@@ -40,6 +40,7 @@ UNMATCHED_OTHER = "Garage_Props_01_12636"
 # small floor props (work lamps, tool boxes) inside this radius are removed
 STAGE_CENTRE = (0.0, 0.5)     # Godot x, z
 STAGE_CLEAR_R = 3.9
+STAGE_DISC_R = 3.45          # everything low inside the turntable disc goes (cables, decals, lamp bases)
 
 
 def load_max(fn):
@@ -294,8 +295,16 @@ def main():
             small = max(xs) - min(xs) < 2.5 and max(ys) - min(ys) < 2.5
             if small and min(zs) < 0.3 and 0.1 < max(zs) < 2.5 and near < STAGE_CLEAR_R:
                 kill += island
+        # cables and other low geometry crossing the disc: cut at the disc edge (hidden under the ring)
+        killed = set(kill)
+        for f in bm.faces:
+            if f in killed:
+                continue
+            c = f.calc_center_median()
+            if math.hypot(c.x - cx, c.y - cy) < STAGE_DISC_R and max(v.co.z for v in f.verts) < 1.5:
+                kill.append(f)
         if kill:
-            removed += len(kill)
+            removed += len(set(kill))
             bmesh.ops.delete(bm, geom=list(set(kill)), context='FACES')
             bm.to_mesh(ob.data)
         bm.free()
