@@ -45,7 +45,7 @@ jobs:
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
           timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true
-          if grep -E "SCRIPT ERROR|Parse Error|Compile Error" smoke.log; then echo "::error::Script errors found"; exit 1; fi
+          if grep -E "SCRIPT ERROR|Parse Error|Compile Error|MODEL MISSING|loaded=false" smoke.log; then echo "::error::Script errors found"; exit 1; fi
           grep -q "SMOKE TEST OK" smoke.log
 
       - name: Render test (software Vulkan, screenshots)

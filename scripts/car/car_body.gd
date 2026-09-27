@@ -122,6 +122,8 @@ func build(p_body_id: String, paint: Dictionary, detailed_lights: bool) -> void:
 		shadows_for_lights = detailed_lights
 		_build_from_model(MODELS[p_body_id], paint)
 		return
+	if MODELS.has(p_body_id):
+		push_warning("MODEL MISSING: %s – using the procedural fallback body" % MODELS[p_body_id]["path"])
 	body_id = p_body_id if BODIES.has(p_body_id) else "r34"
 	spec = BODIES[body_id]
 	shadows_for_lights = detailed_lights

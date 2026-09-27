@@ -5,6 +5,7 @@ const World = preload("res://scripts/world/world.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const Showroom = preload("res://scripts/world/showroom.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const CarBodyScript = preload("res://scripts/car/car_body.gd")
 
 var world: World
 var menu: Menu
@@ -159,6 +160,9 @@ func _smoke_test() -> void:
 	watchdog.timeout.connect(func():
 		print("SMOKE TIMEOUT")
 		get_tree().quit(1))
+	for cid in Game.CAR_ORDER:
+		var mp: String = CarBodyScript.MODELS[cid]["path"]
+		print("SMOKE: model %s loaded=%s" % [cid, str(load(mp) != null)])
 	print("SMOKE: menu")
 	show_menu("main")
 	for s in ["single", "garage", "online", "leaderboard", "options", "main"]:
@@ -171,6 +175,7 @@ func _smoke_test() -> void:
 			print("SMOKE: world %s/%s" % [tr, md])
 			var tod: String = ["dusk", "night", "day", "morning"][i % 4]
 			i += 1
+			Game.settings["car"] = Game.CAR_ORDER[i % Game.CAR_ORDER.size()]
 			_start_world({"track": tr, "mode": md, "laps": 2, "time_of_day": tod, "online": false})
 			while world == null:
 				await get_tree().process_frame
