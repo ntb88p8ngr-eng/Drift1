@@ -17,6 +17,8 @@ func _ready() -> void:
 	for f in 10:
 		await get_tree().process_frame
 	for screen in ["options", "garage", "single"]:
+		if screen == "single":
+			Game.settings["mode"] = "graffiti"
 		main.menu.show_screen(screen)
 		for f in 8:
 			await get_tree().process_frame
@@ -27,11 +29,13 @@ func _ready() -> void:
 	await _shot(out.path_join("ui_online.png"))
 	Net.host_lobby("Test Lobby", 24598, 4, false, "geheim")
 	Net.public_ip = "203.0.113.7"
+	Net.host_set_option("mode", "graffiti")
 	main.menu.show_screen("lobby")
 	for f in 8:
 		await get_tree().process_frame
 	await _shot(out.path_join("ui_lobby.png"))
 	Net.leave()
+	Game.settings["mode"] = "free"
 	main.start_offline()
 	while main.world == null:
 		await get_tree().process_frame

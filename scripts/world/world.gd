@@ -344,7 +344,7 @@ func _lap_race() -> bool:
 
 
 func _setup_graffiti() -> void:
-	time_limit = maxf(laps_total, 1) * 60.0
+	time_limit = clampf(float(config.get("graffiti_minutes", 5)), 1.0, 60.0) * 60.0
 	var players := {}
 	for id in cars.keys():
 		var c: Car = cars[id]

@@ -18,7 +18,7 @@ const MODES := [
 	{"id": "free", "name": "Freies Driften", "desc": "Kein Zeitlimit – sammle Driftpunkte und jage Rundenzeiten."},
 	{"id": "race", "name": "Rennen", "desc": "Wer zuerst alle Runden fährt, gewinnt."},
 	{"id": "drift", "name": "Drift-Battle", "desc": "Alle Runden fahren – die meisten Driftpunkte gewinnen."},
-	{"id": "graffiti", "name": "Graffiti", "desc": "Drifte über die Strecke, um sie in deiner Autofarbe zu markieren – bis jemand drüberdriftet. Nach Ablauf der Zeit (1 Minute pro Runde) gewinnt, wer die meiste Strecke hält."},
+	{"id": "graffiti", "name": "Graffiti", "desc": "Drifte über die Strecke, um sie in deiner Autofarbe zu markieren – bis jemand drüberdriftet. Nach Ablauf der eingestellten Zeit gewinnt, wer die meiste Strecke hält."},
 ]
 
 const TIMES_OF_DAY := [
@@ -72,6 +72,8 @@ const TUNING := [
 	{"id": "turbo", "name": "Turbo", "desc": "Mehr Ladedruck, schnelleres Ansprechen – Sauger bekommen einen Turbo-Kit"},
 	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
 ]
+## Graffiti mode: selectable match length in minutes.
+const GRAFFITI_MINUTES := [2, 5, 10, 15]
 const TUNING_LEVELS := ["Serie", "Stufe 1", "Stufe 2", "Stufe 3"]
 ## Burble-Tune (software map for overrun pops and backfire flames) – free to change per car.
 const BURBLE_LEVELS := ["Aus", "Mild", "Sport", "Brutal"]
@@ -119,6 +121,7 @@ var settings := {
 	"track": "ridge",
 	"mode": "free",
 	"laps": 3,
+	"graffiti_minutes": 5,
 	"time_of_day": "dusk",
 	"master_volume": 0.8,
 	"engine_volume": 1.0,

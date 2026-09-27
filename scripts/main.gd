@@ -54,6 +54,7 @@ func start_offline() -> void:
 		"track": Game.settings["track"],
 		"mode": Game.settings["mode"],
 		"laps": int(Game.settings["laps"]),
+		"graffiti_minutes": int(Game.settings.get("graffiti_minutes", 5)),
 		"time_of_day": Game.settings["time_of_day"],
 		"weather": Game.settings["weather"],
 		"day_cycle": int(Game.settings["day_cycle"]),

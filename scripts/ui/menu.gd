@@ -217,7 +217,22 @@ func _build_single() -> void:
 		tod_names.append(Game.TIMES_OF_DAY[i]["name"])
 		if Game.TIMES_OF_DAY[i]["id"] == Game.settings["time_of_day"]:
 			tod_idx = i
+	# laps for race / drift battle, match length for graffiti – only the one that matters is shown
+	var gt_idx := maxi(Game.GRAFFITI_MINUTES.find(int(Game.settings.get("graffiti_minutes", 5))), 0)
+	var gt_names: Array = []
+	for m in Game.GRAFFITI_MINUTES:
+		gt_names.append("%d Minuten" % m)
+	var graffiti_row := UiKit.labeled("Graffiti-Zeit", UiKit.option(gt_names, gt_idx, func(i):
+		Game.set_setting("graffiti_minutes", Game.GRAFFITI_MINUTES[i])))
+	var laps_label := UiKit.label("%d" % int(Game.settings["laps"]), 19)
+	laps_label.custom_minimum_size = Vector2(40, 0)
+	var laps_slider := UiKit.slider(1, 20, 1, float(Game.settings["laps"]), func(v):
+		Game.set_setting("laps", int(v))
+		laps_label.text = "%d" % int(v), 220)
+	var laps_row := UiKit.labeled("Runden", UiKit.row([laps_slider, laps_label]))
 	var update_desc := func():
+		graffiti_row.visible = Game.settings["mode"] == "graffiti"
+		laps_row.visible = Game.settings["mode"] != "graffiti"
 		var t: Dictionary = Game.TRACKS[track_names.find(Game.track_name(Game.settings["track"]))]
 		var m_desc := ""
 		for m in Game.MODES:
@@ -230,12 +245,8 @@ func _build_single() -> void:
 	_add(UiKit.labeled("Modus", UiKit.option(mode_names, mode_idx, func(i):
 		Game.set_setting("mode", Game.MODES[i]["id"])
 		update_desc.call())))
-	var laps_label := UiKit.label("%d" % int(Game.settings["laps"]), 19)
-	laps_label.custom_minimum_size = Vector2(40, 0)
-	var laps_slider := UiKit.slider(1, 20, 1, float(Game.settings["laps"]), func(v):
-		Game.set_setting("laps", int(v))
-		laps_label.text = "%d" % int(v), 220)
-	_add(UiKit.labeled("Runden (Graffiti: Min.)", UiKit.row([laps_slider, laps_label])))
+	_add(laps_row)
+	_add(graffiti_row)
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 	_add(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(Game.settings["day_cycle"]), func(m): Game.set_setting("day_cycle", m))))
@@ -640,17 +651,26 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.labeled("Strecke", UiKit.option(track_names, ti, func(i): Net.host_set_option("track", Game.TRACKS[i]["id"]))))
 		var modes: Array = []
 		var mi := 0
-		var race_modes := [Game.MODES[1], Game.MODES[2]]
+		var race_modes := Game.MODES.filter(func(m): return m["id"] != "free")
 		for i in race_modes.size():
 			modes.append(race_modes[i]["name"])
 			if race_modes[i]["id"] == lobby.get("mode", "race"):
 				mi = i
 		_lobby_settings.add_child(UiKit.labeled("Modus", UiKit.option(modes, mi, func(i): Net.host_set_option("mode", race_modes[i]["id"]))))
+		if str(lobby.get("mode", "")) == "graffiti":
+			var gnames: Array = []
+			for m in Game.GRAFFITI_MINUTES:
+				gnames.append("%d Minuten" % m)
+			var gi := maxi(Game.GRAFFITI_MINUTES.find(int(lobby.get("graffiti_minutes", 5))), 0)
+			_lobby_settings.add_child(UiKit.labeled("Graffiti-Zeit", UiKit.option(gnames, gi, func(i):
+				Net.host_set_option("graffiti_minutes", Game.GRAFFITI_MINUTES[i]))))
 		var laps_label := UiKit.label(str(int(lobby.get("laps", 3))), 19)
-		_lobby_settings.add_child(UiKit.labeled("Runden (Graffiti: Min.)" if str(lobby.get("mode", "")) == "graffiti" else "Runden", UiKit.row([UiKit.slider(1, 20, 1, float(lobby.get("laps", 3)), func(v):
+		var laps_row := UiKit.labeled("Runden", UiKit.row([UiKit.slider(1, 20, 1, float(lobby.get("laps", 3)), func(v):
 			laps_label.text = str(int(v))
 			if int(v) != int(Net.lobby.get("laps", 3)):
-				Net.host_set_option("laps", int(v)), 200), laps_label])))
+				Net.host_set_option("laps", int(v)), 200), laps_label]))
+		laps_row.visible = str(lobby.get("mode", "")) != "graffiti"
+		_lobby_settings.add_child(laps_row)
 		var tods: Array = []
 		var tdi := 0
 		for i in Game.TIMES_OF_DAY.size():
@@ -666,7 +686,8 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.labeled("Kollisionen", coll))
 	else:
 		_lobby_settings.add_child(UiKit.label("Strecke: %s" % Game.track_name(str(lobby.get("track", "ridge"))), 18))
-		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  Runden: %d" % [Game.mode_name(str(lobby.get("mode", "race"))), int(lobby.get("laps", 3))], 18))
+		var len_text := ("Zeit: %d Minuten" % int(lobby.get("graffiti_minutes", 5))) if str(lobby.get("mode", "")) == "graffiti" else ("Runden: %d" % int(lobby.get("laps", 3)))
+		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  %s" % [Game.mode_name(str(lobby.get("mode", "race"))), len_text], 18))
 		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))
 		_lobby_settings.add_child(UiKit.label("Wetter: %s  ·  Tagesverlauf: %s" % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
