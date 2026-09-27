@@ -11,6 +11,7 @@ const LEADERBOARD_SIZE := 10
 const TRACKS := [
 	{"id": "ridge", "name": "Kurohana Ridge", "desc": "Fließende Bergstrecke im Wald – lange Sweeper, eine Haarnadel, perfekt für Übergänge."},
 	{"id": "harbor", "name": "Harbor Drift Yard", "desc": "Breiter Industriekurs am Hafen – enge Kehren zwischen Containern und Lagerhallen."},
+	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
 ]
 
 const MODES := [

@@ -152,14 +152,15 @@ render_mode diffuse_burley;
 
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform vec3 grass_a : source_color = vec3(0.09, 0.19, 0.045);
-uniform vec3 grass_b : source_color = vec3(0.16, 0.28, 0.07);
-uniform vec3 grass_dry : source_color = vec3(0.3, 0.28, 0.13);
-uniform vec3 forest_floor : source_color = vec3(0.085, 0.075, 0.045);
+uniform vec3 grass_a : source_color = vec3(0.1, 0.27, 0.045);
+uniform vec3 grass_b : source_color = vec3(0.17, 0.4, 0.07);
+uniform vec3 grass_dry : source_color = vec3(0.26, 0.33, 0.11);
+uniform vec3 forest_floor : source_color = vec3(0.07, 0.11, 0.04);
 uniform vec3 dirt : source_color = vec3(0.26, 0.2, 0.13);
 uniform vec3 rock : source_color = vec3(0.36, 0.35, 0.33);
 uniform vec3 concrete : source_color = vec3(0.40, 0.39, 0.36);
 uniform float wetness = 0.0;
+uniform float joints = 1.0;      // concrete slab joints (0 = seamless asphalt)
 
 varying vec3 wpos;
 varying vec4 splat;
@@ -199,7 +200,7 @@ void fragment() {
 		vec3 c = concrete * (0.78 + 0.35 * n2) * (0.88 + 0.24 * n3);
 		vec2 gg = abs(fract(p / 6.0) - 0.5);
 		float joint = smoothstep(0.486, 0.496, max(gg.x, gg.y));
-		c *= 1.0 - joint * 0.4;
+		c *= 1.0 - joint * 0.4 * joints;
 		c = mix(c, c * 0.55, smoothstep(0.66, 0.8, n5) * 0.6);
 		col = mix(col, c, pv);
 	}
@@ -273,8 +274,8 @@ varying float lod_in;
 varying float lod_out;
 
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform vec3 foliage : source_color = vec3(0.17, 0.3, 0.07);
-uniform vec3 needles : source_color = vec3(0.07, 0.17, 0.07);
+uniform vec3 foliage : source_color = vec3(0.15, 0.36, 0.07);
+uniform vec3 needles : source_color = vec3(0.06, 0.21, 0.07);
 uniform vec3 bark : source_color = vec3(0.2, 0.15, 0.1);
 uniform vec3 backlight_color : source_color = vec3(0.12, 0.18, 0.05);
 
@@ -695,10 +696,13 @@ static func terrain_material(track_id: String) -> ShaderMaterial:
 	m.shader = _shader("shader_terrain", TERRAIN_SHADER)
 	m.set_shader_parameter("noise_tex", noise_texture(21, 0.015))
 	m.set_shader_parameter("noise_nrm", noise_texture(22, 0.05, true, 512, 3.0))
+	if track_id == "playground":
+		m.set_shader_parameter("concrete", Color(0.12, 0.12, 0.13))
+		m.set_shader_parameter("joints", 0.0)
 	if track_id == "harbor":
-		m.set_shader_parameter("grass_a", Color(0.14, 0.2, 0.07))
-		m.set_shader_parameter("grass_b", Color(0.22, 0.28, 0.11))
-		m.set_shader_parameter("grass_dry", Color(0.36, 0.32, 0.18))
+		m.set_shader_parameter("grass_a", Color(0.12, 0.26, 0.06))
+		m.set_shader_parameter("grass_b", Color(0.2, 0.36, 0.09))
+		m.set_shader_parameter("grass_dry", Color(0.3, 0.33, 0.14))
 	return m
 
 

@@ -110,8 +110,10 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	scenery = p_scenery
 	rng.seed = hash(track.track_id) + 77
 	var zones: int = [3, 4, 6, 7][clampi(quality, 0, 3)]
-	for i in _corner_indices(zones):
-		_build_zone(i, quality)
+	# the open playground pad has no barriers to stand behind: only the grandstand there
+	if track.track_id != "playground":
+		for i in _corner_indices(zones):
+			_build_zone(i, quality)
 	_build_grandstand()
 
 

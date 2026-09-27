@@ -20,6 +20,7 @@ const TireFX = preload("res://scripts/car/tire_fx.gd")
 const LAYER_WORLD := 1
 const LAYER_LOCAL := 2
 const LAYER_REMOTE := 4
+const LAYER_PROPS := 8         # loose physics props (playground barrels, cones, crates)
 
 const SUSP_TRAVEL := 0.30
 const SAG := 0.09
@@ -290,7 +291,7 @@ func _setup_physics() -> void:
 		collision_mask = 0
 	else:
 		collision_layer = LAYER_LOCAL
-		collision_mask = LAYER_WORLD | (LAYER_REMOTE if remote_collisions else 0)
+		collision_mask = LAYER_WORLD | LAYER_PROPS | (LAYER_REMOTE if remote_collisions else 0)
 
 
 func _setup_wheels() -> void:

@@ -575,15 +575,14 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.labeled("Tageszeit", UiKit.option(tods, tdi, func(i): Net.host_set_option("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 		_lobby_settings.add_child(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(lobby.get("day_cycle", 0)), func(m): Net.host_set_option("day_cycle", m))))
 		_lobby_settings.add_child(UiKit.labeled("Wetter", _weather_option(str(lobby.get("weather", "dry")), func(w): Net.host_set_option("weather", w))))
-		var coll := CheckBox.new()
-		coll.text = "Kollisionen zwischen Autos"
-		coll.button_pressed = bool(lobby.get("collisions", true))
-		coll.toggled.connect(func(on): Net.host_set_option("collisions", on))
-		_lobby_settings.add_child(coll)
+		var coll := UiKit.option(["An – Autos prallen aneinander ab", "Aus – Geister-Modus (durchfahren)"], 0 if bool(lobby.get("collisions", true)) else 1, func(i):
+			Net.host_set_option("collisions", i == 0))
+		coll.tooltip_text = "Im Geister-Modus fahren alle durcheinander hindurch, die anderen Autos sind halbtransparent."
+		_lobby_settings.add_child(UiKit.labeled("Kollisionen", coll))
 	else:
 		_lobby_settings.add_child(UiKit.label("Strecke: %s" % Game.track_name(str(lobby.get("track", "ridge"))), 18))
 		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  Runden: %d" % [Game.mode_name(str(lobby.get("mode", "race"))), int(lobby.get("laps", 3))], 18))
-		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus"], 18))
+		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))
 		_lobby_settings.add_child(UiKit.label("Wetter: %s  ·  Tagesverlauf: %s" % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
 	_ready_btn.visible = not host

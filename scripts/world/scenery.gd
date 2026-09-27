@@ -9,6 +9,7 @@ const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
+const Playground = preload("res://scripts/world/playground.gd")
 
 const CHUNK := 48.0
 const FAR_CHUNK := 192.0        # the coarse outer forest uses big chunks
@@ -60,6 +61,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		_build_water_and_quay()
 		_build_harbor_props()
 		_build_houses(6, ["office", "jp", "shop", "jp", "office", "jp"])
+	elif id == "playground":
+		var pg := Playground.new()
+		pg.name = "Playground"
+		add_child(pg)
+		pg.build(track, terrain, self, quality)
 	else:
 		_build_houses(10, ["jp", "jp", "shop", "jp", "jp", "barn", "jp", "jp", "shop", "jp"])
 		if _village >= 0:
@@ -424,9 +430,10 @@ func _foliage_tint(pine: bool, autumn_ratio: float) -> Color:
 		elif warm < 0.8:
 			return Color(1.75, 0.62, 0.3, 1.0)      # orange
 		return Color(1.8, 0.42, 0.28, 1.0)          # maple red
+	# a touch greener than the textures
 	if pine:
-		return Color(r * 0.95, g, b * 0.95, 1.0)
-	return Color(r, g, b, 1.0)
+		return Color(r * 0.88, g * 1.08, b * 0.88, 1.0)
+	return Color(r * 0.92, g * 1.08, b * 0.85, 1.0)
 
 
 ## Sparse far trees on the coarse outer terrain so the forest does not end at the grid border.

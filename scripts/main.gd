@@ -181,9 +181,9 @@ func _smoke_test() -> void:
 	await _shot(shot_dir, "menu")
 	var i := 0
 	var quick := "--quick" in OS.get_cmdline_user_args()
-	var runs: Array = [["ridge", "race"], ["ridge", "free"], ["harbor", "race"], ["harbor", "free"]]
+	var runs: Array = [["ridge", "race"], ["ridge", "free"], ["harbor", "race"], ["harbor", "free"], ["playground", "free"]]
 	if quick:
-		runs = [["ridge", "free"], ["harbor", "race"]]
+		runs = [["ridge", "free"], ["harbor", "race"], ["playground", "free"]]
 	for run in runs:
 		var tr: String = run[0]
 		var md: String = run[1]

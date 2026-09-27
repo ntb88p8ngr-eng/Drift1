@@ -20,6 +20,13 @@ const DEFS := {
 		"width": 15.0, "runoff": 5.0, "start_dist": 70.0,
 		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.10, 0.10, 0.11),
 	},
+	"playground": {
+		"points": [Vector2(0, 0), Vector2(73, -71), Vector2(134, -100), Vector2(176, -71), Vector2(190, 0), Vector2(176, 71),
+			Vector2(134, 100), Vector2(73, 71), Vector2(0, 0), Vector2(-73, -71), Vector2(-134, -100), Vector2(-176, -71),
+			Vector2(-190, 0), Vector2(-176, 71), Vector2(-134, 100), Vector2(-73, 71)],
+		"width": 16.0, "runoff": 6.0, "start_dist": 40.0,
+		"ground": "asphalt", "offroad_grip": 0.97, "wall": "none", "asphalt": Color(0.075, 0.075, 0.085),
+	},
 	"harbor": {
 		"points": [Vector2(0, 0), Vector2(0, -120), Vector2(30, -170), Vector2(90, -175), Vector2(120, -130),
 			Vector2(110, -70), Vector2(150, -30), Vector2(220, -40), Vector2(250, -100), Vector2(300, -130),
@@ -354,6 +361,8 @@ func _build_curbs() -> void:
 
 func _build_walls() -> void:
 	var n := samples.size()
+	if def["wall"] == "none":
+		return        # open pad: the playground has a barrier around the whole area instead
 	var concrete: bool = def["wall"] == "concrete"
 	var vis := MeshKit.new_st()
 	var faces_l := PackedVector3Array()

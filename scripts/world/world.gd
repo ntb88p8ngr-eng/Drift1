@@ -193,6 +193,10 @@ func _make_car(info: Dictionary, remote: bool) -> Car:
 		tag.modulate = Color(1, 0.9, 0.5)
 		tag.no_depth_test = false
 		car.add_child(tag)
+		if not car.remote_collisions:
+			# ghost mode: the others are see-through so you know you'll pass through them
+			for gi in car.find_children("*", "GeometryInstance3D", true, false):
+				(gi as GeometryInstance3D).transparency = 0.55
 	return car
 
 

@@ -69,6 +69,8 @@ func add_pot(pos: Vector3) -> void:
 
 ## Everything along the track. Call before the forest so the trees keep clear of the props.
 func build(quality: int) -> void:
+	if track.track_id == "playground":
+		return        # the playground brings its own boards, cones and barrels
 	var corners := _corners()
 	_stats["corners"] = corners.size()
 	_corner_chevrons(corners)

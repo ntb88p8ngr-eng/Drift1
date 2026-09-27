@@ -31,9 +31,9 @@ uniform float inner_end = 0.0;
 uniform float wind = 1.0;
 uniform float wetness = 0.0;
 uniform float road_clear = 1.4;
-uniform vec3 color_a : source_color = vec3(0.13, 0.24, 0.06);
-uniform vec3 color_b : source_color = vec3(0.24, 0.36, 0.1);
-uniform vec3 color_dry : source_color = vec3(0.45, 0.4, 0.2);
+uniform vec3 color_a : source_color = vec3(0.12, 0.32, 0.06);
+uniform vec3 color_b : source_color = vec3(0.22, 0.46, 0.1);
+uniform vec3 color_dry : source_color = vec3(0.38, 0.42, 0.18);
 
 varying vec3 g_col;
 varying float g_tip;
@@ -268,9 +268,9 @@ func _add_layer(spacing: float, radius: float, fade0: float, fade1: float, inner
 	mat.set_shader_parameter("inner_start", inner0)
 	mat.set_shader_parameter("inner_end", inner1)
 	if track.track_id == "harbor":
-		mat.set_shader_parameter("color_a", Color(0.16, 0.24, 0.08))
-		mat.set_shader_parameter("color_b", Color(0.27, 0.34, 0.12))
-		mat.set_shader_parameter("color_dry", Color(0.48, 0.42, 0.22))
+		mat.set_shader_parameter("color_a", Color(0.14, 0.3, 0.07))
+		mat.set_shader_parameter("color_b", Color(0.24, 0.42, 0.11))
+		mat.set_shader_parameter("color_dry", Color(0.4, 0.42, 0.2))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "Grass"
 	mmi.multimesh = mm

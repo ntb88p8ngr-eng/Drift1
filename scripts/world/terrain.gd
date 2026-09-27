@@ -49,7 +49,7 @@ var _quay_z := 1e9
 func generate(p_track: Node3D) -> void:
 	track = p_track
 	track_id = track.track_id
-	var seed_base := 1234 if track_id == "ridge" else 5678
+	var seed_base: int = {"ridge": 1234, "harbor": 5678}.get(track_id, 9012)
 	_setup_noise(_n_large, seed_base, 1.0 / 260.0, 4)
 	_setup_noise(_n_mid, seed_base + 1, 1.0 / 85.0, 3)
 	_setup_noise(_n_small, seed_base + 2, 1.0 / 14.0, 2)
@@ -137,6 +137,11 @@ func distance_to_road(x: float, z: float) -> float:
 ## Terrain height before flattening; d = distance to the centreline.
 func _height_fn(x: float, z: float, d: float) -> float:
 	var h := _base_height(x, z)
+	if track_id == "playground":
+		# the whole pad is flat; green hills start a few metres outside its barrier
+		var sd := pad_sd(x, z)
+		var pbw := 30.0 + 30.0 * (_n_blend.get_noise_2d(x, z) * 0.5 + 0.5)
+		return h * smoothstep(6.0, 6.0 + pbw, sd) + _n_small.get_noise_2d(x, z) * 0.55 * smoothstep(6.0, 16.0, sd)
 	var fr := _flat_radius(x, z)
 	var bw := 26.0 + 30.0 * (_n_blend.get_noise_2d(x, z) * 0.5 + 0.5)
 	var blend := smoothstep(fr, fr + bw, d)
@@ -151,9 +156,30 @@ func _flat_radius(x: float, z: float) -> float:
 	return flat_r
 
 
+## Playground pad: a rounded rectangle around the figure eight; signed distance (negative inside).
+const PAD_MARGIN := 70.0
+const PAD_CORNER := 45.0
+
+
+func pad_rect() -> Rect2:
+	return track.bounds.grow(PAD_MARGIN)
+
+
+func pad_sd(x: float, z: float) -> float:
+	var r := pad_rect()
+	var c := r.get_center()
+	var h := r.size * 0.5 - Vector2(PAD_CORNER, PAD_CORNER)
+	var q := Vector2(absf(x - c.x), absf(z - c.y)) - h
+	return Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() + minf(maxf(q.x, q.y), 0.0) - PAD_CORNER
+
+
 ## Hills, ridges and mountains without the road corridor.
 func _base_height(x: float, z: float) -> float:
 	var r := Vector2(x, z).distance_to(_center)
+	if track_id == "playground":
+		var hills := _n_large.get_noise_2d(x, z) * 12.0 + 8.0 + _n_mid.get_noise_2d(x, z) * 5.0
+		hills += smoothstep(550.0, 1100.0, r) * (50.0 + 110.0 * (_n_large.get_noise_2d(x * 0.35, z * 0.35) * 0.5 + 0.5))
+		return maxf(hills, 0.0)
 	if track_id == "harbor":
 		if z > _quay_z - 1.0:
 			return -4.5
@@ -178,7 +204,11 @@ func _base_height(x: float, z: float) -> float:
 func _splat_fn(x: float, z: float, d: float) -> Color:
 	var paved := 0.0
 	var dirt := 0.0
-	if track_id == "harbor":
+	if track_id == "playground":
+		var sd := pad_sd(x, z)
+		paved = 1.0 - smoothstep(-1.0, 1.5, sd)
+		dirt = smoothstep(0.5, 2.0, sd) * (1.0 - smoothstep(3.0, 8.0, sd)) * 0.7
+	elif track_id == "harbor":
 		var apron := float(track.wall_base) + 30.0 + _n_blend.get_noise_2d(x, z) * 10.0
 		paved = 1.0 - smoothstep(apron - 4.0, apron + 3.0, d)
 		if z > _quay_z - 34.0:
@@ -199,6 +229,8 @@ func forest_density(x: float, z: float, d := -1.0) -> float:
 		d = _dist_raw(x, z)
 	var n := _n_forest.get_noise_2d(x, z) * 0.5 + 0.5
 	var f := smoothstep(0.34, 0.52, n)
+	if track_id == "playground":
+		return f * smoothstep(14.0, 40.0, pad_sd(x, z))
 	if track_id == "harbor":
 		var apron := float(track.wall_base) + 36.0
 		f *= smoothstep(apron, apron + 20.0, d)
