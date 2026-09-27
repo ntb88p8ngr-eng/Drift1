@@ -124,6 +124,9 @@ var settings := {
 	"graffiti_minutes": 5,
 	"time_of_day": "dusk",
 	"master_volume": 0.8,
+	"audio_output": "Default",
+	"audio_input": "Default",
+	"mic_volume": 1.0,
 	"engine_volume": 1.0,
 	"fullscreen": false,
 	"window_mode": 0,
@@ -303,7 +306,74 @@ func apply_settings() -> void:
 	var vol := clampf(float(settings["master_volume"]), 0.0, 1.0)
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(vol, 0.0001)))
 	AudioServer.set_bus_mute(0, vol <= 0.001)
+	apply_audio_devices()
 	apply_video()
+
+
+## Speakers / headphones and microphone chosen in Optionen → Audio ("Default" = system default).
+func apply_audio_devices() -> void:
+	var out := str(settings.get("audio_output", "Default"))
+	if AudioServer.get_output_device_list().has(out) and AudioServer.output_device != out:
+		AudioServer.output_device = out
+	var inp := str(settings.get("audio_input", "Default"))
+	if AudioServer.get_input_device_list().has(inp) and AudioServer.input_device != inp:
+		AudioServer.input_device = inp
+
+
+# --- microphone test (level meter in the audio options; the signal is never played back) ---
+var _mic_player: AudioStreamPlayer
+var _mic_capture: AudioEffectCapture
+var _mic_bus := -1
+var _mic_level := 0.0
+
+
+func start_mic_test() -> void:
+	if _mic_player:
+		return
+	_mic_bus = AudioServer.get_bus_index("MicTest")
+	if _mic_bus < 0:
+		AudioServer.add_bus()
+		_mic_bus = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(_mic_bus, "MicTest")
+		_mic_capture = AudioEffectCapture.new()
+		AudioServer.add_bus_effect(_mic_bus, _mic_capture, 0)
+		# silenced after the capture: the microphone is never played back (no feedback)
+		var mute := AudioEffectAmplify.new()
+		mute.volume_db = -80.0
+		AudioServer.add_bus_effect(_mic_bus, mute, 1)
+		AudioServer.set_bus_volume_db(_mic_bus, -80.0)
+	else:
+		_mic_capture = AudioServer.get_bus_effect(_mic_bus, 0) as AudioEffectCapture
+	_mic_player = AudioStreamPlayer.new()
+	_mic_player.stream = AudioStreamMicrophone.new()
+	_mic_player.bus = "MicTest"
+	add_child(_mic_player)
+	_mic_player.play()
+
+
+func stop_mic_test() -> void:
+	if _mic_player:
+		_mic_player.stop()
+		_mic_player.queue_free()
+	_mic_player = null
+	_mic_level = 0.0
+
+
+## Microphone level 0..1 while the test runs.
+func mic_level() -> float:
+	if _mic_capture == null or _mic_player == null:
+		return 0.0
+	var n := _mic_capture.get_frames_available()
+	if n > 0:
+		var buf := _mic_capture.get_buffer(n)
+		var peak := 0.0
+		for f in buf:
+			peak = maxf(peak, maxf(absf(f.x), absf(f.y)))
+		var gain := float(settings.get("mic_volume", 1.0))
+		_mic_level = maxf(clampf(peak * gain, 0.0, 1.0), _mic_level * 0.85)
+	else:
+		_mic_level *= 0.9
+	return _mic_level
 
 
 ## Window mode, resolution, anti-aliasing, upscaling, vsync, fps limit, shadows and gamma.

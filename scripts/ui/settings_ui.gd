@@ -125,7 +125,67 @@ static func audio_page() -> VBoxContainer:
 		Game.save_settings())
 	wv.tooltip_text = "Lautstärke von Regen und Wetter (ganz links = aus)."
 	v.add_child(UiKit.labeled("Wetter / Regen", wv))
+	v.add_child(UiKit.sep())
+	# --- devices ---
+	var outs := _device_list(AudioServer.get_output_device_list())
+	var out_opt := UiKit.option(outs.map(_device_name), maxi(outs.find(str(Game.settings.get("audio_output", "Default"))), 0), func(i):
+		Game.set_setting("audio_output", outs[i]))
+	out_opt.tooltip_text = "Lautsprecher / Kopfhörer, auf denen das Spiel ausgegeben wird."
+	v.add_child(UiKit.labeled("Ausgabegerät", out_opt))
+	var ins := _device_list(AudioServer.get_input_device_list())
+	var in_opt := UiKit.option(ins.map(_device_name), maxi(ins.find(str(Game.settings.get("audio_input", "Default"))), 0), func(i):
+		Game.set_setting("audio_input", ins[i]))
+	in_opt.tooltip_text = "Mikrofon (für Sprach-Funktionen)."
+	v.add_child(UiKit.labeled("Mikrofon", in_opt))
+	v.add_child(UiKit.labeled("Mikrofon-Pegel", UiKit.slider(0, 2, 0.05, float(Game.settings.get("mic_volume", 1.0)), func(x):
+		Game.set_setting("mic_volume", x))))
+	# microphone test: live level meter, nothing is played back
+	var meter := ProgressBar.new()
+	meter.min_value = 0.0
+	meter.max_value = 1.0
+	meter.show_percentage = false
+	meter.custom_minimum_size = Vector2(260, 18)
+	meter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.06, 0.05, 0.1)
+	bg.border_color = UiKit.ACCENT.darkened(0.3)
+	bg.set_border_width_all(1)
+	bg.set_corner_radius_all(4)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = UiKit.GOOD
+	fill.set_corner_radius_all(4)
+	meter.add_theme_stylebox_override("background", bg)
+	meter.add_theme_stylebox_override("fill", fill)
+	var poll := Timer.new()
+	poll.wait_time = 0.05
+	poll.timeout.connect(func(): meter.value = Game.mic_level())
+	var test := CheckButton.new()
+	test.text = "Mikrofon testen"
+	test.toggled.connect(func(on):
+		if on:
+			Game.start_mic_test()
+			poll.start()
+		else:
+			poll.stop()
+			Game.stop_mic_test()
+			meter.value = 0.0)
+	# stop the test when the options close
+	meter.tree_exiting.connect(func(): Game.stop_mic_test())
+	v.add_child(UiKit.row([test, meter, poll]))
 	return v
+
+
+## "Default" first, then the devices the system reports.
+static func _device_list(devices: PackedStringArray) -> Array:
+	var out: Array = ["Default"]
+	for d in devices:
+		if d != "Default":
+			out.append(d)
+	return out
+
+
+static func _device_name(d: String) -> String:
+	return "Systemstandard" if d == "Default" else d
 
 
 static func gameplay_page() -> VBoxContainer:

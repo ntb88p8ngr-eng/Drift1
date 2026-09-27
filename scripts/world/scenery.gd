@@ -1022,6 +1022,9 @@ func _build_lamps() -> void:
 	var every := 36  # samples (≈72 m)
 	var pole_mat := TexKit.std(Color(0.3, 0.31, 0.33), 0.5, 0.7)
 	var head_mat := _glow_material(Color(1.0, 0.85, 0.6), 0.2, 5.2)
+	if track.track_id == "playground":
+		_playground_lamps(pole_mat, head_mat)
+		return
 	var k := 0
 	for i in range(0, n, every):
 		var side := 1.0 if track.curvature[i] > 0.0 else -1.0
@@ -1039,6 +1042,46 @@ func _build_lamps() -> void:
 		l.light_energy = 6.0
 		l.spot_range = 22.0
 		l.spot_angle = 55.0
+		l.spot_attenuation = 0.8
+		l.shadow_enabled = false
+		l.position = Vector3(0, 7.6, -2.4)
+		l.rotation = Vector3(-PI * 0.5, 0, 0)
+		l.visible = false
+		lamp.add_child(l)
+		lamp_lights.append(l)
+		_night_lights.append([l, 6.0])
+		occupy(pos, 1.5)
+
+
+## Playground: the whole pad is drivable, so the lamps stand just outside the barrier, leaning over it.
+func _playground_lamps(pole_mat: Material, head_mat: Material) -> void:
+	var r: Rect2 = terrain.pad_rect().grow(1.2)
+	var c := r.get_center()
+	var pts: Array = []
+	var step := 42.0
+	for side in 4:
+		var a: Vector2
+		var b: Vector2
+		match side:
+			0: a = Vector2(r.position.x + 50.0, r.position.y); b = Vector2(r.end.x - 50.0, r.position.y)
+			1: a = Vector2(r.end.x, r.position.y + 50.0); b = Vector2(r.end.x, r.end.y - 50.0)
+			2: a = Vector2(r.end.x - 50.0, r.end.y); b = Vector2(r.position.x + 50.0, r.end.y)
+			_: a = Vector2(r.position.x, r.end.y - 50.0); b = Vector2(r.position.x, r.position.y + 50.0)
+		var cnt := maxi(1, int(a.distance_to(b) / step))
+		for k in cnt + 1:
+			pts.append(a.lerp(b, float(k) / cnt))
+	for p2 in pts:
+		var pos := Vector3(p2.x, 0, p2.y)
+		pos.y = terrain.height_at(pos.x, pos.z)
+		var inward := Vector3(c.x - p2.x, 0, c.y - p2.y)
+		# face straight across the nearest barrier side
+		inward = Vector3(signf(inward.x), 0, 0) if absf(p2.x - c.x) / r.size.x > absf(p2.y - c.y) / r.size.y else Vector3(0, 0, signf(inward.z))
+		var lamp := make_breakable_lamp(self, Transform3D(Basis.looking_at(inward, Vector3.UP), pos), pole_mat, head_mat)
+		var l := SpotLight3D.new()
+		l.light_color = Color(1.0, 0.82, 0.55)
+		l.light_energy = 6.0
+		l.spot_range = 24.0
+		l.spot_angle = 60.0
 		l.spot_attenuation = 0.8
 		l.shadow_enabled = false
 		l.position = Vector3(0, 7.6, -2.4)

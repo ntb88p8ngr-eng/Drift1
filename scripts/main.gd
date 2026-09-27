@@ -216,6 +216,11 @@ func _smoke_test() -> void:
 		else:
 			world._finish()
 		await get_tree().process_frame
+	Game.start_mic_test()
+	for f in 5:
+		await get_tree().process_frame
+	print("SMOKE: mic test level %.2f, outputs %s, inputs %s" % [Game.mic_level(), AudioServer.get_output_device_list(), AudioServer.get_input_device_list()])
+	Game.stop_mic_test()
 	print("SMOKE: online host")
 	var err := Net.host_lobby("Smoke", 24599, 4, false)
 	print("SMOKE: host result '%s'" % err)

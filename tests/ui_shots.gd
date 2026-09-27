@@ -23,6 +23,13 @@ func _ready() -> void:
 		for f in 8:
 			await get_tree().process_frame
 		await _shot(out.path_join("ui_%s.png" % screen))
+		if screen == "options":
+			var tabs: Array = main.menu.find_children("*", "TabContainer", true, false)
+			if not tabs.is_empty():
+				(tabs[0] as TabContainer).current_tab = 1
+				for f in 6:
+					await get_tree().process_frame
+				await _shot(out.path_join("ui_options_audio.png"))
 	main.menu.show_screen("online")
 	for f in 8:
 		await get_tree().process_frame
