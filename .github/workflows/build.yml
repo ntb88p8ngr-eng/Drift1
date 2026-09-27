@@ -38,9 +38,9 @@ jobs:
 
       - name: Compile all scripts
         run: |
-          timeout 120 ./godot --headless --path . --script res://tests/check_scripts.gd 2>&1 | tee check.log || true
+          timeout 120 ./godot --headless --path . res://tests/check_scripts.tscn 2>&1 | tee check.log || true
+          if grep -E "SCRIPT CHECK FAILED|Parse Error|Compile Error|SCRIPT ERROR" check.log; then echo "::error::Script compile errors"; exit 1; fi
           grep -q "SCRIPT CHECK DONE" check.log
-          if grep -E "SCRIPT CHECK FAILED|Parse Error|SCRIPT ERROR" check.log; then echo "::error::Script compile errors"; exit 1; fi
 
       - name: Smoke test (headless – scripts, physics, networking)
         run: |

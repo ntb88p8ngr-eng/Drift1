@@ -35,7 +35,7 @@ func build(p_track: Node3D, p_night: float, quality: int) -> void:
 		_build_skyline()
 	else:
 		_build_houses(8, ["jp", "jp", "jp", "shop", "jp", "jp", "barn", "jp"])
-		var count := [220, 380, 480, 600][clampi(quality, 0, 3)]
+		var count: int = [220, 380, 480, 600][clampi(quality, 0, 3)]
 		_build_trees(count, 0.62, 0.08)
 		_build_mountains()
 	_build_lamps()
@@ -349,7 +349,7 @@ func _build_water_and_quay() -> void:
 	for k in 2:
 		var ship := Node3D.new()
 		ship.position = Vector3(b.position.x + 80.0 + k * 260.0, 0, quay_z + 40.0 + k * 30.0)
-		var hull_col := [Color(0.1, 0.18, 0.35), Color(0.35, 0.08, 0.06)][k]
+		var hull_col: Color = [Color(0.1, 0.18, 0.35), Color(0.35, 0.08, 0.06)][k]
 		ship.add_child(MeshKit.box_node(Vector3(150, 12, 24), TexKit.std(hull_col, 0.6, 0.3), Vector3(0, 3, 0)))
 		ship.add_child(MeshKit.box_node(Vector3(20, 14, 20), TexKit.std(Color(0.9, 0.9, 0.88), 0.6), Vector3(60, 16, 0)))
 		for c in 8:

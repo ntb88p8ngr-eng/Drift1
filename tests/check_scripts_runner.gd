@@ -1,9 +1,9 @@
-extends SceneTree
-## CI helper: compiles every script in res://scripts and reports failures.
-## Run with: godot --headless --path . --script res://tests/check_scripts.gd
+extends Node
+## CI helper: compiles every script in res://scripts (with autoloads available) and reports failures.
+## Run with: godot --headless --path . res://tests/check_scripts.tscn
 
 
-func _init() -> void:
+func _ready() -> void:
 	var failed := 0
 	var paths := _collect("res://scripts")
 	for path in paths:
@@ -14,7 +14,7 @@ func _init() -> void:
 		else:
 			print("ok  ", path)
 	print("SCRIPT CHECK DONE: %d scripts, %d failed" % [paths.size(), failed])
-	quit(1 if failed > 0 else 0)
+	get_tree().quit(1 if failed > 0 else 0)
 
 
 func _collect(dir_path: String) -> Array:
