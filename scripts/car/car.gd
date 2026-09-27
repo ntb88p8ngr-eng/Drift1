@@ -4,7 +4,7 @@ extends RigidBody3D
 ## - tyre model with slip-angle curve and a friction circle, so wheelspin / handbrake break rear grip
 ## - engine with torque curve, soft rev limiter, turbo spool & blow-off, nitro, launch control
 ## - automatic or manual gearbox (manual never shifts by itself)
-## - tuning (engine, gearbox, suspension, turbo, nitro) from Game.get_tuning()
+## - tuning (engine, gearbox, suspension, tyres, steering, turbo, nitro) from Game.get_tuning()
 ## Remote (network) cars use the same node as a kinematic, interpolated puppet.
 
 signal shifted(up: bool, boost: float)
@@ -224,6 +224,7 @@ func _apply_tuning(t: Dictionary) -> void:
 	var e := int(t.get("engine", 0))
 	var g := int(t.get("gearbox", 0))
 	var s := int(t.get("suspension", 0))
+	var ty := int(t.get("tyres", 0))
 	var tu := int(t.get("turbo", 0))
 	var n := int(t.get("nitro", 0))
 	var st := clampi(int(t.get("steering", 0)), 0, Game.STEER_KIT.size() - 1)
@@ -235,7 +236,7 @@ func _apply_tuning(t: Dictionary) -> void:
 	redline = gb["redline"]
 	shift_time_auto = 0.24 * float(gb["shift"])
 	shift_time_manual = 0.16 * float(gb["shift"])
-	grip *= 1.0 + 0.035 * s
+	grip *= (1.0 + 0.035 * s) * (1.0 + 0.06 * ty)
 	steer_lock += deg_to_rad(float(Game.STEER_KIT[st]))
 	spring_k *= 1.0 + 0.12 * s
 	damper_c *= 1.0 + 0.1 * s

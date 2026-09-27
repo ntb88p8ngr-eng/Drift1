@@ -280,15 +280,22 @@ func _process(delta: float) -> void:
 	# info panel
 	_mode_label.text = "%s · %s" % [Game.mode_name(world.mode).to_upper(), Game.track_name(world.track.track_id)]
 	var lines: Array = []
-	if world.mode == "free":
+	if world.graffiti:
+		lines.append("Zeit     %s" % Game.format_time(maxf(float(world.time_limit) - float(world.race_time), 0.0)))
+		for st in world.graffiti.standings():
+			lines.append("%s  %d m  (%d %%)" % [str(world.graffiti.names.get(st[0], "?")).substr(0, 10), int(st[1]), int(round(float(st[2]) * 100.0))])
+	elif world.mode == "free":
 		lines.append("Runde %d" % (int(world.lap) + 1))
 	else:
 		lines.append("Runde %d / %d" % [mini(int(world.lap) + 1, int(world.laps_total)), int(world.laps_total)])
-	if world.mode == "race" and world.state != "countdown":
+	if world.graffiti:
+		pass
+	elif world.mode == "race" and world.state != "countdown":
 		lines.append("Gesamt  %s" % Game.format_time(float(world.race_time)))
-	lines.append("Zeit     %s" % (Game.format_time(float(world.race_time) - float(world.lap_start)) if world.crossed_start else "-- Einführungsrunde --"))
-	lines.append("Letzte  %s" % Game.format_time(float(world.last_lap)))
-	lines.append("Beste   %s" % Game.format_time(float(world.best_lap)))
+	if not world.graffiti:
+		lines.append("Zeit     %s" % (Game.format_time(float(world.race_time) - float(world.lap_start)) if world.crossed_start else "-- Einführungsrunde --"))
+		lines.append("Letzte  %s" % Game.format_time(float(world.last_lap)))
+		lines.append("Beste   %s" % Game.format_time(float(world.best_lap)))
 	var pos_text: String = world.position_text()
 	if pos_text != "":
 		lines.append("Platz   %s" % pos_text)

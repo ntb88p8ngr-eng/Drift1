@@ -19,6 +19,7 @@ const Hud = preload("res://scripts/ui/hud.gd")
 const PauseMenu = preload("res://scripts/ui/pause_menu.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const ShaderWarmup = preload("res://scripts/world/shader_warmup.gd")
+const Graffiti = preload("res://scripts/world/graffiti.gd")
 
 const SECTORS := 8
 
@@ -39,6 +40,8 @@ var camera: CameraRig
 var hud: Hud
 var pause_menu: PauseMenu
 var scorer: DriftScorer
+var graffiti: Graffiti      # graffiti mode only
+var time_limit := 0.0       # graffiti mode: seconds
 
 var state := "loading"      # loading, waiting, countdown, running, finished
 var race_time := 0.0
@@ -122,6 +125,8 @@ func _ready() -> void:
 	pause_menu.world = self
 	add_child(pause_menu)
 	local_car.wall_hit.connect(_on_wall_hit)
+	if mode == "graffiti":
+		_setup_graffiti()
 
 	if online:
 		Net.remote_state.connect(_on_remote_state)
@@ -134,6 +139,9 @@ func _ready() -> void:
 		hud.set_countdown("…")
 		hud.show_message("Warte auf andere Spieler", "", Color.WHITE, 30.0)
 		Net.notify_loaded()
+	elif mode == "graffiti" and not online:
+		hud.show_message("GRAFFITI", "Drifte über die Strecke, um sie in deiner Farbe zu markieren", Color.WHITE, 4.0)
+		_start_countdown()
 	elif mode == "free":
 		state = "running"
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
@@ -250,6 +258,11 @@ func _physics_process(delta: float) -> void:
 		scorer.update(local_car, delta, get_world_3d().direct_space_state)
 		for ev in scorer.events:
 			hud.on_drift_event(ev)
+		if graffiti:
+			if scorer.drifting:
+				graffiti.spray(progress)
+			if race_time >= time_limit:
+				_finish()
 	if local_car and Input.is_action_just_pressed("reset_car") and local_car.input_enabled and state != "countdown":
 		local_car.reset_to_track()
 		scorer.fail("Zurückgesetzt")
@@ -314,15 +327,42 @@ func _complete_lap() -> void:
 	var sub := "Rundenzeit %s" % Game.format_time(t)
 	if rank > 0:
 		sub += "  ·  Leaderboard Platz %d" % rank
-	if mode != "free" and lap >= laps_total:
+	if _lap_race() and lap >= laps_total:
 		_finish()
 		return
 	if is_best:
 		hud.show_message("NEUE BESTZEIT", sub, UiKit.GOLD, 2.5)
 	else:
-		hud.show_message("RUNDE %d" % (lap + 1) if mode != "free" else "RUNDE", sub, Color.WHITE, 2.0)
-	if mode != "free" and lap == laps_total - 1:
+		hud.show_message("RUNDE %d" % (lap + 1) if _lap_race() else "RUNDE", sub, Color.WHITE, 2.0)
+	if _lap_race() and lap == laps_total - 1:
 		hud.show_message("LETZTE RUNDE", sub, UiKit.GOLD, 2.5)
+
+
+## Modes that end after a number of laps.
+func _lap_race() -> bool:
+	return mode == "race" or mode == "drift"
+
+
+func _setup_graffiti() -> void:
+	time_limit = maxf(laps_total, 1) * 60.0
+	var players := {}
+	for id in cars.keys():
+		var c: Car = cars[id]
+		players[id] = {"color": (c.paint as Dictionary).get("color", Color(0.8, 0.1, 0.1)), "name": c.player_name}
+	graffiti = Graffiti.new()
+	graffiti.name = "Graffiti"
+	add_child(graffiti)
+	graffiti.setup(track, players, Net.local_id() if online else 1, online)
+
+
+## Graffiti: metres of track the player holds (local or remote car).
+func graffiti_metres(c) -> float:
+	if graffiti == null:
+		return 0.0
+	for id in cars.keys():
+		if cars[id] == c:
+			return graffiti.metres(id)
+	return 0.0
 
 
 func total_progress() -> float:
@@ -339,10 +379,18 @@ func _finish() -> void:
 	scorer.enabled = false
 	local_car.input_enabled = false
 	var result := {"time": finish_time, "best_lap": best_lap, "drift": scorer.total, "best_chain": scorer.best_chain, "finished": true}
+	if graffiti:
+		result["graffiti"] = graffiti_metres(local_car)
 	var notes := _submit_leaderboard()
 	if online:
 		Net.report_result(result)
 		_show_online_results()
+	elif graffiti:
+		var held := graffiti_metres(local_car)
+		var header := ["Fahrer", "Auto", "Revier", "Anteil", "Driftpunkte"]
+		var rows := [[local_car.player_name, Game.get_car(local_car.car_id)["name"], "%d m" % int(held),
+			"%d %%" % int(round(held / maxf(track.length, 1.0) * 100.0)), Game.format_points(scorer.total), true]]
+		hud.show_results("GRAFFITI – ZEIT ABGELAUFEN", header, rows, notes, [["Nochmal", request_restart], ["Hauptmenü", request_main_menu]])
 	else:
 		var header := ["", "Fahrer", "Auto", "Gesamtzeit", "Beste Runde", "Driftpunkte"]
 		var rows := [["1.", local_car.player_name, Game.get_car(local_car.car_id)["name"], Game.format_time(finish_time), Game.format_time(best_lap), Game.format_points(scorer.total), true]]
@@ -377,6 +425,8 @@ func _submit_leaderboard() -> Array:
 	var credits := int(scorer.total / 40.0)
 	if finished and mode != "free":
 		credits += 600 * laps_total
+		if graffiti:
+			credits += int(graffiti_metres(local_car) * 2.0)
 		if online and position_text().begins_with("1 "):
 			credits += 2500
 	if credits > 0:
@@ -436,17 +486,30 @@ func _on_results_updated(_arr: Array) -> void:
 
 func _show_online_results() -> void:
 	var arr: Array = Net.result_list.duplicate()
-	if mode == "drift":
+	if graffiti:
+		# everybody's territory from the shared (host-refereed) map, not from the reports
+		for r in arr:
+			r["graffiti"] = graffiti.metres(int(r.get("id", 0)))
+		arr.sort_custom(func(a, b): return float(a["graffiti"]) > float(b["graffiti"]))
+	elif mode == "drift":
 		arr.sort_custom(func(a, b): return float(a["drift"]) > float(b["drift"]))
 	else:
 		arr.sort_custom(func(a, b): return float(a["time"]) < float(b["time"]))
 	var header := ["", "Fahrer", "Auto", "Zeit", "Beste Runde", "Driftpunkte"]
+	if graffiti:
+		header = ["", "Fahrer", "Auto", "Revier", "Anteil", "Driftpunkte"]
 	var rows: Array = []
 	var me := Net.local_id()
 	var done := {}
 	for i in arr.size():
 		var r: Dictionary = arr[i]
 		done[int(r.get("id", 0))] = true
+		if graffiti:
+			var m := float(r.get("graffiti", 0.0))
+			rows.append(["%d." % (i + 1), str(r.get("name", "?")), Game.get_car(str(r.get("car", "r34")))["name"],
+				"%d m" % int(m), "%d %%" % int(round(m / maxf(track.length, 1.0) * 100.0)),
+				Game.format_points(float(r.get("drift", 0.0))), int(r.get("id", 0)) == me])
+			continue
 		rows.append(["%d." % (i + 1), str(r.get("name", "?")), Game.get_car(str(r.get("car", "r34")))["name"],
 			Game.format_time(float(r.get("time", 0.0))), Game.format_time(float(r.get("best_lap", 0.0))),
 			Game.format_points(float(r.get("drift", 0.0))), int(r.get("id", 0)) == me])
@@ -471,7 +534,9 @@ func position_text() -> String:
 		if not is_instance_valid(c):
 			continue
 		var value := 0.0
-		if c == local_car:
+		if graffiti:
+			value = graffiti_metres(c)
+		elif c == local_car:
 			value = scorer.total + scorer.chain if mode == "drift" else total_progress()
 		else:
 			value = (c as Car).remote_drift if mode == "drift" else (c as Car).remote_progress
@@ -494,6 +559,11 @@ func scoreboard_data() -> Dictionary:
 			var lp: int = lap if is_me else (c as Car).remote_lap
 			var dr: float = (scorer.total + scorer.chain) if is_me else (c as Car).remote_drift
 			var pr: float = total_progress() if is_me else (c as Car).remote_progress
+			if graffiti:
+				# ranking by territory; the "Runde" column shows the metres held
+				pr = graffiti.metres(id)
+				rows.append([c.player_name, Game.get_car(c.car_id)["name"], "%d m" % int(pr), Game.format_points(dr), pr, dr, is_me])
+				continue
 			rows.append([c.player_name, Game.get_car(c.car_id)["name"], str(lp + 1), Game.format_points(dr), pr, dr, is_me])
 		if mode == "drift":
 			rows.sort_custom(func(a, b): return float(a[5]) > float(b[5]))
@@ -503,7 +573,7 @@ func scoreboard_data() -> Dictionary:
 		for i in rows.size():
 			var r: Array = rows[i]
 			out.append(["%d." % (i + 1), r[0], r[1], r[2], r[3], r[6]])
-		return {"header": ["Pos", "Fahrer", "Auto", "Runde", "Driftpunkte"], "rows": out}
+		return {"header": ["Pos", "Fahrer", "Auto", "Revier" if graffiti else "Runde", "Driftpunkte"], "rows": out}
 	var tid := track.track_id
 	var out2: Array = []
 	var drift: Array = Game.get_scores(tid, "drift")

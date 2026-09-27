@@ -181,7 +181,7 @@ func _smoke_test() -> void:
 	await _shot(shot_dir, "menu")
 	var i := 0
 	var quick := "--quick" in OS.get_cmdline_user_args()
-	var runs: Array = [["ridge", "race"], ["ridge", "free"], ["harbor", "race"], ["harbor", "free"], ["playground", "free"]]
+	var runs: Array = [["ridge", "race"], ["ridge", "free"], ["harbor", "race"], ["harbor", "free"], ["playground", "free"], ["ridge", "graffiti"]]
 	if quick:
 		runs = [["ridge", "free"], ["harbor", "race"], ["playground", "free"]]
 	for run in runs:
@@ -206,6 +206,9 @@ func _smoke_test() -> void:
 		Input.action_release("steer_left")
 		Input.action_release("handbrake")
 		print("SMOKE: car speed %.1f km/h, gear %d, rpm %d, drift %.0f" % [world.local_car.speed_kmh(), world.local_car.gear, int(world.local_car.rpm), world.scorer.total + world.scorer.chain])
+		if world.graffiti:
+			world.graffiti.spray(world.progress)
+			print("SMOKE: graffiti %d cells, held %.0f m" % [world.graffiti.count, world.graffiti_metres(world.local_car)])
 		await _shot(shot_dir, "%s_%s" % [tr, md])
 		if md == "free":
 			world.end_free_session()

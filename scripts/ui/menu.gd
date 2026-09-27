@@ -235,7 +235,7 @@ func _build_single() -> void:
 	var laps_slider := UiKit.slider(1, 20, 1, float(Game.settings["laps"]), func(v):
 		Game.set_setting("laps", int(v))
 		laps_label.text = "%d" % int(v), 220)
-	_add(UiKit.labeled("Runden", UiKit.row([laps_slider, laps_label])))
+	_add(UiKit.labeled("Runden (Graffiti: Min.)", UiKit.row([laps_slider, laps_label])))
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 	_add(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(Game.settings["day_cycle"]), func(m): Game.set_setting("day_cycle", m))))
@@ -647,7 +647,7 @@ func _refresh_lobby() -> void:
 				mi = i
 		_lobby_settings.add_child(UiKit.labeled("Modus", UiKit.option(modes, mi, func(i): Net.host_set_option("mode", race_modes[i]["id"]))))
 		var laps_label := UiKit.label(str(int(lobby.get("laps", 3))), 19)
-		_lobby_settings.add_child(UiKit.labeled("Runden", UiKit.row([UiKit.slider(1, 20, 1, float(lobby.get("laps", 3)), func(v):
+		_lobby_settings.add_child(UiKit.labeled("Runden (Graffiti: Min.)" if str(lobby.get("mode", "")) == "graffiti" else "Runden", UiKit.row([UiKit.slider(1, 20, 1, float(lobby.get("laps", 3)), func(v):
 			laps_label.text = str(int(v))
 			if int(v) != int(Net.lobby.get("laps", 3)):
 				Net.host_set_option("laps", int(v)), 200), laps_label])))

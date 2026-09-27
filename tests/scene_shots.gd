@@ -21,13 +21,21 @@ func _ready() -> void:
 	if args.has("vd"):
 		Game.settings["view_distance"] = int(args["vd"])
 	var world := World.new()
-	world.setup({"track": args["track"], "mode": "free", "laps": 1, "time_of_day": args["tod"], "weather": args["weather"],
+	world.setup({"track": args["track"], "mode": args.get("mode", "free"), "laps": 1, "time_of_day": args["tod"], "weather": args["weather"],
 		"day_cycle": int(args["cycle"]), "weather_seed": 7, "online": false})
 	add_child(world)
 	for f in 30:
 		await get_tree().process_frame
 	if args.has("elapsed"):
 		world.atmosphere.elapsed = float(args["elapsed"])
+		for f in 4:
+			await get_tree().process_frame
+	if world.graffiti:
+		# paint the first stretch after the start line (as if the local player had drifted it)
+		var tr0 = world.track
+		for k in 60:
+			world.graffiti.spray(tr0.dists[tr0.start_index] + 20.0 + k * 2.0)
+		world.graffiti.apply_claim(2, PackedInt32Array([world.graffiti.cell_at(tr0.dists[tr0.start_index] + 170.0), world.graffiti.cell_at(tr0.dists[tr0.start_index] + 174.0)]))
 		for f in 4:
 			await get_tree().process_frame
 	var tag := "%s_%s_%s" % [args["track"], args["tod"], args["weather"]]

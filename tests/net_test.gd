@@ -27,8 +27,10 @@ func _ready() -> void:
 		Net.lobby_changed.connect(func():
 			if Net.players.size() >= 2:
 				print("NET HOST SEES PLAYER ", Net.players[Net.players.keys().filter(func(k): return k != 1)[0]].get("name", "?"))
-				await get_tree().create_timer(1.0).timeout
+				await get_tree().create_timer(2.0).timeout
 				get_tree().quit(0))
+		Net.graffiti_claimed.connect(func(owner_id: int, cells: PackedInt32Array):
+			print("NET HOST GRAFFITI from %s: %s" % ["client" if owner_id != 1 else "host", cells]))
 	else:
 		Net.connected_ok.connect(func(): print("NET CLIENT AUTHENTICATED"))
 		Net.connection_failed.connect(func(r):
@@ -37,7 +39,11 @@ func _ready() -> void:
 		Net.lobby_changed.connect(func():
 			if Net.players.size() >= 2:
 				print("NET CLIENT IN LOBBY ", Net.lobby.get("name", ""))
+				Net.send_graffiti(PackedInt32Array([3, 4, 5]))
+				await get_tree().create_timer(1.0).timeout
 				get_tree().quit(0))
+		Net.graffiti_claimed.connect(func(owner_id: int, cells: PackedInt32Array):
+			print("NET CLIENT GRAFFITI ECHO owner=%d %s" % [owner_id, cells]))
 		var cf := FileAccess.open("user://net_test_invite_%s.txt" % args["port"], FileAccess.READ)
 		var code := cf.get_as_text() if cf else ""
 		var inv := Net.parse_invite(code)

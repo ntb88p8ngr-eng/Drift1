@@ -79,6 +79,8 @@ jobs:
           if grep -E "SCRIPT ERROR" net.log net2.log host.log host2.log; then echo "::error::Online test failed"; exit 1; fi
           grep -q "NET CLIENT IN LOBBY" net.log
           grep -q "NET HOST SEES PLAYER" host.log
+          grep -q "NET HOST GRAFFITI from client" host.log
+          grep -q "NET CLIENT GRAFFITI ECHO" net.log
           grep -q "Falsches Lobby-Passwort" net2.log
 
       - name: Smoke test (headless – scripts, physics, networking)

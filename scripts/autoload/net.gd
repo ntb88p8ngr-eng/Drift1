@@ -26,6 +26,7 @@ signal results_updated(results: Array)
 signal return_to_lobby_requested
 signal lan_lobbies_changed
 signal upnp_finished(ok: bool, message: String)
+signal graffiti_claimed(owner_id: int, cells: PackedInt32Array)
 
 const DEFAULT_PORT := 24570
 const DISCOVERY_PORT := 24571
@@ -639,6 +640,32 @@ func send_state(state: Array) -> void:
 @rpc("any_peer", "call_remote", "unreliable_ordered", 1)
 func _state(state: Array) -> void:
 	remote_state.emit(multiplayer.get_remote_sender_id(), state)
+
+
+## Graffiti mode: cells the local player sprayed. The host applies claims in arrival order and
+## broadcasts them, so everybody ends up with the same owners.
+func send_graffiti(cells: PackedInt32Array) -> void:
+	if not is_online or cells.is_empty():
+		return
+	if is_host():
+		graffiti_claimed.emit(1, cells)
+		_graffiti_sync.rpc(1, cells)
+	else:
+		_graffiti_claim.rpc_id(1, cells)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _graffiti_claim(cells: PackedInt32Array) -> void:
+	if not is_host() or cells.size() > 256:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	graffiti_claimed.emit(id, cells)
+	_graffiti_sync.rpc(id, cells)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _graffiti_sync(owner_id: int, cells: PackedInt32Array) -> void:
+	graffiti_claimed.emit(owner_id, cells)
 
 
 func report_result(result: Dictionary) -> void:

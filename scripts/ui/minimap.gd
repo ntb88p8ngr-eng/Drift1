@@ -36,6 +36,8 @@ func _draw() -> void:
 	mapped.append(mapped[0])
 	draw_polyline(mapped, Color(0, 0, 0, 0.6), 7.0, true)
 	draw_polyline(mapped, Color(0.85, 0.85, 0.9, 0.9), 3.5, true)
+	if world.graffiti:
+		_draw_territories()
 	var s: Vector3 = world.track.samples[world.track.start_index]
 	var r: Vector3 = world.track.rights[world.track.start_index]
 	draw_line(_to_map(Vector2(s.x - r.x * 10.0, s.z - r.z * 10.0)), _to_map(Vector2(s.x + r.x * 10.0, s.z + r.z * 10.0)), Color(1, 1, 1), 3.0)
@@ -53,3 +55,30 @@ func _draw() -> void:
 		draw_colored_polygon(tri, col)
 		if not local:
 			draw_string(ThemeDB.fallback_font, mp + Vector2(7, -5), str(c.player_name), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
+
+
+## Graffiti mode: every owned stretch of track in its owner's colour.
+func _draw_territories() -> void:
+	var g = world.graffiti
+	var tr = world.track
+	var n: int = tr.sample_count()
+	var i := 0
+	while i < n:
+		var owner: int = g.owners[g.cell_at(tr.dists[i])]
+		if owner == 0:
+			i += 1
+			continue
+		var run := PackedVector2Array()
+		var j := i
+		while j < n and g.owners[g.cell_at(tr.dists[j])] == owner:
+			var p: Vector3 = tr.samples[j]
+			run.append(_to_map(Vector2(p.x, p.z)))
+			j += 1
+		if j < n or i > 0:
+			var p2: Vector3 = tr.samples[j % n]
+			run.append(_to_map(Vector2(p2.x, p2.z)))
+		if run.size() >= 2:
+			var col: Color = g.colors.get(owner, Color.WHITE)
+			col.a = 0.95
+			draw_polyline(run, col, 5.0, true)
+		i = j

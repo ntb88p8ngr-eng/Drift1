@@ -75,6 +75,9 @@ uniform sampler2D puddle_tex : hint_default_black, filter_linear, repeat_disable
 uniform vec4 puddle_rect = vec4(0.0, 0.0, 0.001, 0.001);   // origin xz, 1/size xz
 uniform float puddle_level = 0.0;
 uniform float rain = 0.0;
+// graffiti mode: owner colour per track cell (x = distance along the track / graffiti_len)
+uniform sampler2D graffiti_tex : hint_default_transparent, filter_nearest, repeat_enable;
+uniform float graffiti_len = 0.0;
 
 varying vec3 wpos;
 
@@ -93,12 +96,21 @@ void fragment() {
 	col *= 1.0 - rubber * 0.55;
 	float edge = step(UV.x, edge_line) + step(1.0 - edge_line, UV.x);
 	col = mix(col, line_color * (0.8 + 0.2 * n), clamp(edge, 0.0, 1.0));
+	vec3 tag_glow = vec3(0.0);
+	if (graffiti_len > 0.0) {
+		vec4 g = texture(graffiti_tex, vec2(UV.y / graffiti_len, 0.5));
+		// sprayed look: patchy paint, a bit denser towards the middle of the road
+		float spray = (0.55 + 0.45 * smoothstep(0.35, 0.7, texture(noise_tex, wpos.xz * 0.9).r)) * (1.0 - 0.35 * abs(UV.x - 0.5) * 2.0);
+		col = mix(col, g.rgb * 0.75, g.a * 0.26 * spray);
+		tag_glow = g.rgb * g.a * spray * 0.02;
+	}
 	// wet asphalt gets darker and glossy; puddles become mirror-like with rain ripples
 	float pm = texture(puddle_tex, (wpos.xz - puddle_rect.xy) * puddle_rect.zw).r;
 	float puddle = smoothstep(1.0 - puddle_level, 1.0 - puddle_level + 0.12, pm) * step(0.01, puddle_level);
 	col *= 1.0 - wetness * 0.35;
 	col = mix(col, col * 0.35, puddle);
 	ALBEDO = col;
+	EMISSION = tag_glow;
 	ROUGHNESS = mix(mix(0.86 - rubber * 0.25, 0.16 + n * 0.1, wetness), 0.02, puddle);
 	SPECULAR = mix(0.45, 0.7, max(wetness, puddle));
 	vec3 nm = texture(noise_nrm, wpos.xz * 0.23).xyz;

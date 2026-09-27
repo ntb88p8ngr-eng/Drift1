@@ -18,6 +18,7 @@ const MODES := [
 	{"id": "free", "name": "Freies Driften", "desc": "Kein Zeitlimit – sammle Driftpunkte und jage Rundenzeiten."},
 	{"id": "race", "name": "Rennen", "desc": "Wer zuerst alle Runden fährt, gewinnt."},
 	{"id": "drift", "name": "Drift-Battle", "desc": "Alle Runden fahren – die meisten Driftpunkte gewinnen."},
+	{"id": "graffiti", "name": "Graffiti", "desc": "Drifte über die Strecke, um sie in deiner Autofarbe zu markieren – bis jemand drüberdriftet. Nach Ablauf der Zeit (1 Minute pro Runde) gewinnt, wer die meiste Strecke hält."},
 ]
 
 const TIMES_OF_DAY := [
@@ -66,6 +67,7 @@ const TUNING := [
 	{"id": "engine", "name": "Motor", "desc": "+10 % Drehmoment und +250 U/min pro Stufe"},
 	{"id": "gearbox", "name": "Getriebe", "desc": "Drift-Übersetzung: längerer 2. und 3. Gang, schnelleres Schalten, ab Stufe 2 kürzere Achse"},
 	{"id": "suspension", "name": "Fahrwerk", "desc": "Mehr Grip, straffere Federn und Stabilisatoren"},
+	{"id": "tyres", "name": "Reifen", "desc": "Weichere Mischung für mehr Grip: Sport / Semi-Slick / Slick (+6 % pro Stufe)"},
 	{"id": "steering", "name": "Lenkwinkel", "desc": "Winkel-Kit: +7° / +14° / +22° Lenkeinschlag für größere Driftwinkel"},
 	{"id": "turbo", "name": "Turbo", "desc": "Mehr Ladedruck, schnelleres Ansprechen – Sauger bekommen einen Turbo-Kit"},
 	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
