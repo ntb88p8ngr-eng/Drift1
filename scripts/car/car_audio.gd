@@ -278,7 +278,9 @@ func _ready() -> void:
 		engine_type = str(Game.get_car(str(car.car_id)).get("engine", "i6"))
 		setup_voice(engine_type)
 		if SAMPLED.has(str(car.car_id)):
-			setup_samples(SAMPLED[str(car.car_id)], str(car.car_id))
+			# the sample files carry the data script's PREFIX ("m3" for the m3gt3), else the car id
+			var data: GDScript = SAMPLED[str(car.car_id)]
+			setup_samples(data, str(data.get_script_constant_map().get("PREFIX", car.car_id)))
 		_rpm = car.idle_rpm
 		car.shifted.connect(_on_shift)
 		car.blow_off.connect(_on_blow_off)

@@ -2,6 +2,7 @@ extends Node
 ## Scene manager: menu + showroom <-> race world. Also runs the headless smoke test (--smoke-test).
 
 const World = preload("res://scripts/world/world.gd")
+const CarAudio = preload("res://scripts/car/car_audio.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const Showroom = preload("res://scripts/world/showroom.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
@@ -207,6 +208,9 @@ func _smoke_test() -> void:
 		Input.action_release("steer_left")
 		Input.action_release("handbrake")
 		print("SMOKE: car speed %.1f km/h, gear %d, rpm %d, drift %.0f" % [world.local_car.speed_kmh(), world.local_car.gear, int(world.local_car.rpm), world.scorer.total + world.scorer.chain])
+		var au = world.local_car.audio
+		if au and CarAudio.SAMPLED.has(world.local_car.car_id) and not au._sampled:
+			print("SCRIPT ERROR: SMOKE %s should use its recorded engine sound" % world.local_car.car_id)
 		if world.graffiti:
 			world.graffiti.spray(world.progress)
 			print("SMOKE: graffiti %d cells, held %.0f m" % [world.graffiti.count, world.graffiti_metres(world.local_car)])

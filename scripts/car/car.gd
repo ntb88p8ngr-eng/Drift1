@@ -101,6 +101,8 @@ var headlights := false
 var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.get_underglow)
 var underglow: Node3D
 var _engine_stage := 0
+var spin_hold := SPIN_HOLD     # per car: spinning rear wheels grip again below this share of the grip
+var yaw_damp := 0.0            # per car: extra yaw damping while sliding (keeps light, powerful cars calmer)
 var braking_visual := false
 var track_hint := -1
 var surface_name := "asphalt"
@@ -153,6 +155,8 @@ func _ready() -> void:
 	turbo_base = spec["turbo"]
 	grip = spec["grip"]
 	steer_lock = deg_to_rad(float(spec["steer_lock"]))
+	spin_hold = float(spec.get("spin_hold", SPIN_HOLD))
+	yaw_damp = float(spec.get("yaw_damp", 0.0))
 	var static_load := mass * 9.8 / 4.0
 	spring_k = static_load / SAG
 	damper_c = 2.0 * 0.38 * sqrt(spring_k * mass / 4.0)
@@ -764,7 +768,7 @@ func _simulate(delta: float) -> void:
 			var spin := maxf(float(w["spin"]) * dsign, 0.0)
 			var kin := max_f * KINETIC
 			if spin > 0.3 or req > long_cap * (0.35 if power_slide else 0.95):
-				spin += (req - max_f * SPIN_HOLD * (0.7 if power_slide else 1.0)) / SPIN_MASS * delta
+				spin += (req - max_f * spin_hold * (0.7 if power_slide else 1.0)) / SPIN_MASS * delta
 				var v_red := redline / 60.0 * TAU * radius / maxf(absf(ratio), 0.01)
 				spin = clampf(spin, 0.0, maxf(v_red - v_long * dsign, 0.0))
 			else:
@@ -824,6 +828,11 @@ func _simulate(delta: float) -> void:
 		if slide_k > 0.0:
 			var push := DRIFT_PUSH * mass * slide_k * (throttle - 0.6) / 0.4 * (0.5 + 0.5 * absf(steer_input))
 			apply_central_force(fwd * push)
+
+	# calmer cars: damp the rotation while sliding (not in slow turns or donuts at low speed)
+	if yaw_damp > 0.0 and grounded_wheels >= 3 and speed > 8.0:
+		var slide_y := smoothstep(0.1, 0.4, absf(slip_angle))
+		apply_torque(-up * angular_velocity.dot(up) * yaw_damp * mass * slide_y)
 
 	# anti-roll bars
 	for pair in [[0, 1], [2, 3]]:
