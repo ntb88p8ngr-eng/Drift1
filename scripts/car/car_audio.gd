@@ -6,9 +6,10 @@ extends Node
 ##            grains that follow rpm and throttle, real turbo whistle driven by boost and blow-off
 ##            "pssst" + compressor flutter one-shots on every lift-off/upshift (the only audible turbo)
 ##   i6     – synthesized straight six (fallback for the R34 when the samples are missing)
-##   v8     – Ford 5.0 Coyote: cross-plane V8 burble from uneven pulses, deep bass, overrun crackle
-##   v8race – BMW M3 GT3: high-revving race V8, harsh straight-through exhaust, straight-cut gear whine
-##            and ignition-cut bangs on upshifts
+##   v8     – Ford 5.0 Coyote: cross-plane V8 – two banks firing at uneven intervals through two
+##            deep pipes (burble), crank-order undertones, muffler low-pass (no screaming)
+##   v8race – BMW M3 GT3: high-revving race V8, harsh straight-through exhaust (lowered resonances
+##            and undertones for a deeper voice), straight-cut gear whine, ignition-cut bangs
 ## Plus launch-control two-step stutter, nitro hiss, tyre squeal, wind and impacts.
 
 const MIX_RATE := 22050.0
@@ -17,6 +18,10 @@ const SAMPLE_DIR := "res://assets/audio/"
 const ENGINE_SAMPLE_GAIN := 0.7
 const SPOOL_GAIN := 0.16
 const LIFT_GAIN := 0.85
+## Overall engine level against tyres/wind/rain: the engine voice ends up at 0.5 (-6 dB), turbo,
+## blow-off, gear whine and exhaust pops at 0.7 (-3 dB).
+const ENGINE_MIX := 0.7
+const ENGINE_VOICE := 0.72
 
 static var _sample_cache := {}
 
@@ -95,18 +100,25 @@ const VOICES := {
 		"tone": 0.42, "bass": 0.9, "rasp": 1.0, "click": 0.25, "drive": 1.2, "hard": 0.0,
 		"whine": 0.0, "pop_pitch": 1.1, "turbo": 1.0, "bov": 1.0, "gain": 1.0, "upshift_bang": 0.0,
 	},
+	# cross-plane V8: firing order 1-5-4-8-6-3-7-2 puts the two banks' pulses at uneven intervals
+	# (A B A B B A B A). The banks ring through different pipes and are not equally loud, so the sum
+	# carries the low half-orders – the lazy "blubb-blubb" burble. Deep mufflers, rpm-dependent
+	# low-pass: no screaming at high revs.
 	"v8": {
-		"cyl": 8, "pattern": [1.0, 0.62, 0.9, 0.7, 0.96, 0.58, 0.86, 0.74],
-		"timing": [1.06, 0.94, 1.03, 0.97, 1.05, 0.95, 1.02, 0.98],
-		"body": 95.0, "body_q": 1.1, "high": 620.0, "high_q": 1.8, "decay": 0.42, "grit": 0.5,
-		"tone": 0.36, "bass": 1.6, "rasp": 0.55, "click": 0.3, "drive": 1.5, "hard": 0.0,
-		"whine": 0.0, "pop_pitch": 0.82, "turbo": 0.15, "bov": 0.0, "gain": 1.05, "upshift_bang": 0.35,
+		"cyl": 8, "pattern": [1.0, 0.82, 0.95, 0.86, 1.0, 0.8, 0.93, 0.88],
+		"timing": [1.03, 0.97, 1.02, 0.98, 1.03, 0.97, 1.02, 0.98],
+		"banks": [0, 1, 0, 1, 1, 0, 1, 0], "bank_gain": 0.7, "body2": 72.0,
+		"body": 90.0, "body_q": 1.7, "high": 300.0, "high_q": 1.1, "decay": 0.6, "grit": 0.3,
+		"tone": 0.26, "bass": 2.3, "rasp": 0.4, "click": 0.1, "drive": 1.3, "hard": 0.0,
+		"sub": [0.3, 0.34], "lp": [420.0, 0.15], "lope": 0.08,
+		"whine": 0.0, "pop_pitch": 0.82, "turbo": 0.15, "bov": 0.0, "gain": 1.0, "upshift_bang": 0.35,
 	},
 	"v8race": {
 		"cyl": 8, "pattern": [1.0, 0.86, 0.97, 0.9, 1.0, 0.84, 0.95, 0.9], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-		"body": 210.0, "body_q": 1.3, "high": 1500.0, "high_q": 2.0, "decay": 0.22, "grit": 0.6,
-		"tone": 0.3, "bass": 0.8, "rasp": 1.5, "click": 0.35, "drive": 2.1, "hard": 0.35,
-		"whine": 1.0, "pop_pitch": 1.25, "turbo": 0.15, "bov": 0.0, "gain": 0.95, "upshift_bang": 1.0,
+		"body": 140.0, "body_q": 1.3, "high": 900.0, "high_q": 1.6, "decay": 0.26, "grit": 0.55,
+		"tone": 0.3, "bass": 1.3, "rasp": 1.3, "click": 0.3, "drive": 2.1, "hard": 0.35,
+		"sub": [0.1, 0.22], "lp": [1700.0, 0.25], "whine_ratio": 13.0,
+		"whine": 0.75, "pop_pitch": 1.1, "turbo": 0.15, "bov": 0.0, "gain": 0.85, "upshift_bang": 1.0,
 	},
 }
 
@@ -137,6 +149,15 @@ var _gain := 1.0
 var _upshift_bang := 0.0
 var _bcoef := PackedFloat32Array([0, 0, 0, 0])   # body resonance biquad (b0, b2, a1, a2)
 var _hcoef := PackedFloat32Array([0, 0, 0, 0])   # high resonance biquad
+var _b2coef := PackedFloat32Array([0, 0, 0, 0])  # second bank's body resonance
+var _banks := PackedInt32Array()                 # bank of each firing slot (empty = one bank)
+var _bank_gain := 1.0
+var _sub1 := 0.0          # crank-order 1 and 2 sines (below the firing frequency): deeper voice
+var _sub2 := 0.0
+var _lp0 := 0.0           # output low-pass: cutoff = _lp0 + rpm * _lp1 (0 = off)
+var _lp1 := 0.0
+var _lope := 0.0          # idle lope (cam overlap): random pulse strength at low rpm
+var _whine_ratio := 19.0
 
 # engine state
 var _ph_fire := 0.0
@@ -144,6 +165,14 @@ var _ph_tone := 0.0
 var _fire_k := 0
 var _jit := 1.0
 var _pulse := 0.0
+var _pulse2 := 0.0
+var _b2x1 := 0.0
+var _b2x2 := 0.0
+var _b2y1 := 0.0
+var _b2y2 := 0.0
+var _ph_crank := 0.0
+var _lpa := 0.0
+var _lpb := 0.0
 var _bx1 := 0.0
 var _bx2 := 0.0
 var _by1 := 0.0
@@ -288,6 +317,17 @@ func setup_voice(engine: String) -> void:
 	_upshift_bang = float(v["upshift_bang"])
 	_bcoef = _bandpass(float(v["body"]), float(v["body_q"]))
 	_hcoef = _bandpass(float(v["high"]), float(v["high_q"]))
+	_b2coef = _bandpass(float(v.get("body2", v["body"])), float(v["body_q"]))
+	_banks = PackedInt32Array(v.get("banks", []))
+	_bank_gain = float(v.get("bank_gain", 1.0))
+	var sub: Array = v.get("sub", [0.0, 0.0])
+	_sub1 = float(sub[0])
+	_sub2 = float(sub[1])
+	var lp: Array = v.get("lp", [0.0, 0.0])
+	_lp0 = float(lp[0])
+	_lp1 = float(lp[1])
+	_lope = float(v.get("lope", 0.0))
+	_whine_ratio = float(v.get("whine_ratio", 19.0))
 
 
 ## Loads the R34 recordings; falls back to the synthesized voice when they are missing.
@@ -536,6 +576,14 @@ func render(frames: int) -> PackedVector2Array:
 	var hb2 := _hcoef[1]
 	var ha1 := _hcoef[2]
 	var ha2 := _hcoef[3]
+	var db0 := _b2coef[0]
+	var db2 := _b2coef[1]
+	var da1 := _b2coef[2]
+	var da2 := _b2coef[3]
+	var two_banks := _banks.size() == _cyl
+	var lp_k := 0.0
+	if _lp0 > 0.0:
+		lp_k = 1.0 - exp(-TAU * (_lp0 + t_rpm * _lp1) / MIX_RATE)
 	var idle_rough := clampf(1.0 - (t_rpm - idle) / 1500.0, 0.0, 1.0)
 	# Burble-Tune: overrun pops, most right after lifting off, dying away with the overrun time
 	var blvl := _burble_level()
@@ -582,7 +630,11 @@ func render(frames: int) -> PackedVector2Array:
 				_ph_fire -= 1.0
 				_fire_k = (_fire_k + 1) % _cyl
 				_jit = _timing[_fire_k] * (1.0 + randf_range(-0.015, 0.015) * idle_rough)
-				_pulse = _pattern[_fire_k] * load * (1.0 + randf_range(-0.07, 0.07))
+				var pk := _pattern[_fire_k] * load * (1.0 + randf_range(-0.07, 0.07) - randf() * _lope * idle_rough * 4.0)
+				if two_banks and _banks[_fire_k] == 1:
+					_pulse2 = pk * _bank_gain
+				else:
+					_pulse = pk
 			var ex := _pulse * (1.0 + n * _grit)
 			_pulse *= pulse_decay
 			var yb := cb0 * ex + cb2 * _bx2 - ca1 * _by1 - ca2 * _by2
@@ -590,6 +642,17 @@ func render(frames: int) -> PackedVector2Array:
 			_bx1 = ex
 			_by2 = _by1
 			_by1 = yb
+			if two_banks:
+				# second bank: its own pipe (lower resonance)
+				var ex2 := _pulse2 * (1.0 + n * _grit)
+				_pulse2 *= pulse_decay
+				var yb2 := db0 * ex2 + db2 * _b2x2 - da1 * _b2y1 - da2 * _b2y2
+				_b2x2 = _b2x1
+				_b2x1 = ex2
+				_b2y2 = _b2y1
+				_b2y1 = yb2
+				yb += yb2
+				ex += ex2
 			var yh := hb0 * ex + hb2 * _hx2 - ha1 * _hy1 - ha2 * _hy2
 			_hx2 = _hx1
 			_hx1 = ex
@@ -599,11 +662,21 @@ func render(frames: int) -> PackedVector2Array:
 			_ph_tone = fposmod(_ph_tone + fire * dt, 1.0)
 			var x := _ph_tone * TAU
 			var tone := (sin(x) + 0.5 * sin(2.0 * x + 0.4) + 0.22 * _rasp * sin(3.0 * x + 1.3)) * load
+			if _sub1 > 0.0 or _sub2 > 0.0:
+				# crank orders 1 and 2 (a quarter and half of the V8 firing frequency)
+				_ph_crank = fposmod(_ph_crank + rpm / 60.0 * dt, 1.0)
+				var cx := _ph_crank * TAU
+				tone += (sin(cx) * _sub1 + sin(2.0 * cx + 0.7) * _sub2) * (0.6 + 0.4 * load) * 2.0
 			_lp_noise += (n - _lp_noise) * 0.35
-			eng = tone * _tone + yb * 3.0 * _bass + yh * 3.0 * _rasp + ex * _click + _lp_noise * _pulse * 0.4
+			eng = tone * _tone + yb * 3.0 * _bass + yh * 3.0 * _rasp + ex * _click + _lp_noise * (_pulse + _pulse2) * 0.4
 			eng = tanh(eng * _drive * (0.85 + 0.6 * thr))
 			if _hard > 0.0:
 				eng = lerpf(eng, clampf(eng * 2.5, -0.8, 0.8), _hard)
+			if lp_k > 0.0:
+				# two-pole low-pass (muffler): takes the scream off the top end
+				_lpa += (eng - _lpa) * lp_k
+				_lpb += (_lpa - _lpb) * lp_k
+				eng = _lpb * 1.25
 		var eng_amp := 1.0 if _sampled else 0.42 + 0.36 * thr + 0.22 * (rpm / redline)
 		if launch:
 			# two-step ignition cut: irregular stutter around the launch rpm
@@ -614,11 +687,11 @@ func render(frames: int) -> PackedVector2Array:
 			eng_amp *= 0.85 + 0.15 * sin(float(i) * TAU * 17.0 / MIX_RATE)
 		eng_amp *= 1.0 - _shift_dip * 0.55
 		_shift_dip *= dip_decay
-		var out := eng * eng_amp * 0.42 * _gain
+		var out := eng * eng_amp * 0.42 * _gain * ENGINE_VOICE
 
 		# --- straight-cut gearbox whine (race car) ---
 		if _whine > 0.0 and spd > 1.0:
-			_ph_whine = fposmod(_ph_whine + rpm / 60.0 * 19.0 * dt, 1.0)
+			_ph_whine = fposmod(_ph_whine + rpm / 60.0 * _whine_ratio * dt, 1.0)
 			var wx := _ph_whine * TAU
 			out += (sin(wx) + 0.3 * sin(2.0 * wx)) * _whine * (0.012 + 0.022 * thr) * clampf(spd / 12.0, 0.0, 1.0)
 
@@ -707,6 +780,8 @@ func render(frames: int) -> PackedVector2Array:
 			_pc_env *= _p_cdec
 		else:
 			_p_amp = 0.0
+
+		out *= ENGINE_MIX
 
 		# --- tyre squeal: resonant band-pass noise with smooth envelope ---
 		_sq_env += (sq_target - _sq_env) * (sq_attack if sq_target > _sq_env else sq_release)
