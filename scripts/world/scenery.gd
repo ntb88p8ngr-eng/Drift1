@@ -11,7 +11,13 @@ const TREE_LOD_DIST := 150.0
 var track  # track.gd instance
 var night := 0.0            # 0 = day … 1 = night (drives lamps / window glow)
 var rng := RandomNumberGenerator.new()
-var _occupied: Array = []   # [Vector2 pos, radius]
+const OCC_CELL := 16.0
+
+static var _tree_cache := {}
+const SMALL_RADIUS := 10.0
+
+var _occupied: Array = []   # large objects: [Vector2 pos, radius]
+var _occ_grid := {}         # Vector2i -> Array of [Vector2 pos, radius] (radius <= SMALL_RADIUS)
 var _window_mats: Array = []
 var lamp_lights: Array = []
 
@@ -39,18 +45,39 @@ func build(p_track: Node3D, p_night: float, quality: int) -> void:
 # Placement helpers
 # ---------------------------------------------------------------------------
 func _free_at(pos: Vector3, radius: float, clearance: float) -> bool:
-	if track.distance_to_center(pos) < track.wall_base + clearance:
-		return false
 	var p2 := Vector2(pos.x, pos.z)
+	# large objects (ships, warehouses, cranes) are few – check them directly
 	for o in _occupied:
 		var op: Vector2 = o[0]
 		if op.distance_to(p2) < float(o[1]) + radius:
 			return false
+	# small objects live in a spatial hash
+	var cx := int(floor(pos.x / OCC_CELL))
+	var cz := int(floor(pos.z / OCC_CELL))
+	var reach := int(ceil((radius + SMALL_RADIUS) / OCC_CELL))
+	for dx in range(-reach, reach + 1):
+		for dz in range(-reach, reach + 1):
+			var key := Vector2i(cx + dx, cz + dz)
+			if not _occ_grid.has(key):
+				continue
+			for o in _occ_grid[key]:
+				var op: Vector2 = o[0]
+				if op.distance_to(p2) < float(o[1]) + radius:
+					return false
+	if track.distance_to_center(pos) < track.wall_base + clearance:
+		return false
 	return true
 
 
 func _occupy(pos: Vector3, radius: float) -> void:
-	_occupied.append([Vector2(pos.x, pos.z), radius])
+	var entry := [Vector2(pos.x, pos.z), radius]
+	if radius > SMALL_RADIUS:
+		_occupied.append(entry)
+		return
+	var key := Vector2i(int(floor(pos.x / OCC_CELL)), int(floor(pos.z / OCC_CELL)))
+	if not _occ_grid.has(key):
+		_occ_grid[key] = []
+	_occ_grid[key].append(entry)
 
 
 ## A point beside the track at sample index i, `extra` metres behind the wall (outside of the corner).
@@ -77,13 +104,13 @@ func _face_track(node: Node3D, pos: Vector3) -> void:
 func _build_trees(count: int, pine_ratio: float, autumn_ratio: float) -> void:
 	var variants: Array = []
 	# [hi mesh, lo mesh, crown radius]
-	variants.append([TreeFactory.deciduous(101, 1.0), TreeFactory.deciduous(101, 0.35), 4.5, "leaf"])
-	variants.append([TreeFactory.deciduous(202, 1.0), TreeFactory.deciduous(202, 0.35), 4.5, "leaf"])
-	variants.append([TreeFactory.deciduous(303, 1.0, true), TreeFactory.deciduous(303, 0.35, true), 4.5, "autumn"])
+	variants.append([_tree_mesh("leaf", 101, 1.0), _tree_mesh("leaf", 101, 0.35), 4.5, "leaf"])
+	variants.append([_tree_mesh("leaf", 202, 1.0), _tree_mesh("leaf", 202, 0.35), 4.5, "leaf"])
+	variants.append([_tree_mesh("autumn", 303, 1.0), _tree_mesh("autumn", 303, 0.35), 4.5, "autumn"])
 	if pine_ratio > 0.0:
-		variants.append([TreeFactory.pine(404, 1.0), TreeFactory.pine(404, 0.35), 3.5, "pine"])
-		variants.append([TreeFactory.pine(505, 1.0), TreeFactory.pine(505, 0.35), 3.5, "pine"])
-	var bush_mesh := TreeFactory.bush(606)
+		variants.append([_tree_mesh("pine", 404, 1.0), _tree_mesh("pine", 404, 0.35), 3.5, "pine"])
+		variants.append([_tree_mesh("pine", 505, 1.0), _tree_mesh("pine", 505, 0.35), 3.5, "pine"])
+	var bush_mesh := _tree_mesh("bush", 606, 1.0)
 	var b: Rect2 = track.bounds.grow(220.0)
 	# chunks[variant][chunk_key] = Array of Transform3D
 	var chunks: Array = []
@@ -132,6 +159,25 @@ func _build_trees(count: int, pine_ratio: float, autumn_ratio: float) -> void:
 			_add_multimesh(variants[v][1], xfs, TREE_LOD_DIST, 1400.0, "Trees_lo")
 	for key in bushes.keys():
 		_add_multimesh(bush_mesh, bushes[key], 0.0, 220.0, "Bushes")
+
+
+## Tree meshes are expensive to generate, so they are cached for the whole game session.
+static func _tree_mesh(kind: String, seed_value: int, detail: float) -> ArrayMesh:
+	var key := "%s_%d_%.2f" % [kind, seed_value, detail]
+	if _tree_cache.has(key):
+		return _tree_cache[key]
+	var mesh: ArrayMesh
+	match kind:
+		"pine":
+			mesh = TreeFactory.pine(seed_value, detail)
+		"autumn":
+			mesh = TreeFactory.deciduous(seed_value, detail, true)
+		"bush":
+			mesh = TreeFactory.bush(seed_value)
+		_:
+			mesh = TreeFactory.deciduous(seed_value, detail)
+	_tree_cache[key] = mesh
+	return mesh
 
 
 func _add_multimesh(mesh: Mesh, xfs: Array, range_begin: float, range_end: float, label: String) -> void:
