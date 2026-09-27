@@ -146,6 +146,13 @@ static func gameplay_page() -> VBoxContainer:
 		Game.save_settings(), 200)
 	cz.tooltip_text = "Abstand der Verfolgerkamera – auch während der Fahrt mit dem Mausrad."
 	v.add_child(UiKit.labeled("Kamera-Abstand", UiKit.row([cz, cz_val], 8)))
+	var ct_val := UiKit.label("%+d°" % int(rad_to_deg(float(Game.settings["camera_tilt"]))), 16, UiKit.TEXT_DIM)
+	var ct := UiKit.slider(-0.2, 0.75, 0.01, float(Game.settings["camera_tilt"]), func(x):
+		ct_val.text = "%+d°" % int(rad_to_deg(x))
+		Game.settings["camera_tilt"] = x
+		Game.save_settings(), 200)
+	ct.tooltip_text = "Neigung der Verfolgerkamera – auch während der Fahrt: linke Maustaste halten und ziehen."
+	v.add_child(UiKit.labeled("Kamera-Neigung", UiKit.row([ct, ct_val], 8)))
 	v.add_child(UiKit.labeled("Maus-Empfindlichkeit", UiKit.slider(0.05, 1.0, 0.05, float(Game.settings["mouse_sensitivity"]), func(x):
 		Game.set_setting("mouse_sensitivity", x))))
 	v.add_child(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]), func(x):

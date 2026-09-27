@@ -18,6 +18,8 @@ func _ready() -> void:
 		Game.settings["shadow_quality"] = int(args["shadow"])
 	if args.has("grass"):
 		Game.settings["grass_quality"] = int(args["grass"])
+	if args.has("tilt"):
+		Game.settings["camera_tilt"] = float(args["tilt"])
 	if args.has("vd"):
 		Game.settings["view_distance"] = int(args["vd"])
 	var world := World.new()

@@ -5,6 +5,8 @@ extends Camera3D
 
 const MODES := ["Verfolger", "Verfolger weit", "Motorhaube", "Stoßstange", "Cockpit-Dach"]
 
+const TILT_MIN := -0.2    # rad added to the chase camera's elevation angle
+const TILT_MAX := 0.75
 var car          # car.gd
 var mode := 0
 var free_look := false
@@ -21,6 +23,8 @@ var _vel_s := Vector3.ZERO      # low-passed car velocity (feed-forward for the 
 var _initialized := false
 var _base_fov := 75.0
 var _zoom := 1.0          # chase distance factor (mouse wheel), saved in the settings
+var _tilt := 0.0          # chase elevation (left mouse button + drag up/down), saved in the settings
+var _tilt_drag := false
 var _space_query: PhysicsRayQueryParameters3D
 
 
@@ -32,6 +36,7 @@ func _ready() -> void:
 	fov = _base_fov
 	mode = clampi(int(Game.settings.get("camera_mode", 0)), 0, MODES.size() - 1)
 	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), 0.6, 2.4)
+	_tilt = clampf(float(Game.settings.get("camera_tilt", 0.0)), TILT_MIN, TILT_MAX)
 	_space_query = PhysicsRayQueryParameters3D.new()
 	_space_query.collision_mask = 1
 
@@ -65,10 +70,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif _look_hold:
 			_look_yaw = clampf(_look_yaw - mm.relative.x * sens, -PI, PI)
 			_look_pitch = clampf(_look_pitch + mm.relative.y * sens, -0.3, 1.0)
+		elif _tilt_drag and mode <= 1:
+			# drag down = look down on the car from higher up, drag up = flatter, lower camera
+			_tilt = clampf(_tilt + mm.relative.y * sens * 0.8, TILT_MIN, TILT_MAX)
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			_look_hold = mb.pressed
+		elif mb.button_index == MOUSE_BUTTON_LEFT and not free_look:
+			_tilt_drag = mb.pressed
+			if not mb.pressed:
+				Game.settings["camera_tilt"] = _tilt
+				Game.save_settings()
 		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 			var step := -1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
 			if free_look:
@@ -105,6 +118,8 @@ func _process(delta: float) -> void:
 	# "Kamera-Glättung" 0 … 1: how strongly bumps, suspension pitch/heave and surges are filtered
 	var smooth := clampf(float(Game.settings.get("camera_smoothing", 0.6)), 0.0, 1.0)
 	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), 0.6, 2.4)
+	if not _tilt_drag:
+		_tilt = clampf(float(Game.settings.get("camera_tilt", 0.0)), TILT_MIN, TILT_MAX)
 	if not _initialized:
 		_anchor = car_pos
 		_vel_s = vel
@@ -152,6 +167,12 @@ func _process(delta: float) -> void:
 			dir = -dir
 		var dist := (5.8 if mode == 0 else 8.5) * _zoom
 		var height := (1.75 if mode == 0 else 2.7) * lerpf(1.0, _zoom, 0.6)
+		# tilt: swing the camera up/down around the car, keeping the distance
+		var base_ang := atan2(height, dist)
+		var ang := clampf(base_ang + _tilt, 0.02, 1.25)
+		var rad := sqrt(dist * dist + height * height)
+		dist = rad * cos(ang)
+		height = rad * sin(ang)
 		dist += spd * 0.02
 		target_pos = car_pos - dir * dist + up * (height + _look_pitch * 3.0)
 		look_target = car_pos + up * 0.95 + dir * 2.5
