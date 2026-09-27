@@ -31,6 +31,7 @@ uniform float inner_end = 0.0;
 uniform float wind = 1.0;
 uniform float wetness = 0.0;
 uniform float road_clear = 1.4;
+uniform float trap_w = 4.6;
 uniform vec3 color_a : source_color = vec3(0.12, 0.32, 0.06);
 uniform vec3 color_b : source_color = vec3(0.22, 0.46, 0.1);
 uniform vec3 color_dry : source_color = vec3(0.38, 0.42, 0.18);
@@ -39,6 +40,11 @@ varying vec3 g_col;
 varying float g_tip;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+// wavy outer border of the gravel shoulder (identical in TexKit.TERRAIN_SHADER)
+float shoulder_w(vec2 p) {
+	return 1.8 + 0.28 * sin(p.x * 0.53 + p.y * 0.21) + 0.2 * sin(p.y * 1.37 - p.x * 0.83) + 0.1 * sin(p.x * 3.1 + p.y * 2.3);
+}
 
 float height_at(vec2 p) {
 	vec2 g = (p - map_origin) / map_cell;
@@ -64,17 +70,24 @@ void vertex() {
 	vec2 p = cell + (vec2(r1, r2) - 0.5) * spacing * 0.95;
 	vec2 muv = (p - map_origin) / (map_cell * vec2(map_size - 1));
 	vec4 mask = texture(mask_tex, muv);
-	float road = texture(road_tex, (p - road_origin) * road_inv_size).r * 8.0;
+	vec2 edge = texture(road_tex, (p - road_origin) * road_inv_size).rg;
+	float road = edge.r * 8.0;
+	// the gravel shoulder and the gravel traps have no grass (same wavy border as the terrain shader)
+	float sh = shoulder_w(p);
+	float clear_to = max(road_clear, sh);
+	if (edge.g > 0.3) {
+		clear_to = max(clear_to, mix(sh, trap_w + 0.3 * sin(p.x * 0.37 + p.y * 0.51), smoothstep(0.3, 0.6, edge.g)));
+	}
 	float dist = length(p - cam_pos.xz);
 	float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
 	if (inner_end > 0.0) {
 		fade *= smoothstep(inner_start, inner_end, dist);
 	}
 	float wn = texture(noise_tex, p * 0.03).r;
-	float dens = mask.r * smoothstep(road_clear, road_clear + 1.2, road) * (0.75 + 0.7 * wn);
+	float dens = mask.r * smoothstep(clear_to, clear_to + 0.35, road) * (0.75 + 0.7 * wn);
 	// never on the asphalt: hard cut besides the smooth density falloff (a hash of exactly 0 used to
 	// let single clumps through on the road)
-	float keep = step(r3 + 0.002, dens) * fade * step(road_clear, road);
+	float keep = step(r3 + 0.002, dens) * fade * step(clear_to, road);
 	float tall = mask.g * smoothstep(0.35, 0.7, texture(noise_tex, p * 0.09 + vec2(0.3)).r);
 	float hgt = mix(0.16, 0.38, r4) * (1.0 + tall * 1.9) * mix(0.4, 1.0, smoothstep(0.0, 0.25, keep));
 	float is_flower = COLOR.g;
@@ -185,38 +198,11 @@ func _build_textures() -> void:
 			bytes[k * 4 + 2] = int(clampf(flowers, 0.0, 1.0) * 255.0)
 			bytes[k * 4 + 3] = int(clampf(dry, 0.0, 1.0) * 255.0)
 	_mask_tex = ImageTexture.create_from_image(Image.create_from_data(nx, nz, false, Image.FORMAT_RGBA8, bytes))
-	# distance to the road edge at 1 m resolution (stamped around the centreline)
-	var b: Rect2 = track.bounds.grow(float(track.half_w) + 12.0)
-	_road_origin = b.position
-	var w := int(ceil(b.size.x))
-	var h := int(ceil(b.size.y))
-	_road_size = Vector2(w, h)
-	var road := PackedByteArray()
-	road.resize(w * h)
-	road.fill(255)
-	var half: float = track.half_w
-	var reach := int(ceil(half + 8.0))
-	var n_s: int = track.sample_count()
-	for i in n_s:
-		var s: Vector3 = track.samples[i]
-		var cx := int(s.x - _road_origin.x)
-		var cz := int(s.z - _road_origin.y)
-		for dz in range(-reach, reach + 1):
-			var gz := cz + dz
-			if gz < 0 or gz >= h:
-				continue
-			var wz := _road_origin.y + gz + 0.5 - s.z
-			for dx in range(-reach, reach + 1):
-				var gx := cx + dx
-				if gx < 0 or gx >= w:
-					continue
-				var wx := _road_origin.x + gx + 0.5 - s.x
-				var edge := sqrt(wx * wx + wz * wz) - half
-				var v := int(clampf(edge / 8.0, 0.0, 1.0) * 255.0)
-				var k := gz * w + gx
-				if v < road[k]:
-					road[k] = v
-	_road_tex = ImageTexture.create_from_image(Image.create_from_data(w, h, false, Image.FORMAT_L8, road))
+	# distance to the road edge + gravel traps (shared with the terrain's gravel shoulder)
+	var ed: Dictionary = track.edge_data()
+	_road_tex = ed["tex"]
+	_road_origin = ed["origin"]
+	_road_size = Vector2(1.0 / ed["inv_size"].x, 1.0 / ed["inv_size"].y)
 
 
 func _rebuild(level: int) -> void:
@@ -261,6 +247,7 @@ func _add_layer(spacing: float, radius: float, fade0: float, fade1: float, inner
 	mat.set_shader_parameter("map_cell", Terrain.CELL)
 	mat.set_shader_parameter("map_size", Vector2i(terrain.nx, terrain.nz))
 	mat.set_shader_parameter("road_origin", _road_origin)
+	mat.set_shader_parameter("trap_w", float(track.trap_w))
 	mat.set_shader_parameter("road_inv_size", Vector2(1.0 / _road_size.x, 1.0 / _road_size.y))
 	mat.set_shader_parameter("spacing", spacing)
 	mat.set_shader_parameter("fade_start", fade0)

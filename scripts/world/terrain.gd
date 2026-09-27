@@ -341,6 +341,13 @@ func height_image() -> Image:
 # ---------------------------------------------------------------------------
 func build_meshes(wet_capable := true) -> void:
 	material = TexKit.terrain_material(track_id)
+	if track_id != "playground":
+		var ed: Dictionary = track.edge_data()
+		material.set_shader_parameter("edge_tex", ed["tex"])
+		material.set_shader_parameter("edge_origin", ed["origin"])
+		material.set_shader_parameter("edge_inv_size", ed["inv_size"])
+		material.set_shader_parameter("trap_w", float(track.trap_w))
+		material.set_shader_parameter("shoulder", 1.0)
 	outer_material = material
 	var cx_count := int(ceil(float(nx - 1) / CHUNK))
 	var cz_count := int(ceil(float(nz - 1) / CHUNK))

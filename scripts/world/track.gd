@@ -6,6 +6,7 @@ const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 
 const SPACING := 2.0
+const SHOULDER := 1.8      # mean width of the gravel shoulder from the road edge (m)
 const ROAD_Y := 0.03
 const WALL_HEIGHT := 1.15
 const CELL := 20.0
@@ -51,6 +52,9 @@ var curvature := PackedFloat32Array()
 var off_left := PackedFloat32Array()
 var off_right := PackedFloat32Array()
 var curb_mask := PackedByteArray()
+## gravel trap on the outside of tight corners: weight 0..1, sign = side (+1 = +rights side)
+var trap := PackedFloat32Array()
+var trap_w := 4.6          # gravel trap width from the road edge (m), inside the run-off
 var length := 0.0
 var start_index := 0
 var start_dist := 0.0
@@ -64,6 +68,7 @@ var gantry_xf := Transform3D.IDENTITY   # start gantry frame (grandstand on its 
 var stand_x := 0.0
 
 var _grid := {}
+var _edge: Dictionary = {}
 var _puddle_index := {}     # sample index -> Array of puddle ids
 var _start_lights: Array = []
 var _lamp_lights: Array = []
@@ -75,6 +80,7 @@ func build(id: String) -> void:
 	width = def["width"]
 	half_w = width * 0.5
 	wall_base = half_w + float(def["runoff"])
+	trap_w = minf(4.6, float(def["runoff"]) - 0.4)
 	_sample_centerline()
 	_compute_offsets()
 	_build_grid()
@@ -182,6 +188,19 @@ func _compute_offsets() -> void:
 				on = 1
 				break
 		curb_mask[i] = on
+	# gravel traps (crash zones) on the outside of the tight corners, not on the playground's open pad
+	trap.resize(n)
+	trap.fill(0.0)
+	if str(def.get("wall", "")) != "none":
+		var rawt := PackedFloat32Array()
+		rawt.resize(n)
+		for i in n:
+			rawt[i] = signf(curvature[i]) if absf(curvature[i]) > 1.0 / 70.0 else 0.0
+		for i in n:
+			var acc := 0.0
+			for d in range(-12, 13):
+				acc += rawt[(i + d + n) % n]
+			trap[i] = clampf(acc / 25.0 * 2.2, -1.0, 1.0)
 
 
 static func _min_then_blur(arr: PackedFloat32Array, min_window: int, passes: int) -> PackedFloat32Array:
@@ -603,10 +622,60 @@ func distance_to_center(pos: Vector3) -> float:
 	return sqrt(best_d) if best_d < 1e17 else 1e9
 
 
+## Distance to the road edge (R, 0..8 m) and gravel-trap weight (G) at 1 m resolution, shared by the
+## terrain (gravel shoulder and traps) and the grass (kept off both).
+## Returns {"tex": ImageTexture, "origin": Vector2, "inv_size": Vector2}.
+func edge_data() -> Dictionary:
+	if not _edge.is_empty():
+		return _edge
+	var b: Rect2 = bounds.grow(half_w + 12.0)
+	var origin := b.position
+	var w := int(ceil(b.size.x))
+	var h := int(ceil(b.size.y))
+	var best := PackedFloat32Array()
+	best.resize(w * h)
+	best.fill(1e9)
+	var data := PackedByteArray()
+	data.resize(w * h * 2)
+	for k in w * h:
+		data[k * 2] = 255
+	var reach := int(ceil(half_w + 8.0))
+	for i in samples.size():
+		var s: Vector3 = samples[i]
+		var r: Vector3 = rights[i]
+		var tw := trap[i]
+		var cx := int(s.x - origin.x)
+		var cz := int(s.z - origin.y)
+		for dz in range(-reach, reach + 1):
+			var gz := cz + dz
+			if gz < 0 or gz >= h:
+				continue
+			var wz := origin.y + gz + 0.5 - s.z
+			for dx in range(-reach, reach + 1):
+				var gx := cx + dx
+				if gx < 0 or gx >= w:
+					continue
+				var wx := origin.x + gx + 0.5 - s.x
+				var dd := wx * wx + wz * wz
+				var k := gz * w + gx
+				if dd >= best[k]:
+					continue
+				best[k] = dd
+				var edge := sqrt(dd) - half_w
+				data[k * 2] = int(clampf(edge / 8.0, 0.0, 1.0) * 255.0)
+				var side := wx * r.x + wz * r.z
+				var g := absf(tw) if tw * side > 0.0 else 0.0
+				data[k * 2 + 1] = int(g * 255.0)
+	var img := Image.create_from_data(w, h, false, Image.FORMAT_RG8, data)
+	_edge = {"tex": ImageTexture.create_from_image(img), "origin": origin, "inv_size": Vector2(1.0 / w, 1.0 / h)}
+	return _edge
+
+
 ## Grip multiplier & surface name at a world position, given the track index nearby.
 func surface_at(pos: Vector3, idx: int) -> Array:
 	var rel := pos - samples[idx]
-	var lat := absf(rel.dot(rights[idx]))
+	var side_d := rel.dot(rights[idx])
+	var lat := absf(side_d)
 	if lat <= half_w:
 		var g := 1.0 - 0.18 * wetness
 		var pd := puddle_at(pos, idx)
@@ -615,6 +684,8 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 		return [g, "asphalt"]
 	if curb_mask[idx] == 1 and lat <= half_w + 1.4:
 		return [0.97 * (1.0 - 0.3 * wetness), "curb"]
+	if trap.size() > idx and trap[idx] * side_d > 0.0 and absf(trap[idx]) > 0.4 and lat < half_w + trap_w:
+		return [0.5 * (1.0 - 0.1 * wetness), "gravel"]
 	return [float(def["offroad_grip"]) * (1.0 - 0.12 * wetness), str(def["ground"])]
 
 

@@ -56,6 +56,15 @@ func _ready() -> void:
 	var side := 1.0 if tr.curvature[best] > 0.0 else -1.0
 	views.append(["crowd", tr.samples[best] - tr.rights[best] * side * 4.0 + Vector3(0, 2.0, 0) - tr.tangents[best] * 18.0,
 		tr.samples[best] + tr.rights[best] * side * 16.0 + Vector3(0, 1.0, 0)])
+	# road edge close-ups: curb at the tightest corner (outside) and a straight
+	var ob: Vector3 = tr.samples[best] - tr.rights[best] * side * (float(tr.half_w) + 1.0)
+	views.append(["edge_corner", ob + Vector3(0, 2.2, 0) - tr.tangents[best] * 7.0 + tr.rights[best] * side * 3.0, ob + tr.tangents[best] * 5.0])
+	var ib: Vector3 = tr.samples[best] + tr.rights[best] * side * (float(tr.half_w) + 1.0)
+	views.append(["edge_inside", ib + Vector3(0, 2.2, 0) - tr.tangents[best] * 7.0 - tr.rights[best] * side * 3.0, ib + tr.tangents[best] * 5.0])
+	views.append(["edge_top", tr.samples[best] + Vector3(0, 38, 0) - tr.tangents[best] * 12.0, tr.samples[best]])
+	var i5: int = (tr.start_index + 60) % n
+	var eb: Vector3 = tr.samples[i5] + tr.rights[i5] * (float(tr.half_w) + 1.0)
+	views.append(["edge_straight", eb + Vector3(0, 2.0, 0) - tr.tangents[i5] * 6.0 - tr.rights[i5] * 3.0, eb + tr.tangents[i5] * 6.0])
 	# forest edge, looking into the trees
 	var i2: int = (tr.start_index + 260) % n
 	views.append(["forest", tr.samples[i2] + Vector3(0, 1.4, 0), tr.samples[i2] + tr.rights[i2] * 40.0 + Vector3(0, 3.0, 0)])

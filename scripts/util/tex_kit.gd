@@ -161,6 +161,13 @@ uniform vec3 rock : source_color = vec3(0.36, 0.35, 0.33);
 uniform vec3 concrete : source_color = vec3(0.40, 0.39, 0.36);
 uniform float wetness = 0.0;
 uniform float joints = 1.0;      // concrete slab joints (0 = seamless asphalt)
+// gravel shoulder along the road edge and gravel traps on the outside of tight corners
+uniform sampler2D edge_tex : filter_linear, repeat_disable;   // r: distance to the road edge / 8 m, g: trap
+uniform vec2 edge_origin = vec2(0.0);
+uniform vec2 edge_inv_size = vec2(0.0);
+uniform float shoulder = 0.0;    // 0 = off (playground)
+uniform float trap_w = 4.6;
+uniform vec3 gravel : source_color = vec3(0.47, 0.44, 0.39);
 
 varying vec3 wpos;
 varying vec4 splat;
@@ -170,6 +177,11 @@ void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	wnrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	splat = COLOR;
+}
+
+// wavy outer border of the gravel shoulder (identical in grass.gd)
+float shoulder_w(vec2 p) {
+	return 1.8 + 0.28 * sin(p.x * 0.53 + p.y * 0.21) + 0.2 * sin(p.y * 1.37 - p.x * 0.83) + 0.1 * sin(p.x * 3.1 + p.y * 2.3);
 }
 
 void fragment() {
@@ -204,12 +216,32 @@ void fragment() {
 		c = mix(c, c * 0.55, smoothstep(0.66, 0.8, n5) * 0.6);
 		col = mix(col, c, pv);
 	}
+	// gravel: shoulder band and traps
+	float gv = 0.0;
+	if (shoulder > 0.5 && edge_inv_size.x > 0.0) {
+		vec2 e = texture(edge_tex, (p - edge_origin) * edge_inv_size).rg;
+		float ed = e.r * 8.0;
+		gv = (1.0 - smoothstep(-0.08, 0.08, ed - shoulder_w(p))) * (1.0 - pv);
+		float tb = trap_w + 0.3 * sin(p.x * 0.37 + p.y * 0.51);
+		gv = max(gv, smoothstep(0.3, 0.6, e.g) * (1.0 - smoothstep(tb - 0.1, tb + 0.1, ed)));
+		if (gv > 0.001) {
+			float s1 = texture(noise_tex, p * 2.7).r;
+			float s2 = texture(noise_tex, p * 7.9 + vec2(0.3, 0.6)).r;
+			vec3 gc = gravel * (0.72 + 0.45 * s1) * (0.85 + 0.3 * n1);
+			gc = mix(gc, vec3(0.62, 0.6, 0.56), smoothstep(0.62, 0.75, s2) * 0.6);   // light pebbles
+			gc = mix(gc, vec3(0.2, 0.19, 0.17), smoothstep(0.3, 0.2, s2) * 0.5);      // dark pebbles
+			// tyre-worn, darker gravel next to the asphalt
+			gc *= mix(0.8, 1.0, smoothstep(0.0, 0.9, ed));
+			col = mix(col, gc, gv);
+		}
+	}
 	float wet = wetness * (1.0 - rk * 0.4);
 	ALBEDO = col * (1.0 - wet * 0.38);
-	ROUGHNESS = mix(mix(0.96, 0.86, pv), mix(0.5, 0.18, pv), wet);
+	ROUGHNESS = mix(mix(mix(0.96, 0.86, pv), 0.92, gv), mix(0.5, 0.18, pv), wet);
 	SPECULAR = 0.35 + wet * 0.2;
 	NORMAL_MAP = texture(noise_nrm, p * 0.37).xyz;
-	NORMAL_MAP_DEPTH = mix(1.1, 0.6, max(pv, wet * 0.6));
+	NORMAL_MAP = mix(NORMAL_MAP, texture(noise_nrm, p * 2.3).xyz, gv);
+	NORMAL_MAP_DEPTH = mix(mix(1.1, 0.6, max(pv, wet * 0.6)), 1.6, gv);
 }
 """
 
