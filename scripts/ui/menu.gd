@@ -21,6 +21,7 @@ var _lobby_settings: VBoxContainer
 var _lobby_info: Label
 var _chat_log: RichTextLabel
 var _chat_input: LineEdit
+var _float_bar: HBoxContainer
 var _lan_pw: LineEdit
 var _invite_box: VBoxContainer
 var _ready_btn: Button
@@ -80,6 +81,15 @@ func _ready() -> void:
 	_content.add_theme_constant_override("separation", 10)
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_content)
+	# Back / Done always in the same place: bottom right, outside the scrolling list
+	_float_bar = HBoxContainer.new()
+	_float_bar.add_theme_constant_override("separation", 12)
+	_float_bar.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_float_bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_float_bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_float_bar.offset_right = -40
+	_float_bar.offset_bottom = -36
+	_root.add_child(_float_bar)
 	_status = UiKit.label("", 17, UiKit.GOLD)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(640, 0)
@@ -102,6 +112,18 @@ func _clear() -> void:
 	for c in _content.get_children():
 		_content.remove_child(c)
 		c.queue_free()
+	for c in _float_bar.get_children():
+		_float_bar.remove_child(c)
+		c.queue_free()
+
+
+## A big button pinned to the bottom right corner of the screen (Zurück / Fertig).
+func _float_button(text: String, callback: Callable) -> Button:
+	var b := UiKit.button(text, callback, 240)
+	b.custom_minimum_size.y = 58
+	b.add_theme_font_size_override("font_size", 24)
+	_float_bar.add_child(b)
+	return b
 
 
 func show_screen(screen: String) -> void:
@@ -227,7 +249,7 @@ func _build_single() -> void:
 	_add(UiKit.button("Garage", func():
 		_return_to = "single"
 		show_screen("garage"), 360))
-	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
 
 
 func _day_cycle_option(current: int, on_pick: Callable) -> OptionButton:
@@ -318,9 +340,9 @@ func _build_garage() -> void:
 	_add(_tuning_box)
 	_update_car_info()
 	_add(UiKit.spacer(8))
-	_add(UiKit.button("Fertig", func():
+	_float_button("✔  Fertig", func():
 		Net.update_local_info()
-		show_screen(_return_to), 360))
+		show_screen(_return_to))
 
 
 func _update_car_info() -> void:
@@ -442,7 +464,7 @@ func _build_online() -> void:
 	Net.start_lan_scan()
 	_refresh_lan()
 	_add(UiKit.spacer(8))
-	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
 
 
 func _join(ip: String, port: int, cert: String) -> void:
@@ -694,7 +716,7 @@ func _build_leaderboard() -> void:
 		Game.clear_leaderboard()
 		_fill_leaderboard(cats)
 		show_status("Leaderboard gelöscht."), 360))
-	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
 
 
 func _fill_leaderboard(cats: Array) -> void:
@@ -810,7 +832,7 @@ func _build_controls() -> void:
 	_add(UiKit.spacer(8))
 	_add(UiKit.label("Tipps: Handbremse kurz ziehen und Gas halten leitet Drifts ein. W + S im Stand aktiviert die\nLaunch Control – S loslassen für einen Start mit durchdrehenden Reifen.", 15, UiKit.TEXT_DIM))
 	_add(UiKit.spacer(8))
-	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
 
 
 # ---------------------------------------------------------------------------
@@ -820,4 +842,4 @@ func _build_options() -> void:
 	_header("OPTIONEN")
 	_add(SettingsUi.tabs(func(): main.refresh_showroom(true)))
 	_add(UiKit.spacer(8))
-	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))

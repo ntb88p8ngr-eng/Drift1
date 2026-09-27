@@ -8,6 +8,7 @@ var world   # world.gd
 var _main_box: VBoxContainer
 var _controls_box: VBoxContainer
 var _options_box: VBoxContainer
+var _options_back: Button
 var _panel: PanelContainer
 var _was_captured := false
 
@@ -65,14 +66,25 @@ func _ready() -> void:
 			Net.update_local_info())
 	burble.tooltip_text = "Fehlzündungen im Schiebebetrieb: Blubbern, Knallen und Flammen."
 	_options_box.add_child(UiKit.labeled("Burble-Tune", burble))
-	_options_box.add_child(UiKit.button("Zurück", func(): _show(_main_box)))
 	_options_box.visible = false
 	stack.add_child(_options_box)
+	# "Zurück" pinned to the bottom right corner while the options are open
+	_options_back = UiKit.button("◀  Zurück", func(): _show(_main_box), 240)
+	_options_back.custom_minimum_size.y = 58
+	_options_back.add_theme_font_size_override("font_size", 24)
+	_options_back.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_options_back.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_options_back.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_options_back.offset_right = -40
+	_options_back.offset_bottom = -36
+	_options_back.visible = false
+	root.add_child(_options_back)
 
 
 func _show(box: Control) -> void:
 	for b in [_main_box, _controls_box, _options_box]:
 		(b as Control).visible = b == box
+	_options_back.visible = box == _options_box
 
 
 func _unhandled_input(event: InputEvent) -> void:
