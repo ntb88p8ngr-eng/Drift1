@@ -60,9 +60,10 @@ var _splash_fx: GPUParticles3D
 var _rain_mat: StandardMaterial3D
 var _rain_player: AudioStreamPlayer
 var _rain_playback: AudioStreamGeneratorPlayback
-var _lp1 := 0.0
-var _lp2 := 0.0
+# rain sound state: soft noise wash per channel, low rumble, soft drop patter
+var _rs := PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0.1, 0.5])   # wash L1 L2 R1 R2, rumble, drop low, drop band, drop f, pan
 var _drop_env := 0.0
+var _gust_ph := 0.0
 var _last_night := -1.0
 var _sun_dir := Vector3.UP
 var _moon_dir := Vector3.UP
@@ -322,12 +323,12 @@ func _build_rain() -> void:
 	pm.gravity = Vector3.ZERO
 	_rain_fx.process_material = pm
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.018, 0.55)
+	quad.size = Vector2(0.012, 0.5)
 	_rain_mat = StandardMaterial3D.new()
 	_rain_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_rain_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_rain_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-	_rain_mat.albedo_color = Color(0.75, 0.8, 0.85, 0.28)
+	_rain_mat.albedo_color = Color(0.75, 0.8, 0.85, 0.08)
 	_rain_mat.disable_receive_shadows = true
 	quad.material = _rain_mat
 	_rain_fx.draw_pass_1 = quad
@@ -341,6 +342,7 @@ func _build_rain() -> void:
 	_splash_fx.top_level = true
 	_splash_fx.visibility_aabb = AABB(Vector3(-30, -5, -30), Vector3(60, 10, 60))
 	_splash_fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
 	var sm := ParticleProcessMaterial.new()
 	sm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	sm.emission_box_extents = Vector3(18, 0.02, 18)
@@ -358,7 +360,7 @@ func _build_rain() -> void:
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	smat.albedo_color = Color(0.8, 0.83, 0.88, 0.18)
+	smat.albedo_color = Color(0.8, 0.83, 0.88, 0.09)
 	smat.albedo_texture = TexKit.smoke_texture()
 	sq.material = smat
 	_splash_fx.draw_pass_1 = sq
@@ -369,10 +371,19 @@ func _build_rain() -> void:
 	gen.buffer_length = 0.15
 	_rain_player = AudioStreamPlayer.new()
 	_rain_player.stream = gen
-	_rain_player.volume_db = -8.0
 	add_child(_rain_player)
+	_apply_weather_volume()
+	Game.settings_changed.connect(_apply_weather_volume)
 	_rain_player.play()
 	_rain_playback = _rain_player.get_stream_playback()
+
+
+## "Wetter" slider in the audio options (0 = off).
+func _apply_weather_volume() -> void:
+	if _rain_player == null:
+		return
+	var v := clampf(float(Game.settings.get("weather_volume", 0.6)), 0.0, 1.5)
+	_rain_player.volume_db = linear_to_db(maxf(v, 0.0001)) - 10.0
 
 
 func _update_rain_fx() -> void:
@@ -390,7 +401,8 @@ func _update_rain_fx() -> void:
 	_rain_fx.emitting = rain > 0.02
 	_rain_fx.amount_ratio = clampf(rain, 0.0, 1.0)
 	var lvl := lerpf(0.12, 0.8, _day_level(sun_elevation))
-	_rain_mat.albedo_color = Color(lvl, lvl * 1.04, lvl * 1.1, 0.16 + 0.16 * rain)
+	# faint streaks: you notice the rain without looking through a curtain
+	_rain_mat.albedo_color = Color(lvl, lvl * 1.04, lvl * 1.1, 0.045 + 0.06 * rain)
 	var ground_y := 0.05
 	if track:
 		ground_y = 0.06
@@ -400,26 +412,64 @@ func _update_rain_fx() -> void:
 	_fill_rain_audio()
 
 
+## Calm rain: a soft, warm wash of low-passed noise (independent per ear, slowly swelling like gusts),
+## a low rumble when it pours and a quiet patter of drops on leaves – no hiss, no clicks.
 func _fill_rain_audio() -> void:
 	if _rain_playback == null:
 		return
 	var frames := _rain_playback.get_frames_available()
 	if frames <= 0:
 		return
+	_rain_playback.push_buffer(render_rain(frames))
+
+
+func render_rain(frames: int) -> PackedVector2Array:
+	var sr := 22050.0
 	var buf := PackedVector2Array()
 	buf.resize(frames)
-	var amp := clampf(rain, 0.0, 1.0) * 0.5
-	var drop_rate := 60.0 * rain / 22050.0
+	var amp := clampf(rain, 0.0, 1.0)
+	var k_wash := 1.0 - exp(-TAU * 1000.0 / sr)
+	var k_rumble := 1.0 - exp(-TAU * 160.0 / sr)
+	var drop_rate := (20.0 + 70.0 * amp) / sr
+	var drop_decay := exp(-1.0 / (0.008 * sr))
+	_gust_ph = fposmod(_gust_ph + float(frames) / sr * 0.09, 1.0)
+	var gust := 0.85 + 0.15 * sin(_gust_ph * TAU) + 0.06 * sin(_gust_ph * TAU * 2.7 + 1.0)
+	var wash_amp := 0.5 * amp * gust
+	var rumble_amp := 0.9 * pow(amp, 1.5)
+	var drop_amp := 0.05 * sqrt(amp)
+	var l1 := _rs[0]
+	var l2 := _rs[1]
+	var r1 := _rs[2]
+	var r2 := _rs[3]
+	var rum := _rs[4]
+	var dl := _rs[5]
+	var db := _rs[6]
+	var df := _rs[7]
+	var pan := _rs[8]
+	var denv := _drop_env
 	for i in frames:
-		var n := randf() * 2.0 - 1.0
-		_lp1 += (n - _lp1) * 0.5
-		_lp2 += (_lp1 - _lp2) * 0.08
-		var hiss := (_lp1 - _lp2) * amp
-		if randf() < drop_rate:
-			_drop_env = randf_range(0.3, 1.0)
-		var drop := n * _drop_env * 0.25 * amp
-		_drop_env *= 0.93
-		var l := hiss + drop
-		var r := hiss * 0.9 + (randf() * 2.0 - 1.0) * 0.02 * amp + drop * 0.6
-		buf[i] = Vector2(l, r)
-	_rain_playback.push_buffer(buf)
+		var wl := randf() * 2.0 - 1.0
+		var wr := randf() * 2.0 - 1.0
+		l1 += (wl - l1) * k_wash
+		l2 += (l1 - l2) * k_wash
+		r1 += (wr - r1) * k_wash
+		r2 += (r1 - r2) * k_wash
+		rum += ((wl + wr) * 0.5 - rum) * k_rumble
+		var left := l2 * wash_amp + rum * rumble_amp
+		var right := r2 * wash_amp + rum * rumble_amp
+		if denv > 0.001:
+			# a drop: short band-limited tap, panned
+			dl += df * db
+			db += df * (wl * denv - dl - 1.4 * db)
+			var tap := db * drop_amp
+			left += tap * (1.0 - pan)
+			right += tap * pan
+			denv *= drop_decay
+		elif randf() < drop_rate:
+			denv = randf_range(0.3, 1.0)
+			df = 2.0 * sin(PI * randf_range(900.0, 2600.0) / sr)
+			pan = randf()
+		buf[i] = Vector2(left, right)
+	_rs = PackedFloat32Array([l1, l2, r1, r2, rum, dl, db, df, pan])
+	_drop_env = denv
+	return buf

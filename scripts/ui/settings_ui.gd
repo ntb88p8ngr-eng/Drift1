@@ -113,6 +113,11 @@ static func audio_page() -> VBoxContainer:
 	v.add_child(UiKit.labeled("Motorsound", UiKit.slider(0, 1.5, 0.05, float(Game.settings["engine_volume"]), func(x):
 		Game.settings["engine_volume"] = x
 		Game.save_settings())))
+	var wv := UiKit.slider(0, 1.5, 0.05, float(Game.settings["weather_volume"]), func(x):
+		Game.settings["weather_volume"] = x
+		Game.save_settings())
+	wv.tooltip_text = "Lautstärke von Regen und Wetter (ganz links = aus)."
+	v.add_child(UiKit.labeled("Wetter / Regen", wv))
 	return v
 
 

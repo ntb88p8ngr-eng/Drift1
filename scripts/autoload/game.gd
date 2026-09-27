@@ -138,6 +138,7 @@ var settings := {
 	"fov": 75.0,
 	"mouse_sensitivity": 0.25,
 	"steer_assist": 0.55,
+	"weather_volume": 0.6,
 	"handbrake_strength": 0.75,
 	"slide": 0.5,
 	"camera_mode": 0,

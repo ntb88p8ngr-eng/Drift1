@@ -48,6 +48,8 @@ jobs:
           timeout 120 ./godot --headless --path . res://tests/audio_test.tscn -- "$RUNNER_TEMP/audio" 2>&1 | tee audio.log || true
           if grep -E "SCRIPT ERROR|AUDIO NAN|AUDIO SAMPLES MISSING" audio.log; then echo "::error::Audio test failed"; exit 1; fi
           grep -q "AUDIO TEST DONE" audio.log
+          timeout 60 ./godot --headless --path . res://tests/rain_audio_test.tscn -- "$RUNNER_TEMP/audio" 2>&1 | tee -a audio.log || true
+          grep -q "RAIN TEST DONE" audio.log
 
       - name: Drive test (terrain collision, gearing, weather grip)
         run: |
