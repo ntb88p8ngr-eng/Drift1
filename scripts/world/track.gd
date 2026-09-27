@@ -252,7 +252,7 @@ func _build_curbs() -> void:
 		if curb_mask[i] == 0 or curb_mask[i2] == 0:
 			continue
 		var col := Color(0.85, 0.08, 0.06) if (i / 2) % 2 == 0 else Color(0.95, 0.95, 0.95)
-		for side in [-1.0, 1.0]:
+		for side: float in [-1.0, 1.0]:
 			var r0: Vector3 = rights[i] * side
 			var r1: Vector3 = rights[i2] * side
 			var y := Vector3(0, ROAD_Y + 0.012, 0)
@@ -283,7 +283,7 @@ func _build_walls() -> void:
 	var faces_r := PackedVector3Array()
 	var h := WALL_HEIGHT
 	var thick := 0.5 if concrete else 0.25
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		var offs: PackedFloat32Array = off_left if side < 0.0 else off_right
 		for i in n:
 			var i2 := (i + 1) % n
@@ -370,7 +370,7 @@ func _build_posts() -> void:
 	mm.mesh = post
 	var xfs: Array = []
 	var n := samples.size()
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		var offs: PackedFloat32Array = off_left if side < 0.0 else off_right
 		for i in range(0, n, 2):
 			var p: Vector3 = samples[i] + rights[i] * side * (offs[i] + 0.12) + Vector3(0, 0.42, 0)
@@ -412,7 +412,7 @@ func _build_start() -> void:
 	g.global_transform = Transform3D(Basis.looking_at(t, Vector3.UP), p)
 	var steel := TexKit.std(Color(0.12, 0.12, 0.14), 0.4, 0.7)
 	var span := half_w + 2.0
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		g.add_child(MeshKit.box_node(Vector3(0.6, 7.0, 0.6), steel, Vector3(side * span, 3.5, 0)))
 	g.add_child(MeshKit.box_node(Vector3(span * 2.0 + 0.6, 1.3, 0.8), steel, Vector3(0, 7.2, 0)))
 	var banner := TexKit.emissive(Color(0.55, 0.2, 0.95), 1.6)
@@ -423,7 +423,7 @@ func _build_start() -> void:
 	for k in 4:
 		var col := Color(1.0, 0.1, 0.05) if k < 3 else Color(0.1, 1.0, 0.2)
 		var m := TexKit.emissive(col, 0.0)
-		for face in [-1.0, 1.0]:
+		for face: float in [-1.0, 1.0]:
 			var s := MeshKit.sphere_node(0.32, m, Vector3(-1.8 + k * 1.2, 5.9, 0.35 * face))
 			g.add_child(s)
 		_start_lights.append(m)
@@ -476,7 +476,7 @@ func nearest_index(pos: Vector3) -> int:
 	var cz := int(floor(pos.z / CELL))
 	var best := -1
 	var best_d := 1e20
-	for radius in [1, 3, 8]:
+	for radius: int in [1, 3, 8]:
 		for dx in range(-radius, radius + 1):
 			for dz in range(-radius, radius + 1):
 				var key := Vector2i(cx + dx, cz + dz)

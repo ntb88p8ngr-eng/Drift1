@@ -155,6 +155,10 @@ func _smoke_test() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot-dir="):
 			shot_dir = a.substr(11)
+	var watchdog := get_tree().create_timer(420.0, true, false, true)
+	watchdog.timeout.connect(func():
+		print("SMOKE TIMEOUT")
+		get_tree().quit(1))
 	print("SMOKE: menu")
 	show_menu("main")
 	for s in ["single", "garage", "online", "leaderboard", "options", "main"]:

@@ -124,7 +124,7 @@ func _bottom_at(z: float) -> float:
 		y = lerpf(base, spec["tail_base"], clampf((z - (rear - 0.6)) / 0.6, 0.0, 1.0))
 	var r: float = spec["wheel_r"]
 	var arch_r := r + 0.07
-	for axle in [spec["axle_f"], spec["axle_r"]]:
+	for axle: float in [spec["axle_f"], spec["axle_r"]]:
 		var dz: float = z - float(axle)
 		if absf(dz) < arch_r:
 			y = maxf(y, r + 0.03 + sqrt(arch_r * arch_r - dz * dz))
@@ -135,7 +135,7 @@ func _flare_at(z: float) -> float:
 	var f: float = spec["flare"]
 	var out := 0.0
 	var r: float = spec["wheel_r"] + 0.25
-	for axle in [spec["axle_f"], spec["axle_r"]]:
+	for axle: float in [spec["axle_f"], spec["axle_r"]]:
 		var dz: float = absf(z - float(axle))
 		if dz < r:
 			out = maxf(out, f * (0.5 + 0.5 * cos(dz / r * PI)))
@@ -193,7 +193,7 @@ func _build_body() -> void:
 	# dark wheel wells so the arches read as openings
 	var well := TexKit.std(Color(0.02, 0.02, 0.02), 0.9)
 	var r: float = spec["wheel_r"]
-	for axle in [spec["axle_f"], spec["axle_r"]]:
+	for axle: float in [spec["axle_f"], spec["axle_r"]]:
 		var w := MeshKit.cyl_node(r + 0.06, r + 0.06, 1.55, well, Vector3(0, r + 0.03, float(axle)), Vector3(0, 0, PI * 0.5), 20)
 		w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(w)
@@ -264,7 +264,7 @@ func _build_cabin() -> void:
 		rmi.name = "Roof"
 		add_child(rmi)
 	# pillars (A, B, C) as painted / black tubes following the cabin edges
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		var a_pts: Array = []
 		var c_pts: Array = []
 		for s in steps + 1:
@@ -332,12 +332,12 @@ func _build_front() -> void:
 	# splitter
 	add_child(MeshKit.box_node(Vector3(1.72, 0.025, 0.22), TexKit.carbon(), Vector3(0, float(spec["nose_base"]) + 0.01, fz + 0.14)))
 	# brake ducts / fog lights
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		add_child(MeshKit.box_node(Vector3(0.24, 0.1, 0.08), black, Vector3(side * 0.62, 0.33, fz + 0.1)))
 		add_child(MeshKit.box_node(Vector3(0.12, 0.05, 0.03), TexKit.emissive(Color(1.0, 0.55, 0.05), 0.8), Vector3(side * 0.72, 0.42, fz + 0.09)))
 	# headlights
 	var head_style: String = spec["head"]
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		var hx := side * 0.58
 		var hy := hood_y - 0.05
 		var hz := fz + 0.2
@@ -391,21 +391,21 @@ func _build_rear() -> void:
 		"quad_round", "round_pairs":
 			var xs := [0.34, 0.6] if tail_style == "quad_round" else [0.45, 0.66]
 			var rad := 0.075 if tail_style == "quad_round" else 0.09
-			for side in [-1.0, 1.0]:
+			for side: float in [-1.0, 1.0]:
 				for x in xs:
 					var zpos := rz + 0.005 - absf(float(x)) * 0.06
 					add_child(MeshKit.cyl_node(rad + 0.018, rad + 0.018, 0.04, TexKit.chrome(), Vector3(side * float(x), ty, zpos - 0.01), Vector3(PI * 0.5, 0, 0), 20))
 					add_child(MeshKit.cyl_node(rad, rad, 0.05, tail_mat, Vector3(side * float(x), ty, zpos), Vector3(PI * 0.5, 0, 0), 20))
 		"wide_bar":
 			add_child(MeshKit.box_node(Vector3(1.5, 0.14, 0.04), black, Vector3(0, ty, rz + 0.0)))
-			for side in [-1.0, 1.0]:
+			for side: float in [-1.0, 1.0]:
 				add_child(MeshKit.box_node(Vector3(0.5, 0.11, 0.05), tail_mat, Vector3(side * 0.5, ty, rz + 0.005)))
 		_:
-			for side in [-1.0, 1.0]:
+			for side: float in [-1.0, 1.0]:
 				var bar := MeshKit.box_node(Vector3(0.5, 0.09, 0.08), tail_mat, Vector3(side * 0.55, ty, rz - 0.02))
 				bar.rotation.y = side * -0.12
 				add_child(bar)
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		add_child(MeshKit.box_node(Vector3(0.1, 0.05, 0.03), reverse_mat, Vector3(side * 0.18, 0.42, rz - 0.02)))
 	# exhaust
 	var ex_style: String = spec["exhaust"]
@@ -424,7 +424,7 @@ func _build_rear() -> void:
 	var wz := rz - 0.28
 	match wing:
 		"tall":
-			for side in [-1.0, 1.0]:
+			for side: float in [-1.0, 1.0]:
 				add_child(MeshKit.box_node(Vector3(0.05, 0.17, 0.2), paint_mat, Vector3(side * 0.62, deck_y + 0.08, wz)))
 			var blade := MeshKit.box_node(Vector3(1.56, 0.035, 0.28), paint_mat, Vector3(0, deck_y + 0.18, wz + 0.02))
 			blade.rotation.x = -0.1
@@ -446,7 +446,7 @@ func _build_rear() -> void:
 			var blade := MeshKit.box_node(Vector3(1.45, 0.04, 0.22), paint_mat, Vector3(0, deck_y + 0.09, wz + 0.05))
 			blade.rotation.x = -0.12
 			add_child(blade)
-			for side in [-1.0, 1.0]:
+			for side: float in [-1.0, 1.0]:
 				add_child(MeshKit.box_node(Vector3(0.04, 0.08, 0.14), paint_mat, Vector3(side * 0.55, deck_y + 0.04, wz + 0.05)))
 		_:
 			add_child(MeshKit.box_node(Vector3(1.4, 0.04, 0.12), black, Vector3(0, deck_y + 0.02, rz - 0.15)))
@@ -457,7 +457,7 @@ func _build_misc() -> void:
 	var black := TexKit.black_plastic()
 	var cab: Array = spec["cabin"]
 	var mz: float = float(cab[0][0]) + 0.35
-	for side in [-1.0, 1.0]:
+	for side: float in [-1.0, 1.0]:
 		var hw := _table_lerp(loft, mz, 1)
 		var belt := _table_lerp(loft, mz, 2)
 		# mirror
@@ -471,7 +471,7 @@ func _build_misc() -> void:
 		add_child(MeshKit.box_node(Vector3(0.05, 0.1, len_side), black, Vector3(side * (_table_lerp(loft, zc, 1) - 0.005), float(spec["base"]) + 0.04, zc)))
 		# door handle + door gap line
 		add_child(MeshKit.box_node(Vector3(0.02, 0.025, 0.14), black, Vector3(side * (_table_lerp(loft, 0.35, 1) + 0.004), _table_lerp(loft, 0.35, 2) - 0.1, 0.35)))
-		for gz in [mz + 0.15, 0.9]:
+		for gz: float in [mz + 0.15, 0.9]:
 			var hwz := _table_lerp(loft, gz, 1) + _flare_at(gz)
 			var line := MeshKit.box_node(Vector3(0.006, _table_lerp(loft, gz, 2) - float(spec["base"]) - 0.12, 0.008), black,
 				Vector3(side * (hwz + 0.004), (float(spec["base"]) + _table_lerp(loft, gz, 2)) * 0.5, gz))
@@ -513,7 +513,7 @@ func _build_wheels() -> void:
 		# tyre with rounded shoulders: main tread + two sidewall rings
 		var tread := MeshKit.cyl_node(r, r, w * 0.82, TexKit.rubber(), Vector3.ZERO, Vector3(0, 0, PI * 0.5), 32)
 		spin.add_child(tread)
-		for s in [-1.0, 1.0]:
+		for s: float in [-1.0, 1.0]:
 			var wall := MeshKit.cyl_node(r * 0.95, r, w * 0.09, TexKit.rubber(), Vector3(s * w * 0.455, 0, 0), Vector3(0, 0, -s * PI * 0.5), 32)
 			spin.add_child(wall)
 		# rim barrel, face, spokes, hub

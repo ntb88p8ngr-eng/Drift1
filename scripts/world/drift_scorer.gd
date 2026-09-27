@@ -103,7 +103,7 @@ func _check_near_wall(car, space: PhysicsDirectSpaceState3D) -> bool:
 	var rear := xf * Vector3(0, 0.6, 2.0)
 	var ex: Array[RID] = [car.get_rid()]
 	_query.exclude = ex
-	for dir in [xf.basis.x, -xf.basis.x, xf.basis.z]:
+	for dir: Vector3 in [xf.basis.x, -xf.basis.x, xf.basis.z]:
 		_query.from = rear
 		_query.to = rear + (dir as Vector3) * 2.2
 		if not space.intersect_ray(_query).is_empty():

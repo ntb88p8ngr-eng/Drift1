@@ -192,7 +192,7 @@ static func _needle_cards(st: SurfaceTool, rng: RandomNumberGenerator, path: Arr
 		if side.length_squared() < 1e-4:
 			side = Vector3.RIGHT
 		side = side.normalized()
-		for rot in [0.0, 1.1, -1.1]:
+		for rot: float in [0.0, 1.1, -1.1]:
 			if detail <= 0.6 and rot != 0.0:
 				continue
 			var across := side.rotated(dir, rot + rng.randf_range(-0.2, 0.2)) * width * 0.5

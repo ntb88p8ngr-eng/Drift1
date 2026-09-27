@@ -316,8 +316,8 @@ func _build_water_and_quay() -> void:
 		var crane := Node3D.new()
 		crane.position = Vector3(b.position.x + 120.0 + k * 180.0, 0, quay_z - 12.0)
 		var steel := TexKit.std(Color(0.85, 0.45, 0.08) if k == 0 else Color(0.15, 0.4, 0.75), 0.5, 0.4)
-		for sx in [-1.0, 1.0]:
-			for sz in [-1.0, 1.0]:
+		for sx: float in [-1.0, 1.0]:
+			for sz: float in [-1.0, 1.0]:
 				crane.add_child(MeshKit.box_node(Vector3(1.2, 40, 1.2), steel, Vector3(sx * 9.0, 20, sz * 8.0)))
 		crane.add_child(MeshKit.box_node(Vector3(20, 3, 3), steel, Vector3(0, 40, -8)))
 		crane.add_child(MeshKit.box_node(Vector3(20, 3, 3), steel, Vector3(0, 40, 8)))
@@ -466,7 +466,7 @@ func _build_mountains() -> void:
 	var st := MeshKit.new_st()
 	MeshKit.grid(st, rows, centers, true, Vector2(40, 0.02), Color.WHITE, true)
 	var mat := TexKit.ground_material(Color(0.09, 0.15, 0.07), Color(0.13, 0.19, 0.09), Color(0.25, 0.24, 0.22), 0.95)
-	var mi := MeshKit.mesh_instance(MeshKit.commit(st, mat), null, false)
+	var mi := MeshKit.mesh_instance(MeshKit.commit(st, mat, null, true), null, false)
 	mi.name = "Mountains"
 	add_child(mi)
 

@@ -246,7 +246,10 @@ void sky() {
 	}
 	if (LIGHT0_ENABLED) {
 		float d = dot(dir, LIGHT0_DIRECTION);
-		float disk = smoothstep(cos(sun_size), cos(sun_size * 0.85), d);
+		float disk = 0.0;
+		if (sun_size > 0.0001) {
+			disk = smoothstep(cos(sun_size), cos(sun_size * 0.85), d);
+		}
 		float glow = pow(max(d, 0.0), 6.0) * sun_glow + pow(max(d, 0.0), 80.0) * 0.8;
 		col += sun_color * glow;
 		col += sun_color * disk * 25.0 * step(-0.02, h);

@@ -406,7 +406,9 @@ func _simulate(delta: float) -> void:
 	# automatic gearbox
 	if transmission == "auto" and shift_timer <= 0.0 and gear >= 1 and not controls_locked:
 		var ground_rpm := absf(forward_speed / radius * 60.0 / TAU * ratio)
-		if rpm > redline * 0.93 and gear < gears.size() and throttle > 0.2:
+		# drift-aware: hold the gear while sliding sideways (rev limiter instead of an upshift)
+		var sliding := absf(slip_angle) > 0.35 and forward_speed > 5.0
+		if rpm > redline * 0.93 and gear < gears.size() and throttle > 0.2 and not sliding:
 			_shift(1)
 		elif gear > 1 and ground_rpm < redline * 0.42:
 			_shift(-1)
