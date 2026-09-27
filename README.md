@@ -1,7 +1,7 @@
 # Midnight Drift
 
 Ein Drift-Racing-Spiel mit Godot 4.3. Autos, Strecken, Bäume, Häuser, Himmel, Texturen und Sounds
-werden beim Start **prozedural im Code erzeugt**. Das Spiel braucht keine fremden Assets.
+werden beim Start **prozedural im Code erzeugt**. Nur die drei Automodelle sind echte 3D-Modelle (Blend Swap, siehe Credits).
 
 ## Download (.exe)
 
@@ -25,8 +25,10 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | Strecken | **Kurohana Ridge** (fließende Waldstrecke mit ~1,9 km) und **Harbor Drift Yard** (breiter Hafenkurs mit ~1,3 km und engen Kehren). Beide haben Curbs, Leitplanken bzw. Betonwände, ein Startportal mit Startampel und Straßenlaternen |
 | Bäume | prozedurale Laub- und Nadelbäume: rekursive, gebogene und verjüngte Äste, tausende Blattkarten mit generierter Blatt- bzw. Nadeltextur, Rinden-Normalmap, Wind im Shader, 2 LOD-Stufen |
 | Häuser | japanische Wohnhäuser, Laden mit Getränkeautomaten, Scheune, Büro, Lagerhallen, Container, Kräne, Schiffe, Skyline. Nachts leuchten die Fenster |
-| Standardauto | **Skyline GT-R R34 (Verschnitt)** in **Midnight Purple II**: Chamäleon-Lack (Farbwechsel je nach Blickwinkel, Metallic-Flakes, Klarlack), 4 runde Rückleuchten, Heckflügel |
-| Weitere Autos | Silvia S15, Trueno AE86, Supra A80 (alle als Verschnitt). 8 Lackierungen plus eigene Farbe |
+| Autos | **Nissan Skyline GT-R R34** (Standard), **Ford Mustang GT**, **BMW M3 GT3**: detaillierte 3D-Modelle von Blend Swap, für das Spiel optimiert. Einfarbige Klarlack-Lackierungen (Rot, Weiß, Schwarz, Silber, Blau, Gelb) plus eigene Farbe |
+| Tuning | Motor, Getriebe, Fahrwerk, Turbo und Nitro, je 3 Stufen, für jedes Auto einzeln. Bezahlt wird mit Credits, die es für Driftpunkte und Rennen gibt |
+| Nitro | **Shift** gibt Nitro. In der Serie ist der Boost klein, mit Tuning wird er stärker und hält länger. Der Tank lädt sich langsam wieder auf, beim Driften schneller |
+| Launch Control | **W + S im Stand**: Die Drehzahl pendelt am Zwei-Stufen-Begrenzer (mit Fehlzündungen), die Vorderbremse hält und die Hinterräder drehen durch (Burnout). S loslassen = Start mit Radschlupf |
 | Licht | Scheinwerfer mit dynamischen Spotlights (L), Bremslicht, Rückfahrlicht, Unterbodenbeleuchtung. Bei Dämmerung und Nacht schaltet sich das Licht automatisch ein |
 | Physik | eigenes Raycast-Fahrwerk: Federung, Dämpfer, Stabis, Reifenmodell mit Schräglaufwinkel und Reibungskreis. Radschlupf und Handbremse lassen das Heck ausbrechen. Dazu eine Konter-Lenkhilfe (einstellbar) |
 | Getriebe | alle Autos starten mit **Automatik**. **Manuell** lässt sich jederzeit in der Garage oder beim Fahren mit **M** umschalten |
@@ -44,9 +46,11 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | W / ↑ / RT | Gas |
 | S / ↓ / LT | Bremse / Rückwärts |
 | A, D / ←, → / Stick | Lenken |
-| Leertaste / (A) | Handbremse |
-| E oder Shift / RB | Hochschalten (manuell) |
+| Leertaste / (A) | Handbremse (mit Gas drehen die Hinterräder weiter) |
+| Shift / (B) | Nitro |
+| E / RB | Hochschalten (manuell) |
 | Q oder Strg / LB | Runterschalten (manuell) |
+| W + S im Stand | Launch Control / Burnout |
 | M | Automatik ⇄ Manuell |
 | C / (Y) | Kamera wechseln (Verfolger, weit, Motorhaube, Stoßstange, Dach) |
 | **V** / R-Stick-Klick | **Kamera-Lock lösen**: freie Orbit-Kamera mit Maus bzw. rechtem Stick, Mausrad zoomt |
@@ -55,7 +59,6 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | R / Back | Auto auf die Strecke zurücksetzen |
 | L | Licht an/aus |
 | Tab | Leaderboard / Spielerliste |
-| F1 | Hilfe ein/aus |
 | Esc / Start | Pause |
 
 ## Online spielen
@@ -81,7 +84,17 @@ scripts/car/       car.gd (Physik), car_body.gd (Modell + Lack + Licht), car_aud
 scripts/world/     world.gd (Rennablauf), track.gd, scenery.gd, tree_factory.gd, environment_builder.gd, …
 scripts/ui/        menu.gd, hud.gd, pause_menu.gd, gauge.gd, minimap.gd, ui_kit.gd
 scripts/util/      mesh_kit.gd (prozedurale Meshes), tex_kit.gd (Shader & Texturen)
+assets/cars/       r34.glb, mustang.glb, m3gt3.glb (+ Maße als JSON), CREDITS.md
+tools/             convert_cars.py (Blend → GLB), preview_car.py
 ```
 
-Die Autos sind eigenständige Nachbildungen im Stil der bekannten JDM-Klassiker ("Verschnitt"). Es
-werden keine Original-Modelle oder Markenlogos verwendet.
+## Credits
+
+Die Automodelle stammen von [Blend Swap](https://www.blendswap.com). Details stehen in `assets/cars/CREDITS.md`:
+
+- Nissan Skyline R34 GT-R – Blend Swap #92438, **CC-BY 3.0**
+- Ford Mustang GT – Blend Swap #92324, CC0
+- BMW M3 GT3 – „Bmw M3 Gt3“ von Neubi, Blend Swap #19869, CC0
+
+Die Modelle wurden mit `tools/convert_cars.py` (Blender 4.2) in GLB-Dateien umgewandelt. Die Vorschau-Renderings
+erzeugt `tools/preview_car.py`.

@@ -6,6 +6,7 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 var car   # car.gd
 var _smokes: Array = []
 var _flames: Array = []
+var _nitro_flames: Array = []
 var _flash: OmniLight3D
 var _flash_t := 0.0
 var _key_base := 0
@@ -21,6 +22,9 @@ func _ready() -> void:
 		var fl := _make_flame()
 		fl.set_meta("local", p)
 		_flames.append(fl)
+		var nf := _make_flame(true)
+		nf.set_meta("local", p)
+		_nitro_flames.append(nf)
 	_flash = OmniLight3D.new()
 	_flash.light_color = Color(1.0, 0.5, 0.15)
 	_flash.omni_range = 5.0
@@ -91,12 +95,12 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	return p
 
 
-func _make_flame() -> GPUParticles3D:
+func _make_flame(nitro := false) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = 24
-	p.lifetime = 0.12
-	p.one_shot = true
-	p.explosiveness = 0.9
+	p.amount = 24 if not nitro else 40
+	p.lifetime = 0.12 if not nitro else 0.09
+	p.one_shot = not nitro
+	p.explosiveness = 0.9 if not nitro else 0.0
 	p.emitting = false
 	p.local_coords = false
 	var m := ParticleProcessMaterial.new()
@@ -108,8 +112,12 @@ func _make_flame() -> GPUParticles3D:
 	m.scale_min = 0.5
 	m.scale_max = 1.0
 	var grad := Gradient.new()
-	grad.set_color(0, Color(1.0, 0.9, 0.5, 1.0))
-	grad.set_color(1, Color(1.0, 0.2, 0.0, 0.0))
+	if nitro:
+		grad.set_color(0, Color(0.6, 0.8, 1.0, 1.0))
+		grad.set_color(1, Color(0.2, 0.3, 1.0, 0.0))
+	else:
+		grad.set_color(0, Color(1.0, 0.9, 0.5, 1.0))
+		grad.set_color(1, Color(1.0, 0.2, 0.0, 0.0))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	m.color_ramp = gt
@@ -175,10 +183,13 @@ func _process(delta: float) -> void:
 				car.skidmarks.break_mark(key)
 	# exhaust flames follow the car
 	var xf: Transform3D = car.global_transform
-	for f in _flames:
+	for f in _flames + _nitro_flames:
 		var fl: GPUParticles3D = f
 		var lp: Vector3 = fl.get_meta("local")
 		fl.global_transform = Transform3D(xf.basis, xf * lp)
+	var nitro_on: bool = car.nitro_active
+	for f in _nitro_flames:
+		(f as GPUParticles3D).emitting = nitro_on
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		_flash.visible = true

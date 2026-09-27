@@ -20,7 +20,6 @@ var _message: Label
 var _sub_message: Label
 var _countdown: Label
 var _cam_label: Label
-var _hints: PanelContainer
 var _scoreboard: PanelContainer
 var _score_grid: GridContainer
 var _results: PanelContainer
@@ -97,18 +96,6 @@ func _ready() -> void:
 	_root.add_child(_minimap)
 	_minimap.setup(world)
 
-	# --- control hints (bottom left) ---
-	var hint_grid := GridContainer.new()
-	hint_grid.columns = 2
-	hint_grid.add_theme_constant_override("h_separation", 14)
-	for pair in Game.CONTROLS_HELP:
-		hint_grid.add_child(UiKit.label(pair[0], 14, UiKit.GOLD))
-		hint_grid.add_child(UiKit.label(pair[1], 14, UiKit.TEXT))
-	_hints = UiKit.panel(hint_grid)
-	_anchor(_hints, 0, 1, 20, -440, 420, 0)
-	_hints.visible = bool(Game.settings.get("show_hints", true))
-	_root.add_child(_hints)
-
 	# --- scoreboard ---
 	_score_grid = GridContainer.new()
 	_score_grid.add_theme_constant_override("h_separation", 26)
@@ -178,9 +165,6 @@ func on_drift_event(ev: Array) -> void:
 func _process(delta: float) -> void:
 	if world == null or world.local_car == null:
 		return
-	if Input.is_action_just_pressed("toggle_hints"):
-		_hints.visible = not _hints.visible
-		Game.settings["show_hints"] = _hints.visible
 	_scoreboard.visible = Input.is_action_pressed("scoreboard") and not _results.visible
 	if _scoreboard.visible:
 		_score_refresh -= delta

@@ -137,7 +137,7 @@ func _spawn_cars() -> void:
 func _make_car(info: Dictionary, remote: bool) -> Car:
 	var car := Car.new()
 	car.car_id = str(info.get("car", "r34"))
-	car.paint = Game.get_paint(str(info.get("paint", "mp2")), str(info.get("custom_color", "")))
+	car.paint = Game.get_paint(str(info.get("paint", "red")), str(info.get("custom_color", "")))
 	car.player_name = str(info.get("name", "Driver"))
 	car.is_remote = remote
 	car.remote_collisions = bool(config.get("collisions", true))
@@ -330,6 +330,15 @@ func _submit_leaderboard() -> Array:
 		var r3 := Game.submit_score(tid, "race", pname, finish_time, cid, "%d Runden" % laps_total)
 		if r3 > 0:
 			notes.append("Rennzeit: Platz %d im Leaderboard!" % r3)
+	# credits for the tuning shop
+	var credits := int(scorer.total / 40.0)
+	if finished and mode != "free":
+		credits += 600 * laps_total
+		if online and position_text().begins_with("1 "):
+			credits += 2500
+	if credits > 0:
+		Game.add_credits(credits)
+		notes.append("+%s Credits (Tuning in der Garage)" % Game.format_points(credits))
 	return notes
 
 

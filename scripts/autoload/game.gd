@@ -26,52 +26,55 @@ const TIMES_OF_DAY := [
 	{"id": "morning", "name": "Morgennebel"},
 ]
 
-## Midnight Purple II is a colour-shifting paint: base colour head-on, flip colour at an angle, edge at grazing angles.
+## Solid (single colour) paints. metallic/roughness give a glossy clear-coated finish.
 const PAINTS := [
-	{"id": "mp2", "name": "Midnight Purple II", "base": Color(0.17, 0.04, 0.30), "flip": Color(0.05, 0.28, 0.20), "edge": Color(0.45, 0.22, 0.06), "flake": 0.45},
-	{"id": "mp3", "name": "Midnight Purple III", "base": Color(0.26, 0.09, 0.38), "flip": Color(0.45, 0.34, 0.10), "edge": Color(0.10, 0.30, 0.32), "flake": 0.40},
-	{"id": "bayside", "name": "Bayside Blue", "base": Color(0.02, 0.16, 0.55), "flip": Color(0.05, 0.28, 0.66), "edge": Color(0.00, 0.06, 0.24), "flake": 0.30},
-	{"id": "jade", "name": "Millennium Jade", "base": Color(0.40, 0.45, 0.41), "flip": Color(0.28, 0.40, 0.37), "edge": Color(0.18, 0.24, 0.24), "flake": 0.35},
-	{"id": "pearl", "name": "White Pearl", "base": Color(0.84, 0.84, 0.81), "flip": Color(0.92, 0.88, 0.80), "edge": Color(0.70, 0.72, 0.82), "flake": 0.20},
-	{"id": "black", "name": "Black Pearl", "base": Color(0.015, 0.015, 0.02), "flip": Color(0.05, 0.03, 0.07), "edge": Color(0.10, 0.08, 0.12), "flake": 0.50},
-	{"id": "red", "name": "Active Red", "base": Color(0.55, 0.02, 0.02), "flip": Color(0.60, 0.08, 0.02), "edge": Color(0.25, 0.00, 0.02), "flake": 0.30},
-	{"id": "yellow", "name": "Lightning Yellow", "base": Color(0.90, 0.68, 0.02), "flip": Color(0.95, 0.52, 0.00), "edge": Color(0.50, 0.34, 0.00), "flake": 0.25},
+	{"id": "red", "name": "Rot", "color": Color(0.62, 0.025, 0.03), "metallic": 0.08, "roughness": 0.2},
+	{"id": "white", "name": "Weiß", "color": Color(0.88, 0.88, 0.86), "metallic": 0.0, "roughness": 0.18},
+	{"id": "black", "name": "Schwarz", "color": Color(0.018, 0.018, 0.022), "metallic": 0.25, "roughness": 0.16},
+	{"id": "silver", "name": "Silber", "color": Color(0.62, 0.63, 0.65), "metallic": 0.75, "roughness": 0.28},
+	{"id": "blue", "name": "Bayside Blue", "color": Color(0.03, 0.17, 0.56), "metallic": 0.35, "roughness": 0.22},
+	{"id": "yellow", "name": "Gelb", "color": Color(0.92, 0.7, 0.03), "metallic": 0.05, "roughness": 0.2},
 ]
 
 ## Car catalogue. Torque in Nm, masses in kg. All cars start with automatic gearboxes – manual can be
-## switched on in the garage or while driving with [M].
+## switched on in the garage or while driving with [M]. Models: see assets/cars (Blend Swap, credits in README).
 const CARS := {
 	"r34": {
-		"name": "Skyline GT-R R34 (Verschnitt)", "body": "r34", "mass": 1450.0, "torque": 470.0,
-		"redline": 8000.0, "idle": 950.0, "gears": [3.30, 2.10, 1.52, 1.16, 0.93, 0.77], "reverse": 3.3,
-		"final": 4.1, "rear_split": 0.8, "turbo": 0.45, "grip": 1.08, "steer_lock": 44.0,
-		"transmission": "auto", "desc": "RB26-Reihensechser mit Twin-Turbo, ATTESA auf Drift getrimmt (80 % hinten).",
+		"name": "Nissan Skyline GT-R R34", "mass": 1540.0, "torque": 440.0,
+		"redline": 8000.0, "idle": 950.0, "gears": [3.83, 2.36, 1.69, 1.31, 1.0, 0.79], "reverse": 3.8,
+		"final": 3.9, "rear_split": 0.8, "turbo": 0.45, "grip": 1.08, "steer_lock": 44.0, "engine": "i6",
+		"transmission": "auto", "desc": "RB26DETT-Reihensechser mit Twin-Turbo, Allrad auf Drift getrimmt (80 % hinten).",
 	},
-	"s15": {
-		"name": "Silvia S15 (Verschnitt)", "body": "s15", "mass": 1240.0, "torque": 330.0,
-		"redline": 7800.0, "idle": 900.0, "gears": [3.32, 1.90, 1.36, 1.06, 0.86, 0.73], "reverse": 3.3,
-		"final": 4.3, "rear_split": 1.0, "turbo": 0.4, "grip": 1.02, "steer_lock": 48.0,
-		"transmission": "auto", "desc": "Leichter Hecktriebler mit SR20-Turbo – der Drift-Klassiker.",
+	"mustang": {
+		"name": "Ford Mustang GT", "mass": 1690.0, "torque": 560.0,
+		"redline": 7400.0, "idle": 800.0, "gears": [3.24, 2.13, 1.52, 1.16, 0.85, 0.72], "reverse": 3.4,
+		"final": 3.73, "rear_split": 1.0, "turbo": 0.0, "grip": 1.05, "steer_lock": 46.0, "engine": "v8",
+		"transmission": "auto", "desc": "5.0-Liter-V8-Sauger mit Hinterradantrieb – viel Drehmoment, lange Drifts.",
 	},
-	"ae86": {
-		"name": "Trueno AE86 (Verschnitt)", "body": "ae86", "mass": 960.0, "torque": 190.0,
-		"redline": 8200.0, "idle": 1000.0, "gears": [3.59, 2.02, 1.38, 1.00, 0.86], "reverse": 3.5,
-		"final": 4.3, "rear_split": 1.0, "turbo": 0.0, "grip": 1.0, "steer_lock": 46.0,
-		"transmission": "auto", "desc": "Hochdrehender Sauger, federleicht – Technik schlägt Leistung.",
-	},
-	"a80": {
-		"name": "Supra A80 (Verschnitt)", "body": "a80", "mass": 1500.0, "torque": 560.0,
-		"redline": 7200.0, "idle": 850.0, "gears": [3.83, 2.36, 1.69, 1.31, 1.00, 0.79], "reverse": 3.5,
-		"final": 3.6, "rear_split": 1.0, "turbo": 0.55, "grip": 1.1, "steer_lock": 42.0,
-		"transmission": "auto", "desc": "2JZ-Monster mit riesigem Turbo – viel Leistung, viel Rauch.",
+	"m3gt3": {
+		"name": "BMW M3 GT3", "mass": 1260.0, "torque": 470.0,
+		"redline": 9000.0, "idle": 1100.0, "gears": [3.1, 2.25, 1.75, 1.42, 1.19, 1.02], "reverse": 3.3,
+		"final": 4.1, "rear_split": 1.0, "turbo": 0.0, "grip": 1.16, "steer_lock": 43.0, "engine": "v8race",
+		"transmission": "auto", "desc": "Hochdrehender Renn-V8, Leichtbau und Rennfahrwerk – präzise und schnell.",
 	},
 }
-const CAR_ORDER := ["r34", "s15", "ae86", "a80"]
+const CAR_ORDER := ["r34", "mustang", "m3gt3"]
+
+## Tuning shop: every category has 4 levels (0 = stock). Costs in credits per level.
+const TUNING := [
+	{"id": "engine", "name": "Motor", "desc": "+10 % Drehmoment und +250 U/min pro Stufe"},
+	{"id": "gearbox", "name": "Getriebe", "desc": "Schnellere Schaltvorgänge und kürzere Übersetzung"},
+	{"id": "suspension", "name": "Fahrwerk", "desc": "Mehr Grip, mehr Lenkeinschlag, straffere Federn"},
+	{"id": "turbo", "name": "Turbo", "desc": "Mehr Ladedruck, schnelleres Ansprechen – Sauger bekommen einen Turbo-Kit"},
+	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
+]
+const TUNING_LEVELS := ["Serie", "Stufe 1", "Stufe 2", "Stufe 3"]
+const TUNING_COST := [0, 3000, 7000, 14000]
 
 var settings := {
 	"player_name": "Driver",
 	"car": "r34",
-	"paint": "mp2",
+	"paint": "red",
 	"custom_color": "",
 	"transmission": "auto",
 	"track": "ridge",
@@ -92,7 +95,8 @@ var settings := {
 	"lobby_name": "",
 	"max_players": 8,
 	"use_upnp": true,
-	"show_hints": true,
+	"credits": 12000,
+	"tuning": {},
 }
 
 ## leaderboard[track_id][category] = Array of entries (sorted best first)
@@ -120,7 +124,8 @@ func _setup_input() -> void:
 	_add_action("steer_left", [KEY_A, KEY_LEFT], [], [[JOY_AXIS_LEFT_X, -1.0]])
 	_add_action("steer_right", [KEY_D, KEY_RIGHT], [], [[JOY_AXIS_LEFT_X, 1.0]])
 	_add_action("handbrake", [KEY_SPACE], [JOY_BUTTON_A], [])
-	_add_action("shift_up", [KEY_E, KEY_SHIFT], [JOY_BUTTON_RIGHT_SHOULDER], [])
+	_add_action("shift_up", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [])
+	_add_action("nitro", [KEY_SHIFT], [JOY_BUTTON_B], [])
 	_add_action("shift_down", [KEY_Q, KEY_CTRL], [JOY_BUTTON_LEFT_SHOULDER], [])
 	_add_action("toggle_transmission", [KEY_M], [], [])
 	_add_action("camera_next", [KEY_C], [JOY_BUTTON_Y], [])
@@ -130,7 +135,6 @@ func _setup_input() -> void:
 	_add_action("lights", [KEY_L], [JOY_BUTTON_DPAD_UP], [])
 	_add_action("pause", [KEY_ESCAPE], [JOY_BUTTON_START], [])
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
-	_add_action("toggle_hints", [KEY_F1], [], [])
 	_add_action("look_left", [], [], [[JOY_AXIS_RIGHT_X, -1.0]])
 	_add_action("look_right", [], [], [[JOY_AXIS_RIGHT_X, 1.0]])
 	_add_action("look_up", [], [], [[JOY_AXIS_RIGHT_Y, -1.0]])
@@ -158,9 +162,11 @@ func _add_action(action: String, keys: Array, buttons: Array, axes: Array) -> vo
 const CONTROLS_HELP := [
 	["W / ↑ / RT", "Gas"],
 	["S / ↓ / LT", "Bremse / Rückwärts"],
+	["W + S im Stand", "Launch Control / Burnout (S loslassen = Start)"],
 	["A D / ← → / Stick", "Lenken"],
-	["Leertaste / (A)", "Handbremse – Drift einleiten"],
-	["E / Shift / RB", "Hochschalten (manuell)"],
+	["Leertaste / (A)", "Handbremse – mit Gas drehen die Hinterräder weiter"],
+	["Shift / (B)", "Nitro"],
+	["E / RB", "Hochschalten (manuell)"],
 	["Q / Strg / LB", "Runterschalten (manuell)"],
 	["M", "Automatik ⇄ Manuell"],
 	["C / (Y)", "Kamera wechseln"],
@@ -170,7 +176,6 @@ const CONTROLS_HELP := [
 	["R / Back", "Auto auf Strecke zurücksetzen"],
 	["L", "Licht an/aus"],
 	["Tab", "Leaderboard / Spielerliste"],
-	["F1", "Hilfe ein/aus"],
 	["Esc / Start", "Pause"],
 ]
 
@@ -186,11 +191,20 @@ func load_settings() -> void:
 				settings[k] = data[k]
 	if not CARS.has(settings["car"]):
 		settings["car"] = "r34"
+	var paint_known: bool = settings["paint"] == "custom"
+	for p in PAINTS:
+		if p["id"] == settings["paint"]:
+			paint_known = true
+	if not paint_known:
+		settings["paint"] = "red"
 	settings["laps"] = int(settings["laps"])
 	settings["quality"] = int(settings["quality"])
 	settings["port"] = int(settings["port"])
 	settings["max_players"] = int(settings["max_players"])
 	settings["camera_mode"] = int(settings["camera_mode"])
+	settings["credits"] = int(settings["credits"])
+	if not (settings["tuning"] is Dictionary):
+		settings["tuning"] = {}
 
 
 func save_settings() -> void:
@@ -240,12 +254,69 @@ func get_car(car_id: String) -> Dictionary:
 
 func get_paint(paint_id: String, custom_html: String = "") -> Dictionary:
 	if paint_id == "custom" and custom_html != "":
-		var c := Color.from_string(custom_html, Color(0.2, 0.05, 0.3))
-		return {"id": "custom", "name": "Eigene Farbe", "base": c, "flip": c.lightened(0.15).lerp(Color(c.b, c.r, c.g), 0.25), "edge": c.darkened(0.4), "flake": 0.35}
+		var c := Color.from_string(custom_html, Color(0.6, 0.03, 0.03))
+		return {"id": "custom", "name": "Eigene Farbe", "color": c, "metallic": 0.1, "roughness": 0.2}
 	for p in PAINTS:
 		if p["id"] == paint_id:
 			return p
 	return PAINTS[0]
+
+
+# ---------------------------------------------------------------------------
+# Tuning & credits
+# ---------------------------------------------------------------------------
+func get_tuning(car_id: String) -> Dictionary:
+	var all: Dictionary = settings["tuning"]
+	var t: Dictionary = all.get(car_id, {})
+	var out := {}
+	for c in TUNING:
+		out[c["id"]] = int(t.get(c["id"], 0))
+	return out
+
+
+func tuning_cost(car_id: String, category: String) -> int:
+	var lvl: int = get_tuning(car_id)[category]
+	if lvl >= TUNING_LEVELS.size() - 1:
+		return -1
+	return TUNING_COST[lvl + 1]
+
+
+## Buys the next level; returns "" on success or an error text.
+func buy_tuning(car_id: String, category: String) -> String:
+	var cost := tuning_cost(car_id, category)
+	if cost < 0:
+		return "Maximale Stufe erreicht."
+	if int(settings["credits"]) < cost:
+		return "Nicht genug Credits (%s benötigt)." % format_points(cost)
+	settings["credits"] = int(settings["credits"]) - cost
+	var all: Dictionary = settings["tuning"]
+	var t: Dictionary = all.get(car_id, {})
+	t[category] = int(t.get(category, 0)) + 1
+	all[car_id] = t
+	settings["tuning"] = all
+	save_settings()
+	return ""
+
+
+## Sells back the last level of a category for half the price.
+func downgrade_tuning(car_id: String, category: String) -> void:
+	var lvl: int = get_tuning(car_id)[category]
+	if lvl <= 0:
+		return
+	settings["credits"] = int(settings["credits"]) + TUNING_COST[lvl] / 2
+	var all: Dictionary = settings["tuning"]
+	var t: Dictionary = all.get(car_id, {})
+	t[category] = lvl - 1
+	all[car_id] = t
+	settings["tuning"] = all
+	save_settings()
+
+
+func add_credits(amount: int) -> void:
+	if amount <= 0:
+		return
+	settings["credits"] = int(settings["credits"]) + amount
+	save_settings()
 
 
 func track_name(track_id: String) -> String:

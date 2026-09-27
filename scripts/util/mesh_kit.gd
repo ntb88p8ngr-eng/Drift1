@@ -171,6 +171,49 @@ static func tube(st: SurfaceTool, points: Array, radii: Array, segments: int, uv
 		cap(st, last, (points[n - 1] as Vector3) + tip_dir * float(radii[n - 1]) * 0.6, tip_dir, col)
 
 
+## Surface of revolution around the X axis. profile: Array of Vector2(x, radius), traversed so that
+## the outside lies to the left of the direction of travel (normal = (-dr, dx)).
+static func lathe(st: SurfaceTool, profile: Array, segments: int, col: Color = Color.WHITE) -> void:
+	var n := profile.size()
+	if n < 2:
+		return
+	var normals2: Array = []
+	for i in n:
+		var a: Vector2 = profile[maxi(i - 1, 0)]
+		var b: Vector2 = profile[mini(i + 1, n - 1)]
+		var t := (b - a).normalized()
+		normals2.append(Vector2(-t.y, t.x))
+	for i in range(n - 1):
+		var p0: Vector2 = profile[i]
+		var p1: Vector2 = profile[i + 1]
+		var n0: Vector2 = normals2[i]
+		var n1: Vector2 = normals2[i + 1]
+		var seg_n := Vector2(-(p1 - p0).y, (p1 - p0).x)
+		for j in segments:
+			var a0 := TAU * float(j) / segments
+			var a1 := TAU * float(j + 1) / segments
+			var c0 := cos(a0)
+			var s0 := sin(a0)
+			var c1 := cos(a1)
+			var s1 := sin(a1)
+			var v00 := Vector3(p0.x, p0.y * c0, p0.y * s0)
+			var v01 := Vector3(p0.x, p0.y * c1, p0.y * s1)
+			var v10 := Vector3(p1.x, p1.y * c0, p1.y * s0)
+			var v11 := Vector3(p1.x, p1.y * c1, p1.y * s1)
+			var n00 := Vector3(n0.x, n0.y * c0, n0.y * s0)
+			var n01 := Vector3(n0.x, n0.y * c1, n0.y * s1)
+			var n10 := Vector3(n1.x, n1.y * c0, n1.y * s0)
+			var n11 := Vector3(n1.x, n1.y * c1, n1.y * s1)
+			var am := (a0 + a1) * 0.5
+			var outward := Vector3(seg_n.x, seg_n.y * cos(am), seg_n.y * sin(am))
+			var u0 := float(j) / segments
+			var u1 := float(j + 1) / segments
+			var w0 := float(i) / (n - 1)
+			var w1 := float(i + 1) / (n - 1)
+			tri(st, v00, v10, v11, n00, n10, n11, Vector2(u0, w0), Vector2(u0, w1), Vector2(u1, w1), outward, col)
+			tri(st, v00, v11, v01, n00, n11, n01, Vector2(u0, w0), Vector2(u1, w1), Vector2(u1, w0), outward, col)
+
+
 ## Axis-aligned box (optionally transformed) with flat normals.
 static func box(st: SurfaceTool, xf: Transform3D, size: Vector3, col: Color = Color.WHITE, uv_scale := 1.0) -> void:
 	var h := size * 0.5

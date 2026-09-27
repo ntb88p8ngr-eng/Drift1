@@ -340,19 +340,20 @@ void fragment() {
 # ---------------------------------------------------------------------------
 # Materials
 # ---------------------------------------------------------------------------
-static func paint_material(paint: Dictionary) -> ShaderMaterial:
-	var sh: Shader = _shader("shader_paint", PAINT_SHADER)
-	var m := ShaderMaterial.new()
-	m.shader = sh
+static func paint_material(paint: Dictionary) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.clearcoat_enabled = true
+	m.clearcoat = 1.0
+	m.clearcoat_roughness = 0.03
+	m.metallic_specular = 0.6
 	apply_paint(m, paint)
 	return m
 
 
-static func apply_paint(m: ShaderMaterial, paint: Dictionary) -> void:
-	m.set_shader_parameter("base_color", paint["base"])
-	m.set_shader_parameter("flip_color", paint["flip"])
-	m.set_shader_parameter("edge_color", paint["edge"])
-	m.set_shader_parameter("flake_amount", paint["flake"])
+static func apply_paint(m: StandardMaterial3D, paint: Dictionary) -> void:
+	m.albedo_color = paint.get("color", Color(0.62, 0.025, 0.03))
+	m.metallic = float(paint.get("metallic", 0.1))
+	m.roughness = float(paint.get("roughness", 0.2))
 
 
 static func std(color: Color, roughness := 0.5, metallic := 0.0, emission := Color.BLACK, emission_energy := 0.0) -> StandardMaterial3D:
@@ -685,6 +686,27 @@ static func smoke_texture() -> ImageTexture:
 
 	var result = ImageTexture.create_from_image(img)
 	_cache["tex_smoke"] = result
+	return result
+
+
+## Honeycomb-ish mesh for grilles and intakes (dark, alpha-free).
+static func grille_texture() -> ImageTexture:
+	if _cache.has("tex_grille"):
+		return _cache["tex_grille"]
+	var size := 64
+	var img := Image.create(size, size, false, Image.FORMAT_RGB8)
+	for y in size:
+		for x in size:
+			var row := int(y / 8.0)
+			var ox := 4 if row % 2 == 1 else 0
+			var cx := fposmod(float(x + ox), 8.0) - 4.0
+			var cy := fposmod(float(y), 8.0) - 4.0
+			var d := maxf(absf(cx) * 0.9 + absf(cy) * 0.5, absf(cy))
+			var v := 0.02 if d < 2.6 else 0.16
+			img.set_pixel(x, y, Color(v, v, v * 1.05))
+	img.generate_mipmaps()
+	var result := ImageTexture.create_from_image(img)
+	_cache["tex_grille"] = result
 	return result
 
 

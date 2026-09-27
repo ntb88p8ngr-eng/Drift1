@@ -25,7 +25,7 @@ func _ready() -> void:
 	env.glow_intensity = 0.8
 	env.glow_bloom = 0.05
 	env.ssao_enabled = Game.quality() >= 2
-	env.ssr_enabled = Game.quality() >= 2
+	env.ssr_enabled = false
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.08, 0.04, 0.14)
 	env.fog_density = 0.02
@@ -35,18 +35,24 @@ func _ready() -> void:
 
 	# glossy floor
 	var floor_mat := StandardMaterial3D.new()
-	floor_mat.albedo_color = Color(0.03, 0.03, 0.04)
-	floor_mat.roughness = 0.12
-	floor_mat.metallic = 0.4
+	floor_mat.albedo_color = Color(0.035, 0.035, 0.045)
+	floor_mat.roughness = 0.35
+	floor_mat.metallic = 0.2
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(80, 80)
-	add_child(MeshKit.mesh_instance(plane, floor_mat, false))
-	turntable = Node3D.new()
-	add_child(turntable)
-	var disc := MeshKit.cyl_node(3.6, 3.7, 0.08, TexKit.std(Color(0.08, 0.08, 0.1), 0.25, 0.7), Vector3(0, 0.04, 0), Vector3.ZERO, 64)
-	add_child(disc)
-	var ring := MeshKit.cyl_node(3.72, 3.72, 0.02, TexKit.emissive(Color(0.6, 0.25, 1.0), 3.0), Vector3(0, 0.07, 0), Vector3.ZERO, 64)
+	var floor_mi := MeshKit.mesh_instance(plane, floor_mat, false)
+	floor_mi.position.y = -0.002
+	add_child(floor_mi)
+	# glowing ring first (slightly lower and wider), then the turntable disc on top of it
+	var ring := MeshKit.cyl_node(3.78, 3.78, 0.05, TexKit.emissive(Color(0.6, 0.25, 1.0), 2.5), Vector3(0, 0.025, 0), Vector3.ZERO, 96)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ring)
+	var disc := MeshKit.cyl_node(3.62, 3.7, 0.07, TexKit.std(Color(0.08, 0.08, 0.1), 0.35, 0.6), Vector3(0, 0.035, 0), Vector3.ZERO, 96)
+	disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(disc)
+	turntable = Node3D.new()
+	turntable.position.y = 0.07
+	add_child(turntable)
 
 	# softboxes (emissive panels) – they show up as reflections in the paint
 	for k in 3:
@@ -65,6 +71,9 @@ func _ready() -> void:
 	key.spot_angle = 40.0
 	key.light_energy = 10.0
 	key.shadow_enabled = true
+	key.shadow_bias = 0.08
+	key.shadow_normal_bias = 1.5
+	key.shadow_blur = 1.5
 	add_child(key)
 	var fill := SpotLight3D.new()
 	fill.position = Vector3(-4, 4, -3)

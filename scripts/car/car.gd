@@ -2,8 +2,9 @@ extends RigidBody3D
 ## Drift-tuned raycast vehicle.
 ## - 4 raycast suspensions (spring + damper + anti-roll bars)
 ## - tyre model with slip-angle curve and a friction circle, so wheelspin / handbrake break rear grip
-## - engine with torque curve, rev limiter, turbo spool & blow-off, automatic or manual gearbox
-## - optional counter-steer assist
+## - engine with torque curve, soft rev limiter, turbo spool & blow-off, nitro, launch control
+## - automatic or manual gearbox (manual never shifts by itself)
+## - tuning (engine, gearbox, suspension, turbo, nitro) from Game.get_tuning()
 ## Remote (network) cars use the same node as a kinematic, interpolated puppet.
 
 signal shifted(up: bool, boost: float)
@@ -24,6 +25,9 @@ const SAG := 0.09
 const PEAK_SLIP := 0.14         # rad – slip angle at maximum lateral grip
 const SLIDE_GRIP := 0.78        # lateral grip multiplier when fully sliding
 const STEER_SPEED := 5.5        # rad/s
+const DRAG := 0.34
+const ROLLING := 3.0
+const LAUNCH_RPM := 0.6         # launch control rpm as a fraction of the redline
 
 # --- configuration (set before adding to the tree) ---
 var car_id := "r34"
@@ -37,7 +41,7 @@ var remote_collisions := true
 var track = null
 var skidmarks = null
 
-# --- spec ---
+# --- spec (after tuning) ---
 var spec: Dictionary
 var body_spec: Dictionary
 var radius := 0.34
@@ -48,12 +52,19 @@ var gears: Array = []
 var reverse_ratio := 3.3
 var final_drive := 4.1
 var rear_split := 1.0
-var turbo_gain := 0.0
+var turbo_base := 0.0          # stock turbo lag share (off-boost torque loss)
+var turbo_extra := 0.0         # tuning: extra torque at full boost
+var turbo_gain := 0.0          # >0 when the car has any turbo (audio / HUD)
+var spool_rate := 0.9
 var grip := 1.0
 var steer_lock := 0.75
 var spring_k := 40000.0
 var damper_c := 3500.0
 var antiroll_k := 9000.0
+var shift_time_auto := 0.24
+var shift_time_manual := 0.16
+var nitro_power := 0.12
+var nitro_capacity := 2.5      # seconds of continuous use
 
 # --- runtime state ---
 var body: CarBody
@@ -83,6 +94,13 @@ var track_hint := -1
 var surface_name := "asphalt"
 var total_slip := 0.0
 var flip_timer := 0.0
+var nitro := 1.0            # 0..1 tank
+var nitro_active := false
+var launch_active := false  # launch control / clutch dump phase
+var line_lock := false      # W+S at standstill: front brakes hold, rear wheels spin (burnout)
+var launch_time := 0.0
+var _launch_osc := 0.0
+var _limit_time := 0.0
 var _prev_throttle := 0.0
 var _prev_velocity := Vector3.ZERO
 var _hit_cooldown := 0.0
@@ -102,7 +120,7 @@ var remote_drift := 0.0
 
 func _ready() -> void:
 	spec = Game.get_car(car_id)
-	body_spec = CarBody.BODIES.get(spec["body"], CarBody.BODIES["r34"])
+	body_spec = CarBody.physics_spec(car_id)
 	radius = body_spec["wheel_r"]
 	mass = spec["mass"]
 	max_torque = spec["torque"]
@@ -112,19 +130,22 @@ func _ready() -> void:
 	reverse_ratio = spec["reverse"]
 	final_drive = spec["final"]
 	rear_split = spec["rear_split"]
-	turbo_gain = spec["turbo"]
+	turbo_base = spec["turbo"]
 	grip = spec["grip"]
 	steer_lock = deg_to_rad(float(spec["steer_lock"]))
-	rpm = idle_rpm
 	var static_load := mass * 9.8 / 4.0
 	spring_k = static_load / SAG
 	damper_c = 2.0 * 0.38 * sqrt(spring_k * mass / 4.0)
 	antiroll_k = spring_k * 0.35
+	if not is_display:
+		_apply_tuning(Game.get_tuning(car_id))
+	turbo_gain = maxf(turbo_base, turbo_extra)
+	rpm = idle_rpm
 
 	body = CarBody.new()
 	body.name = "Body"
 	add_child(body)
-	body.build(spec["body"], paint, not is_remote and not is_display)
+	body.build(car_id, paint, not is_remote and not is_display)
 
 	_setup_physics()
 	_setup_wheels()
@@ -142,9 +163,36 @@ func _ready() -> void:
 	_update_lights()
 
 
+func _apply_tuning(t: Dictionary) -> void:
+	var e := int(t.get("engine", 0))
+	var g := int(t.get("gearbox", 0))
+	var s := int(t.get("suspension", 0))
+	var tu := int(t.get("turbo", 0))
+	var n := int(t.get("nitro", 0))
+	max_torque *= 1.0 + 0.1 * e
+	redline += 250.0 * e
+	shift_time_auto = 0.24 * (1.0 - 0.2 * g)
+	shift_time_manual = 0.16 * (1.0 - 0.2 * g)
+	final_drive *= 1.0 + 0.035 * g
+	grip *= 1.0 + 0.035 * s
+	steer_lock += deg_to_rad(2.5 * s)
+	spring_k *= 1.0 + 0.12 * s
+	damper_c *= 1.0 + 0.1 * s
+	antiroll_k *= 1.0 + 0.25 * s
+	if tu > 0:
+		# turbo cars get more boost, naturally aspirated cars a turbo kit
+		if turbo_base > 0.0:
+			turbo_extra = 0.12 * tu
+		else:
+			turbo_extra = 0.18 + 0.1 * (tu - 1)
+	spool_rate = 0.9 * (1.0 + 0.35 * tu)
+	nitro_power = 0.12 + 0.13 * n
+	nitro_capacity = 2.5 + 1.25 * n
+
+
 func _setup_physics() -> void:
 	var length: float = body_spec["length"]
-	var hw: float = body_spec["track"] + 0.12
+	var hw: float = float(body_spec["track"]) + 0.12
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(hw * 2.0, 0.62, length * 0.96)
@@ -153,9 +201,9 @@ func _setup_physics() -> void:
 	add_child(cs)
 	var cs2 := CollisionShape3D.new()
 	var cab := BoxShape3D.new()
-	cab.size = Vector3(hw * 1.5, 0.38, length * 0.42)
+	cab.size = Vector3(hw * 1.5, 0.36, length * 0.42)
 	cs2.shape = cab
-	cs2.position = Vector3(0, float(body_spec["roof"]) - 0.22, 0.3)
+	cs2.position = Vector3(0, float(body_spec["roof"]) - 0.22, 0.2)
 	add_child(cs2)
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.3
@@ -238,11 +286,13 @@ func _read_input(delta: float) -> void:
 	var brk := 0.0
 	var steer_target := 0.0
 	var hb := false
+	var want_nitro := false
 	if input_enabled:
 		thr = Input.get_action_strength("accelerate")
 		brk = Input.get_action_strength("brake")
 		steer_target = Input.get_action_strength("steer_right") - Input.get_action_strength("steer_left")
 		hb = Input.is_action_pressed("handbrake")
+		want_nitro = Input.is_action_pressed("nitro")
 		if Input.is_action_just_pressed("toggle_transmission"):
 			transmission = "manual" if transmission == "auto" else "auto"
 			if transmission == "auto" and gear == 0:
@@ -259,9 +309,12 @@ func _read_input(delta: float) -> void:
 	steer_input = move_toward(steer_input, steer_target, rate * delta)
 	handbrake = hb
 	if controls_locked:
+		# countdown: rev the engine against the launch control, handbrake on
 		throttle = thr
 		brake_input = 0.0
 		handbrake = true
+		line_lock = false
+		nitro_active = false
 		return
 	if transmission == "auto":
 		if gear == -1:
@@ -287,6 +340,15 @@ func _read_input(delta: float) -> void:
 	else:
 		throttle = thr
 		brake_input = brk
+	# W + S at (near) standstill = launch control with line lock (burnout)
+	line_lock = gear >= 1 and thr > 0.5 and brk > 0.5 and absf(forward_speed) < 3.0
+	# nitro
+	nitro_active = want_nitro and nitro > 0.0 and throttle > 0.1 and gear >= 1 and not line_lock
+	if nitro_active:
+		nitro = maxf(nitro - delta / nitro_capacity, 0.0)
+	else:
+		var regen := 0.035 + (0.07 if absf(slip_angle) > 0.25 and speed > 8.0 else 0.0)
+		nitro = minf(nitro + regen * delta, 1.0)
 
 
 func _gear_ratio() -> float:
@@ -305,7 +367,7 @@ func _shift(dir: int) -> void:
 		return
 	var up := dir > 0 and gear >= 1
 	gear = ng
-	shift_timer = 0.3 if transmission == "auto" else 0.16
+	shift_timer = shift_time_auto if transmission == "auto" else shift_time_manual
 	if up and boost > 0.25:
 		blow_off.emit(boost)
 		boost *= 0.45
@@ -316,8 +378,8 @@ func _torque_at(r: float) -> float:
 	var t := clampf(r / redline, 0.0, 1.1)
 	var c := (0.52 + 1.25 * t - 0.95 * t * t) / 0.931
 	var tq := max_torque * clampf(c, 0.3, 1.0)
-	if turbo_gain > 0.0:
-		tq *= lerpf(1.0 - turbo_gain, 1.0, boost)
+	if turbo_base > 0.0 or turbo_extra > 0.0:
+		tq *= lerpf(1.0 - turbo_base, 1.0, boost) + turbo_extra * boost
 	return tq
 
 
@@ -334,7 +396,6 @@ func _simulate(delta: float) -> void:
 	slip_angle = atan2(local_vel.x, -local_vel.z) if speed > 3.0 else 0.0
 	var com_global := xf * center_of_mass
 
-	# --- track / surface lookup (one query per tick for the whole car) ---
 	if track:
 		var proj: Array = track.project(global_position, track_hint)
 		track_hint = proj[0]
@@ -348,9 +409,20 @@ func _simulate(delta: float) -> void:
 	target = clampf(target, -steer_lock, steer_lock)
 	steer_angle = move_toward(steer_angle, target, STEER_SPEED * delta)
 
+	# --- launch control state ---
+	if line_lock:
+		launch_active = true
+		launch_time = 0.0
+	elif launch_active:
+		launch_time += delta
+		if launch_time > 1.3 or forward_speed > 13.0 or throttle < 0.3 or gear < 1:
+			launch_active = false
+	elif gear >= 1 and throttle > 0.6 and absf(forward_speed) < 1.5 and not controls_locked:
+		launch_active = true
+		launch_time = 0.0
+
 	# --- gearbox / engine ---
 	shift_timer = maxf(shift_timer - delta, 0.0)
-	limiter_timer = maxf(limiter_timer - delta, 0.0)
 	var driven_speed := 0.0
 	var driven_count := 0.0
 	for w in wheels:
@@ -363,27 +435,43 @@ func _simulate(delta: float) -> void:
 	var ratio := _gear_ratio()
 	var wheel_rpm := driven_speed / radius * 60.0 / TAU
 	var coupled_rpm := absf(wheel_rpm * ratio)
+	var launch_rpm := redline * LAUNCH_RPM
+	_launch_osc += delta
+	var wobble := sin(_launch_osc * TAU * 6.5) * 0.045 + sin(_launch_osc * TAU * 2.3) * 0.02 + randf_range(-0.012, 0.012)
 	var engaged := ratio != 0.0 and shift_timer <= 0.0 and not controls_locked
-	if engaged:
+	if line_lock or (controls_locked and throttle > 0.4):
+		# two-step limiter holds the revs around the launch rpm
+		rpm = lerpf(rpm, launch_rpm * (1.0 + wobble) * clampf(throttle * 1.2, 0.3, 1.0), 1.0 - exp(-delta * 16.0))
+		if turbo_gain > 0.0:
+			boost = move_toward(boost, 0.85, 0.7 * delta)
+		_backfire_cooldown -= delta
+		if randf() < delta * 5.0 and _backfire_cooldown <= 0.0:
+			_backfire_cooldown = 0.12
+			backfire.emit()
+	elif ratio != 0.0 and shift_timer > 0.0:
+		# clutch open during a gear change: revs drop to the next gear's speed (no free revving)
+		rpm = lerpf(rpm, maxf(coupled_rpm, idle_rpm), 1.0 - exp(-delta * 14.0))
+	elif engaged:
 		var floor_rpm := idle_rpm
 		if absi(gear) == 1:
 			floor_rpm = idle_rpm + throttle * (redline * 0.5 - idle_rpm)
-		var target_rpm := maxf(coupled_rpm, floor_rpm)
-		rpm = lerpf(rpm, target_rpm, 1.0 - exp(-delta * 18.0))
+		if launch_active:
+			floor_rpm = maxf(floor_rpm, launch_rpm * (1.0 + wobble * 0.5))
+		rpm = lerpf(rpm, maxf(coupled_rpm, floor_rpm), 1.0 - exp(-delta * 18.0))
 	else:
-		var free_target := idle_rpm + throttle * (redline * 1.02 - idle_rpm)
+		var free_target := idle_rpm + throttle * (redline * 0.99 - idle_rpm)
 		rpm = move_toward(rpm, free_target, (7000.0 if free_target > rpm else 4000.0) * delta)
-	if rpm >= redline:
-		rpm = redline
-		limiter_timer = 0.07
-	rpm = maxf(rpm, idle_rpm * 0.9)
+	rpm = clampf(rpm, idle_rpm * 0.9, redline)
+	var at_limit := rpm > redline * 0.975
+	limiter_timer = 0.1 if at_limit and throttle > 0.3 else maxf(limiter_timer - delta, 0.0)
+	_limit_time = _limit_time + delta if at_limit else 0.0
 
 	# turbo spool
-	if turbo_gain > 0.0:
+	if turbo_gain > 0.0 and not line_lock:
 		var boost_target := 0.0
 		if throttle > 0.4:
 			boost_target = clampf((rpm - redline * 0.3) / (redline * 0.35), 0.0, 1.0) * throttle
-		boost = move_toward(boost, boost_target, (0.9 if boost_target > boost else 3.0) * delta)
+		boost = move_toward(boost, boost_target, (spool_rate if boost_target > boost else 3.0) * delta)
 		if _prev_throttle > 0.6 and throttle < 0.2 and boost > 0.35:
 			blow_off.emit(boost)
 			boost *= 0.3
@@ -397,18 +485,22 @@ func _simulate(delta: float) -> void:
 	var drive_total := 0.0
 	if engaged:
 		var tq := _torque_at(rpm) * throttle
-		if limiter_timer > 0.0:
-			tq = 0.0
+		# soft rev limiter: torque fades out over the last 3 % instead of a hard cut
+		tq *= clampf((redline - rpm) / (redline * 0.03), 0.0, 1.0)
+		if nitro_active:
+			tq *= 1.0 + nitro_power
+		if launch_active and not line_lock:
+			tq *= 1.35
 		if throttle < 0.05:
 			tq = -max_torque * 0.14 * (rpm / redline) * signf(ratio * driven_speed) * signf(ratio)
 		drive_total = tq * ratio * 0.85 / radius
 
-	# automatic gearbox
-	if transmission == "auto" and shift_timer <= 0.0 and gear >= 1 and not controls_locked:
+	# automatic gearbox – never runs in manual mode
+	if transmission == "auto" and shift_timer <= 0.0 and gear >= 1 and not controls_locked and not line_lock:
 		var ground_rpm := absf(forward_speed / radius * 60.0 / TAU * ratio)
-		# drift-aware: hold the gear while sliding sideways (rev limiter instead of an upshift)
 		var sliding := absf(slip_angle) > 0.35 and forward_speed > 5.0
-		if rpm > redline * 0.93 and gear < gears.size() and throttle > 0.2 and not sliding:
+		var hold_for_drift := sliding and _limit_time < 0.45
+		if rpm > redline * 0.94 and gear < gears.size() and throttle > 0.2 and not hold_for_drift and not launch_active:
 			_shift(1)
 		elif gear > 1 and ground_rpm < redline * 0.42:
 			_shift(-1)
@@ -423,6 +515,7 @@ func _simulate(delta: float) -> void:
 	var front_brake := 0.62
 	var brake_force_max := mass * 9.8 * 1.25
 	var mass_per_wheel := mass / 4.0
+	var spin_surface := rpm / 60.0 * TAU * radius / maxf(absf(ratio), 0.01) if ratio != 0.0 else 0.0
 	for i in 4:
 		var w: Dictionary = wheels[i]
 		var ray: RayCast3D = w["ray"]
@@ -456,7 +549,6 @@ func _simulate(delta: float) -> void:
 		apply_force(up * f_susp, mount_g - global_position)
 		var wheel_load := f_susp
 
-		# surface
 		var sg := 1.0
 		var sname := "asphalt"
 		if track and track_hint >= 0:
@@ -465,7 +557,6 @@ func _simulate(delta: float) -> void:
 			sname = s[1]
 		w["surface"] = sname
 
-		# wheel frame
 		var a := steer_angle if w["front"] else 0.0
 		var w_fwd := fwd * cos(a) + right * sin(a)
 		var w_right := right * cos(a) - fwd * sin(a)
@@ -484,14 +575,25 @@ func _simulate(delta: float) -> void:
 		var split := (1.0 - rear_split) if is_front else rear_split
 		var f_drive := drive_total * split * 0.5
 		var f_long := f_drive
-		if brake_input > 0.01:
+		var locked := false
+		var power_slide := false   # rear wheels spinning under power (handbrake + gas, burnout)
+		if line_lock:
+			if is_front:
+				# line lock: front brakes hold the car
+				f_long = clampf(-v_long * mass_per_wheel * 25.0, -max_f, max_f)
+			else:
+				power_slide = true
+		elif brake_input > 0.01:
 			var bias := front_brake if is_front else 1.0 - front_brake
 			f_long -= clampf(v_long / 0.6, -1.0, 1.0) * brake_force_max * bias * 0.5 * brake_input
-		var locked := false
-		if handbrake and not is_front:
-			f_long = -clampf(v_long / 0.4, -1.0, 1.0) * max_f * 0.95
-			locked = absf(v_long) > 0.5
-		f_long -= v_long * 12.0  # rolling resistance
+		if handbrake and not is_front and not line_lock:
+			if throttle > 0.25 and engaged and f_drive != 0.0:
+				# handbrake + throttle: the rear keeps spinning instead of locking
+				power_slide = true
+			else:
+				f_long = -clampf(v_long / 0.4, -1.0, 1.0) * max_f * 0.95
+				locked = absf(v_long) > 0.5
+		f_long -= v_long * ROLLING
 		# parking hold when nearly stopped and no input
 		if throttle < 0.02 and brake_input < 0.02 and absf(v_long) < 1.2 and speed < 1.5:
 			f_long -= v_long * mass_per_wheel * 8.0
@@ -505,36 +607,41 @@ func _simulate(delta: float) -> void:
 		else:
 			curve = signf(ratio_a) * lerpf(1.0, SLIDE_GRIP, clampf((absf(ratio_a) - 1.0) / 2.5, 0.0, 1.0))
 		var f_lat := -curve * max_f
-		# low speed: kill lateral creep directly
-		if speed < 2.0:
+		if speed < 2.0 and not power_slide:
 			f_lat = clampf(-v_lat * mass_per_wheel * 6.0, -max_f, max_f)
 
-		# friction circle – wheelspin / locked wheels eat lateral grip
 		var spin_excess := 0.0
-		var combined := sqrt(f_long * f_long + f_lat * f_lat)
-		if combined > max_f and max_f > 0.0:
-			if absf(f_long) > max_f * 0.98 or locked:
-				spin_excess = (absf(f_drive) - max_f) / max_f if absf(f_drive) > max_f else 0.0
-				f_long = clampf(f_long, -max_f, max_f) * 0.92
-				var remaining := sqrt(maxf(max_f * max_f - f_long * f_long, 0.0))
-				var lat_cap := maxf(remaining, max_f * (0.22 if locked else 0.3))
-				f_lat = clampf(f_lat, -lat_cap, lat_cap)
-			else:
-				var s2 := max_f / combined
-				f_long *= s2
-				f_lat *= s2
-		# wheelspin state (drives rpm and smoke)
-		if spin_excess > 0.0 and absf(f_drive) > 0.0:
-			w["spin"] = move_toward(float(w["spin"]), signf(f_drive) * minf(spin_excess * 10.0, 25.0), 60.0 * delta)
+		if power_slide:
+			# spinning tyre: kinetic friction forward, little side grip left
+			f_long = signf(f_drive) * max_f * 0.55 - v_long * ROLLING
+			if line_lock:
+				f_long = signf(f_drive) * max_f * 0.45
+			f_lat = clampf(f_lat, -max_f * 0.35, max_f * 0.35)
+			var spin_target := maxf(spin_surface - v_long, 6.0 * throttle)
+			w["spin"] = move_toward(float(w["spin"]), spin_target, 50.0 * delta)
 		else:
-			w["spin"] = move_toward(float(w["spin"]), 0.0, 35.0 * delta)
-		if locked:
-			w["spin"] = -v_long
+			var combined := sqrt(f_long * f_long + f_lat * f_lat)
+			if combined > max_f and max_f > 0.0:
+				if absf(f_long) > max_f * 0.98 or locked:
+					spin_excess = (absf(f_drive) - max_f) / max_f if absf(f_drive) > max_f else 0.0
+					f_long = clampf(f_long, -max_f, max_f) * 0.92
+					var remaining := sqrt(maxf(max_f * max_f - f_long * f_long, 0.0))
+					var lat_cap := maxf(remaining, max_f * (0.22 if locked else 0.3))
+					f_lat = clampf(f_lat, -lat_cap, lat_cap)
+				else:
+					var s2 := max_f / combined
+					f_long *= s2
+					f_lat *= s2
+			if spin_excess > 0.0 and absf(f_drive) > 0.0:
+				w["spin"] = move_toward(float(w["spin"]), signf(f_drive) * minf(spin_excess * 10.0, 25.0), 60.0 * delta)
+			else:
+				w["spin"] = move_toward(float(w["spin"]), 0.0, 35.0 * delta)
+			if locked:
+				w["spin"] = -v_long
 
 		var force_point := hit + up * 0.25 - global_position
 		apply_force(w_fwd * f_long + w_right * f_lat, force_point)
 
-		# slip value for smoke / sound / skidmarks (m/s of sliding)
 		var lat_slide := maxf(absf(v_lat) - 1.2, 0.0)
 		var long_slide := absf(float(w["spin"]))
 		if locked:
@@ -558,7 +665,7 @@ func _simulate(delta: float) -> void:
 			apply_force(-up * f, (wr["ray"] as RayCast3D).global_position - global_position)
 
 	# aero: drag + downforce
-	apply_central_force(-vel * speed * 0.42)
+	apply_central_force(-vel * speed * DRAG)
 	if grounded_wheels > 0:
 		apply_central_force(-up * speed * speed * 1.4)
 	surface_name = str(wheels[2]["surface"])
@@ -665,11 +772,14 @@ func get_net_state(progress: float, lap: int, drift_total: float) -> Array:
 		flags |= 2
 	if gear == -1:
 		flags |= 4
+	if nitro_active:
+		flags |= 8
+	if line_lock:
+		flags |= 16
 	var rear_slip := 0.0
-	if wheels.size() == 4:
-		rear_slip = (float(wheels[2]["slip"]) + float(wheels[3]["slip"])) * 0.5
 	var front_slip := 0.0
 	if wheels.size() == 4:
+		rear_slip = (float(wheels[2]["slip"]) + float(wheels[3]["slip"])) * 0.5
 		front_slip = (float(wheels[0]["slip"]) + float(wheels[1]["slip"])) * 0.5
 	return [global_position, global_transform.basis.get_rotation_quaternion(), linear_velocity, steer_angle,
 		rpm, flags, progress, lap, drift_total, rear_slip, front_slip, throttle, boost]
@@ -694,6 +804,8 @@ func apply_net_state(s: Array) -> void:
 	braking_visual = (remote_flags & 1) != 0
 	headlights = (remote_flags & 2) != 0
 	gear = -1 if (remote_flags & 4) != 0 else 1
+	nitro_active = (remote_flags & 8) != 0
+	line_lock = (remote_flags & 16) != 0
 	if wheels.size() == 4:
 		wheels[0]["slip"] = front_slip
 		wheels[1]["slip"] = front_slip
@@ -723,7 +835,6 @@ func _remote_step(delta: float) -> void:
 	forward_speed = _net_vel.dot(fwd)
 	var local_vel := global_transform.basis.inverse() * _net_vel
 	slip_angle = atan2(local_vel.x, -local_vel.z) if speed > 3.0 else 0.0
-	# contact points for smoke / skidmarks
 	for w in wheels:
 		var mount: Vector3 = w["mount"]
 		w["contact"] = global_transform * Vector3(mount.x, 0.0, mount.z)

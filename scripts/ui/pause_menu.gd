@@ -36,7 +36,6 @@ func _ready() -> void:
 	_main_box.add_child(UiKit.button("Weiter", toggle))
 	if not world.online:
 		_main_box.add_child(UiKit.button("Neustart", func(): _close_then(Callable(world, "request_restart"))))
-	_main_box.add_child(UiKit.button("Steuerung", func(): _show(_controls_box)))
 	_main_box.add_child(UiKit.button("Optionen", func(): _show(_options_box)))
 	if world.mode == "free":
 		_main_box.add_child(UiKit.button("Session beenden (Punkte speichern)", func(): _close_then(Callable(world, "end_free_session"))))
@@ -47,16 +46,6 @@ func _ready() -> void:
 	stack.add_child(_main_box)
 
 	_controls_box = VBoxContainer.new()
-	_controls_box.add_child(UiKit.title("STEUERUNG", 36))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 24)
-	for pair in Game.CONTROLS_HELP:
-		grid.add_child(UiKit.label(pair[0], 18, UiKit.GOLD))
-		grid.add_child(UiKit.label(pair[1], 18))
-	_controls_box.add_child(grid)
-	_controls_box.add_child(UiKit.spacer())
-	_controls_box.add_child(UiKit.button("Zurück", func(): _show(_main_box)))
 	_controls_box.visible = false
 	stack.add_child(_controls_box)
 

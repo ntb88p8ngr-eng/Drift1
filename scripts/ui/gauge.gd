@@ -54,6 +54,15 @@ func _draw() -> void:
 	draw_string(font, c + Vector2(-r, -r * 0.08), gtxt, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 50, UiKit.GOLD if float(car.shift_timer) > 0.0 else Color.WHITE)
 	var trans := "AUTO" if car.transmission == "auto" else "MANUELL"
 	draw_string(font, c + Vector2(-r, r * 0.13), trans, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 14, UiKit.ACCENT.lightened(0.3))
+	# nitro bar
+	var nw := r * 1.1
+	var np := c + Vector2(-nw * 0.5, r * 0.93)
+	draw_rect(Rect2(np, Vector2(nw, 7)), Color(1, 1, 1, 0.15))
+	var ncol := Color(0.3, 0.55, 1.0) if not bool(car.nitro_active) else Color(0.6, 0.9, 1.0)
+	draw_rect(Rect2(np, Vector2(nw * clampf(float(car.nitro), 0.0, 1.0), 7)), ncol)
+	draw_string(font, np + Vector2(0, 19), "NITRO", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+	if bool(car.line_lock) or (bool(car.controls_locked) and float(car.throttle) > 0.4):
+		draw_string(font, c + Vector2(-r, -r * 0.42), "LAUNCH", HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 16, UiKit.GOLD)
 	# boost bar
 	if float(car.turbo_gain) > 0.0:
 		var bw := r * 1.1

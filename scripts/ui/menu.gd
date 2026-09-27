@@ -25,6 +25,7 @@ var _lan_list: VBoxContainer
 var _color_picker: ColorPickerButton
 var _car_desc: Label
 var _car_stats: VBoxContainer
+var _tuning_box: VBoxContainer
 var _lb_track := 0
 var _lb_cat := 0
 var _lb_list: VBoxContainer
@@ -118,6 +119,8 @@ func show_screen(screen: String) -> void:
 			_build_leaderboard()
 		"options":
 			_build_options()
+		"controls":
+			_build_controls()
 		_:
 			current = "main"
 			_build_main()
@@ -147,13 +150,15 @@ func _build_main() -> void:
 		_return_to = "main"
 		show_screen("garage"), 360))
 	_add(UiKit.button("Leaderboard", func(): show_screen("leaderboard"), 360))
-	_add(UiKit.button("Optionen & Steuerung", func(): show_screen("options"), 360))
+	_add(UiKit.button("Steuerung", func(): show_screen("controls"), 360))
+	_add(UiKit.button("Optionen", func(): show_screen("options"), 360))
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
 	_add(UiKit.spacer(18))
 	var car: Dictionary = Game.get_car(Game.settings["car"])
 	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"])
 	_add(UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT))
 	_add(UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM))
+	_add(UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD))
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +276,11 @@ func _build_garage() -> void:
 	_add(_car_desc)
 	_car_stats = VBoxContainer.new()
 	_add(_car_stats)
+	_add(UiKit.spacer(6))
+	_add(UiKit.label("Tuning", 24, UiKit.ACCENT.lightened(0.3)))
+	_tuning_box = VBoxContainer.new()
+	_tuning_box.add_theme_constant_override("separation", 6)
+	_add(_tuning_box)
 	_update_car_info()
 	_add(UiKit.spacer(8))
 	_add(UiKit.button("Fertig", func():
@@ -279,16 +289,18 @@ func _build_garage() -> void:
 
 
 func _update_car_info() -> void:
-	var car: Dictionary = Game.get_car(Game.settings["car"])
+	var car_id: String = Game.settings["car"]
+	var car: Dictionary = Game.get_car(car_id)
 	_car_desc.text = str(car["desc"])
 	for c in _car_stats.get_children():
 		c.queue_free()
+	_update_tuning(car_id)
 	var kw := float(car["torque"]) * float(car["redline"]) * 0.62 / 9549.0
 	var stats := [
 		["Leistung", clampf(kw / 330.0, 0.1, 1.0), "%d PS" % int(kw * 1.36)],
 		["Gewicht", clampf(1.0 - (float(car["mass"]) - 900.0) / 800.0, 0.1, 1.0), "%d kg" % int(car["mass"])],
 		["Grip", clampf((float(car["grip"]) - 0.9) / 0.25, 0.1, 1.0), ""],
-		["Turbo", clampf(float(car["turbo"]) / 0.6, 0.0, 1.0), "Sauger" if float(car["turbo"]) <= 0.0 else "Turbo"],
+		["Turbo", clampf(float(car["turbo"]) / 0.6, 0.0, 1.0), "Sauger" if float(car["turbo"]) <= 0.0 else "Twin-Turbo"],
 		["Antrieb", float(car["rear_split"]), "%d %% hinten" % int(float(car["rear_split"]) * 100.0)],
 	]
 	for s in stats:
@@ -488,7 +500,7 @@ func _refresh_lobby() -> void:
 		var tag := "HOST" if id == 1 else ("BEREIT" if p.get("ready", false) else "nicht bereit")
 		var col := UiKit.GOLD if id == 1 else (UiKit.GOOD if p.get("ready", false) else UiKit.TEXT_DIM)
 		var car_name: String = Game.get_car(str(p.get("car", "r34")))["name"]
-		var paint_name: String = Game.get_paint(str(p.get("paint", "mp2")), str(p.get("custom_color", "")))["name"]
+		var paint_name: String = Game.get_paint(str(p.get("paint", "red")), str(p.get("custom_color", "")))["name"]
 		var me := " (du)" if id == Net.local_id() else ""
 		var line := UiKit.row([
 			UiKit.label(str(p.get("name", "?")) + me, 19, Color.WHITE),
@@ -614,6 +626,60 @@ func _fill_leaderboard(cats: Array) -> void:
 	_lb_list.add_child(grid)
 
 
+func _update_tuning(car_id: String) -> void:
+	if _tuning_box == null or not is_instance_valid(_tuning_box):
+		return
+	for c in _tuning_box.get_children():
+		c.queue_free()
+	_tuning_box.add_child(UiKit.label("Credits: %s   ·   verdienen durch Driftpunkte und Rennen" % Game.format_points(int(Game.settings["credits"])), 17, UiKit.GOLD))
+	var t := Game.get_tuning(car_id)
+	for cat in Game.TUNING:
+		var cid: String = cat["id"]
+		var lvl: int = t[cid]
+		var stars := ""
+		for k in 3:
+			stars += "■" if k < lvl else "□"
+		var name_l := UiKit.label(str(cat["name"]), 19)
+		name_l.custom_minimum_size = Vector2(110, 0)
+		var lvl_l := UiKit.label("%s  %s" % [stars, Game.TUNING_LEVELS[lvl]], 18, UiKit.ACCENT.lightened(0.4))
+		lvl_l.custom_minimum_size = Vector2(150, 0)
+		var cost := Game.tuning_cost(car_id, cid)
+		var buy_text := "Max" if cost < 0 else "Upgrade (%s)" % Game.format_points(cost)
+		var buy := UiKit.button(buy_text, func():
+			var err := Game.buy_tuning(car_id, cid)
+			if err != "":
+				show_status(err, UiKit.BAD)
+			else:
+				show_status("%s verbessert!" % cat["name"], UiKit.GOOD)
+				Net.update_local_info()
+			_update_tuning(car_id), 200)
+		buy.disabled = cost < 0
+		var sell := UiKit.button("−", func():
+			Game.downgrade_tuning(car_id, cid)
+			_update_tuning(car_id), 44)
+		sell.disabled = lvl == 0
+		sell.tooltip_text = "Stufe zurückbauen (halber Preis zurück)"
+		_tuning_box.add_child(UiKit.row([name_l, lvl_l, buy, sell], 10))
+		var d := UiKit.label(str(cat["desc"]), 14, UiKit.TEXT_DIM)
+		_tuning_box.add_child(d)
+
+
+func _build_controls() -> void:
+	_header("STEUERUNG")
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 24)
+	grid.add_theme_constant_override("v_separation", 6)
+	for pair in Game.CONTROLS_HELP:
+		grid.add_child(UiKit.label(pair[0], 18, UiKit.GOLD))
+		grid.add_child(UiKit.label(pair[1], 18))
+	_add(grid)
+	_add(UiKit.spacer(8))
+	_add(UiKit.label("Tipps: Handbremse kurz ziehen und Gas halten leitet Drifts ein. W + S im Stand aktiviert die\nLaunch Control – S loslassen für einen Start mit durchdrehenden Reifen.", 15, UiKit.TEXT_DIM))
+	_add(UiKit.spacer(8))
+	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+
+
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
@@ -633,14 +699,5 @@ func _build_options() -> void:
 	_add(UiKit.labeled("Maus-Empfindlichkeit", UiKit.slider(0.05, 1.0, 0.05, float(Game.settings["mouse_sensitivity"]), func(v): Game.set_setting("mouse_sensitivity", v))))
 	_add(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]), func(v): Game.set_setting("steer_assist", v))))
 	_add(UiKit.labeled("Einheit", UiKit.option(["km/h", "mph"], 0 if Game.settings["units_kmh"] else 1, func(i): Game.set_setting("units_kmh", i == 0))))
-	_add(UiKit.spacer(8))
-	_add(UiKit.label("Steuerung", 22, UiKit.ACCENT.lightened(0.3)))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 24)
-	for pair in Game.CONTROLS_HELP:
-		grid.add_child(UiKit.label(pair[0], 17, UiKit.GOLD))
-		grid.add_child(UiKit.label(pair[1], 17))
-	_add(grid)
 	_add(UiKit.spacer(8))
 	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
