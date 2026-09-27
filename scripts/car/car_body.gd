@@ -70,19 +70,19 @@ const MODELS := {
 		"path": "res://assets/cars/r34.glb", "wheel_r": 0.343, "wheel_w": 0.3, "track": 0.734,
 		"axle_f": -1.33, "axle_r": 1.33, "length": 4.6, "half_width": 0.89, "base": 0.16, "roof": 1.3,
 		"head": [[-0.65, 0.666, -2.0], [0.65, 0.666, -2.0]], "tail": [[-0.53, 0.85, 2.17], [0.53, 0.85, 2.17]],
-		"exhaust": [[-0.41, 0.33, 2.3]],
+		"exhaust": [[-0.409, 0.317, 2.29]], "exhaust_r": 0.045,
 	},
 	"mustang": {
 		"path": "res://assets/cars/mustang.glb", "wheel_r": 0.34, "wheel_w": 0.27, "track": 0.834,
 		"axle_f": -1.357, "axle_r": 1.357, "length": 4.78, "half_width": 0.95, "base": 0.14, "roof": 1.36,
 		"head": [[-0.75, 0.55, -1.8], [0.75, 0.55, -1.8]], "tail": [[-0.58, 0.66, 2.27], [0.58, 0.66, 2.27]],
-		"exhaust": [[-0.52, 0.3, 2.38], [0.52, 0.3, 2.38]],
+		"exhaust": [[-0.66, 0.29, 2.27], [0.66, 0.29, 2.27]], "exhaust_r": 0.065,
 	},
 	"m3gt3": {
 		"path": "res://assets/cars/m3gt3.glb", "wheel_r": 0.322, "wheel_w": 0.28, "track": 0.793,
 		"axle_f": -1.3265, "axle_r": 1.3265, "length": 4.62, "half_width": 0.93, "base": 0.1, "roof": 1.23,
 		"head": [[-0.54, 0.49, -1.85], [0.54, 0.49, -1.85]], "tail": [[-0.47, 0.68, 2.17], [0.47, 0.68, 2.17]],
-		"exhaust": [[-0.42, 0.24, 2.28], [0.42, 0.24, 2.28]],
+		"exhaust": [[-0.526, 0.179, 2.24], [-0.452, 0.179, 2.255], [0.452, 0.179, 2.255], [0.526, 0.179, 2.24]], "exhaust_r": 0.026,
 	},
 }
 
@@ -103,7 +103,8 @@ var trim_mat: StandardMaterial3D
 var head_spots: Array = []
 var brake_light: OmniLight3D
 var wheel_nodes: Array = []   # [pivot, spin] for FL, FR, RL, RR
-var exhaust_points: Array = []
+var exhaust_points: Array = []    # exhaust tip centres in car space (flames start here, pointing +Z)
+var exhaust_radius := 0.05
 var shadows_for_lights := true
 var _front := -2.3
 var _rear := 2.3
@@ -1052,19 +1053,22 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 			var side := -1.0 if i % 2 == 0 else 1.0
 			pivot.position = Vector3(side * float(m["track"]), float(m["wheel_r"]), float(m["axle_f"] if i < 2 else m["axle_r"]))
 		wheel_nodes.append([pivot, spin])
+	# measured tip centres of the model's pipes (see tools/find_exhausts.py)
 	for e in m["exhaust"]:
-		exhaust_points.append(Vector3(e[0], e[1], e[2]) + Vector3(0, 0, 0.06))
+		exhaust_points.append(Vector3(e[0], e[1], e[2]) + Vector3(0, 0, 0.01))
+	exhaust_radius = float(m.get("exhaust_r", 0.05))
 	# headlight spots
 	for k in m["head"].size():
 		var h: Array = m["head"][k]
 		var spot := SpotLight3D.new()
-		spot.position = Vector3(h[0], h[1], float(h[2]) - 0.1)
-		spot.rotation = Vector3(-0.06, 0, 0)
+		# in front of the bumper, otherwise the car body shadows its own headlights
+		spot.position = Vector3(h[0], h[1], _front - 0.08)
+		spot.rotation = Vector3(-0.07, 0, 0)
 		spot.light_color = Color(0.95, 0.96, 1.0)
-		spot.light_energy = 7.0
-		spot.spot_range = 70.0
-		spot.spot_angle = 26.0
-		spot.spot_attenuation = 0.6
+		spot.light_energy = 16.0
+		spot.spot_range = 90.0
+		spot.spot_angle = 32.0
+		spot.spot_attenuation = 0.35
 		spot.shadow_enabled = shadows_for_lights and k == 1
 		spot.visible = false
 		add_child(spot)

@@ -17,13 +17,16 @@ func _draw() -> void:
 	var c := size * 0.5
 	var r := minf(size.x, size.y) * 0.46
 	var redline: float = car.redline
-	var max_rpm := ceilf(redline / 1000.0) * 1000.0 + 1000.0
+	# scale like the real car's rev counter (R34: 9, Mustang: 8, M3 GT3: 10), extended when tuned past it
+	var max_rpm := float(Game.get_car(str(car.car_id)).get("tach", ceilf(redline / 1000.0) * 1000.0 + 1000.0))
+	if redline > max_rpm - 250.0:
+		max_rpm = ceilf((redline + 250.0) / 1000.0) * 1000.0
 	var start := deg_to_rad(135.0)
 	var sweep := deg_to_rad(270.0)
 	draw_circle(c, r + 10.0, Color(0.02, 0.015, 0.04, 0.72))
 	draw_arc(c, r + 10.0, 0.0, TAU, 64, Color(0.45, 0.22, 0.8, 0.8), 2.0, true)
 	draw_arc(c, r - 4.0, start, start + sweep, 72, Color(1, 1, 1, 0.12), 8.0, true)
-	var red_a := start + sweep * (redline * 0.94 / max_rpm)
+	var red_a := start + sweep * (redline / max_rpm)
 	draw_arc(c, r - 4.0, red_a, start + sweep, 24, Color(1.0, 0.15, 0.1, 0.85), 8.0, true)
 	var rpm: float = car.rpm
 	var a := start + sweep * clampf(rpm / max_rpm, 0.0, 1.0)
@@ -35,8 +38,14 @@ func _draw() -> void:
 		var dir := Vector2(cos(ta), sin(ta))
 		draw_line(c + dir * (r - 30.0), c + dir * (r - 8.0), Color(1, 1, 1, 0.8), 2.0, true)
 		var tp := c + dir * (r - 46.0) + Vector2(-6, 7)
-		draw_string(font, tp, str(k), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.8))
+		draw_string(font, tp, str(k), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 0.35, 0.3) if k * 1000.0 >= redline else Color(1, 1, 1, 0.8))
+		# half-thousand marks
+		if (k + 0.5) * 1000.0 <= max_rpm:
+			var ha := start + sweep * ((k + 0.5) * 1000.0 / max_rpm)
+			var hd := Vector2(cos(ha), sin(ha))
+			draw_line(c + hd * (r - 20.0), c + hd * (r - 8.0), Color(1, 1, 1, 0.45), 1.5, true)
 		k += 1
+	draw_string(font, c + Vector2(-r, -r * 0.64), "x1000 U/min", HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 11, Color(1, 1, 1, 0.45))
 	var nd := Vector2(cos(a), sin(a))
 	draw_line(c - nd * 12.0, c + nd * (r - 12.0), Color(1.0, 0.3, 0.2), 4.0, true)
 	draw_circle(c, 9.0, Color(0.15, 0.1, 0.2))

@@ -96,6 +96,8 @@ var total_slip := 0.0
 var flip_timer := 0.0
 var nitro := 1.0            # 0..1 tank
 var nitro_active := false
+var _xf_prev := Transform3D.IDENTITY
+var _auto_hold := 0.0      # automatic gearbox: pause after a shift
 var launch_active := false  # launch control / clutch dump phase
 var line_lock := false      # W+S at standstill: front brakes hold, rear wheels spin (burnout)
 var launch_time := 0.0
@@ -116,6 +118,8 @@ var remote_flags := 0
 var remote_progress := 0.0
 var remote_lap := 0
 var remote_drift := 0.0
+var remote_best_chain := 0.0   # best single drift of this remote player
+var remote_chain := 0.0        # the drift they are doing right now
 
 
 func _ready() -> void:
@@ -126,7 +130,7 @@ func _ready() -> void:
 	max_torque = spec["torque"]
 	redline = spec["redline"]
 	idle_rpm = spec["idle"]
-	gears = spec["gears"]
+	gears = (spec["gears"] as Array).duplicate()
 	reverse_ratio = spec["reverse"]
 	final_drive = spec["final"]
 	rear_split = spec["rear_split"]
@@ -146,6 +150,9 @@ func _ready() -> void:
 	body.name = "Body"
 	add_child(body)
 	body.build(car_id, paint, not is_remote and not is_display)
+	if not is_display:
+		body.top_level = true
+		_xf_prev = global_transform
 
 	_setup_physics()
 	_setup_wheels()
@@ -169,13 +176,17 @@ func _apply_tuning(t: Dictionary) -> void:
 	var s := int(t.get("suspension", 0))
 	var tu := int(t.get("turbo", 0))
 	var n := int(t.get("nitro", 0))
+	var st := clampi(int(t.get("steering", 0)), 0, Game.STEER_KIT.size() - 1)
 	max_torque *= 1.0 + 0.1 * e
-	redline += 250.0 * e
-	shift_time_auto = 0.24 * (1.0 - 0.2 * g)
-	shift_time_manual = 0.16 * (1.0 - 0.2 * g)
-	final_drive *= 1.0 + 0.035 * g
+	# gearbox stages change the ratios (longer 2nd/3rd gear), the final drive and the shift speed
+	var gb: Dictionary = Game.tuned_gearing(car_id)
+	gears = gb["gears"]
+	final_drive = gb["final"]
+	redline = gb["redline"]
+	shift_time_auto = 0.24 * float(gb["shift"])
+	shift_time_manual = 0.16 * float(gb["shift"])
 	grip *= 1.0 + 0.035 * s
-	steer_lock += deg_to_rad(2.5 * s)
+	steer_lock += deg_to_rad(float(Game.STEER_KIT[st]))
 	spring_k *= 1.0 + 0.12 * s
 	damper_c *= 1.0 + 0.1 * s
 	antiroll_k *= 1.0 + 0.25 * s
@@ -265,6 +276,8 @@ func _setup_wheels() -> void:
 func _physics_process(delta: float) -> void:
 	if is_display:
 		return
+	# state before this physics step, used to interpolate the visuals between steps
+	_xf_prev = global_transform
 	if is_remote:
 		_remote_step(delta)
 		return
@@ -277,6 +290,8 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if is_display:
 		return
+	# the body mesh is drawn at an interpolated transform so it moves smoothly at any frame rate
+	body.global_transform = visual_transform()
 	_update_wheel_visuals(delta)
 	_update_lights()
 
@@ -423,6 +438,7 @@ func _simulate(delta: float) -> void:
 
 	# --- gearbox / engine ---
 	shift_timer = maxf(shift_timer - delta, 0.0)
+	_auto_hold = maxf(_auto_hold - delta, 0.0)
 	var driven_speed := 0.0
 	var driven_count := 0.0
 	for w in wheels:
@@ -500,11 +516,20 @@ func _simulate(delta: float) -> void:
 		var ground_rpm := absf(forward_speed / radius * 60.0 / TAU * ratio)
 		var sliding := absf(slip_angle) > 0.35 and forward_speed > 5.0
 		var hold_for_drift := sliding and _limit_time < 0.45
-		if rpm > redline * 0.94 and gear < gears.size() and throttle > 0.2 and not hold_for_drift and not launch_active:
+		# wheelspin makes the engine rpm run away from the road speed: only shift down when the engine
+		# itself is slow too, otherwise the box would hunt between 1st and 2nd
+		var spinning := rpm > ground_rpm * 1.25 + 300.0
+		# upshift when the road speed has reached the gear's limit – or after a while on the limiter
+		# with spinning wheels – but never right after the last automatic shift (no hunting)
+		var gear_done := ground_rpm > redline * 0.8 or _limit_time > 0.6
+		var may_down := _auto_hold <= 0.0 or throttle < 0.3
+		if rpm > redline * 0.94 and gear < gears.size() and throttle > 0.2 and gear_done and not hold_for_drift and not launch_active:
 			_shift(1)
-		elif gear > 1 and ground_rpm < redline * 0.42:
+			_auto_hold = 1.2
+		elif gear > 1 and may_down and ground_rpm < redline * 0.42 and rpm < redline * 0.55:
 			_shift(-1)
-		elif gear > 1 and throttle > 0.95 and ground_rpm < redline * 0.5:
+			_auto_hold = 0.8
+		elif gear > 1 and may_down and throttle > 0.95 and ground_rpm < redline * 0.5 and not spinning:
 			var lower := absf(forward_speed / radius * 60.0 / TAU * float(gears[gear - 2]) * final_drive)
 			if lower < redline * 0.8:
 				_shift(-1)
@@ -692,6 +717,13 @@ func _check_flip(delta: float) -> void:
 		reset_to_track()
 
 
+## Car transform interpolated between the last two physics steps (smooth at any frame rate).
+func visual_transform() -> Transform3D:
+	if is_display:
+		return global_transform
+	return _xf_prev.interpolate_with(global_transform, clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0))
+
+
 func reset_to_track() -> void:
 	flip_timer = 0.0
 	if track == null:
@@ -702,6 +734,7 @@ func reset_to_track() -> void:
 		global_transform = track.transform_at(int(proj[0]), lateral, 0.6)
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	_xf_prev = global_transform
 	gear = 1
 	boost = 0.0
 	for w in wheels:
@@ -710,6 +743,7 @@ func reset_to_track() -> void:
 
 func place(xf: Transform3D) -> void:
 	global_transform = xf
+	_xf_prev = xf
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	_net_pos = xf.origin
@@ -764,7 +798,7 @@ func is_sliding() -> bool:
 # ---------------------------------------------------------------------------
 # Networking
 # ---------------------------------------------------------------------------
-func get_net_state(progress: float, lap: int, drift_total: float) -> Array:
+func get_net_state(progress: float, lap: int, drift_total: float, best_chain := 0.0, chain := 0.0) -> Array:
 	var flags := 0
 	if braking_visual:
 		flags |= 1
@@ -782,7 +816,7 @@ func get_net_state(progress: float, lap: int, drift_total: float) -> Array:
 		rear_slip = (float(wheels[2]["slip"]) + float(wheels[3]["slip"])) * 0.5
 		front_slip = (float(wheels[0]["slip"]) + float(wheels[1]["slip"])) * 0.5
 	return [global_position, global_transform.basis.get_rotation_quaternion(), linear_velocity, steer_angle,
-		rpm, flags, progress, lap, drift_total, rear_slip, front_slip, throttle, boost]
+		rpm, flags, progress, lap, drift_total, rear_slip, front_slip, throttle, boost, best_chain, chain]
 
 
 func apply_net_state(s: Array) -> void:
@@ -801,6 +835,9 @@ func apply_net_state(s: Array) -> void:
 	var front_slip: float = s[10]
 	throttle = s[11]
 	boost = s[12]
+	if s.size() >= 15:
+		remote_best_chain = s[13]
+		remote_chain = s[14]
 	braking_visual = (remote_flags & 1) != 0
 	headlights = (remote_flags & 2) != 0
 	gear = -1 if (remote_flags & 4) != 0 else 1

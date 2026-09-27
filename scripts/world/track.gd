@@ -49,7 +49,15 @@ var start_index := 0
 var start_dist := 0.0
 var bounds := Rect2()
 
+var wetness := 0.0          # 0 dry … 1 soaked (set by the weather)
+var puddle_level := 0.0     # how far the puddles have filled up
+var puddles: Array = []     # {"c": centre, "t": tangent, "r": right, "la": half length, "lc": half width}
+var road_material: ShaderMaterial
+var gantry_xf := Transform3D.IDENTITY   # start gantry frame (grandstand on its +X side)
+var stand_x := 0.0
+
 var _grid := {}
+var _puddle_index := {}     # sample index -> Array of puddle ids
 var _start_lights: Array = []
 var _lamp_lights: Array = []
 
@@ -65,6 +73,7 @@ func build(id: String) -> void:
 	_build_grid()
 	_build_ground()
 	_build_road()
+	_build_puddles()
 	_build_curbs()
 	_build_walls()
 	_build_start()
@@ -198,27 +207,15 @@ func _build_grid() -> void:
 # ---------------------------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------------------------
+## The visible ground and its collision come from terrain.gd; this only adds a safety floor.
 func _build_ground() -> void:
-	var mat: Material
-	if def["ground"] == "concrete":
-		mat = TexKit.ground_material(Color(0.36, 0.35, 0.33), Color(0.42, 0.41, 0.38), Color(0.30, 0.28, 0.25), 0.85, 6.0)
-	else:
-		mat = TexKit.ground_material(Color(0.12, 0.21, 0.06), Color(0.19, 0.29, 0.08), Color(0.27, 0.24, 0.13), 0.95, 0.0)
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(3000, 3000)
-	plane.subdivide_width = 8
-	plane.subdivide_depth = 8
-	var mi := MeshKit.mesh_instance(plane, mat, false)
-	mi.position = Vector3(bounds.get_center().x, 0.0, bounds.get_center().y)
-	mi.name = "Ground"
-	add_child(mi)
 	var body := StaticBody3D.new()
-	body.name = "GroundBody"
+	body.name = "SafetyFloor"
 	body.collision_layer = 1
 	body.collision_mask = 0
 	var shape := CollisionShape3D.new()
 	var wb := WorldBoundaryShape3D.new()
-	wb.plane = Plane(Vector3.UP, 0.0)
+	wb.plane = Plane(Vector3.UP, -45.0)
 	shape.shape = wb
 	body.add_child(shape)
 	add_child(body)
@@ -237,10 +234,90 @@ func _build_road() -> void:
 		var d := samples[i2] - rights[i2] * half_w + Vector3(0, ROAD_Y, 0)
 		MeshKit.quad(st, a, b, c, d, Vector3.UP, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
+	road_material = mat
 	var mesh := MeshKit.commit(st, mat, null, true)
 	var mi := MeshKit.mesh_instance(mesh, null, false)
 	mi.name = "Road"
 	add_child(mi)
+
+
+## Puddles in dips of the road surface (fixed per track so every player has the same ones).
+func _build_puddles() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(track_id) + 991
+	var n := samples.size()
+	var count := int(length / 32.0)
+	var noise := FastNoiseLite.new()
+	noise.seed = rng.seed
+	noise.frequency = 0.35
+	var px := 0.5   # metres per texel
+	var rect := bounds.grow(width + 4.0)
+	var w := int(ceil(rect.size.x / px))
+	var h := int(ceil(rect.size.y / px))
+	var data := PackedByteArray()
+	data.resize(w * h)
+	data.fill(0)
+	for k in count:
+		var i := rng.randi_range(0, n - 1)
+		var lateral := rng.randf_range(-half_w + 1.0, half_w - 1.0)
+		var c: Vector3 = samples[i] + rights[i] * lateral
+		var la := rng.randf_range(1.2, 3.6)
+		var lc := rng.randf_range(0.7, 1.8)
+		var ang := rng.randf_range(-0.5, 0.5)
+		var t: Vector3 = tangents[i].rotated(Vector3.UP, ang)
+		var r: Vector3 = t.cross(Vector3.UP).normalized()
+		puddles.append({"c": c, "t": t, "r": r, "la": la, "lc": lc})
+		var id := puddles.size() - 1
+		var span := int(ceil(la / SPACING)) + 1
+		for d in range(-span, span + 1):
+			var si := (i + d + n) % n
+			if not _puddle_index.has(si):
+				_puddle_index[si] = []
+			_puddle_index[si].append(id)
+		# stamp a soft, noisy ellipse into the mask
+		var reach := int(ceil((la + 0.5) / px))
+		var cx := int((c.x - rect.position.x) / px)
+		var cz := int((c.z - rect.position.y) / px)
+		for dz in range(-reach, reach + 1):
+			for dx in range(-reach, reach + 1):
+				var gx := cx + dx
+				var gz := cz + dz
+				if gx < 0 or gz < 0 or gx >= w or gz >= h:
+					continue
+				var wp := Vector3(rect.position.x + (gx + 0.5) * px, 0.0, rect.position.y + (gz + 0.5) * px)
+				var rel := wp - c
+				var e := Vector2(rel.dot(t) / la, rel.dot(r) / lc).length()
+				var v := clampf(1.0 - e + noise.get_noise_2d(wp.x, wp.z) * 0.3, 0.0, 1.0)
+				var idx := gz * w + gx
+				data[idx] = maxi(data[idx], int(v * 255.0))
+	var tex := ImageTexture.create_from_image(Image.create_from_data(w, h, false, Image.FORMAT_L8, data))
+	road_material.set_shader_parameter("puddle_tex", tex)
+	road_material.set_shader_parameter("puddle_rect", Vector4(rect.position.x, rect.position.y, 1.0 / (w * px), 1.0 / (h * px)))
+
+
+## Called by the weather: road wetness and puddle fill level (0..1).
+func set_weather(p_wetness: float, p_puddles: float, rain := 0.0) -> void:
+	wetness = p_wetness
+	puddle_level = p_puddles
+	if road_material:
+		road_material.set_shader_parameter("wetness", wetness)
+		road_material.set_shader_parameter("puddle_level", puddle_level)
+		road_material.set_shader_parameter("rain", rain)
+
+
+## 0..1: how deep in a puddle `pos` is (0 when dry).
+func puddle_at(pos: Vector3, idx: int) -> float:
+	if puddle_level <= 0.02 or not _puddle_index.has(idx):
+		return 0.0
+	var best := 0.0
+	for id in _puddle_index[idx]:
+		var p: Dictionary = puddles[id]
+		var rel: Vector3 = pos - (p["c"] as Vector3)
+		var e := Vector2(rel.dot(p["t"]) / float(p["la"]), rel.dot(p["r"]) / float(p["lc"])).length()
+		# the visible puddle grows with the fill level (same threshold as the road shader)
+		if e < puddle_level:
+			best = maxf(best, 1.0 - e / maxf(puddle_level, 0.01) * 0.5)
+	return best
 
 
 func _build_curbs() -> void:
@@ -412,6 +489,8 @@ func _build_start() -> void:
 	g.global_transform = Transform3D(Basis.looking_at(t, Vector3.UP), p)
 	var steel := TexKit.std(Color(0.12, 0.12, 0.14), 0.4, 0.7)
 	var span := half_w + 2.0
+	gantry_xf = g.global_transform
+	stand_x = span
 	for side: float in [-1.0, 1.0]:
 		g.add_child(MeshKit.box_node(Vector3(0.6, 7.0, 0.6), steel, Vector3(side * span, 3.5, 0)))
 	g.add_child(MeshKit.box_node(Vector3(span * 2.0 + 0.6, 1.3, 0.8), steel, Vector3(0, 7.2, 0)))
@@ -520,10 +599,14 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 	var rel := pos - samples[idx]
 	var lat := absf(rel.dot(rights[idx]))
 	if lat <= half_w:
-		return [1.0, "asphalt"]
+		var g := 1.0 - 0.18 * wetness
+		var pd := puddle_at(pos, idx)
+		if pd > 0.0:
+			g *= 1.0 - 0.5 * pd
+		return [g, "asphalt"]
 	if curb_mask[idx] == 1 and lat <= half_w + 1.4:
-		return [0.97, "curb"]
-	return [float(def["offroad_grip"]), str(def["ground"])]
+		return [0.97 * (1.0 - 0.3 * wetness), "curb"]
+	return [float(def["offroad_grip"]) * (1.0 - 0.12 * wetness), str(def["ground"])]
 
 
 func transform_at(idx: int, lateral := 0.0, height := 0.5) -> Transform3D:

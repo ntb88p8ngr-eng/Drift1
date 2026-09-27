@@ -2,6 +2,7 @@ extends CanvasLayer
 ## Pause menu (Esc / Start). Pauses the game offline; online the race keeps running.
 
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 
 var world   # world.gd
 var _main_box: VBoxContainer
@@ -52,27 +53,11 @@ func _ready() -> void:
 	_options_box = VBoxContainer.new()
 	_options_box.add_theme_constant_override("separation", 10)
 	_options_box.add_child(UiKit.title("OPTIONEN", 36))
-	_options_box.add_child(UiKit.labeled("Lautstärke", UiKit.slider(0, 1, 0.05, float(Game.settings["master_volume"]),
-		func(v): Game.set_setting("master_volume", v))))
-	_options_box.add_child(UiKit.labeled("Motorsound", UiKit.slider(0, 1.5, 0.05, float(Game.settings["engine_volume"]),
-		func(v):
-			Game.settings["engine_volume"] = v
-			Game.save_settings()
-			if world.local_car and world.local_car.audio:
-				world.local_car.audio.set_volume(v))))
-	_options_box.add_child(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]),
-		func(v): Game.set_setting("steer_assist", v))))
-	_options_box.add_child(UiKit.labeled("Sichtfeld (FOV)", UiKit.slider(60, 100, 1, float(Game.settings["fov"]),
-		func(v):
-			Game.set_setting("fov", v)
-			world.camera._base_fov = v)))
-	_options_box.add_child(UiKit.labeled("Maus-Empfindlichkeit", UiKit.slider(0.05, 1.0, 0.05, float(Game.settings["mouse_sensitivity"]),
-		func(v): Game.set_setting("mouse_sensitivity", v))))
+	_options_box.add_child(SettingsUi.tabs(Callable(), true))
 	var trans := UiKit.option(["Automatik", "Manuell"], 0 if world.local_car.transmission == "auto" else 1, func(i):
 		world.local_car.transmission = "auto" if i == 0 else "manual"
 		Game.set_setting("transmission", world.local_car.transmission))
 	_options_box.add_child(UiKit.labeled("Getriebe", trans))
-	_options_box.add_child(UiKit.spacer())
 	_options_box.add_child(UiKit.button("Zurück", func(): _show(_main_box)))
 	_options_box.visible = false
 	stack.add_child(_options_box)

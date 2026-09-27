@@ -85,6 +85,8 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool)
 		"laps": int(Game.settings["laps"]),
 		"mode": Game.settings["mode"] if Game.settings["mode"] != "free" else "race",
 		"time_of_day": Game.settings["time_of_day"],
+		"weather": Game.settings["weather"],
+		"day_cycle": int(Game.settings["day_cycle"]),
 		"collisions": true,
 		"host_id": 1,
 	}
@@ -322,6 +324,9 @@ func host_start_race() -> String:
 		"laps": int(lobby.get("laps", 3)),
 		"mode": lobby.get("mode", "race"),
 		"time_of_day": lobby.get("time_of_day", "dusk"),
+		"weather": lobby.get("weather", "dry"),
+		"day_cycle": int(lobby.get("day_cycle", 0)),
+		"weather_seed": randi() % 100000,
 		"collisions": bool(lobby.get("collisions", true)),
 		"online": true,
 		"players": players.duplicate(true),

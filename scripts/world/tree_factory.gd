@@ -1,7 +1,9 @@
 extends RefCounted
 ## Procedurally generated, high-detail trees.
 ## Every mesh has two surfaces: 0 = bark (tapered, bent branch tubes), 1 = foliage (alpha-tested leaf cards).
-## "detail" 1.0 = close-up model (~6-8k triangles), ~0.35 = distant LOD.
+## "detail" 1.0 = close-up model (~6-9k triangles), 0.25 = mid-distance LOD (~0.5-1.3k).
+## far_tree() builds the cheap far LOD (opaque crown volumes, ~100 triangles); shrub(), fern() and
+## rock() fill the undergrowth. Foliage colours can be varied per instance (MultiMesh custom data).
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
@@ -22,6 +24,12 @@ static func _material(key: String) -> Material:
 				_mats[key] = TexKit.leaf_material("leaf", Color(1.6, 0.95, 0.45))
 			"needle":
 				_mats[key] = TexKit.leaf_material("needle", Color(1.0, 1.0, 1.0))
+			"fern":
+				_mats[key] = TexKit.leaf_material("fern", Color(1.0, 1.0, 1.0))
+			"far":
+				_mats[key] = TexKit.far_tree_material(Color(0.17, 0.3, 0.07))
+			"rock":
+				_mats[key] = TexKit.rock_material()
 	return _mats[key]
 
 
@@ -38,8 +46,8 @@ static func deciduous(seed_value: int, detail: float, autumn := false) -> ArrayM
 		"rng": rng, "bark": bark, "leaves": leaves, "detail": detail,
 		"max_depth": 3 if detail > 0.6 else 2,
 		"crown": Vector3(0, height * 0.72, 0),
-		"leaf_size": 1.15 if detail > 0.6 else 2.1,
-		"leaf_count": 15 if detail > 0.6 else 9,
+		"leaf_size": 1.3 if detail > 0.6 else (2.1 if detail > 0.3 else 2.8),
+		"leaf_count": 11 if detail > 0.6 else (9 if detail > 0.3 else 5),
 	}
 	var dir := Vector3(rng.randf_range(-0.07, 0.07), 1.0, rng.randf_range(-0.07, 0.07)).normalized()
 	_branch(ctx, Vector3(0, -0.3, 0), dir, height * 0.55, 0.30 * height / 10.0, 0)
@@ -82,7 +90,9 @@ static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float
 		return
 	var children: int = [6, 4, 3][mini(depth, 2)]
 	if detail < 0.6 and depth == 0:
-		children = 7
+		children = 7 if detail > 0.3 else 6
+	if detail <= 0.3 and depth == 1:
+		children = 3
 	var az := rng.randf() * TAU
 	for c in children:
 		var t := rng.randf_range(0.38 if depth == 0 else 0.25, 0.97)
@@ -185,15 +195,15 @@ static func _needle_cards(st: SurfaceTool, rng: RandomNumberGenerator, path: Arr
 		var a: Vector3 = path[i]
 		var b: Vector3 = path[i + 1]
 		var dir := (b - a).normalized()
-		var card_len := maxf(blen / cards * 1.6, 0.6)
+		var card_len := maxf(blen / cards * 1.75, 0.7)
 		var start: Vector3 = a.lerp(b, fposmod(t * (path.size() - 1), 1.0))
-		var width := clampf(card_len * 0.75, 0.45, 1.3)
+		var width := clampf(card_len * 0.85, 0.5, 1.5)
 		var side := dir.cross(Vector3.UP)
 		if side.length_squared() < 1e-4:
 			side = Vector3.RIGHT
 		side = side.normalized()
 		for rot: float in [0.0, 1.1, -1.1]:
-			if detail <= 0.6 and rot != 0.0:
+			if detail <= 0.6 and rot < 0.0:
 				continue
 			var across := side.rotated(dir, rot + rng.randf_range(-0.2, 0.2)) * width * 0.5
 			var nrm := (across.cross(dir)).normalized()
@@ -228,3 +238,198 @@ static func bush(seed_value: int) -> ArrayMesh:
 	var mesh := MeshKit.commit(bark, _material("bark"), null, true)
 	MeshKit.commit(leaves, _material("leaf"), mesh)
 	return mesh
+
+
+# ---------------------------------------------------------------------------
+# Far LOD: trunk + opaque, lumpy crown volumes. One mesh holds a conifer AND a broadleaf tree
+# (UV.x = 0 / 1); the instance custom alpha picks one (0.75 = conifer, 1.0 = broadleaf), so the
+# whole distant forest of a chunk is a single draw call. COLOR.a = 0 marks trunk vertices.
+# ---------------------------------------------------------------------------
+static func far_forest_mesh(pine_seed: int, leaf_seed: int) -> ArrayMesh:
+	var st := MeshKit.new_st()
+	_far_pine(st, pine_seed)
+	_far_leaf(st, leaf_seed)
+	return MeshKit.commit(st, _material("far"))
+
+
+static func _far_pine(st: SurfaceTool, seed_value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var height := rng.randf_range(12.0, 18.0)
+	var mark := Vector2(0.0, 0.0)
+	_far_trunk(st, height * 0.5, 0.3, mark)
+	var base_h := rng.randf_range(2.0, 3.0)
+	var layers := 4
+	for k in layers:
+		var f := float(k) / layers
+		var y0 := lerpf(base_h, height * 0.78, f)
+		var r := lerpf(3.4, 1.0, f) * (height / 15.0)
+		var tip := y0 + lerpf(4.5, 3.2, f) * (height / 15.0)
+		_cone(st, Vector3(0, y0, 0), r, tip - y0, 6, rng, Color(0.9 + 0.2 * f, 1.0, 0.9, 1.0), mark, false)
+	_cone(st, Vector3(0, height * 0.82, 0), 0.8, height * 0.2, 5, rng, Color(1.1, 1.1, 1.0, 1.0), mark, false)
+
+
+static func _far_leaf(st: SurfaceTool, seed_value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var mark := Vector2(1.0, 0.0)
+	var h := rng.randf_range(8.0, 11.5)
+	_far_trunk(st, h * 0.55, 0.28, mark)
+	var centre := Vector3(0, h * 0.68, 0)
+	for k in 3:
+		var a := TAU * float(k) / 3.0 + rng.randf_range(-0.4, 0.4)
+		var off := Vector3(cos(a) * 1.5, rng.randf_range(-0.5, 1.0), sin(a) * 1.5)
+		var rad := Vector3(rng.randf_range(2.7, 3.4), rng.randf_range(2.2, 3.0), rng.randf_range(2.7, 3.4))
+		var shade := rng.randf_range(0.85, 1.15)
+		_blob(st, centre + off, rad, rng, Color(shade, shade, shade * 0.95, 1.0), centre, mark)
+
+
+static func _far_trunk(st: SurfaceTool, height: float, radius: float, mark: Vector2) -> void:
+	var seg := 4
+	for i in seg:
+		var a0 := TAU * float(i) / seg
+		var a1 := TAU * float(i + 1) / seg
+		var d0 := Vector3(cos(a0), 0, sin(a0))
+		var d1 := Vector3(cos(a1), 0, sin(a1))
+		var p0 := d0 * radius + Vector3(0, -0.3, 0)
+		var p1 := d1 * radius + Vector3(0, -0.3, 0)
+		var q0 := d0 * radius * 0.55 + Vector3(0, height, 0)
+		var q1 := d1 * radius * 0.55 + Vector3(0, height, 0)
+		var col := Color(1, 1, 1, 0)
+		MeshKit.tri(st, p0, p1, q1, d0, d1, d1, mark, mark, mark, (d0 + d1), col)
+		MeshKit.tri(st, p0, q1, q0, d0, d1, d0, mark, mark, mark, (d0 + d1), col)
+
+
+## Low-poly lumpy ellipsoid (6 x 4 segments) with normals pointing away from `crown_centre`.
+static func _blob(st: SurfaceTool, c: Vector3, r: Vector3, rng: RandomNumberGenerator, col: Color, crown_centre: Vector3, mark := Vector2.ZERO) -> void:
+	var seg := 5
+	var rings := 3
+	var pts: Array = []
+	for j in rings + 1:
+		var v := float(j) / rings
+		var phi := PI * v
+		var row: Array = []
+		for i in seg:
+			var th := TAU * float(i) / seg + (0.5 if j % 2 == 1 else 0.0)
+			var n := Vector3(sin(phi) * cos(th), cos(phi), sin(phi) * sin(th))
+			var jitter := 1.0 + rng.randf_range(-0.14, 0.14)
+			row.append(c + Vector3(n.x * r.x, n.y * r.y, n.z * r.z) * jitter)
+		pts.append(row)
+	for j in rings:
+		for i in seg:
+			var i2 := (i + 1) % seg
+			var a: Vector3 = pts[j][i]
+			var b: Vector3 = pts[j][i2]
+			var cc: Vector3 = pts[j + 1][i2]
+			var d: Vector3 = pts[j + 1][i]
+			var na := (a - crown_centre).normalized()
+			var nb := (b - crown_centre).normalized()
+			var nc := (cc - crown_centre).normalized()
+			var nd := (d - crown_centre).normalized()
+			var mid := (a + b + cc + d) * 0.25
+			MeshKit.tri(st, a, b, cc, na, nb, nc, mark, mark, mark, mid - c, col)
+			MeshKit.tri(st, a, cc, d, na, nc, nd, mark, mark, mark, mid - c, col)
+
+
+static func _cone(st: SurfaceTool, base: Vector3, radius: float, height: float, seg: int, rng: RandomNumberGenerator, col: Color, mark := Vector2.ZERO, underside := true) -> void:
+	var tip := base + Vector3(rng.randf_range(-0.1, 0.1), height, rng.randf_range(-0.1, 0.1))
+	var ring: Array = []
+	for i in seg:
+		var a := TAU * float(i) / seg
+		var r := radius * rng.randf_range(0.85, 1.12)
+		ring.append(base + Vector3(cos(a) * r, rng.randf_range(-0.35, 0.1), sin(a) * r))
+	for i in seg:
+		var a: Vector3 = ring[i]
+		var b: Vector3 = ring[(i + 1) % seg]
+		var na := ((a - base).normalized() + Vector3.UP * 0.6).normalized()
+		var nb := ((b - base).normalized() + Vector3.UP * 0.6).normalized()
+		var out := ((a + b) * 0.5 - base).normalized() + Vector3.UP * 0.3
+		MeshKit.tri(st, a, b, tip, na, nb, Vector3.UP, mark, mark, mark, out, col)
+		if not underside:
+			continue
+		var under := Color(col.r * 0.7, col.g * 0.7, col.b * 0.7, col.a)
+		MeshKit.tri(st, a, b, base + Vector3(0, -0.2, 0), Vector3.DOWN, Vector3.DOWN, Vector3.DOWN, mark, mark, mark, Vector3.DOWN, under)
+
+
+# ---------------------------------------------------------------------------
+# Undergrowth
+# ---------------------------------------------------------------------------
+## Small leafy shrub (0.4 – 0.9 m) made of a few leaf cards.
+static func shrub(seed_value: int) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var bark := MeshKit.new_st()
+	var leaves := MeshKit.new_st()
+	var ctx := {"rng": rng, "leaves": leaves, "crown": Vector3(0, 0.25, 0), "leaf_size": 0.55, "leaf_count": 9}
+	for k in 3:
+		var a := rng.randf() * TAU
+		var tip := Vector3(cos(a) * 0.25, rng.randf_range(0.35, 0.6), sin(a) * 0.25)
+		MeshKit.tube(bark, [Vector3.ZERO, tip], [0.02, 0.008], 3, Vector2.ONE, Color.WHITE, false)
+		_leaf_cluster(ctx, tip, 0.4)
+	var mesh := MeshKit.commit(bark, _material("bark"))
+	MeshKit.commit(leaves, _material("leaf"), mesh)
+	return mesh
+
+
+## Fern: arching fronds (bent strips with a frond texture).
+static func fern(seed_value: int) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var st := MeshKit.new_st()
+	var fronds := rng.randi_range(7, 10)
+	for k in fronds:
+		var a := TAU * float(k) / fronds + rng.randf_range(-0.25, 0.25)
+		var dir := Vector3(cos(a), 0, sin(a))
+		var side := Vector3(-dir.z, 0, dir.x)
+		var length := rng.randf_range(0.7, 1.15)
+		var lift := rng.randf_range(0.55, 0.9)
+		var segs := 3
+		var prev_l := Vector3.ZERO
+		var prev_r := Vector3.ZERO
+		for s in segs + 1:
+			var t := float(s) / segs
+			var p := dir * length * t + Vector3.UP * (lift * sin(t * PI * 0.75) * length - 0.35 * t * t * length)
+			var w := 0.16 * (1.0 - t * 0.6) * length
+			var l := p - side * w
+			var r := p + side * w
+			if s > 0:
+				var n := (Vector3.UP * 0.8 + dir * 0.2).normalized()
+				var v0 := float(s - 1) / segs
+				var v1 := t
+				MeshKit.tri(st, prev_l, prev_r, r, n, n, n, Vector2(0, v0), Vector2(1, v0), Vector2(1, v1), Vector3.UP, Color.WHITE)
+				MeshKit.tri(st, prev_l, r, l, n, n, n, Vector2(0, v0), Vector2(1, v1), Vector2(0, v1), Vector3.UP, Color.WHITE)
+			prev_l = l
+			prev_r = r
+	return MeshKit.commit(st, _material("fern"))
+
+
+## Boulder: displaced, slightly flattened icosphere with a mossy rock material.
+static func rock(seed_value: int) -> ArrayMesh:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.frequency = 0.9
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.0
+	sphere.height = 2.0
+	sphere.radial_segments = 14
+	sphere.rings = 7
+	var arr := sphere.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var squash := Vector3(rng.randf_range(0.9, 1.3), rng.randf_range(0.55, 0.8), rng.randf_range(0.8, 1.1))
+	for i in verts.size():
+		var v := verts[i]
+		var d := 1.0 + noise.get_noise_3dv(v * 1.3) * 0.35 + noise.get_noise_3dv(v * 4.0 + Vector3(9, 9, 9)) * 0.08
+		v = v * d * squash
+		# flat-ish underside that sinks into the ground
+		v.y = maxf(v.y, -0.25)
+		verts[i] = v
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = null
+	arr[Mesh.ARRAY_TANGENT] = null
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arr)
+	st.generate_normals()
+	st.set_material(_material("rock"))
+	return st.commit()

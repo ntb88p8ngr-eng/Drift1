@@ -42,6 +42,19 @@ jobs:
           if grep -E "SCRIPT CHECK FAILED|Parse Error|Compile Error|SCRIPT ERROR" check.log; then echo "::error::Script compile errors"; exit 1; fi
           grep -q "SCRIPT CHECK DONE" check.log
 
+      - name: Audio test (engine voices, R34 samples)
+        run: |
+          mkdir -p "$RUNNER_TEMP/audio"
+          timeout 120 ./godot --headless --path . res://tests/audio_test.tscn -- "$RUNNER_TEMP/audio" 2>&1 | tee audio.log || true
+          if grep -E "SCRIPT ERROR|AUDIO NAN|AUDIO SAMPLES MISSING" audio.log; then echo "::error::Audio test failed"; exit 1; fi
+          grep -q "AUDIO TEST DONE" audio.log
+
+      - name: Drive test (terrain collision, gearing, weather grip)
+        run: |
+          timeout 240 ./godot --headless --path . res://tests/drive_test.tscn 2>&1 | tee drive.log || true
+          if grep -E "SCRIPT ERROR" drive.log; then echo "::error::Drive test failed"; exit 1; fi
+          grep -q "DRIVE m3gt3 y range" drive.log
+
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
           timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true
@@ -65,6 +78,8 @@ jobs:
           name: test-output
           path: |
             check.log
+            audio.log
+            drive.log
             smoke.log
             render.log
             ${{ runner.temp }}/shots/

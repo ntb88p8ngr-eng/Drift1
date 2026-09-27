@@ -16,6 +16,9 @@ var _chain_label: Label
 var _mult_label: Label
 var _angle_label: Label
 var _total_label: Label
+var _total_caption: Label
+var _top_drift_label: Label
+var _top_drift_sub: Label
 var _message: Label
 var _sub_message: Label
 var _countdown: Label
@@ -50,8 +53,24 @@ func _ready() -> void:
 	info.add_child(_mode_label)
 	info.add_child(_info_lines)
 	var info_panel := UiKit.panel(info)
-	_anchor(info_panel, 0, 0, 20, 20, 300, 0)
-	_root.add_child(info_panel)
+	var left_col := VBoxContainer.new()
+	left_col.add_theme_constant_override("separation", 10)
+	left_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_anchor(left_col, 0, 0, 20, 20, 300, 0)
+	_root.add_child(left_col)
+	left_col.add_child(info_panel)
+	# highest drift of the session (you or another player), below the info panel
+	var top := VBoxContainer.new()
+	top.add_theme_constant_override("separation", 0)
+	var cap := UiKit.label("TOP-DRIFT", 14, UiKit.GOLD)
+	_top_drift_label = UiKit.label("–", 24, Color.WHITE)
+	_top_drift_label.add_theme_font_override("font", UiKit.title_font())
+	_top_drift_sub = UiKit.label("", 14, UiKit.TEXT_DIM)
+	top.add_child(cap)
+	top.add_child(_top_drift_label)
+	top.add_child(_top_drift_sub)
+	var top_panel := UiKit.panel(top)
+	left_col.add_child(top_panel)
 
 	# --- drift display (top centre) ---
 	_drift_box = VBoxContainer.new()
@@ -60,10 +79,34 @@ func _ready() -> void:
 	_chain_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_mult_label = UiKit.label("", 26, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	_angle_label = UiKit.label("", 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
-	_total_label = UiKit.label("", 22, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	for l in [_total_label, _chain_label, _mult_label, _angle_label]:
+	# total score: caption + big number on a dark plate so it stays readable on any background
+	_total_caption = UiKit.label("DRIFT-SCORE", 17, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_total_label = UiKit.label("0", 38, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_total_label.add_theme_font_override("font", UiKit.title_font())
+	_total_label.add_theme_color_override("font_outline_color", Color(0.25, 0.05, 0.45))
+	_total_label.add_theme_constant_override("outline_size", 6)
+	var score_box := VBoxContainer.new()
+	score_box.add_theme_constant_override("separation", -4)
+	score_box.add_child(_total_caption)
+	score_box.add_child(_total_label)
+	var plate := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.02, 0.07, 0.72)
+	sb.border_color = UiKit.ACCENT
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.content_margin_left = 28
+	sb.content_margin_right = 28
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 6
+	plate.add_theme_stylebox_override("panel", sb)
+	plate.add_child(score_box)
+	var plate_row := CenterContainer.new()
+	plate_row.add_child(plate)
+	_drift_box.add_child(plate_row)
+	for l in [_chain_label, _mult_label, _angle_label]:
 		_drift_box.add_child(l)
-	_anchor(_drift_box, 0.5, 0, -300, 18, 600, 200)
+	_anchor(_drift_box, 0.5, 0, -300, 14, 600, 230)
 	_root.add_child(_drift_box)
 
 	# --- messages ---
@@ -127,6 +170,34 @@ func _anchor(c: Control, ax: float, ay: float, x: float, y: float, w: float, h: 
 	c.offset_bottom = y + h
 
 
+## Highest single drift of the session – yours or another player's (online), or the track record.
+func _update_top_drift() -> void:
+	var sc = world.scorer
+	var mine := maxf(float(sc.best_chain), float(sc.chain))
+	var best := mine
+	var holder := "Du"
+	var live := float(sc.chain) > 0.0 and float(sc.chain) >= float(sc.best_chain)
+	if world.online:
+		for id in world.cars.keys():
+			var c = world.cars[id]
+			if not is_instance_valid(c) or c == world.local_car:
+				continue
+			var v := maxf(float(c.remote_best_chain), float(c.remote_chain))
+			if v > best:
+				best = v
+				holder = str(c.player_name)
+				live = float(c.remote_chain) > 0.0 and float(c.remote_chain) >= float(c.remote_best_chain)
+		_top_drift_sub.text = "%s%s" % [holder, "  · läuft" if live and best > 0.0 else ""]
+	else:
+		var rec: Array = Game.get_scores(world.track.track_id, "combo")
+		var rec_txt := ""
+		if rec.size() > 0:
+			rec_txt = "Rekord %s · %s" % [Game.format_points(float(rec[0]["value"])), rec[0]["name"]]
+		_top_drift_sub.text = ("Du%s" % ("  · läuft" if live and best > 0.0 else "")) + ("\n" + rec_txt if rec_txt != "" else "")
+	_top_drift_label.text = Game.format_points(best) if best > 0.0 else "–"
+	_top_drift_label.add_theme_color_override("font_color", UiKit.GOLD if live and best > 0.0 else Color.WHITE)
+
+
 # ---------------------------------------------------------------------------
 func show_message(text: String, sub := "", color := Color.WHITE, duration := 2.2) -> void:
 	_message.text = text
@@ -160,6 +231,11 @@ func on_drift_event(ev: Array) -> void:
 			show_message("COMBO VERLOREN", "%s – %s Punkte weg" % [reason, Game.format_points(lost)], UiKit.BAD, 1.8)
 		"transition":
 			_mult_label.add_theme_color_override("font_color", Color(0.5, 1.0, 1.0))
+		"spin":
+			var count := int(ev[2]) if ev.size() > 2 else 1
+			show_message("%d°!" % (360 * count), "+%s  ·  Reifen durchgehend durchgedreht" % Game.format_points(float(ev[1])), UiKit.GOLD, 1.6)
+		"reverse":
+			show_message("REVERSE ENTRY!", "+%s" % Game.format_points(float(ev[1])), UiKit.GOLD, 1.6)
 
 
 func _process(delta: float) -> void:
@@ -191,7 +267,8 @@ func _process(delta: float) -> void:
 
 	# drift
 	var sc = world.scorer
-	_total_label.text = "DRIFT  %s" % Game.format_points(float(sc.total))
+	_total_label.text = Game.format_points(float(sc.total))
+	_update_top_drift()
 	var chain: float = sc.chain
 	_chain_shown = lerpf(_chain_shown, chain, 1.0 - exp(-delta * 12.0)) if chain > 0.0 else 0.0
 	if chain > 0.0:

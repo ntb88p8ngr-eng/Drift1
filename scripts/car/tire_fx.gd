@@ -1,5 +1,7 @@
 extends Node3D
-## Tyre smoke / dust particles per wheel, skidmarks and exhaust backfire flames.
+## Tyre smoke / dust particles per wheel, skidmarks, exhaust backfire flames and nitro flames.
+## The flames are children of the car body (local coordinates), so they always sit exactly in the
+## exhaust tips, even at high speed.
 
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 
@@ -18,19 +20,25 @@ func _ready() -> void:
 	_key_base = car.get_instance_id() * 8
 	for i in 4:
 		_smokes.append(_make_smoke(i >= 2))
+	var r: float = car.body.exhaust_radius
 	for p in car.body.exhaust_points:
-		var fl := _make_flame()
-		fl.set_meta("local", p)
+		var fl := _make_flame(false, r)
+		fl.position = p
 		_flames.append(fl)
-		var nf := _make_flame(true)
-		nf.set_meta("local", p)
+		var nf := _make_flame(true, r)
+		nf.position = p
 		_nitro_flames.append(nf)
 	_flash = OmniLight3D.new()
 	_flash.light_color = Color(1.0, 0.5, 0.15)
 	_flash.omni_range = 5.0
 	_flash.light_energy = 0.0
 	_flash.visible = false
-	add_child(_flash)
+	car.body.add_child(_flash)
+	if car.body.exhaust_points.size() > 0:
+		var avg := Vector3.ZERO
+		for p in car.body.exhaust_points:
+			avg += p
+		_flash.position = avg / float(car.body.exhaust_points.size()) + Vector3(0, 0.1, 0.4)
 	car.backfire.connect(_on_backfire)
 
 
@@ -95,26 +103,39 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	return p
 
 
-func _make_flame(nitro := false) -> GPUParticles3D:
+func _make_flame(nitro: bool, pipe_r: float) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = 24 if not nitro else 40
-	p.lifetime = 0.12 if not nitro else 0.09
+	var size := clampf(pipe_r * 5.0, 0.12, 0.34)
+	p.amount = 40 if nitro else 24
+	p.lifetime = 0.1 if nitro else 0.12
 	p.one_shot = not nitro
-	p.explosiveness = 0.9 if not nitro else 0.0
+	p.explosiveness = 0.0 if nitro else 0.9
 	p.emitting = false
-	p.local_coords = false
+	p.local_coords = true
+	p.visibility_aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 4))
 	var m := ParticleProcessMaterial.new()
+	# car space: +Z points out of the tail pipe
 	m.direction = Vector3(0, 0, 1)
-	m.spread = 12.0
-	m.initial_velocity_min = 4.0
-	m.initial_velocity_max = 8.0
+	m.spread = 7.0 if nitro else 12.0
+	m.initial_velocity_min = 5.0 if nitro else 4.0
+	m.initial_velocity_max = 9.0 if nitro else 8.0
 	m.gravity = Vector3.ZERO
-	m.scale_min = 0.5
+	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	m.emission_sphere_radius = pipe_r * 0.6
+	m.scale_min = 0.7
 	m.scale_max = 1.0
+	var sc := Curve.new()
+	sc.add_point(Vector2(0.0, 0.55))
+	sc.add_point(Vector2(0.3, 1.0))
+	sc.add_point(Vector2(1.0, 0.25))
+	var sct := CurveTexture.new()
+	sct.curve = sc
+	m.scale_curve = sct
 	var grad := Gradient.new()
 	if nitro:
-		grad.set_color(0, Color(0.6, 0.8, 1.0, 1.0))
-		grad.set_color(1, Color(0.2, 0.3, 1.0, 0.0))
+		grad.set_color(0, Color(0.85, 0.95, 1.0, 1.0))
+		grad.set_color(1, Color(0.35, 0.2, 1.0, 0.0))
+		grad.add_point(0.35, Color(0.3, 0.55, 1.0, 0.9))
 	else:
 		grad.set_color(0, Color(1.0, 0.9, 0.5, 1.0))
 		grad.set_color(1, Color(1.0, 0.2, 0.0, 0.0))
@@ -123,7 +144,7 @@ func _make_flame(nitro := false) -> GPUParticles3D:
 	m.color_ramp = gt
 	p.process_material = m
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.35, 0.35)
+	quad.size = Vector2(size, size)
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -134,7 +155,7 @@ func _make_flame(nitro := false) -> GPUParticles3D:
 	quad.material = mat
 	p.draw_pass_1 = quad
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(p)
+	car.body.add_child(p)
 	return p
 
 
@@ -162,7 +183,13 @@ func _process(delta: float) -> void:
 		var offroad := surf != "asphalt" and surf != "curb"
 		var on := false
 		var ratio := 0.0
-		if grounded and offroad and speed > 6.0:
+		var wet: float = car.track.wetness if car.track else 0.0
+		if grounded and not offroad and wet > 0.25 and speed > 9.0 and slip <= threshold:
+			# spray from wet asphalt
+			on = true
+			ratio = clampf(speed / 60.0 * wet, 0.08, 0.55) * (1.0 if i >= 2 else 0.6)
+			pm.color = Color(0.82, 0.85, 0.9, 0.55)
+		elif grounded and offroad and speed > 6.0:
 			on = true
 			ratio = clampf(speed / 40.0 + slip / 15.0, 0.1, 0.8)
 			pm.color = Color(0.55, 0.47, 0.35) if surf == "grass" else Color(0.7, 0.7, 0.68)
@@ -181,20 +208,18 @@ func _process(delta: float) -> void:
 				car.skidmarks.add_mark(key, contact, 0.22, clampf(slip / 12.0, 0.25, 0.85))
 			else:
 				car.skidmarks.break_mark(key)
-	# exhaust flames follow the car
-	var xf: Transform3D = car.global_transform
-	for f in _flames + _nitro_flames:
-		var fl: GPUParticles3D = f
-		var lp: Vector3 = fl.get_meta("local")
-		fl.global_transform = Transform3D(xf.basis, xf * lp)
+	# nitro flames (the emitters are parented to the car body)
 	var nitro_on: bool = car.nitro_active
 	for f in _nitro_flames:
 		(f as GPUParticles3D).emitting = nitro_on
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		_flash.visible = true
+		_flash.light_color = Color(1.0, 0.5, 0.15)
 		_flash.light_energy = 3.0 * (_flash_t / 0.12)
-		if _flames.size() > 0:
-			_flash.global_position = (_flames[0] as GPUParticles3D).global_position
+	elif nitro_on:
+		_flash.visible = true
+		_flash.light_color = Color(0.35, 0.5, 1.0)
+		_flash.light_energy = 1.6 + randf() * 0.6
 	else:
 		_flash.visible = false

@@ -6,7 +6,11 @@ signal exit_requested(target: String)   # "menu", "lobby", "restart", "leave"
 
 const Track = preload("res://scripts/world/track.gd")
 const Scenery = preload("res://scripts/world/scenery.gd")
-const EnvBuilder = preload("res://scripts/world/environment_builder.gd")
+const Terrain = preload("res://scripts/world/terrain.gd")
+const Atmosphere = preload("res://scripts/world/atmosphere.gd")
+const Grass = preload("res://scripts/world/grass.gd")
+const LensFlare = preload("res://scripts/world/lens_flare.gd")
+const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Skidmarks = preload("res://scripts/world/skidmarks.gd")
 const DriftScorer = preload("res://scripts/world/drift_scorer.gd")
 const Car = preload("res://scripts/car/car.gd")
@@ -23,8 +27,11 @@ var laps_total := 3
 var online := false
 var track: Track
 var scenery: Scenery
+var terrain: Terrain
+var atmosphere: Atmosphere
+var grass: Grass
+var flares: LensFlare
 var skidmarks: Skidmarks
-var env_info := {}
 var local_car: Car
 var cars := {}              # peer_id -> Car
 var camera: CameraRig
@@ -51,6 +58,7 @@ var _wait_timeout := 15.0
 var _last_count_step := -1
 var _session_saved := false
 var _finish_order: Array = []
+var _auto_lights := false
 
 
 func setup(cfg: Dictionary) -> void:
@@ -62,15 +70,40 @@ func _ready() -> void:
 	laps_total = int(config.get("laps", 3))
 	online = bool(config.get("online", false))
 	var quality := Game.quality()
-	env_info = EnvBuilder.build(self, config.get("time_of_day", "dusk"), quality)
+	var t0 := Time.get_ticks_msec()
+	atmosphere = Atmosphere.new()
+	atmosphere.name = "Atmosphere"
+	add_child(atmosphere)
+	atmosphere.setup(config, quality)
 	track = Track.new()
 	track.name = "Track"
 	add_child(track)
 	track.build(config.get("track", "ridge"))
+	terrain = Terrain.new()
+	terrain.name = "Terrain"
+	add_child(terrain)
+	terrain.generate(track)
+	var t1 := Time.get_ticks_msec()
 	scenery = Scenery.new()
 	scenery.name = "Scenery"
 	add_child(scenery)
-	scenery.build(track, float(env_info["night"]), quality)
+	scenery.build(track, terrain, atmosphere.night, quality)
+	var t2 := Time.get_ticks_msec()
+	terrain.build_meshes()
+	atmosphere.track = track
+	atmosphere.materials_wet = [terrain.material]
+	for key in ["leaf", "needle", "fern", "rock"]:
+		atmosphere.materials_wet.append(TreeFactory._material(key))
+	atmosphere.night_changed.connect(_on_night_changed)
+	grass = Grass.new()
+	grass.name = "Grass"
+	add_child(grass)
+	grass.setup(terrain, track, self)
+	flares = LensFlare.new()
+	flares.name = "LensFlares"
+	add_child(flares)
+	flares.setup(atmosphere)
+	print("WORLD: terrain %d ms, scenery %d ms, meshes+grass %d ms (%s)" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2, scenery.stats_text()])
 	skidmarks = Skidmarks.new()
 	skidmarks.name = "Skidmarks"
 	add_child(skidmarks)
@@ -106,7 +139,7 @@ func _ready() -> void:
 
 
 func _spawn_cars() -> void:
-	var night: float = env_info["night"]
+	var night: float = atmosphere.night
 	if online:
 		var players: Dictionary = config.get("players", {})
 		var ids: Array = players.keys()
@@ -132,6 +165,7 @@ func _spawn_cars() -> void:
 		local_car.place(track.grid_transform(0))
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
 	local_car.headlights = night >= 0.4
+	_auto_lights = local_car.headlights
 
 
 func _make_car(info: Dictionary, remote: bool) -> Car:
@@ -216,7 +250,7 @@ func _physics_process(delta: float) -> void:
 		_net_timer -= delta
 		if _net_timer <= 0.0:
 			_net_timer = 1.0 / 30.0
-			Net.send_state(local_car.get_net_state(total_progress(), lap, scorer.total + scorer.chain))
+			Net.send_state(local_car.get_net_state(total_progress(), lap, scorer.total + scorer.chain, scorer.best_chain, scorer.chain))
 
 
 func _update_progress() -> void:
@@ -474,6 +508,18 @@ func scoreboard_data() -> Dictionary:
 # ---------------------------------------------------------------------------
 # Events / exits
 # ---------------------------------------------------------------------------
+## Time of day / weather changed the light level: lamps, windows and (automatic) headlights.
+func _on_night_changed(n: float) -> void:
+	if scenery:
+		scenery.set_night(n)
+	if local_car == null:
+		return
+	if n > 0.45 and not _auto_lights:
+		_auto_lights = true
+		local_car.headlights = true
+	elif n < 0.3 and _auto_lights:
+		_auto_lights = false
+		local_car.headlights = false
 func _on_wall_hit(strength: float) -> void:
 	if strength > 5.0 and scorer.chain > 0.0:
 		scorer.fail("Wand berührt")

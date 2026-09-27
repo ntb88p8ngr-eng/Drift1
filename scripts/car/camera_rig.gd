@@ -18,7 +18,6 @@ var _dir := Vector3.FORWARD
 var _pos := Vector3.ZERO
 var _initialized := false
 var _base_fov := 75.0
-var _shake := 0.0
 var _space_query: PhysicsRayQueryParameters3D
 
 
@@ -82,7 +81,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if car == null or not is_instance_valid(car):
 		return
-	var xf: Transform3D = car.global_transform
+	# interpolated transform: the physics runs at 120 Hz, the camera at the display rate
+	var xf: Transform3D = car.visual_transform() if car.has_method("visual_transform") else car.global_transform
 	var car_pos := xf.origin
 	var up := Vector3.UP
 	var heading := -xf.basis.z
@@ -164,13 +164,10 @@ func _process(delta: float) -> void:
 	else:
 		_pos = _pos.lerp(target_pos, 1.0 - exp(-delta * (14.0 if free_look else 9.0)))
 
-	# speed / drift shake
-	var slip: float = car.total_slip
-	_shake = clampf((spd - 35.0) / 40.0, 0.0, 1.0) * 0.02 + clampf(slip / 60.0, 0.0, 0.02)
-	var shake_off := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * _shake
-	global_position = _pos + shake_off
+	global_position = _pos
 	if global_position.distance_to(look_target) > 0.01:
 		look_at(look_target, Vector3.UP)
+	_base_fov = float(Game.settings.get("fov", 75.0))
 	var target_fov := _base_fov + clampf(spd * 0.28, 0.0, 20.0)
 	if mode >= 2 and not free_look:
 		target_fov += 5.0

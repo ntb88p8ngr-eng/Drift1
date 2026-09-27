@@ -3,6 +3,8 @@ extends CanvasLayer
 ## The 3D showroom behind the menu shows the selected car.
 
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const CarBodyScript = preload("res://scripts/car/car_body.gd")
+const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 
 var main   # main.gd
 var current := ""
@@ -212,6 +214,8 @@ func _build_single() -> void:
 	_add(UiKit.labeled("Runden", UiKit.row([laps_slider, laps_label])))
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
+	_add(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(Game.settings["day_cycle"]), func(m): Game.set_setting("day_cycle", m))))
+	_add(UiKit.labeled("Wetter", _weather_option(str(Game.settings["weather"]), func(w): Game.set_setting("weather", w))))
 	_add(UiKit.labeled("Getriebe", UiKit.option(["Automatik", "Manuell"], 0 if Game.settings["transmission"] == "auto" else 1, func(i):
 		Game.set_setting("transmission", "auto" if i == 0 else "manual"))))
 	_add(desc)
@@ -222,6 +226,31 @@ func _build_single() -> void:
 		_return_to = "single"
 		show_screen("garage"), 360))
 	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
+
+
+func _day_cycle_option(current: int, on_pick: Callable) -> OptionButton:
+	var names: Array = []
+	var sel := 0
+	for i in Game.DAY_CYCLES.size():
+		var m: int = Game.DAY_CYCLES[i]
+		names.append(Game.day_cycle_name(m))
+		if m == current:
+			sel = i
+	var o := UiKit.option(names, sel, func(i): on_pick.call(Game.DAY_CYCLES[i]))
+	o.tooltip_text = "Die Zeit läuft ab der gewählten Tageszeit weiter – z. B. vom Sonnenuntergang in die Nacht."
+	return o
+
+
+func _weather_option(current: String, on_pick: Callable) -> OptionButton:
+	var names: Array = []
+	var sel := 0
+	for i in Game.WEATHER_MODES.size():
+		names.append(Game.WEATHER_MODES[i]["name"])
+		if Game.WEATHER_MODES[i]["id"] == current:
+			sel = i
+	var o := UiKit.option(names, sel, func(i): on_pick.call(Game.WEATHER_MODES[i]["id"]))
+	o.tooltip_text = "Regen macht die Strecke rutschiger, Pfützen noch mehr. Wechselhaft: Schauer kommen und gehen."
+	return o
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +573,8 @@ func _refresh_lobby() -> void:
 			if Game.TIMES_OF_DAY[i]["id"] == lobby.get("time_of_day", "dusk"):
 				tdi = i
 		_lobby_settings.add_child(UiKit.labeled("Tageszeit", UiKit.option(tods, tdi, func(i): Net.host_set_option("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
+		_lobby_settings.add_child(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(lobby.get("day_cycle", 0)), func(m): Net.host_set_option("day_cycle", m))))
+		_lobby_settings.add_child(UiKit.labeled("Wetter", _weather_option(str(lobby.get("weather", "dry")), func(w): Net.host_set_option("weather", w))))
 		var coll := CheckBox.new()
 		coll.text = "Kollisionen zwischen Autos"
 		coll.button_pressed = bool(lobby.get("collisions", true))
@@ -553,6 +584,7 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.label("Strecke: %s" % Game.track_name(str(lobby.get("track", "ridge"))), 18))
 		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  Runden: %d" % [Game.mode_name(str(lobby.get("mode", "race"))), int(lobby.get("laps", 3))], 18))
 		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus"], 18))
+		_lobby_settings.add_child(UiKit.label("Wetter: %s  ·  Tagesverlauf: %s" % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
 	_ready_btn.visible = not host
 	_ready_btn.text = "Nicht bereit" if me_ready else "Bereit"
@@ -630,6 +662,22 @@ func _fill_leaderboard(cats: Array) -> void:
 	_lb_list.add_child(grid)
 
 
+## Gear ratios and top speed per gear (at the redline) including gearbox tuning.
+func _gearing_text(car_id: String) -> String:
+	var gb: Dictionary = Game.tuned_gearing(car_id)
+	var r: float = float(CarBodyScript.physics_spec(car_id)["wheel_r"])
+	var ratios: Array = []
+	var speeds: Array = []
+	var gears: Array = gb["gears"]
+	var fd: float = gb["final"]
+	var kmh: bool = bool(Game.settings.get("units_kmh", true))
+	for i in gears.size():
+		ratios.append("%.2f" % float(gears[i]))
+		var v := float(gb["redline"]) / 60.0 * TAU * r / (float(gears[i]) * fd)
+		speeds.append("%d" % int(v * (3.6 if kmh else 2.237)))
+	return "Übersetzung  %s  ·  Achse %.2f\nBis Drehzahlgrenze (%d U/min): %s %s" % [" / ".join(ratios), fd, int(gb["redline"]), " / ".join(speeds), "km/h" if kmh else "mph"]
+
+
 func _update_tuning(car_id: String) -> void:
 	if _tuning_box == null or not is_instance_valid(_tuning_box):
 		return
@@ -666,6 +714,12 @@ func _update_tuning(car_id: String) -> void:
 		_tuning_box.add_child(UiKit.row([name_l, lvl_l, buy, sell], 10))
 		var d := UiKit.label(str(cat["desc"]), 14, UiKit.TEXT_DIM)
 		_tuning_box.add_child(d)
+		if cid == "gearbox":
+			var gl := UiKit.label(_gearing_text(car_id), 14, UiKit.ACCENT.lightened(0.45))
+			_tuning_box.add_child(gl)
+		elif cid == "steering":
+			var lock := float(Game.get_car(car_id)["steer_lock"]) + float(Game.STEER_KIT[lvl])
+			_tuning_box.add_child(UiKit.label("Lenkeinschlag: %d°" % int(lock), 14, UiKit.ACCENT.lightened(0.45)))
 
 
 func _build_controls() -> void:
@@ -689,19 +743,6 @@ func _build_controls() -> void:
 # ---------------------------------------------------------------------------
 func _build_options() -> void:
 	_header("OPTIONEN")
-	_add(UiKit.labeled("Gesamtlautstärke", UiKit.slider(0, 1, 0.05, float(Game.settings["master_volume"]), func(v): Game.set_setting("master_volume", v))))
-	_add(UiKit.labeled("Motorsound", UiKit.slider(0, 1.5, 0.05, float(Game.settings["engine_volume"]), func(v): Game.set_setting("engine_volume", v))))
-	_add(UiKit.labeled("Grafikqualität", UiKit.option(["Niedrig", "Mittel", "Hoch", "Ultra"], int(Game.settings["quality"]), func(i):
-		Game.set_setting("quality", i)
-		main.refresh_showroom(true))))
-	var fs := CheckBox.new()
-	fs.text = "Vollbild"
-	fs.button_pressed = bool(Game.settings["fullscreen"])
-	fs.toggled.connect(func(on): Game.set_setting("fullscreen", on))
-	_add(fs)
-	_add(UiKit.labeled("Sichtfeld (FOV)", UiKit.slider(60, 100, 1, float(Game.settings["fov"]), func(v): Game.set_setting("fov", v))))
-	_add(UiKit.labeled("Maus-Empfindlichkeit", UiKit.slider(0.05, 1.0, 0.05, float(Game.settings["mouse_sensitivity"]), func(v): Game.set_setting("mouse_sensitivity", v))))
-	_add(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]), func(v): Game.set_setting("steer_assist", v))))
-	_add(UiKit.labeled("Einheit", UiKit.option(["km/h", "mph"], 0 if Game.settings["units_kmh"] else 1, func(i): Game.set_setting("units_kmh", i == 0))))
+	_add(SettingsUi.tabs(func(): main.refresh_showroom(true)))
 	_add(UiKit.spacer(8))
 	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))

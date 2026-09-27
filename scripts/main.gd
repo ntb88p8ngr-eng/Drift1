@@ -55,6 +55,9 @@ func start_offline() -> void:
 		"mode": Game.settings["mode"],
 		"laps": int(Game.settings["laps"]),
 		"time_of_day": Game.settings["time_of_day"],
+		"weather": Game.settings["weather"],
+		"day_cycle": int(Game.settings["day_cycle"]),
+		"weather_seed": randi() % 100000,
 		"online": false,
 		"collisions": true,
 	}
@@ -156,6 +159,12 @@ func _smoke_test() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot-dir="):
 			shot_dir = a.substr(11)
+	if "--quick" in OS.get_cmdline_user_args():
+		# software rendering in CI is slow: lowest settings (not saved)
+		Game.settings["quality"] = 0
+		Game.settings["grass_quality"] = 1
+		Game.settings["shadow_quality"] = 0
+		Game.apply_video()
 	var watchdog := get_tree().create_timer(420.0, true, false, true)
 	watchdog.timeout.connect(func():
 		print("SMOKE TIMEOUT")
@@ -181,7 +190,8 @@ func _smoke_test() -> void:
 		var tod: String = ["dusk", "night", "day", "morning"][i % 4]
 		i += 1
 		Game.settings["car"] = Game.CAR_ORDER[i % Game.CAR_ORDER.size()]
-		_start_world({"track": tr, "mode": md, "laps": 2, "time_of_day": tod, "online": false})
+		var weather: String = ["dry", "rain", "changing", "dry"][i % 4]
+		_start_world({"track": tr, "mode": md, "laps": 2, "time_of_day": tod, "weather": weather, "day_cycle": 8, "weather_seed": 5, "online": false})
 		while world == null:
 			await get_tree().process_frame
 		for f in 120:
