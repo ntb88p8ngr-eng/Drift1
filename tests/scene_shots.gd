@@ -14,6 +14,8 @@ func _ready() -> void:
 			args[kv[0]] = kv[1]
 	DirAccess.make_dir_recursive_absolute(args["out"])
 	Game.settings["car"] = args["car"]
+	if args.has("grass"):
+		Game.settings["grass_quality"] = int(args["grass"])
 	if args.has("vd"):
 		Game.settings["view_distance"] = int(args["vd"])
 	var world := World.new()

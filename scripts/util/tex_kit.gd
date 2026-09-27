@@ -216,6 +216,13 @@ const LEAF_SHADER := """
 shader_type spatial;
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 
+// dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
+// the neighbouring LOD keeps exactly the other ones (no popping, no holes)
+global uniform vec3 main_cam_pos;
+instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+varying float lod_in;
+varying float lod_out;
+
 uniform sampler2D leaf_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec3 tint : source_color = vec3(1.0);
 uniform float wind = 1.0;
@@ -226,6 +233,9 @@ uniform float wetness = 0.0;
 varying vec3 inst_tint;
 
 void vertex() {
+	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
+	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	// per-instance colour variation (MultiMesh custom data, alpha = 1 marks it as set)
 	inst_tint = INSTANCE_CUSTOM.a > 0.5 ? INSTANCE_CUSTOM.rgb : vec3(1.0);
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -237,6 +247,10 @@ void vertex() {
 }
 
 void fragment() {
+	float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+	if (lod_h < 1.0 - lod_in || lod_h > 1.0 - lod_out) {
+		discard;
+	}
 	vec4 t = texture(leaf_tex, UV);
 	ALBEDO = t.rgb * COLOR.rgb * tint * inst_tint * (1.0 - wetness * 0.2);
 	ALPHA = t.a;
@@ -251,6 +265,13 @@ const FAR_TREE_SHADER := """
 shader_type spatial;
 render_mode diffuse_burley;
 
+// dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
+// the neighbouring LOD keeps exactly the other ones (no popping, no holes)
+global uniform vec3 main_cam_pos;
+instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+varying float lod_in;
+varying float lod_out;
+
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform vec3 foliage : source_color = vec3(0.17, 0.3, 0.07);
 uniform vec3 needles : source_color = vec3(0.07, 0.17, 0.07);
@@ -262,6 +283,9 @@ varying vec3 wpos;
 varying float is_leaf;
 
 void vertex() {
+	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
+	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	inst_tint = INSTANCE_CUSTOM.a > 0.5 ? INSTANCE_CUSTOM.rgb : vec3(1.0);
 	// the mesh holds a conifer (UV.x = 0) and a broadleaf tree (UV.x = 1); custom alpha picks one
 	float want_leaf = INSTANCE_CUSTOM.a > 0.9 ? 1.0 : 0.0;
@@ -273,6 +297,10 @@ void vertex() {
 }
 
 void fragment() {
+	float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+	if (lod_h < 1.0 - lod_in || lod_h > 1.0 - lod_out) {
+		discard;
+	}
 	float n = texture(noise_tex, wpos.xz * 0.35 + wpos.y * 0.21).r;
 	float n2 = texture(noise_tex, wpos.xz * 1.3 - wpos.y * 0.5).r;
 	vec3 base = mix(needles, foliage, is_leaf);
@@ -324,12 +352,22 @@ const BARK_SHADER := """
 shader_type spatial;
 render_mode diffuse_burley;
 
+// dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
+// the neighbouring LOD keeps exactly the other ones (no popping, no holes)
+global uniform vec3 main_cam_pos;
+instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+varying float lod_in;
+varying float lod_out;
+
 uniform sampler2D bark_tex : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D bark_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform vec3 tint : source_color = vec3(1.0);
 uniform float wind = 1.0;
 
 void vertex() {
+	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
+	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float h = clamp((VERTEX.y - 2.0) * 0.09, 0.0, 1.4);
 	float sway = sin(TIME * 1.5 + wp.x * 0.31 + wp.z * 0.23) * 0.05;
@@ -338,6 +376,10 @@ void vertex() {
 }
 
 void fragment() {
+	float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+	if (lod_h < 1.0 - lod_in || lod_h > 1.0 - lod_out) {
+		discard;
+	}
 	ALBEDO = texture(bark_tex, UV).rgb * COLOR.rgb * tint;
 	NORMAL_MAP = texture(bark_nrm, UV).xyz;
 	NORMAL_MAP_DEPTH = 1.4;
@@ -716,6 +758,13 @@ const IMPOSTOR_SHADER := """
 shader_type spatial;
 render_mode skip_vertex_transform, cull_disabled, diffuse_burley, shadows_disabled;
 
+// dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
+// the neighbouring LOD keeps exactly the other ones (no popping, no holes)
+global uniform vec3 main_cam_pos;
+instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+varying float lod_in;
+varying float lod_out;
+
 uniform sampler2D atlas : source_color, filter_linear_mipmap;
 uniform vec2 pine_size = vec2(7.2, 16.5);
 uniform vec2 leaf_size = vec2(10.0, 12.0);
@@ -724,6 +773,9 @@ uniform vec2 mesh_size = vec2(10.0, 17.0);
 varying vec3 tint;
 
 void vertex() {
+	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
+	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	vec3 origin = MODEL_MATRIX[3].xyz;
 	float s = length(MODEL_MATRIX[0].xyz);
 	float leaf = INSTANCE_CUSTOM.a > 0.9 ? 1.0 : 0.0;
@@ -741,6 +793,10 @@ void vertex() {
 }
 
 void fragment() {
+	float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+	if (lod_h < 1.0 - lod_in || lod_h > 1.0 - lod_out) {
+		discard;
+	}
 	vec4 t = texture(atlas, UV);
 	ALBEDO = t.rgb * tint;
 	ALPHA = t.a;

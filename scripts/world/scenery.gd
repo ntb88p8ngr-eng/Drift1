@@ -12,8 +12,11 @@ const Houses = preload("res://scripts/world/houses.gd")
 
 const CHUNK := 48.0
 const FAR_CHUNK := 192.0        # the coarse outer forest uses big chunks
-const LOD0_END := 64.0          # chunk-centre distances
-const LOD1_END := 160.0
+# chunk-centre distances where the tree LODs hand over (set per graphics quality in build())
+var LOD0_END := 95.0
+var LOD1_END := 280.0
+const FADE0 := 12.0             # half width of the dithered cross-fade bands
+const FADE1 := 30.0
 const FAR_END := 2600.0
 const OCC_CELL := 16.0
 const SMALL_RADIUS := 10.0
@@ -44,6 +47,8 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	terrain = p_terrain
 	night = p_night
 	quality = clampi(p_quality, 0, 3)
+	LOD0_END = [60.0, 75.0, 95.0, 115.0][quality]
+	LOD1_END = [180.0, 220.0, 280.0, 340.0][quality]
 	rng.seed = hash(track.track_id)
 	var id: String = track.track_id
 	_flatten_start()
@@ -150,7 +155,8 @@ static func _cached(key: String, maker: Callable) -> Mesh:
 
 ## chunks: Dictionary Vector2i -> Array of [Transform3D, Color]; one MultiMeshInstance per chunk.
 ## impostor = 2D billboard trees that take over beyond the view distance (begin follows the setting).
-func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end: float, label: String, shadows: bool, size := CHUNK, shadow_only := false, impostor := false) -> void:
+## lod_fade: (fade-in start, end, fade-out start, end) for the dithered LOD cross-fade in the tree shaders.
+func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end: float, label: String, shadows: bool, size := CHUNK, shadow_only := false, impostor := false, lod_fade := Vector4.ZERO) -> void:
 	for key in chunks.keys():
 		var items: Array = chunks[key]
 		if items.is_empty():
@@ -184,8 +190,17 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		if shadow_only:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		add_child(mmi)
+		if lod_fade != Vector4.ZERO:
+			mmi.set_instance_shader_parameter("lod_fade", lod_fade)
 		_ranged.append([mmi, range_begin, range_end, impostor])
 		_stats[label] = int(_stats.get(label, 0)) + items.size()
+
+
+func _process(_delta: float) -> void:
+	# LOD cross-fade distance is measured from the real camera (also in the shadow passes)
+	var cam := get_viewport().get_camera_3d()
+	if cam:
+		RenderingServer.global_shader_parameter_set("main_cam_pos", cam.global_position)
 
 
 ## "view_distance" setting (metres): 3D trees, bushes, rocks and props end there; beyond it the
@@ -243,11 +258,11 @@ static func _push(chunks: Dictionary, p: Vector3, item: Array, size := CHUNK) ->
 # ---------------------------------------------------------------------------
 func _build_forest(id: String) -> void:
 	# [kind, seed] – broadleaf trees get their autumn colours through the instance tint
-	var kinds: Array = [["pine", 404], ["pine", 505], ["leaf", 101], ["oak", 303]]
+	var kinds: Array = [["pine", 404], ["pine", 505], ["pine", 606], ["pine", 707], ["leaf", 101], ["leaf", 121], ["oak", 303], ["oak", 313]]
 	var pine_ratio := 0.62
 	var autumn_ratio := 0.1
 	if id == "harbor":
-		kinds = [["leaf", 101], ["leaf", 202], ["pine", 404], ["oak", 303]]
+		kinds = [["leaf", 101], ["leaf", 202], ["leaf", 212], ["pine", 404], ["pine", 505], ["oak", 303], ["oak", 313]]
 		pine_ratio = 0.3
 		autumn_ratio = 0.22
 	var meshes: Array = []
@@ -295,7 +310,9 @@ func _build_forest(id: String) -> void:
 				options = range(kinds.size())
 			var v: int = options[rng.randi() % options.size()]
 			var s := rng.randf_range(0.78, 1.3) * (1.0 + smoothstep(wb + 30.0, wb + 150.0, d) * 0.15)
-			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.88, 1.12), s))
+			# every tree a little different: uneven width per axis, height, a slight random tilt
+			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * rng.randf_range(0.82, 1.18), s * rng.randf_range(0.85, 1.15), s * rng.randf_range(0.82, 1.18)))
+			basis = Basis(Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.0, 0.05)) * basis
 			# lean slightly downhill
 			basis = Basis(Vector3(nrm.z, 0, -nrm.x).normalized(), (1.0 - nrm.y) * 0.4) * basis if nrm.y < 0.98 else basis
 			var tint := _foliage_tint(kinds[v][0] == "pine", autumn_ratio)
@@ -305,12 +322,17 @@ func _build_forest(id: String) -> void:
 		gz += spacing
 	_solitary_oaks(kinds, chunks, far_chunks)
 	var lod1_shadow := quality >= 3
+	# neighbouring levels overlap by the fade band (+ a little, the bounds centre sits higher than the
+	# node) and cross-fade with complementary dither patterns
+	var f_hi := Vector4(-2.0, -1.0, LOD0_END - FADE0, LOD0_END + FADE0)
+	var f_mid := Vector4(LOD0_END - FADE0, LOD0_END + FADE0, LOD1_END - FADE1, LOD1_END + FADE1)
+	var f_far := Vector4(LOD1_END - FADE1, LOD1_END + FADE1, 1e9, 2e9)
 	for v in kinds.size():
 		# close trees: full detail, but their shadows come from the lighter mid-detail mesh
-		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END, "Trees_hi", false)
-		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END, "Trees_shadow", true, CHUNK, true)
-		_emit_chunks(meshes[v][1], chunks[v], LOD0_END, LOD1_END, "Trees_mid", lod1_shadow)
-	_emit_chunks(far_mesh, far_chunks, LOD1_END, FAR_END, "Trees_far", false)
+		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_hi", false, CHUNK, false, false, f_hi)
+		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_shadow", true, CHUNK, true, false, f_hi)
+		_emit_chunks(meshes[v][1], chunks[v], LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, CHUNK, false, false, f_mid)
+	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, FAR_END, "Trees_far", false, CHUNK, false, false, f_far)
 	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, FAR_END, FAR_END * 2.0, "Trees_2d", false, CHUNK, false, true)
 	_build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
 

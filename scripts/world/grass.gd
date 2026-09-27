@@ -72,7 +72,9 @@ void vertex() {
 	}
 	float wn = texture(noise_tex, p * 0.03).r;
 	float dens = mask.r * smoothstep(road_clear, road_clear + 1.2, road) * (0.75 + 0.7 * wn);
-	float keep = step(r3, dens) * fade;
+	// never on the asphalt: hard cut besides the smooth density falloff (a hash of exactly 0 used to
+	// let single clumps through on the road)
+	float keep = step(r3 + 0.002, dens) * fade * step(road_clear, road);
 	float tall = mask.g * smoothstep(0.35, 0.7, texture(noise_tex, p * 0.09 + vec2(0.3)).r);
 	float hgt = mix(0.16, 0.38, r4) * (1.0 + tall * 1.9) * mix(0.4, 1.0, smoothstep(0.0, 0.25, keep));
 	float is_flower = COLOR.g;

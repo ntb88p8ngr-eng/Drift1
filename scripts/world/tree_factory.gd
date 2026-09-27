@@ -49,9 +49,10 @@ static func deciduous(seed_value: int, detail: float, autumn := false) -> ArrayM
 		"max_depth": 3 if detail > 0.6 else 2,
 		"crown": Vector3(0, height * 0.72, 0),
 		"leaf_size": 1.3 if detail > 0.6 else (2.1 if detail > 0.3 else 2.8),
-		"leaf_count": 11 if detail > 0.6 else (9 if detail > 0.3 else 5),
+		"leaf_count": 13 if detail > 0.6 else (9 if detail > 0.3 else 5),
 	}
-	var dir := Vector3(rng.randf_range(-0.07, 0.07), 1.0, rng.randf_range(-0.07, 0.07)).normalized()
+	_character(ctx, rng)
+	var dir: Vector3 = (Vector3(rng.randf_range(-0.07, 0.07), 1.0, rng.randf_range(-0.07, 0.07)) + (ctx["bias"] as Vector3) * 0.6).normalized()
 	_branch(ctx, Vector3(0, -0.3, 0), dir, height * 0.55, 0.30 * height / 10.0, 0)
 	# root flares
 	var roots := 5 if detail > 0.6 else 0
@@ -63,6 +64,13 @@ static func deciduous(seed_value: int, detail: float, autumn := false) -> ArrayM
 	var mesh := MeshKit.commit(bark, _material("bark"), null, true)
 	MeshKit.commit(leaves, _material("leaf_autumn" if autumn else "leaf"), mesh)
 	return mesh
+
+
+## Per-tree character: a light side (branches there grow longer and lean towards it) and a lean.
+static func _character(ctx: Dictionary, rng: RandomNumberGenerator) -> void:
+	var a := rng.randf() * TAU
+	ctx["bias"] = Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.12, 0.35)
+	ctx["asym"] = rng.randf_range(0.2, 0.5)
 
 
 static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float, radius: float, depth: int) -> void:
@@ -81,7 +89,7 @@ static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float
 	var up_bias: float = ctx.get("up_bias", 0.06)
 	for s in segs:
 		var bend := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.4, 0.5), rng.randf_range(-1, 1)) * (0.1 + depth * 0.07) * gnarl
-		d = (d + bend + Vector3.UP * (up_bias if depth > 0 else 0.03)).normalized()
+		d = (d + bend + Vector3.UP * (up_bias if depth > 0 else 0.03) + (ctx.get("bias", Vector3.ZERO) as Vector3) * 0.08).normalized()
 		if depth >= 2:
 			d = (d + Vector3.DOWN * 0.05).normalized()
 		p = p + d * (length / segs)
@@ -115,6 +123,12 @@ static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float
 		var clen := length * rng.randf_range(0.55, 0.75) * (1.15 - t * 0.45)
 		if depth == 0:
 			clen *= float(ctx.get("limb_scale", 1.0))
+		# fuller on the light side, thinner on the shady side
+		var bias: Vector3 = ctx.get("bias", Vector3.ZERO)
+		if bias.length_squared() > 0.0:
+			clen *= 1.0 + float(ctx.get("asym", 0.0)) * Vector3(cdir.x, 0, cdir.z).normalized().dot(bias.normalized())
+		if depth > 0 and rng.randf() < 0.1:
+			continue
 		_branch(ctx, pt, cdir, clen, rad * 0.62, depth + 1)
 	if depth == max_depth - 1:
 		_leaf_cluster(ctx, p, length * 0.45 + 0.6)
@@ -164,7 +178,8 @@ static func oak(seed_value: int, detail: float) -> ArrayMesh:
 		"t_min": 0.62, "angle_min": 42.0, "angle_max": 72.0, "limb_scale": 2.1,
 		"up_bias": 0.035, "gnarl": 1.7,
 	}
-	var dir := Vector3(rng.randf_range(-0.05, 0.05), 1.0, rng.randf_range(-0.05, 0.05)).normalized()
+	_character(ctx, rng)
+	var dir: Vector3 = (Vector3(rng.randf_range(-0.05, 0.05), 1.0, rng.randf_range(-0.05, 0.05)) + (ctx["bias"] as Vector3) * 0.4).normalized()
 	_branch(ctx, Vector3(0, -0.3, 0), dir, trunk, 0.52, 0)
 	var roots := 6 if detail > 0.6 else 0
 	for k in roots:
@@ -185,50 +200,99 @@ static func pine(seed_value: int, detail: float) -> ArrayMesh:
 	rng.seed = seed_value
 	var bark := MeshKit.new_st()
 	var leaves := MeshKit.new_st()
-	var height := rng.randf_range(12.0, 18.0)
-	var ring := 10 if detail > 0.6 else 5
-	# trunk with slight lean/wobble
+	var hi := detail > 0.6
+	var height := rng.randf_range(11.0, 20.0)
+	var hs := height / 15.0
+	var ring := 10 if hi else 5
+	# every tree has its own character: lean, a fuller side (towards the light), crown shape, droop
+	var lean_dir := Vector3(cos(rng.randf() * TAU), 0, sin(rng.randf() * TAU)).normalized()
+	var lean := rng.randf_range(0.0, 0.45) * hs
+	var sweep := rng.randf_range(0.0, 0.35)        # base sweep (trunk bent near the ground)
+	var bias_az := rng.randf() * TAU
+	var asym := rng.randf_range(0.12, 0.4)
+	var droop_base := rng.randf_range(0.15, 0.5)
+	var slim := rng.randf_range(0.75, 1.2)          # crown width
+	var bare := rng.randf_range(0.08, 0.3)          # share of the trunk without green branches
+	# trunk
 	var tpts: Array = []
 	var trad: Array = []
-	var segs := 9
-	for s in segs + 1:
-		var f := float(s) / segs
-		tpts.append(Vector3(sin(f * 3.1 + seed_value) * 0.12 * f, -0.3 + f * height, cos(f * 2.3 + seed_value) * 0.12 * f))
-		trad.append(lerpf(0.36, 0.03, pow(f, 0.9)) * (height / 15.0))
+	var segs := 12 if hi else 7
+	for k in segs + 1:
+		var f := float(k) / segs
+		var bend := lean_dir * (lean * f * f + sweep * sin(f * PI) * 0.4) + Vector3(sin(f * 7.1 + seed_value) * 0.06, 0, cos(f * 5.3 + seed_value) * 0.06) * f
+		tpts.append(Vector3(0, -0.3 + f * height, 0) + bend)
+		trad.append(lerpf(0.4, 0.03, pow(f, 0.85)) * hs * rng.randf_range(0.97, 1.03))
 	MeshKit.tube(bark, tpts, trad, ring, Vector2(1.0, 0.25))
-	var start_h := rng.randf_range(2.0, 3.2)
+	var trunk_at := func(y: float) -> Vector3:
+		var f := clampf((y + 0.3) / height, 0.0, 1.0)
+		var fi := f * segs
+		var i := mini(int(fi), segs - 1)
+		return (tpts[i] as Vector3).lerp(tpts[i + 1], fi - i)
+	var start_h := height * bare + rng.randf_range(0.8, 1.6)
+	# dead stubs on the bare lower trunk
+	if hi:
+		var yy := 1.2
+		while yy < start_h:
+			var az := rng.randf() * TAU
+			var o := Vector3(cos(az), rng.randf_range(-0.2, 0.1), sin(az))
+			var b0: Vector3 = trunk_at.call(yy)
+			MeshKit.tube(bark, [b0, b0 + o * rng.randf_range(0.3, 0.9)], [0.035, 0.01], 3, Vector2(1, 0.3), Color(0.75, 0.7, 0.65))
+			yy += rng.randf_range(0.35, 0.8)
 	var h := start_h
-	var whorl := 0
-	var per_whorl := 7 if detail > 0.6 else 5
+	var per_whorl := 9 if hi else 6
 	while h < height - 0.6:
 		var frac := (h - start_h) / (height - start_h)
-		var blen := lerpf(3.8, 0.55, pow(frac, 0.85)) * rng.randf_range(0.85, 1.15) * (height / 15.0)
+		# crown profile: full in the lower third, then a slightly convex cone
+		var profile := lerpf(1.0, 0.12, pow(frac, rng.randf_range(0.8, 1.05)))
+		var base_len := 4.0 * profile * slim * hs
 		var offset := rng.randf() * TAU
-		for k in per_whorl:
-			var az := offset + TAU * float(k) / per_whorl + rng.randf_range(-0.25, 0.25)
+		var n_br := per_whorl - (rng.randi_range(0, 2) if hi else rng.randi_range(0, 1))
+		for k in n_br:
+			if rng.randf() < 0.12:
+				continue                                   # gaps: broken or missing branches
+			var az := offset + TAU * float(k) / n_br + rng.randf_range(-0.35, 0.35)
 			var out := Vector3(cos(az), 0, sin(az))
-			var droop := rng.randf_range(0.2, 0.45) * (1.0 - frac * 0.5)
-			var base := Vector3(0, h, 0)
-			var mid := base + out * blen * 0.5 + Vector3(0, -droop * blen * 0.35, 0)
-			var tip := base + out * blen + Vector3(0, -droop * blen * 0.25 + 0.12 * blen, 0)
-			if detail > 0.6:
-				MeshKit.tube(bark, [base, mid, tip], [0.06 * (1.0 - frac) + 0.02, 0.035, 0.012], 4, Vector2(1.0, 0.3))
-			_needle_cards(leaves, rng, [base + out * 0.15, mid, tip], blen, detail)
-		h += rng.randf_range(0.5, 0.75) * (height / 15.0)
-		whorl += 1
-	# crown tip
-	var top := Vector3(0, height - 0.4, 0)
-	for k in 4:
-		var az2 := TAU * k / 4.0
-		var o := Vector3(cos(az2), 0.8, sin(az2)).normalized()
-		_needle_cards(leaves, rng, [top, top + o * 0.5, top + o * 0.9], 0.9, detail)
+			var side_f := 1.0 + asym * cos(az - bias_az)
+			var blen := base_len * side_f * rng.randf_range(0.7, 1.25) + 0.4
+			var droop := (droop_base + rng.randf_range(-0.1, 0.15)) * (1.0 - frac * 0.6)
+			var base: Vector3 = trunk_at.call(h)
+			var up_kick := rng.randf_range(0.02, 0.2)
+			var p1 := base + out * blen * 0.35 + Vector3(0, up_kick * blen * 0.3, 0)
+			var p2 := base + out * blen * 0.7 + Vector3(0, -droop * blen * 0.3, 0)
+			var tip := base + out * blen + Vector3(0, -droop * blen * 0.35 + up_kick * blen * 0.5, 0)
+			if hi:
+				MeshKit.tube(bark, [base, p1, p2, tip], [0.07 * (1.0 - frac) + 0.02, 0.04, 0.022, 0.008], 4, Vector2(1.0, 0.3))
+			_needle_cards(leaves, rng, [base + out * 0.2, p1, p2, tip], blen, detail)
+			# side twigs with their own needle sprays
+			if hi and blen > 1.4:
+				for tw in rng.randi_range(1, 3):
+					var t := rng.randf_range(0.35, 0.85)
+					var q: Vector3 = p1.lerp(tip, t)
+					var side := out.cross(Vector3.UP).normalized() * (1.0 if rng.randf() < 0.5 else -1.0)
+					var tl := blen * rng.randf_range(0.25, 0.45)
+					var qe := q + (side * 0.8 + out * 0.5).normalized() * tl + Vector3(0, -droop * tl * 0.3, 0)
+					_needle_cards(leaves, rng, [q, q.lerp(qe, 0.5), qe], tl, detail * 0.5)
+		h += rng.randf_range(0.4, 0.8) * hs
+	# leader: sometimes bent or forked
+	var top: Vector3 = trunk_at.call(height - 0.4)
+	var tip_dir := (Vector3.UP + lean_dir * rng.randf_range(0.0, 0.5)).normalized()
+	var leaders := 2 if rng.randf() < 0.12 else 1
+	for l in leaders:
+		var d := tip_dir.rotated(Vector3.UP, l * 2.5) if l > 0 else tip_dir
+		if l > 0:
+			d = (d + lean_dir.rotated(Vector3.UP, PI) * 0.5).normalized()
+		_needle_cards(leaves, rng, [top - Vector3(0, 0.8, 0), top, top + d * 1.2], 1.4, detail)
+	for k in 5:
+		var az2 := TAU * k / 5.0 + rng.randf()
+		var o := Vector3(cos(az2), 0.7, sin(az2)).normalized()
+		_needle_cards(leaves, rng, [top, top + o * 0.5, top + o * 1.0], 1.0, detail)
 	var mesh := MeshKit.commit(bark, _material("bark_pine"), null, true)
 	MeshKit.commit(leaves, _material("needle"), mesh)
 	return mesh
 
 
 static func _needle_cards(st: SurfaceTool, rng: RandomNumberGenerator, path: Array, blen: float, detail: float) -> void:
-	var cards := 3 if detail > 0.6 else 2
+	var cards := 4 if detail > 0.6 else (2 if detail > 0.2 else 1)
 	for c in cards:
 		var t := float(c) / cards
 		var i := mini(int(t * (path.size() - 1)), path.size() - 2)
