@@ -75,6 +75,12 @@ uniform sampler2D puddle_tex : hint_default_black, filter_linear, repeat_disable
 uniform vec4 puddle_rect = vec4(0.0, 0.0, 0.001, 0.001);   // origin xz, 1/size xz
 uniform float puddle_level = 0.0;
 uniform float rain = 0.0;
+// photo asphalt (assets/textures/asphalt_*): fine grain + relief; a second, rotated and larger
+// sample breaks up the tiling
+uniform sampler2D asphalt_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D asphalt_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float asphalt_tile = 0.9;     // metres per repeat
+uniform float asphalt_mean = 0.35;    // average brightness of the texture (0 = texture off)
 // graffiti mode: owner colour per track cell (x = distance along the track / graffiti_len)
 uniform sampler2D graffiti_tex : hint_default_transparent, filter_nearest, repeat_enable;
 uniform float graffiti_len = 0.0;
@@ -90,6 +96,14 @@ void fragment() {
 	float n2 = texture(noise_tex, wpos.xz * 0.019).r;
 	float n3 = texture(noise_tex, wpos.xz * 0.004 + vec2(0.3, 0.7)).r;
 	vec3 col = asphalt * (0.72 + 0.56 * n) * (0.85 + 0.3 * n2);
+	vec2 tp = wpos.xz / asphalt_tile;
+	float grain = 1.0;
+	if (asphalt_mean > 0.0) {
+		vec2 tp2 = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * wpos.xz / (asphalt_tile * 5.3);
+		grain = dot(texture(asphalt_tex, tp).rgb, vec3(0.3333)) / asphalt_mean;
+		float grain2 = dot(texture(asphalt_tex, tp2).rgb, vec3(0.3333)) / asphalt_mean;
+		col = asphalt * (0.9 + 0.2 * n) * (0.85 + 0.3 * n2) * mix(1.0, grain, 0.9) * mix(1.0, grain2, 0.3);
+	}
 	col = mix(col, asphalt * 1.45, smoothstep(0.62, 0.66, n3) * patch_amount);
 	float line_off = 0.14 * sin(UV.y * 0.011) + 0.06 * sin(UV.y * 0.037);
 	float rubber = smoothstep(0.30, 0.0, abs(UV.x - 0.5 + line_off)) * (0.45 + 0.4 * n2);
@@ -111,9 +125,12 @@ void fragment() {
 	col = mix(col, col * 0.35, puddle);
 	ALBEDO = col;
 	EMISSION = tag_glow;
-	ROUGHNESS = mix(mix(0.86 - rubber * 0.25, 0.16 + n * 0.1, wetness), 0.02, puddle);
+	ROUGHNESS = mix(mix(0.86 - rubber * 0.25 - clamp(grain - 1.0, 0.0, 0.5) * 0.2, 0.16 + n * 0.1, wetness), 0.02, puddle);
 	SPECULAR = mix(0.45, 0.7, max(wetness, puddle));
 	vec3 nm = texture(noise_nrm, wpos.xz * 0.23).xyz;
+	if (asphalt_mean > 0.0) {
+		nm = mix(nm, texture(asphalt_nrm, tp).xyz, 0.75);
+	}
 	vec3 ripple = texture(noise_nrm, wpos.xz * 1.7 + vec2(TIME * 0.9, -TIME * 0.6)).xyz;
 	NORMAL_MAP = mix(nm, mix(vec3(0.5, 0.5, 1.0), ripple, 0.25 * rain), puddle);
 	NORMAL_MAP_DEPTH = mix(mix(0.7, 0.18, wetness), 0.4, puddle);
@@ -180,6 +197,13 @@ uniform vec2 edge_inv_size = vec2(0.0);
 uniform float shoulder = 0.0;    // 0 = off (playground)
 uniform float trap_w = 4.6;
 uniform vec3 gravel : source_color = vec3(0.47, 0.44, 0.39);
+// photo textures: gravel (shoulders, traps, harbor ground) and asphalt (playground pad)
+uniform sampler2D gravel_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D gravel_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D asphalt_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D asphalt_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float photo_tex = 0.0;   // 1 when the photo textures are set
+uniform int paved_mode = 0;      // paved ground: 0 concrete slabs, 1 gravel, 2 asphalt
 
 varying vec3 wpos;
 varying vec4 splat;
@@ -218,13 +242,27 @@ void fragment() {
 	vec2 rp = vec2(p.x + p.y * 0.3, wpos.y * 1.5 + p.y * 0.2);
 	vec3 rcol = rock * (0.62 + 0.7 * texture(noise_tex, rp * 0.21).r) * (0.85 + 0.3 * n4);
 	col = mix(col, rcol, rk);
-	// concrete apron (harbor)
+	// paved ground: concrete apron / gravel yard (harbor), asphalt pad (playground)
 	float pv = clamp(splat.r, 0.0, 1.0);
+	vec2 rot_p = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * p;
+	vec3 pnrm = vec3(0.5, 0.5, 1.0);
 	if (pv > 0.001) {
 		vec3 c = concrete * (0.78 + 0.35 * n2) * (0.88 + 0.24 * n3);
-		vec2 gg = abs(fract(p / 6.0) - 0.5);
-		float joint = smoothstep(0.486, 0.496, max(gg.x, gg.y));
-		c *= 1.0 - joint * 0.4 * joints;
+		if (photo_tex > 0.5 && paved_mode == 1) {
+			vec3 gt = texture(gravel_tex, p / 1.7).rgb;
+			float g2 = dot(texture(gravel_tex, rot_p / 8.3).rgb, vec3(0.3333)) / 0.49;
+			c = gt * 0.82 * mix(1.0, g2, 0.35) * (0.85 + 0.3 * n3);
+			pnrm = texture(gravel_nrm, p / 1.7).xyz;
+		} else if (photo_tex > 0.5 && paved_mode == 2) {
+			float a1 = dot(texture(asphalt_tex, p / 0.9).rgb, vec3(0.3333)) / 0.35;
+			float a2 = dot(texture(asphalt_tex, rot_p / 4.8).rgb, vec3(0.3333)) / 0.35;
+			c = concrete * mix(1.0, a1, 0.9) * mix(1.0, a2, 0.3) * (0.88 + 0.24 * n3);
+			pnrm = texture(asphalt_nrm, p / 0.9).xyz;
+		} else {
+			vec2 gg = abs(fract(p / 6.0) - 0.5);
+			float joint = smoothstep(0.486, 0.496, max(gg.x, gg.y));
+			c *= 1.0 - joint * 0.4 * joints;
+		}
 		c = mix(c, c * 0.55, smoothstep(0.66, 0.8, n5) * 0.6);
 		col = mix(col, c, pv);
 	}
@@ -242,6 +280,10 @@ void fragment() {
 			vec3 gc = gravel * (0.72 + 0.45 * s1) * (0.85 + 0.3 * n1);
 			gc = mix(gc, vec3(0.62, 0.6, 0.56), smoothstep(0.62, 0.75, s2) * 0.6);   // light pebbles
 			gc = mix(gc, vec3(0.2, 0.19, 0.17), smoothstep(0.3, 0.2, s2) * 0.5);      // dark pebbles
+			if (photo_tex > 0.5) {
+				float g2 = dot(texture(gravel_tex, rot_p / 8.3).rgb, vec3(0.3333)) / 0.49;
+				gc = texture(gravel_tex, p / 1.7).rgb * 0.9 * mix(1.0, g2, 0.35) * (0.85 + 0.3 * n1);
+			}
 			// tyre-worn, darker gravel next to the asphalt
 			gc *= mix(0.8, 1.0, smoothstep(0.0, 0.9, ed));
 			col = mix(col, gc, gv);
@@ -252,7 +294,12 @@ void fragment() {
 	ROUGHNESS = mix(mix(mix(0.96, 0.86, pv), 0.92, gv), mix(0.5, 0.18, pv), wet);
 	SPECULAR = 0.35 + wet * 0.2;
 	NORMAL_MAP = texture(noise_nrm, p * 0.37).xyz;
-	NORMAL_MAP = mix(NORMAL_MAP, texture(noise_nrm, p * 2.3).xyz, gv);
+	if (photo_tex > 0.5) {
+		NORMAL_MAP = mix(NORMAL_MAP, pnrm, pv * step(0.5, float(paved_mode)));
+		NORMAL_MAP = mix(NORMAL_MAP, texture(gravel_nrm, p / 1.7).xyz, gv);
+	} else {
+		NORMAL_MAP = mix(NORMAL_MAP, texture(noise_nrm, p * 2.3).xyz, gv);
+	}
 	NORMAL_MAP_DEPTH = mix(mix(1.1, 0.6, max(pv, wet * 0.6)), 1.6, gv);
 }
 """
@@ -437,6 +484,8 @@ void fragment() {
 
 const SKY_SHADER := """
 shader_type sky;
+// the expensive atmosphere + clouds run at half resolution; sun disk, moon and stars stay sharp
+render_mode use_half_res_pass;
 
 uniform vec3 zenith_color : source_color = vec3(0.12, 0.28, 0.62);
 uniform vec3 horizon_color : source_color = vec3(0.62, 0.72, 0.85);
@@ -454,6 +503,20 @@ uniform float star_amount = 0.0;
 uniform float moon_amount = 0.0;
 uniform vec3 moon_dir = vec3(-0.3, 0.5, -0.8);
 uniform float exposure = 1.0;
+// physically based atmosphere (single scattering: Rayleigh for the blue sky and red dusk,
+// Mie for the haze and the bright halo around the sun)
+uniform float physical = 1.0;     // 0 = old colour gradient only
+uniform float sky_energy = 0.085; // scattered light -> scene brightness
+uniform float haze = 1.0;         // Mie (aerosol) density: > 1 in rain and mist
+
+const float R_PLANET = 6371e3;
+const float R_ATMOS = 6471e3;
+const vec3 K_RLH = vec3(5.5e-6, 13.0e-6, 22.4e-6);
+const float K_MIE = 21e-6;
+const float SH_RLH = 8e3;
+const float SH_MIE = 1.2e3;
+const float G_MIE = 0.76;
+const float I_SUN = 22.0;
 
 float hash2(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -483,8 +546,77 @@ float fbm(vec2 p, int octaves) {
 	return v;
 }
 
-void sky() {
-	vec3 dir = normalize(EYEDIR);
+// ray / sphere (centre at the origin): far intersection distance, < 0 if none
+vec2 rsi(vec3 r0, vec3 rd, float sr) {
+	float b = 2.0 * dot(rd, r0);
+	float c = dot(r0, r0) - sr * sr;
+	float d = b * b - 4.0 * c;
+	if (d < 0.0) return vec2(1e5, -1e5);
+	float sq = sqrt(d);
+	return vec2((-b - sq) * 0.5, (-b + sq) * 0.5);
+}
+
+// light scattered towards the eye along `rd` (observer 1 m above the ground)
+vec3 atmosphere(vec3 rd, vec3 sd, int steps_i, int steps_j) {
+	vec3 r0 = vec3(0.0, R_PLANET + 1.0, 0.0);
+	vec2 p = rsi(r0, rd, R_ATMOS);
+	if (p.x > p.y) return vec3(0.0);
+	p.y = min(p.y, rsi(r0, rd, R_PLANET).x > 0.0 ? rsi(r0, rd, R_PLANET).x : p.y);
+	float step_i = (p.y - max(p.x, 0.0)) / float(steps_i);
+	float t_i = max(p.x, 0.0);
+	vec3 tot_r = vec3(0.0);
+	vec3 tot_m = vec3(0.0);
+	float od_r_i = 0.0;
+	float od_m_i = 0.0;
+	float mu = dot(rd, sd);
+	float mumu = mu * mu;
+	float gg = G_MIE * G_MIE;
+	float p_rlh = 3.0 / (16.0 * PI) * (1.0 + mumu);
+	float p_mie = 3.0 / (8.0 * PI) * ((1.0 - gg) * (mumu + 1.0)) / (pow(1.0 + gg - 2.0 * mu * G_MIE, 1.5) * (2.0 + gg));
+	float k_mie = K_MIE * haze;
+	for (int i = 0; i < steps_i; i++) {
+		vec3 pos_i = r0 + rd * (t_i + step_i * 0.5);
+		float h_i = length(pos_i) - R_PLANET;
+		float od_r_step = exp(-h_i / SH_RLH) * step_i;
+		float od_m_step = exp(-h_i / SH_MIE) * step_i;
+		od_r_i += od_r_step;
+		od_m_i += od_m_step;
+		float step_j = rsi(pos_i, sd, R_ATMOS).y / float(steps_j);
+		float t_j = 0.0;
+		float od_r_j = 0.0;
+		float od_m_j = 0.0;
+		for (int j = 0; j < steps_j; j++) {
+			vec3 pos_j = pos_i + sd * (t_j + step_j * 0.5);
+			float h_j = length(pos_j) - R_PLANET;
+			od_r_j += exp(-h_j / SH_RLH) * step_j;
+			od_m_j += exp(-h_j / SH_MIE) * step_j;
+			t_j += step_j;
+		}
+		vec3 attn = exp(-(k_mie * (od_m_i + od_m_j) + K_RLH * (od_r_i + od_r_j)));
+		tot_r += od_r_step * attn;
+		tot_m += od_m_step * attn;
+		t_i += step_i;
+	}
+	return I_SUN * (p_rlh * K_RLH * tot_r + p_mie * k_mie * tot_m);
+}
+
+// colour of direct sunlight after crossing the atmosphere (sunset red, noon white)
+vec3 sun_transmittance(vec3 sd) {
+	vec3 r0 = vec3(0.0, R_PLANET + 1.0, 0.0);
+	float len = rsi(r0, sd, R_ATMOS).y;
+	float st = len / 8.0;
+	float od_r = 0.0;
+	float od_m = 0.0;
+	for (int j = 0; j < 8; j++) {
+		float h = length(r0 + sd * (st * (float(j) + 0.5))) - R_PLANET;
+		od_r += exp(-h / SH_RLH) * st;
+		od_m += exp(-h / SH_MIE) * st;
+	}
+	return exp(-(K_RLH * od_r + K_MIE * haze * od_m));
+}
+
+// sky without the sharp sun disk / moon / stars; alpha = cloud cover (hides stars and disk)
+vec4 sky_color(vec3 dir, bool cubemap) {
 	float h = dir.y;
 	vec3 sd = normalize(sun_dir);
 	vec3 col;
@@ -493,47 +625,94 @@ void sky() {
 	} else {
 		col = mix(horizon_color, ground_color, clamp(-h * 5.0, 0.0, 1.0));
 	}
-	// sun glow and disk (sun_dir points towards the sun; hidden below the horizon)
 	float d = dot(dir, sd);
 	float above = smoothstep(-0.08, 0.02, sd.y);
-	float glow = pow(max(d, 0.0), 6.0) * sun_glow + pow(max(d, 0.0), 80.0) * 0.8;
-	col += sun_color * glow * above;
-	if (sun_size > 0.0001) {
-		float disk = smoothstep(cos(sun_size), cos(sun_size * 0.85), d);
-		col += sun_color * disk * 25.0 * step(-0.02, h) * above;
+	vec3 sun_tint = sun_color;
+	if (physical > 0.0) {
+		// scattering from the sun; the old gradient only carries the night sky
+		vec3 ad = vec3(dir.x, max(dir.y, 0.0), dir.z);
+		vec3 phys = atmosphere(normalize(ad + vec3(0.0, 0.0005, 0.0)), sd, cubemap ? 8 : 12, cubemap ? 3 : 4) * sky_energy;
+		if (h < 0.0) {
+			phys = mix(phys, ground_color * dot(phys, vec3(0.33)) * 2.0, clamp(-h * 4.0, 0.0, 1.0));
+		}
+		float night_w = 1.0 - smoothstep(-0.16, 0.02, sd.y);
+		col = mix(col, phys + col * night_w, physical);
+		vec3 tr = sun_transmittance(normalize(vec3(sd.x, max(sd.y, 0.01), sd.z)));
+		sun_tint = mix(sun_color, tr / max(max(tr.r, tr.g), max(tr.b, 0.05)) * vec3(1.0, 0.97, 0.92), physical);
+	} else {
+		float glow = pow(max(d, 0.0), 6.0) * sun_glow + pow(max(d, 0.0), 80.0) * 0.8;
+		col += sun_color * glow * above;
 	}
 	if (moon_amount > 0.0) {
 		vec3 md = normalize(moon_dir);
-		float mdd = dot(dir, md);
-		col += vec3(0.8, 0.85, 1.0) * smoothstep(0.9993, 0.9996, mdd) * moon_amount * 3.0;
-		col += vec3(0.25, 0.3, 0.45) * pow(max(mdd, 0.0), 30.0) * moon_amount * 0.3;
+		col += vec3(0.25, 0.3, 0.45) * pow(max(dot(dir, md), 0.0), 30.0) * moon_amount * 0.3;
 	}
-	if (star_amount > 0.0 && h > 0.0) {
-		float s = hash3(floor(dir * 420.0));
-		float tw = hash3(floor(dir * 420.0) + vec3(3.0));
-		col += vec3(0.9, 0.92, 1.0) * step(0.9975, s) * star_amount * (0.4 + 0.6 * tw) * smoothstep(0.0, 0.25, h) * (1.0 - cloud_coverage);
-	}
+	float cover = 0.0;
 	if (h > 0.0) {
 		vec2 uv = dir.xz / (h + 0.08);
-		int oct = AT_CUBEMAP_PASS ? 4 : 6;
+		int oct = cubemap ? 4 : 6;
 		// high, thin veil
 		float n2 = fbm(uv * 0.22 + cloud_offset * 0.35 + vec2(7.0, 3.0), 4);
 		float veil = smoothstep(0.52, 0.85, n2) * 0.3 * (1.0 - cloud_darkness);
-		col = mix(col, cloud_color, veil * smoothstep(0.0, 0.25, h));
-		// main cloud layer, lit from the sun side
+		vec3 lit = mix(cloud_color, cloud_color * sun_tint, 0.55 * physical);
+		col = mix(col, lit, veil * smoothstep(0.0, 0.25, h));
+		// main cloud layer, lit from the sun side in the colour of the sunlight
 		float n = fbm(uv * 0.8 + cloud_offset, oct);
 		float cov = 1.0 - cloud_coverage;
 		float dens = smoothstep(cov - 0.05, cov + 0.3, n);
 		float n_sun = fbm(uv * 0.8 + cloud_offset + sd.xz * 0.12, oct);
 		float shade = clamp((n_sun - n) * 5.0 + 0.5, 0.0, 1.0);
-		vec3 cc = mix(cloud_color, cloud_shade, shade);
+		vec3 cc = mix(lit, cloud_shade, shade);
 		cc = mix(cc, cloud_shade * 0.55, cloud_darkness * (0.4 + 0.6 * dens));
-		cc += sun_color * pow(max(d, 0.0), 8.0) * 0.6 * (1.0 - dens) * above;
-		col = mix(col, cc, dens * smoothstep(0.0, 0.1, h) * 0.96);
+		// silver lining towards the sun
+		cc += sun_tint * pow(max(d, 0.0), 8.0) * 0.6 * (1.0 - dens) * above;
+		float a = dens * smoothstep(0.0, 0.1, h) * 0.96;
+		col = mix(col, cc, a);
+		cover = max(a, veil);
 	}
 	// overcast: the whole sky turns flat grey
 	col = mix(col, mix(cloud_shade, cloud_color, 0.35) * (0.6 + 0.4 * clamp(h * 2.0 + 0.5, 0.0, 1.0)), cloud_darkness * 0.55);
-	COLOR = col * exposure;
+	return vec4(col, cover);
+}
+
+void sky() {
+	vec3 dir = normalize(EYEDIR);
+	vec4 base;
+	if (AT_CUBEMAP_PASS) {
+		base = sky_color(dir, true);
+	} else if (AT_HALF_RES_PASS) {
+		base = sky_color(dir, false);
+		COLOR = base.rgb;
+		ALPHA = base.a;
+	} else {
+		base = HALF_RES_COLOR;
+	}
+	if (!AT_HALF_RES_PASS) {
+		vec3 col = base.rgb;
+		float clear = 1.0 - base.a;
+		float h = dir.y;
+		vec3 sd = normalize(sun_dir);
+		float d = dot(dir, sd);
+		float above = smoothstep(-0.08, 0.02, sd.y);
+		if (sun_size > 0.0001) {
+			vec3 tr = sun_transmittance(normalize(vec3(sd.x, max(sd.y, 0.01), sd.z)));
+			vec3 disk_col = mix(sun_color, tr / max(max(tr.r, tr.g), max(tr.b, 0.05)), physical);
+			float disk = smoothstep(cos(sun_size), cos(sun_size * 0.85), d);
+			col += disk_col * disk * 25.0 * step(-0.02, h) * above * (0.25 + 0.75 * clear);
+		}
+		if (moon_amount > 0.0) {
+			vec3 md = normalize(moon_dir);
+			col += vec3(0.8, 0.85, 1.0) * smoothstep(0.9993, 0.9996, dot(dir, md)) * moon_amount * 3.0 * (0.2 + 0.8 * clear);
+		}
+		if (star_amount > 0.0 && h > 0.0) {
+			float s = hash3(floor(dir * 420.0));
+			float tw = hash3(floor(dir * 420.0) + vec3(3.0));
+			col += vec3(0.9, 0.92, 1.0) * step(0.9975, s) * star_amount * (0.4 + 0.6 * tw) * smoothstep(0.0, 0.25, h) * clear;
+		}
+		COLOR = col * exposure;
+	} else {
+		COLOR *= exposure;
+	}
 }
 """
 
@@ -720,7 +899,20 @@ static func road_material(asphalt: Color, wet := 0.0) -> ShaderMaterial:
 	m.set_shader_parameter("noise_nrm", noise_texture(12, 0.03, true, 512, 4.0))
 	m.set_shader_parameter("asphalt", asphalt)
 	m.set_shader_parameter("wetness", wet)
+	var at: Texture2D = photo_texture("asphalt_albedo.jpg")
+	if at:
+		m.set_shader_parameter("asphalt_tex", at)
+		m.set_shader_parameter("asphalt_nrm", photo_texture("asphalt_normal.png"))
+		m.set_shader_parameter("asphalt_mean", 0.35)
+	else:
+		m.set_shader_parameter("asphalt_mean", 0.0)
 	return m
+
+
+## Photo textures from assets/textures (null if missing).
+static func photo_texture(file: String) -> Texture2D:
+	var path := "res://assets/textures/" + file
+	return load(path) if ResourceLoader.exists(path) else null
 
 
 static func ground_material(a: Color, b: Color, c: Color, roughness := 0.95, tile := 0.0) -> ShaderMaterial:
@@ -743,6 +935,14 @@ static func terrain_material(track_id: String) -> ShaderMaterial:
 	m.shader = _shader("shader_terrain", TERRAIN_SHADER)
 	m.set_shader_parameter("noise_tex", noise_texture(21, 0.015))
 	m.set_shader_parameter("noise_nrm", noise_texture(22, 0.05, true, 512, 3.0))
+	var gt: Texture2D = photo_texture("gravel_albedo.jpg")
+	if gt:
+		m.set_shader_parameter("gravel_tex", gt)
+		m.set_shader_parameter("gravel_nrm", photo_texture("gravel_normal.png"))
+		m.set_shader_parameter("asphalt_tex", photo_texture("asphalt_albedo.jpg"))
+		m.set_shader_parameter("asphalt_nrm", photo_texture("asphalt_normal.png"))
+		m.set_shader_parameter("photo_tex", 1.0)
+		m.set_shader_parameter("paved_mode", {"harbor": 1, "playground": 2}.get(track_id, 0))
 	if track_id == "playground":
 		m.set_shader_parameter("concrete", Color(0.12, 0.12, 0.13))
 		m.set_shader_parameter("joints", 0.0)

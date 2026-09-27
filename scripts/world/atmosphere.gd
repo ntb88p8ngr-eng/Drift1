@@ -231,6 +231,8 @@ func _apply(_delta: float) -> void:
 	sky_mat.set_shader_parameter("moon_amount", clampf(-sp.x / 8.0, 0.0, 1.0) * (1.0 - overcast))
 	sky_mat.set_shader_parameter("moon_dir", _moon_dir)
 	sky_mat.set_shader_parameter("exposure", 1.0)
+	# thicker aerosols (milky haze) in rain and when it clouds over
+	sky_mat.set_shader_parameter("haze", 1.0 + rain * 2.5 + overcast * 1.5)
 	# light: the sun above the horizon, otherwise the moon
 	var sun_amount := smoothstep(-2.0, 4.0, sp.x)
 	var moon_amount := smoothstep(-2.0, -9.0, sp.x)

@@ -838,6 +838,73 @@ func _update_tuning(car_id: String) -> void:
 	var b_def := UiKit.label("Werkseinstellung: %s" % Game.BURBLE_LEVELS[int(Game.get_car(car_id).get("burble", 1))], 14, UiKit.TEXT_DIM)
 	_tuning_box.add_child(UiKit.row([b_name, b_opt, b_def], 10))
 	_tuning_box.add_child(b_desc)
+	_underglow_ui(car_id)
+
+
+## Underglow: on/off, flasher mode and speed, and per side on/off, colour and "Flasher" (joins the
+## mode; otherwise that side stays lit steadily). Free, applied to the car on the turntable at once.
+func _underglow_ui(car_id: String) -> void:
+	var cfg := Game.get_underglow(car_id)
+	var apply := func():
+		Game.set_underglow(car_id, cfg)
+		main.refresh_showroom(false)
+		Net.update_local_info()
+	_tuning_box.add_child(UiKit.spacer(4))
+	var title := UiKit.label("Underglow", 19)
+	title.custom_minimum_size = Vector2(110, 0)
+	var on := CheckButton.new()
+	on.text = "An"
+	on.button_pressed = bool(cfg["on"])
+	var details := VBoxContainer.new()
+	details.add_theme_constant_override("separation", 4)
+	details.visible = on.button_pressed
+	on.toggled.connect(func(v):
+		cfg["on"] = v
+		details.visible = v
+		apply.call())
+	_tuning_box.add_child(UiKit.row([title, on], 10))
+	var mode := UiKit.option(Game.UNDERGLOW_MODES, int(cfg["mode"]), func(i):
+		cfg["mode"] = i
+		apply.call(), 200)
+	mode.tooltip_text = "Muster für alle Seiten, bei denen „Flasher“ an ist – die anderen leuchten dauerhaft."
+	var speed := UiKit.slider(0.25, 3.0, 0.05, float(cfg["speed"]), func(x):
+		cfg["speed"] = x
+		apply.call(), 150)
+	details.add_child(UiKit.row([UiKit.label("Modus", 15, UiKit.TEXT_DIM), mode, UiKit.label("Tempo", 15, UiKit.TEXT_DIM), speed], 8))
+	var pickers: Array = []
+	for sd in Game.UNDERGLOW_SIDES:
+		var key: String = sd[0]
+		var side: Dictionary = cfg["sides"][key]
+		var lbl := UiKit.label(sd[1], 15)
+		lbl.custom_minimum_size = Vector2(70, 0)
+		var s_on := CheckBox.new()
+		s_on.text = "an"
+		s_on.button_pressed = bool(side["on"])
+		s_on.toggled.connect(func(v):
+			side["on"] = v
+			apply.call())
+		var pick := ColorPickerButton.new()
+		pick.custom_minimum_size = Vector2(90, 32)
+		pick.edit_alpha = false
+		pick.color = Color.from_string(str(side["color"]), Color(0.55, 0.25, 1.0))
+		pick.color_changed.connect(func(c):
+			side["color"] = "#" + c.to_html(false)
+			apply.call())
+		pickers.append([pick, side])
+		var fl := CheckBox.new()
+		fl.text = "Flasher"
+		fl.button_pressed = bool(side["flash"])
+		fl.toggled.connect(func(v):
+			side["flash"] = v
+			apply.call())
+		details.add_child(UiKit.row([lbl, s_on, pick, fl], 8))
+	details.add_child(UiKit.button("Alle Seiten wie vorne", func():
+		var front: Dictionary = cfg["sides"]["front"]
+		for pk in pickers:
+			(pk[1] as Dictionary)["color"] = front["color"]
+			(pk[0] as ColorPickerButton).color = Color.from_string(str(front["color"]), Color.WHITE)
+		apply.call(), 240))
+	_tuning_box.add_child(details)
 
 
 func _build_controls() -> void:

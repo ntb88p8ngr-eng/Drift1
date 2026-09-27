@@ -5,6 +5,7 @@ extends Node3D
 const Car = preload("res://scripts/car/car.gd")
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
+const MenuStorm = preload("res://scripts/world/menu_storm.gd")
 
 var car: Car
 var turntable: Node3D
@@ -39,6 +40,12 @@ func _ready() -> void:
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+	if garage:
+		# a stormy night outside: lightning, rain and thunder (seen through the gate and skylights)
+		var storm := MenuStorm.new()
+		storm.name = "Storm"
+		add_child(storm)
+		storm.setup(env, _hall_rect())
 
 	if garage == null:
 		# fallback studio floor when the garage asset is missing
@@ -116,6 +123,18 @@ func _ready() -> void:
 	cam.current = true
 	add_child(cam)
 	rebuild_car()
+
+
+## Floor rectangle (x, z) of the hall in showroom coordinates.
+func _hall_rect() -> Rect2:
+	var f := FileAccess.open(GARAGE_INFO, FileAccess.READ)
+	var info = JSON.parse_string(f.get_as_text()) if f else null
+	if info is Dictionary and info.has("floor_min"):
+		var st: Array = info.get("stage", [0, 0, 0])
+		var mn: Array = info["floor_min"]
+		var mx: Array = info["floor_max"]
+		return Rect2(float(mn[0]) - float(st[0]), float(mn[2]) - float(st[2]), float(mx[0]) - float(mn[0]), float(mx[2]) - float(mn[2]))
+	return Rect2(-15, -9, 27, 18)
 
 
 ## The garage hall (converted from the 3ds Max scene, see tools/convert_garage.py), moved so that the
@@ -240,6 +259,7 @@ func rebuild_car() -> void:
 func refresh_paint() -> void:
 	if car:
 		car.set_paint(Game.get_paint(Game.settings["paint"], Game.settings["custom_color"]))
+		car.set_underglow(Game.get_underglow(car.car_id))
 
 
 func _process(delta: float) -> void:

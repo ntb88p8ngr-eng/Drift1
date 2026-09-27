@@ -191,6 +191,8 @@ func _make_car(info: Dictionary, remote: bool) -> Car:
 	car.transmission = str(info.get("transmission", "auto"))
 	if remote:
 		car.burble = clampi(int(info.get("burble", Game.get_car(car.car_id).get("burble", 1))), 0, Game.BURBLE_LEVELS.size() - 1)
+		var ug = info.get("underglow", {})
+		car.underglow_cfg = ug if ug is Dictionary else {}
 	car.name = "Car_%s" % car.player_name.validate_node_name()
 	add_child(car)
 	if remote:

@@ -1,0 +1,36 @@
+extends Node
+## Main-menu background shots (garage, storm outside): calm, during a lightning strike.
+## Run: godot --path . res://tests/menu_shots.tscn -- --out=/tmp/menu
+
+const Main = preload("res://scripts/main.gd")
+
+
+func _ready() -> void:
+	Game.persist = false
+	var out := "/tmp/menu"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--out="):
+			out = a.substr(6)
+	DirAccess.make_dir_recursive_absolute(out)
+	if OS.get_cmdline_user_args().has("--underglow"):
+		Game.settings["underglow"] = {Game.settings["car"]: {"on": true, "mode": 0, "speed": 1.0, "sides": {
+			"front": {"on": true, "color": "#00e5ff", "flash": false}, "rear": {"on": true, "color": "#ff2060", "flash": true},
+			"left": {"on": true, "color": "#8a3dff", "flash": false}, "right": {"on": true, "color": "#8a3dff", "flash": false}}}}
+	var main := Main.new()
+	add_child(main)
+	for f in 20:
+		await get_tree().process_frame
+	var storm = main.find_child("Storm", true, false)
+	await _shot(out.path_join("menu_calm.png"))
+	if storm:
+		storm._next = 0.0
+		for f in 2:
+			await get_tree().process_frame
+		await _shot(out.path_join("menu_flash.png"))
+	get_tree().quit()
+
+
+func _shot(path: String) -> void:
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(path)
+	print("SHOT ", path)

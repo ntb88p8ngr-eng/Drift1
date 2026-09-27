@@ -72,6 +72,9 @@ const TUNING := [
 	{"id": "turbo", "name": "Turbo", "desc": "Mehr Ladedruck, schnelleres Ansprechen – Sauger bekommen einen Turbo-Kit"},
 	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
 ]
+## Underglow (free cosmetic): modes for the sides that are set to "Flasher".
+const UNDERGLOW_MODES := ["Dauerlicht", "Pulsieren", "Blinken", "Stroboskop", "Wechselblinker", "Lauflicht", "Polizei", "Regenbogen"]
+const UNDERGLOW_SIDES := [["front", "Vorne"], ["rear", "Hinten"], ["left", "Links"], ["right", "Rechts"]]
 ## Graffiti mode: selectable match length in minutes.
 const GRAFFITI_MINUTES := [2, 5, 10, 15]
 const TUNING_LEVELS := ["Serie", "Stufe 1", "Stufe 2", "Stufe 3"]
@@ -167,6 +170,7 @@ var settings := {
 	"credits": 12000,
 	"tuning": {},
 	"burble": {},
+	"underglow": {},
 }
 
 ## leaderboard[track_id][category] = Array of entries (sorted best first)
@@ -597,6 +601,26 @@ func set_burble(car_id: String, level: int) -> void:
 	settings_changed.emit()
 
 
+func get_underglow(car_id: String) -> Dictionary:
+	var all: Dictionary = settings.get("underglow", {})
+	var c: Dictionary = (all.get(car_id, {}) as Dictionary).duplicate(true)
+	var out := {"on": bool(c.get("on", false)), "mode": clampi(int(c.get("mode", 0)), 0, UNDERGLOW_MODES.size() - 1),
+		"speed": clampf(float(c.get("speed", 1.0)), 0.25, 3.0), "sides": {}}
+	var sides: Dictionary = c.get("sides", {})
+	for s in UNDERGLOW_SIDES:
+		var sd: Dictionary = sides.get(s[0], {})
+		out["sides"][s[0]] = {"on": bool(sd.get("on", true)), "color": str(sd.get("color", "#8a3dff")), "flash": bool(sd.get("flash", false))}
+	return out
+
+
+func set_underglow(car_id: String, cfg: Dictionary) -> void:
+	var all: Dictionary = settings.get("underglow", {})
+	all[car_id] = cfg.duplicate(true)
+	settings["underglow"] = all
+	save_settings()
+	settings_changed.emit()
+
+
 func add_credits(amount: int) -> void:
 	if amount <= 0:
 		return
@@ -644,6 +668,7 @@ func local_player_info() -> Dictionary:
 		"custom_color": settings["custom_color"],
 		"transmission": settings["transmission"],
 		"burble": get_burble(str(settings["car"])),
+		"underglow": get_underglow(str(settings["car"])),
 		"ready": false,
 		"version": VERSION,
 	}

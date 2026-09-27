@@ -16,6 +16,7 @@ signal backfire(strength: float)
 const CarBody = preload("res://scripts/car/car_body.gd")
 const CarAudio = preload("res://scripts/car/car_audio.gd")
 const TireFX = preload("res://scripts/car/tire_fx.gd")
+const Underglow = preload("res://scripts/car/underglow.gd")
 
 const LAYER_WORLD := 1
 const LAYER_LOCAL := 2
@@ -93,6 +94,8 @@ var forward_speed := 0.0    # m/s, signed along heading
 var slip_angle := 0.0       # rad, body slip (velocity vs heading)
 var grounded_wheels := 0
 var headlights := false
+var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.get_underglow)
+var underglow: Node3D
 var braking_visual := false
 var track_hint := -1
 var surface_name := "asphalt"
@@ -167,6 +170,11 @@ func _ready() -> void:
 		_xf_prev = global_transform
 		_xf_curr = global_transform
 
+	underglow = Underglow.new()
+	underglow.name = "Underglow"
+	body.add_child(underglow)
+	set_underglow(underglow_cfg if not underglow_cfg.is_empty() or is_remote else Game.get_underglow(car_id))
+
 	_setup_physics()
 	_setup_wheels()
 
@@ -218,6 +226,15 @@ func _update_backfire(delta: float) -> void:
 func _on_settings_changed() -> void:
 	if not is_remote:
 		burble = Game.get_burble(car_id)
+		var ug := Game.get_underglow(car_id)
+		if underglow and ug != underglow.cfg:
+			set_underglow(ug)
+
+
+func set_underglow(cfg: Dictionary) -> void:
+	underglow_cfg = cfg
+	if underglow:
+		underglow.setup(cfg, body_spec, true)
 
 
 func _apply_tuning(t: Dictionary) -> void:

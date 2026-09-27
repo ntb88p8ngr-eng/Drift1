@@ -16,6 +16,7 @@ func _ready() -> void:
 	add_child(main)
 	for f in 10:
 		await get_tree().process_frame
+	Game.settings["underglow"] = {Game.settings["car"]: {"on": true, "mode": 4, "speed": 1.0, "sides": {}}}
 	for screen in ["options", "garage", "single"]:
 		if screen == "single":
 			Game.settings["mode"] = "graffiti"

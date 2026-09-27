@@ -96,6 +96,13 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 # ---------------------------------------------------------------------------
 # Placement helpers
 # ---------------------------------------------------------------------------
+## Share of scenery kept at distance d from the road: 1 up to `near`, down to `min_keep` at `far`
+## (the lower the graphics quality, the stronger the thinning).
+func far_keep(d: float, near: float, far: float, min_keep: float) -> float:
+	var lo: float = min_keep * [0.6, 0.8, 1.0, 1.25][quality]
+	return lerpf(1.0, clampf(lo, 0.05, 1.0), smoothstep(near, far, d))
+
+
 func free_at(pos: Vector3, radius: float, clearance: float) -> bool:
 	var p2 := Vector2(pos.x, pos.z)
 	for o in _occupied:
@@ -310,7 +317,9 @@ func _build_forest(id: String) -> void:
 			if d < wb + 3.0:
 				continue
 			var f: float = terrain.forest_density(pos.x, pos.z, d)
-			if rng.randf() > f:
+			# thinner away from the track: far trees only fill the view, as bigger trees further apart
+			var keep := far_keep(d, wb + 5.0, wb + 170.0, 0.3)
+			if rng.randf() > f * keep:
 				continue
 			if not free_at(pos, 1.6, 3.0):
 				continue
@@ -328,7 +337,7 @@ func _build_forest(id: String) -> void:
 			if options.is_empty():
 				options = range(kinds.size())
 			var v: int = options[rng.randi() % options.size()]
-			var s := rng.randf_range(0.78, 1.3) * (1.0 + smoothstep(wb + 30.0, wb + 150.0, d) * 0.15)
+			var s := rng.randf_range(0.78, 1.3) * (1.0 + smoothstep(wb + 30.0, wb + 150.0, d) * 0.15) / pow(keep, 0.25)
 			# every tree a little different: uneven width per axis, height, a slight random tilt
 			var sx := s * rng.randf_range(0.82, 1.18)
 			var sz := s * rng.randf_range(0.82, 1.18)
@@ -504,6 +513,7 @@ func _build_undergrowth(id: String) -> void:
 			else:
 				p *= 0.8
 			p *= 1.0 - smoothstep(120.0, 260.0, d) * 0.7
+			p *= far_keep(d, wb + 5.0, wb + 90.0, 0.15)
 			if rng.randf() > p:
 				continue
 			if not free_at(pos, 0.6, 1.4):
@@ -563,6 +573,7 @@ func _build_rocks(id: String) -> void:
 			var p := 0.08 + (1.0 - nrm.y) * 1.8 + sp.b * 0.08
 			if id == "harbor":
 				p *= 0.5
+			p *= far_keep(d, wb + 5.0, wb + 170.0, 0.3)
 			if rng.randf() > p:
 				continue
 			if not free_at(pos, 1.2, 2.0):
