@@ -144,6 +144,8 @@ var settings := {
 	"slide": 0.5,
 	"camera_mode": 0,
 	"camera_smoothing": 0.6,
+	"camera_zoom": 1.2,
+	"show_fps": false,
 	"units_kmh": true,
 	"last_ip": "127.0.0.1",
 	"port": 24570,

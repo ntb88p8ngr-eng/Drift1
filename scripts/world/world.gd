@@ -18,6 +18,7 @@ const CameraRig = preload("res://scripts/car/camera_rig.gd")
 const Hud = preload("res://scripts/ui/hud.gd")
 const PauseMenu = preload("res://scripts/ui/pause_menu.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const ShaderWarmup = preload("res://scripts/world/shader_warmup.gd")
 
 const SECTORS := 8
 
@@ -112,6 +113,7 @@ func _ready() -> void:
 	camera.name = "Camera"
 	camera.car = local_car
 	add_child(camera)
+	_warmup.call_deferred()
 	scorer = DriftScorer.new()
 	hud = Hud.new()
 	hud.world = self
@@ -563,3 +565,23 @@ func request_leave_online() -> void:
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().paused = false
+
+
+## Compile every render pipeline right after loading (no freezes later, see shader_warmup.gd).
+func _warmup() -> void:
+	for f in 2:
+		await get_tree().process_frame
+	if not is_inside_tree() or camera == null:
+		return
+	var extra: Array = []
+	var pg := scenery.get_node_or_null("Playground") if scenery else null
+	if pg:
+		extra = pg._meshes.values()
+	# make the car's flames and smoke part of it
+	if local_car and local_car.fx:
+		local_car.fx._on_backfire(1.0)
+	var w := ShaderWarmup.new()
+	w.name = "ShaderWarmup"
+	add_child(w)
+	w.run(self, camera, extra)
+

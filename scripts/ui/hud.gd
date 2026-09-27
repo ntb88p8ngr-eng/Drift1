@@ -37,6 +37,27 @@ var _score_refresh := 0.0
 var _count_time := 0.0
 
 
+var _fps_label: Label
+var _fps_t := 0.0
+var _fps_frames := 0
+var _fps_worst := 0.0
+
+
+func _update_fps(delta: float) -> void:
+	var on := bool(Game.settings.get("show_fps", false))
+	_fps_label.visible = on
+	if not on:
+		return
+	_fps_frames += 1
+	_fps_t += delta
+	_fps_worst = maxf(_fps_worst, delta)
+	if _fps_t >= 0.5:
+		_fps_label.text = "%d FPS  ·  %.1f ms  ·  max %.0f ms" % [roundi(_fps_frames / _fps_t), _fps_t / _fps_frames * 1000.0, _fps_worst * 1000.0]
+		_fps_t = 0.0
+		_fps_frames = 0
+		_fps_worst = 0.0
+
+
 func _ready() -> void:
 	layer = 5
 	_root = Control.new()
@@ -44,6 +65,13 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.theme = UiKit.theme()
 	add_child(_root)
+	# FPS counter (options: Grafik → FPS-Anzeige), bottom-left; shows the worst frame of the last
+	# half second too, so hitches are visible
+	_fps_label = UiKit.label("", 16, Color(0.7, 1.0, 0.7))
+	_fps_label.add_theme_constant_override("outline_size", 6)
+	_fps_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_anchor(_fps_label, 0, 1, 20, -40, 360, 30)
+	_root.add_child(_fps_label)
 
 	# --- top-left info panel ---
 	var info := VBoxContainer.new()
@@ -239,6 +267,7 @@ func on_drift_event(ev: Array) -> void:
 
 
 func _process(delta: float) -> void:
+	_update_fps(delta)
 	if world == null or world.local_car == null:
 		return
 	_scoreboard.visible = Input.is_action_pressed("scoreboard") and not _results.visible

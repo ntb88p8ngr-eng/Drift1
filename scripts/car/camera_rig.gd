@@ -20,6 +20,7 @@ var _anchor := Vector3.ZERO     # smoothed car position the chase camera hangs o
 var _vel_s := Vector3.ZERO      # low-passed car velocity (feed-forward for the anchor)
 var _initialized := false
 var _base_fov := 75.0
+var _zoom := 1.0          # chase distance factor (mouse wheel), saved in the settings
 var _space_query: PhysicsRayQueryParameters3D
 
 
@@ -30,6 +31,7 @@ func _ready() -> void:
 	_base_fov = float(Game.settings.get("fov", 75.0))
 	fov = _base_fov
 	mode = clampi(int(Game.settings.get("camera_mode", 0)), 0, MODES.size() - 1)
+	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), 0.6, 2.4)
 	_space_query = PhysicsRayQueryParameters3D.new()
 	_space_query.collision_mask = 1
 
@@ -67,10 +69,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			_look_hold = mb.pressed
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			_free_dist = clampf(_free_dist - 0.6, 3.0, 25.0)
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			_free_dist = clampf(_free_dist + 0.6, 3.0, 25.0)
+		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			var step := -1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+			if free_look:
+				_free_dist = clampf(_free_dist + step * 0.6, 3.0, 25.0)
+			else:
+				# chase view: the wheel moves the camera closer / further back
+				_zoom = clampf(_zoom + step * 0.1, 0.6, 2.4)
+				Game.settings["camera_zoom"] = _zoom
+				Game.save_settings()
 	if event.is_action_pressed("camera_next"):
 		if free_look:
 			set_free_look(false)
@@ -97,6 +104,7 @@ func _process(delta: float) -> void:
 	var spd := vflat.length()
 	# "Kamera-Glättung" 0 … 1: how strongly bumps, suspension pitch/heave and surges are filtered
 	var smooth := clampf(float(Game.settings.get("camera_smoothing", 0.6)), 0.0, 1.0)
+	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), 0.6, 2.4)
 	if not _initialized:
 		_anchor = car_pos
 		_vel_s = vel
@@ -142,8 +150,8 @@ func _process(delta: float) -> void:
 		var dir := _dir.rotated(Vector3.UP, _look_yaw)
 		if Input.is_action_pressed("look_back"):
 			dir = -dir
-		var dist := 5.8 if mode == 0 else 8.5
-		var height := 1.75 if mode == 0 else 2.7
+		var dist := (5.8 if mode == 0 else 8.5) * _zoom
+		var height := (1.75 if mode == 0 else 2.7) * lerpf(1.0, _zoom, 0.6)
 		dist += spd * 0.02
 		target_pos = car_pos - dir * dist + up * (height + _look_pitch * 3.0)
 		look_target = car_pos + up * 0.95 + dir * 2.5

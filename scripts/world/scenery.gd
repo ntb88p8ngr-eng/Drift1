@@ -48,8 +48,8 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	terrain = p_terrain
 	night = p_night
 	quality = clampi(p_quality, 0, 3)
-	LOD0_END = [60.0, 75.0, 95.0, 115.0][quality]
-	LOD1_END = [180.0, 220.0, 280.0, 340.0][quality]
+	LOD0_END = [50.0, 62.0, 75.0, 95.0][quality]
+	LOD1_END = [150.0, 185.0, 225.0, 280.0][quality]
 	rng.seed = hash(track.track_id)
 	var id: String = track.track_id
 	_flatten_start()

@@ -49,7 +49,7 @@ static func deciduous(seed_value: int, detail: float, autumn := false) -> ArrayM
 		"max_depth": 3 if detail > 0.6 else 2,
 		"crown": Vector3(0, height * 0.72, 0),
 		"leaf_size": 1.3 if detail > 0.6 else (2.1 if detail > 0.3 else 2.8),
-		"leaf_count": 13 if detail > 0.6 else (9 if detail > 0.3 else 5),
+		"leaf_count": 10 if detail > 0.6 else (9 if detail > 0.3 else 4),
 	}
 	_character(ctx, rng)
 	var dir: Vector3 = (Vector3(rng.randf_range(-0.07, 0.07), 1.0, rng.randf_range(-0.07, 0.07)) + (ctx["bias"] as Vector3) * 0.6).normalized()
@@ -173,7 +173,7 @@ static func oak(seed_value: int, detail: float) -> ArrayMesh:
 		"max_depth": 3 if detail > 0.6 else 2,
 		"crown": Vector3(0, trunk + 3.2, 0),
 		"leaf_size": 1.5 if detail > 0.6 else (2.4 if detail > 0.3 else 3.1),
-		"leaf_count": 12 if detail > 0.6 else (10 if detail > 0.3 else 6),
+		"leaf_count": 10 if detail > 0.6 else (10 if detail > 0.3 else 4),
 		"trunk_children": 6 if detail > 0.3 else 5,
 		"t_min": 0.62, "angle_min": 42.0, "angle_max": 72.0, "limb_scale": 2.1,
 		"up_bias": 0.035, "gnarl": 1.7,
@@ -239,7 +239,7 @@ static func pine(seed_value: int, detail: float) -> ArrayMesh:
 			MeshKit.tube(bark, [b0, b0 + o * rng.randf_range(0.3, 0.9)], [0.035, 0.01], 3, Vector2(1, 0.3), Color(0.75, 0.7, 0.65))
 			yy += rng.randf_range(0.35, 0.8)
 	var h := start_h
-	var per_whorl := 9 if hi else 6
+	var per_whorl := 8 if hi else 6
 	while h < height - 0.6:
 		var frac := (h - start_h) / (height - start_h)
 		# crown profile: full in the lower third, then a slightly convex cone
@@ -264,8 +264,8 @@ static func pine(seed_value: int, detail: float) -> ArrayMesh:
 				MeshKit.tube(bark, [base, p1, p2, tip], [0.07 * (1.0 - frac) + 0.02, 0.04, 0.022, 0.008], 4, Vector2(1.0, 0.3))
 			_needle_cards(leaves, rng, [base + out * 0.2, p1, p2, tip], blen, detail)
 			# side twigs with their own needle sprays
-			if hi and blen > 1.4:
-				for tw in rng.randi_range(1, 3):
+			if hi and blen > 1.8:
+				for tw in rng.randi_range(0, 2):
 					var t := rng.randf_range(0.35, 0.85)
 					var q: Vector3 = p1.lerp(tip, t)
 					var side := out.cross(Vector3.UP).normalized() * (1.0 if rng.randf() < 0.5 else -1.0)
@@ -292,7 +292,7 @@ static func pine(seed_value: int, detail: float) -> ArrayMesh:
 
 
 static func _needle_cards(st: SurfaceTool, rng: RandomNumberGenerator, path: Array, blen: float, detail: float) -> void:
-	var cards := 4 if detail > 0.6 else (2 if detail > 0.2 else 1)
+	var cards := 3 if detail > 0.6 else (2 if detail > 0.2 else 1)
 	for c in cards:
 		var t := float(c) / cards
 		var i := mini(int(t * (path.size() - 1)), path.size() - 2)

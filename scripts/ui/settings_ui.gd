@@ -96,6 +96,13 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		Game.save_settings(), 200)
 	vd.tooltip_text = "Bis zu dieser Entfernung werden Bäume, Büsche, Sträucher, Felsen und Deko in 3D gezeichnet. Dahinter stehen die Bäume als 2D-Bilder bis zum Horizont – es fehlt nie ein Baum. Weniger = mehr FPS. Wirkt sofort."
 	v.add_child(UiKit.labeled("Sichtweite 3D-Bäume & Pflanzen", UiKit.row([vd, vd_val], 8)))
+	var fps := CheckBox.new()
+	fps.text = "FPS-Anzeige im Rennen"
+	fps.button_pressed = bool(Game.settings.get("show_fps", false))
+	fps.toggled.connect(func(on):
+		Game.settings["show_fps"] = on
+		Game.save_settings())
+	v.add_child(fps)
 	var lf := CheckBox.new()
 	lf.text = "Lens Flares (Sonne und Mond)"
 	lf.button_pressed = bool(Game.settings["lens_flares"])
@@ -132,6 +139,13 @@ static func gameplay_page() -> VBoxContainer:
 		Game.save_settings(), 200)
 	cs.tooltip_text = "Wie stark die Verfolgerkamera Bodenwellen, Federbewegungen und Ruckler beim Gasgeben und Bremsen ausfiltert."
 	v.add_child(UiKit.labeled("Kamera-Glättung", UiKit.row([cs, cs_val], 8)))
+	var cz_val := UiKit.label("%.1fx" % float(Game.settings["camera_zoom"]), 16, UiKit.TEXT_DIM)
+	var cz := UiKit.slider(0.6, 2.4, 0.1, float(Game.settings["camera_zoom"]), func(x):
+		cz_val.text = "%.1fx" % x
+		Game.settings["camera_zoom"] = x
+		Game.save_settings(), 200)
+	cz.tooltip_text = "Abstand der Verfolgerkamera – auch während der Fahrt mit dem Mausrad."
+	v.add_child(UiKit.labeled("Kamera-Abstand", UiKit.row([cz, cz_val], 8)))
 	v.add_child(UiKit.labeled("Maus-Empfindlichkeit", UiKit.slider(0.05, 1.0, 0.05, float(Game.settings["mouse_sensitivity"]), func(x):
 		Game.set_setting("mouse_sensitivity", x))))
 	v.add_child(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]), func(x):
