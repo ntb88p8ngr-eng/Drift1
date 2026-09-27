@@ -65,6 +65,9 @@ func _ready() -> void:
 	var i5: int = (tr.start_index + 60) % n
 	var eb: Vector3 = tr.samples[i5] + tr.rights[i5] * (float(tr.half_w) + 1.0)
 	views.append(["edge_straight", eb + Vector3(0, 2.0, 0) - tr.tangents[i5] * 6.0 - tr.rights[i5] * 3.0, eb + tr.tangents[i5] * 6.0])
+	# distant skyline (harbor: north of the track)
+	var cc: Vector2 = tr.bounds.get_center()
+	views.append(["skyline", Vector3(cc.x, 12.0, cc.y), Vector3(cc.x, 60.0, cc.y - 800.0)])
 	# forest edge, looking into the trees
 	var i2: int = (tr.start_index + 260) % n
 	views.append(["forest", tr.samples[i2] + Vector3(0, 1.4, 0), tr.samples[i2] + tr.rights[i2] * 40.0 + Vector3(0, 3.0, 0)])

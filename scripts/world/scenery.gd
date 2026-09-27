@@ -957,19 +957,23 @@ func _rtg_crane(c: Vector3, basis: Basis, sz: float) -> void:
 
 func _build_skyline() -> void:
 	var c: Vector2 = track.bounds.get_center()
-	var win_tex := _skyline_texture()
+	# far away the window grid is averaged by the mipmaps into one flat glow, so only a few windows are
+	# lit and the facade itself stays dark (albedo without the yellow lights)
+	var win_tex := _skyline_texture(true)
+	var facade_tex := _skyline_texture(false)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.2, 0.21, 0.24)
-	mat.albedo_texture = win_tex
+	mat.albedo_color = Color(0.22, 0.23, 0.26)
+	mat.albedo_texture = facade_tex
 	mat.emission_enabled = true
 	mat.emission_texture = win_tex
-	mat.emission = Color(1.0, 0.85, 0.6)
+	mat.emission = Color(1.0, 0.82, 0.55)
+	mat.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY   # only the windows glow, not the whole facade
 	mat.uv1_triplanar = true
 	mat.uv1_world_triplanar = true
 	mat.uv1_scale = Vector3(0.04, 0.04, 0.04)
 	mat.roughness = 0.4
 	mat.metallic = 0.2
-	_glow_mats.append([mat, 0.0, 0.55])
+	_glow_mats.append([mat, 0.0, 1.4])
 	for k in 70:
 		var a := rng.randf_range(-PI * 0.95, -PI * 0.05)  # north side (away from the water)
 		var r := rng.randf_range(750.0, 1050.0)
@@ -986,13 +990,21 @@ func _build_skyline() -> void:
 			add_child(MeshKit.sphere_node(0.8, TexKit.emissive(Color(1, 0.1, 0.05), 5.0), b.position + Vector3(0, (h + 3.0) * 0.5 + 1.0, 0)))
 
 
-func _skyline_texture() -> ImageTexture:
+## lights = true: emission (a few lit windows on black); false: the facade colours (grey windows).
+func _skyline_texture(lights: bool) -> ImageTexture:
 	var img := Image.create(64, 64, false, Image.FORMAT_RGB8)
-	img.fill(Color(0.05, 0.05, 0.06))
+	img.fill(Color(0.0, 0.0, 0.0) if lights else Color(0.3, 0.3, 0.32))
+	var lit_rng := RandomNumberGenerator.new()
+	lit_rng.seed = 7117
 	for y in range(2, 64, 4):
 		for x in range(2, 64, 4):
-			var lit := rng.randf() < 0.3
-			var col := Color(1.0, 0.85, 0.55) * rng.randf_range(0.5, 1.0) if lit else Color(0.06, 0.065, 0.08)
+			var lit := lit_rng.randf() < 0.12
+			var b := lit_rng.randf_range(0.4, 1.0)
+			var col: Color
+			if lights:
+				col = Color(1.0, 0.85, 0.6) * b if lit else Color(0, 0, 0)
+			else:
+				col = Color(0.16, 0.18, 0.22)
 			for yy in 2:
 				for xx in 2:
 					img.set_pixel(x + xx, y + yy, col)
