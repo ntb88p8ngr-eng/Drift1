@@ -7,6 +7,8 @@ const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
+const Details = preload("res://scripts/world/details.gd")
+const Houses = preload("res://scripts/world/houses.gd")
 
 const CHUNK := 48.0
 const FAR_CHUNK := 192.0        # the coarse outer forest uses big chunks
@@ -24,7 +26,9 @@ var night := 0.0            # 0 = day … 1 = night (lamps / window glow)
 var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
+var details: Node3D
 var lamp_lights: Array = []
+var _village := -1              # sample index the village clusters around
 
 var _occupied: Array = []   # large objects: [Vector2 pos, radius]
 var _occ_grid := {}         # Vector2i -> Array of [Vector2 pos, radius] (radius <= SMALL_RADIUS)
@@ -32,7 +36,7 @@ var _window_mats: Array = []     # [material, lit]
 var _glow_mats: Array = []       # [material, day energy, night energy]
 var _night_lights: Array = []    # lights that only exist at night: [light, energy]
 var _stats := {}
-var _ranged: Array = []          # [GeometryInstance3D, range begin, range end] – capped by the view distance
+var _ranged: Array = []          # [GeometryInstance3D, begin, end, impostor] – follow the view distance
 
 
 func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -> void:
@@ -43,20 +47,28 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	rng.seed = hash(track.track_id)
 	var id: String = track.track_id
 	_flatten_start()
+	details = Details.new()
+	details.name = "Details"
+	add_child(details)
+	details.setup(track, terrain, self)
 	if id == "harbor":
 		_build_water_and_quay()
 		_build_harbor_props()
-		_build_houses(5, ["office", "jp", "shop", "jp", "office"])
+		_build_houses(6, ["office", "jp", "shop", "jp", "office", "jp"])
 	else:
-		_build_houses(9, ["jp", "jp", "jp", "shop", "jp", "jp", "barn", "jp", "shop"])
+		_build_houses(10, ["jp", "jp", "shop", "jp", "jp", "barn", "jp", "jp", "shop", "jp"])
+		if _village >= 0:
+			details.add_bus_stop(_village + 12, -1.0)
 	_build_lamps()
 	crowd = Crowd.new()
 	crowd.name = "Crowd"
 	add_child(crowd)
 	crowd.build(track, terrain, self, quality)
+	details.build(quality)
 	_build_forest(id)
 	_build_undergrowth(id)
 	_build_rocks(id)
+	details.finish()
 	if id == "harbor":
 		_build_skyline()
 	set_night(night)
@@ -137,16 +149,16 @@ static func _cached(key: String, maker: Callable) -> Mesh:
 
 
 ## chunks: Dictionary Vector2i -> Array of [Transform3D, Color]; one MultiMeshInstance per chunk.
-func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end: float, label: String, shadows: bool, size := CHUNK, shadow_only := false) -> void:
+## impostor = 2D billboard trees that take over beyond the view distance (begin follows the setting).
+func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end: float, label: String, shadows: bool, size := CHUNK, shadow_only := false, impostor := false) -> void:
 	for key in chunks.keys():
 		var items: Array = chunks[key]
 		if items.is_empty():
 			continue
-		var center := Vector3((key.x + 0.5) * size, 0.0, (key.y + 0.5) * size)
-		var ysum := 0.0
-		for it in items:
-			ysum += (it[0] as Transform3D).origin.y
-		center.y = ysum / items.size()
+		# every set emitted for the same cell (LOD levels, 2D trees, props) gets the same bounds, so
+		# the visibility-range distance (measured to the AABB centre) is identical for all of them
+		var cell: Array = _cell_bounds(key, size)
+		var center := Vector3((key.x + 0.5) * size, float(cell[0]), (key.y + 0.5) * size)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
@@ -162,25 +174,57 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		mmi.position = center
 		mmi.visibility_range_begin = range_begin
 		mmi.visibility_range_end = range_end
-		mmi.visibility_range_end_margin = 8.0
+		# no hysteresis: all LODs of a chunk share its centre, so with zero margins exactly one of them
+		# is drawn at any distance (margins left a gap where a chunk vanished for a moment)
+		mmi.visibility_range_begin_margin = 0.0
+		mmi.visibility_range_end_margin = 0.0
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		mmi.custom_aabb = AABB(Vector3(-size * 0.5 - 14.0, -3.0, -size * 0.5 - 14.0), Vector3(size + 28.0, float(cell[1]) - float(cell[0]) + 36.0, size + 28.0))
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if shadow_only:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		add_child(mmi)
-		_ranged.append([mmi, range_begin, range_end])
+		_ranged.append([mmi, range_begin, range_end, impostor])
 		_stats[label] = int(_stats.get(label, 0)) + items.size()
 
 
-## Caps every tree, bush, rock and prop chunk at the "view_distance" setting (metres); updates live.
+## "view_distance" setting (metres): 3D trees, bushes, rocks and props end there; beyond it the
+## forest continues as 2D impostors up to the horizon, so every tree in view is always drawn.
 func apply_view_distance() -> void:
-	var vd := float(Game.settings.get("view_distance", FAR_END))
+	var vd := float(Game.settings.get("view_distance", 1200))
 	for r in _ranged:
 		var gi: GeometryInstance3D = r[0]
 		if not is_instance_valid(gi):
 			continue
-		gi.visible = float(r[1]) < vd
-		gi.visibility_range_end = minf(float(r[2]), vd)
+		if bool(r[3]):
+			gi.visibility_range_begin = vd
+			gi.visible = vd < float(r[2])
+		else:
+			gi.visible = float(r[1]) < vd
+			gi.visibility_range_end = minf(float(r[2]), vd)
+
+
+## [lowest, highest] ground height of a chunk cell (cached): shared by all sets of that cell.
+var _cell_cache := {}
+
+
+func _cell_bounds(key: Vector2i, size: float) -> Array:
+	var ck := Vector3i(key.x, key.y, int(size))
+	if _cell_cache.has(ck):
+		return _cell_cache[ck]
+	var ext: Rect2 = terrain.extent()
+	var lo := 1e9
+	var hi := -1e9
+	for iz in 5:
+		for ix in 5:
+			var x := (key.x + ix / 4.0) * size
+			var z := (key.y + iz / 4.0) * size
+			var h: float = terrain.height_at(x, z) if ext.has_point(Vector2(x, z)) else terrain.outer_height(x, z)
+			lo = minf(lo, h)
+			hi = maxf(hi, h)
+	var r := [lo - 2.0, hi + 2.0]
+	_cell_cache[ck] = r
+	return r
 
 
 static func _chunk_key(p: Vector3, size := CHUNK) -> Vector2i:
@@ -199,11 +243,11 @@ static func _push(chunks: Dictionary, p: Vector3, item: Array, size := CHUNK) ->
 # ---------------------------------------------------------------------------
 func _build_forest(id: String) -> void:
 	# [kind, seed] – broadleaf trees get their autumn colours through the instance tint
-	var kinds: Array = [["pine", 404], ["pine", 505], ["leaf", 101]]
+	var kinds: Array = [["pine", 404], ["pine", 505], ["leaf", 101], ["oak", 303]]
 	var pine_ratio := 0.62
 	var autumn_ratio := 0.1
 	if id == "harbor":
-		kinds = [["leaf", 101], ["leaf", 202], ["pine", 404]]
+		kinds = [["leaf", 101], ["leaf", 202], ["pine", 404], ["oak", 303]]
 		pine_ratio = 0.3
 		autumn_ratio = 0.22
 	var meshes: Array = []
@@ -211,8 +255,8 @@ func _build_forest(id: String) -> void:
 		var kind: String = k[0]
 		var sd: int = k[1]
 		meshes.append([
-			_cached("tree_%s_%d_hi" % [kind, sd], func(): return TreeFactory.pine(sd, 1.0) if kind == "pine" else TreeFactory.deciduous(sd, 1.0)),
-			_cached("tree_%s_%d_mid" % [kind, sd], func(): return TreeFactory.pine(sd, 0.35) if kind == "pine" else TreeFactory.deciduous(sd, 0.25)),
+			_cached("tree_%s_%d_hi" % [kind, sd], func(): return _tree_mesh(kind, sd, true)),
+			_cached("tree_%s_%d_mid" % [kind, sd], func(): return _tree_mesh(kind, sd, false)),
 		])
 	var far_mesh: Mesh = _cached("far_forest", func(): return TreeFactory.far_forest_mesh(404, 101))
 	var chunks: Array = []
@@ -241,9 +285,11 @@ func _build_forest(id: String) -> void:
 				continue
 			pos.y = terrain.height_at(pos.x, pos.z) - 0.3
 			var is_pine := rng.randf() < pine_ratio
+			var is_oak := not is_pine and rng.randf() < 0.3
 			var options: Array = []
 			for i in kinds.size():
-				if (kinds[i][0] == "pine") == is_pine:
+				var kk: String = kinds[i][0]
+				if (is_pine and kk == "pine") or (is_oak and kk == "oak") or (not is_pine and not is_oak and kk == "leaf"):
 					options.append(i)
 			if options.is_empty():
 				options = range(kinds.size())
@@ -257,6 +303,7 @@ func _build_forest(id: String) -> void:
 			_push(chunks[v], pos, [xf, tint])
 			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 0.75 if kinds[v][0] == "pine" else 1.0)])
 		gz += spacing
+	_solitary_oaks(kinds, chunks, far_chunks)
 	var lod1_shadow := quality >= 3
 	for v in kinds.size():
 		# close trees: full detail, but their shadows come from the lighter mid-detail mesh
@@ -264,7 +311,56 @@ func _build_forest(id: String) -> void:
 		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END, "Trees_shadow", true, CHUNK, true)
 		_emit_chunks(meshes[v][1], chunks[v], LOD0_END, LOD1_END, "Trees_mid", lod1_shadow)
 	_emit_chunks(far_mesh, far_chunks, LOD1_END, FAR_END, "Trees_far", false)
+	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, FAR_END, FAR_END * 2.0, "Trees_2d", false, CHUNK, false, true)
 	_build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
+
+
+static func _tree_mesh(kind: String, sd: int, hi: bool) -> Mesh:
+	match kind:
+		"pine":
+			return TreeFactory.pine(sd, 1.0 if hi else 0.35)
+		"oak":
+			return TreeFactory.oak(sd, 1.0 if hi else 0.25)
+	return TreeFactory.deciduous(sd, 1.0 if hi else 0.25)
+
+
+## Big solitary oaks on the meadows and around the houses.
+func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary) -> void:
+	var v := -1
+	for i in kinds.size():
+		if kinds[i][0] == "oak":
+			v = i
+	if v < 0:
+		return
+	var ext: Rect2 = terrain.extent().grow(-10.0)
+	var wb: float = track.wall_base
+	var spacing := 26.0
+	var gz := ext.position.y
+	var count := 0
+	while gz < ext.end.y:
+		var gx := ext.position.x
+		while gx < ext.end.x:
+			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
+			gx += spacing
+			var d: float = terrain.distance_to_road(pos.x, pos.z)
+			if d < wb + 9.0 or d > wb + 140.0:
+				continue
+			var sp: Color = terrain.splat_at(pos.x, pos.z)
+			var p := sp.a * 0.5 + (0.12 if _village >= 0 and pos.distance_to(track.samples[_village]) < 120.0 else 0.0)
+			if rng.randf() > p or terrain.forest_density(pos.x, pos.z, d) > 0.6:
+				continue
+			if terrain.normal_at(pos.x, pos.z).y < 0.85 or not free_at(pos, 5.0, 4.0):
+				continue
+			pos.y = terrain.height_at(pos.x, pos.z) - 0.3
+			var s := rng.randf_range(1.15, 1.6)
+			var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.05), s)), pos)
+			var tint := _foliage_tint(false, 0.05)
+			_push(chunks[v], pos, [xf, tint])
+			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 1.0)])
+			occupy(pos, 5.0)
+			count += 1
+		gz += spacing
+	_stats["Oaks_solitary"] = count
 
 
 func _foliage_tint(pine: bool, autumn_ratio: float) -> Color:
@@ -310,6 +406,7 @@ func _build_outer_forest(far_mesh: Mesh, pine_ratio: float, autumn_ratio: float)
 				Color(tint.r, tint.g, tint.b, 0.75 if is_pine else 1.0)], FAR_CHUNK)
 		gz += spacing
 	_emit_chunks(far_mesh, chunks, 0.0, FAR_END, "Trees_outer", false, FAR_CHUNK)
+	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), chunks, FAR_END, FAR_END * 2.0, "Trees_2d", false, FAR_CHUNK, false, true)
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +477,10 @@ func _build_undergrowth(id: String) -> void:
 # ---------------------------------------------------------------------------
 func _build_rocks(id: String) -> void:
 	var rock_mesh: Mesh = _cached("rock_11", func(): return TreeFactory.rock(11))
+	var rock_mesh2: Mesh = _cached("rock_23", func(): return TreeFactory.rock(23))
 	var rocks := {}
+	var rocks2 := {}
+	var stones := {}
 	var spacing := 11.0
 	var ext: Rect2 = terrain.extent().grow(-4.0)
 	var wb: float = track.wall_base
@@ -397,7 +497,7 @@ func _build_rocks(id: String) -> void:
 			if sp.r > 0.3:
 				continue
 			var nrm: Vector3 = terrain.normal_at(pos.x, pos.z)
-			var p := 0.05 + (1.0 - nrm.y) * 1.6 + sp.b * 0.05
+			var p := 0.08 + (1.0 - nrm.y) * 1.8 + sp.b * 0.08
 			if id == "harbor":
 				p *= 0.5
 			if rng.randf() > p:
@@ -406,14 +506,55 @@ func _build_rocks(id: String) -> void:
 				continue
 			pos.y = terrain.height_at(pos.x, pos.z) - 0.15
 			var s := rng.randf_range(0.35, 1.2) * (1.0 + (1.0 - nrm.y) * 1.5)
-			if rng.randf() < 0.08:
+			if rng.randf() < 0.1:
 				s *= 2.2
-			var basis := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.25, 0.25))
-			basis = basis.scaled(Vector3(s * rng.randf_range(0.7, 1.3), s * rng.randf_range(0.6, 1.2), s * rng.randf_range(0.7, 1.3)))
-			var t := rng.randf_range(0.8, 1.15)
-			_push(rocks, pos, [Transform3D(basis, pos), Color(t, t * rng.randf_range(0.95, 1.03), t * rng.randf_range(0.9, 1.0), 1.0)])
+			var set: Dictionary = rocks if rng.randf() < 0.5 else rocks2
+			_push(set, pos, [_rock_xf(pos, s), _rock_tint()])
+			# big boulders come with a few smaller ones around them
+			if s > 1.3:
+				for k in rng.randi_range(2, 5):
+					var a := rng.randf() * TAU
+					var q := pos + Vector3(cos(a), 0, sin(a)) * s * rng.randf_range(1.1, 1.9)
+					q.y = terrain.height_at(q.x, q.z) - 0.1
+					_push(rocks2 if k % 2 == 0 else rocks, q, [_rock_xf(q, s * rng.randf_range(0.2, 0.45)), _rock_tint()])
 		gz += spacing
 	_emit_chunks(rock_mesh, rocks, 0.0, 420.0, "Rocks", true)
+	_emit_chunks(rock_mesh2, rocks2, 0.0, 420.0, "Rocks", true)
+	# small stones: along the verges behind the barriers and scattered over the forest floor
+	var sp2 := 3.2
+	gz = ext.position.y
+	while gz < ext.end.y:
+		var gx := ext.position.x
+		while gx < ext.end.x:
+			var pos := Vector3(gx + rng.randf() * sp2, 0.0, gz + rng.randf() * sp2)
+			gx += sp2
+			var d: float = terrain.distance_to_road(pos.x, pos.z)
+			if d < wb + 0.8 or d > wb + 70.0:
+				continue
+			var verge := 1.0 - smoothstep(wb + 1.0, wb + 10.0, d)
+			var p := 0.08 + verge * 0.5
+			if id == "harbor":
+				p *= 0.4
+			if rng.randf() > p:
+				continue
+			if terrain.splat_at(pos.x, pos.z).r > 0.5:
+				continue
+			pos.y = terrain.height_at(pos.x, pos.z) - 0.03
+			var s := rng.randf_range(0.07, 0.3)
+			_push(stones, pos, [_rock_xf(pos, s), _rock_tint()])
+		gz += sp2
+	_emit_chunks(rock_mesh2, stones, 0.0, 110.0, "Stones", false)
+
+
+func _rock_xf(pos: Vector3, s: float) -> Transform3D:
+	var basis := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.25, 0.25))
+	basis = basis.scaled(Vector3(s * rng.randf_range(0.7, 1.3), s * rng.randf_range(0.6, 1.2), s * rng.randf_range(0.7, 1.3)))
+	return Transform3D(basis, pos)
+
+
+func _rock_tint() -> Color:
+	var t := rng.randf_range(0.8, 1.15)
+	return Color(t, t * rng.randf_range(0.95, 1.03), t * rng.randf_range(0.9, 1.0), 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -423,101 +564,48 @@ func _build_houses(count: int, styles: Array) -> void:
 	var n: int = track.sample_count()
 	var placed := 0
 	var tries := 0
+	var builder := Houses.new()
+	builder.rng = rng
+	builder.details = details
 	# cluster houses into a small village around a random stretch of road
 	var village := rng.randi_range(0, n - 1)
-	while placed < count and tries < 500:
+	_village = village
+	while placed < count and tries < 600:
 		tries += 1
-		var i := village + rng.randi_range(-80, 80) if tries < 300 else rng.randi_range(0, n - 1)
+		var i := village + rng.randi_range(-90, 90) if tries < 350 else rng.randi_range(0, n - 1)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
-		var pos := _roadside(i, rng.randf_range(14.0, 24.0), side)
-		if not free_at(pos, 9.0, 12.0):
+		var style: String = styles[placed % styles.size()]
+		# lot radius: shops have a car park in front, offices a canopy, houses a garden wall
+		var lot: float = {"shop": 13.0, "office": 10.5, "barn": 10.0}.get(style, 9.0)
+		var pos := _roadside(i, lot + rng.randf_range(4.0, 10.0), side)
+		if not free_at(pos, lot, 6.0):
 			continue
 		var nrm: Vector3 = terrain.normal_at(pos.x, pos.z)
 		if nrm.y < 0.8:
 			continue
-		pos.y = terrain.flatten(pos, 8.0, 7.0)
-		var style: String = styles[placed % styles.size()]
-		var house := _make_house(style)
+		pos.y = terrain.flatten(pos, lot - 1.0, 7.0)
+		var xf := _facing_xf(pos)
+		builder.window_mat = _window_material()
+		var house := builder.make(style, xf)
 		add_child(house)
-		_face_track(house, pos)
-		occupy(pos, 9.5)
+		house.global_transform = xf
+		if style == "shop":
+			for k in 3:
+				_vending_machine(house, Vector3(6.1, 0, -3.3 + k * 1.05))
+		elif style == "jp" and rng.randf() < 0.35:
+			_vending_machine(house, Vector3(-5.8, 0, -4.2))
+		occupy(pos, lot + 0.5)
 		placed += 1
 
 
-func _make_house(style: String) -> Node3D:
-	var root := Node3D.new()
-	root.name = "House_" + style
-	var wall_cols := [Color(0.88, 0.86, 0.8), Color(0.8, 0.74, 0.62), Color(0.72, 0.76, 0.78), Color(0.9, 0.9, 0.9)]
-	var roof_cols := [Color(0.18, 0.2, 0.24), Color(0.35, 0.12, 0.1), Color(0.2, 0.25, 0.3), Color(0.25, 0.22, 0.2)]
-	var wall := TexKit.std(wall_cols[rng.randi() % wall_cols.size()], 0.85)
-	var roof := TexKit.std(roof_cols[rng.randi() % roof_cols.size()], 0.6, 0.2)
-	var wood := TexKit.std(Color(0.3, 0.2, 0.12), 0.8)
-	var win := _window_material()
-	# foundation reaching into the ground (covers small slopes)
-	root.add_child(MeshKit.box_node(Vector3(10.5, 2.0, 10.0), TexKit.std(Color(0.42, 0.42, 0.4), 0.95), Vector3(0, -0.9, 0)))
-	match style:
-		"shop":
-			var w := 9.0
-			var d := 7.0
-			var h := 3.4
-			root.add_child(MeshKit.box_node(Vector3(w, h, d), wall, Vector3(0, h * 0.5, 0)))
-			root.add_child(MeshKit.box_node(Vector3(w + 0.3, 0.35, d + 0.3), roof, Vector3(0, h + 0.17, 0)))
-			root.add_child(MeshKit.box_node(Vector3(w * 0.8, 1.9, 0.08), win, Vector3(0, 1.3, -d * 0.5 - 0.04)))
-			var awning := MeshKit.box_node(Vector3(w, 0.1, 1.6), TexKit.std(Color(0.7, 0.1, 0.12), 0.6), Vector3(0, 2.6, -d * 0.5 - 0.8))
-			awning.rotation.x = -0.25
-			root.add_child(awning)
-			var sign_mat := _glow_material(Color(1.0, 0.55, 0.15), 0.5, 3.0)
-			root.add_child(MeshKit.box_node(Vector3(w * 0.6, 0.8, 0.12), sign_mat, Vector3(0, h + 0.8, -d * 0.5 + 0.3)))
-			_vending_machine(root, Vector3(w * 0.5 - 0.6, 0, -d * 0.5 - 0.6))
-			_vending_machine(root, Vector3(w * 0.5 - 1.5, 0, -d * 0.5 - 0.6))
-		"office":
-			var w := 14.0
-			var d := 10.0
-			var h := 7.5
-			root.add_child(MeshKit.box_node(Vector3(w, h, d), TexKit.std(Color(0.55, 0.57, 0.6), 0.7), Vector3(0, h * 0.5, 0)))
-			for fl in 2:
-				for k in 5:
-					root.add_child(MeshKit.box_node(Vector3(2.0, 1.4, 0.08), win, Vector3(-w * 0.4 + k * w * 0.2, 1.8 + fl * 3.2, -d * 0.5 - 0.04)))
-			root.add_child(MeshKit.box_node(Vector3(w + 0.4, 0.4, d + 0.4), roof, Vector3(0, h + 0.2, 0)))
-		"barn":
-			var w := 8.0
-			var d := 12.0
-			var h := 4.5
-			var red := TexKit.std(Color(0.5, 0.12, 0.08), 0.9)
-			root.add_child(MeshKit.box_node(Vector3(w, h, d), red, Vector3(0, h * 0.5, 0)))
-			var prism := PrismMesh.new()
-			prism.size = Vector3(w + 0.8, 3.0, d + 0.6)
-			var r := MeshKit.mesh_instance(prism, roof)
-			r.position = Vector3(0, h + 1.5, 0)
-			root.add_child(r)
-			root.add_child(MeshKit.box_node(Vector3(3.2, 3.4, 0.1), wood, Vector3(0, 1.7, -d * 0.5 - 0.05)))
-		_:
-			# Japanese-style two-storey house with gabled tiled roof, veranda and sliding door
-			var w := rng.randf_range(8.0, 10.0)
-			var d := rng.randf_range(7.0, 9.0)
-			var h := rng.randf_range(5.2, 6.0)
-			root.add_child(MeshKit.box_node(Vector3(w + 0.3, 0.5, d + 0.3), TexKit.std(Color(0.45, 0.45, 0.43), 0.9), Vector3(0, 0.25, 0)))
-			root.add_child(MeshKit.box_node(Vector3(w, h, d), wall, Vector3(0, h * 0.5 + 0.4, 0)))
-			root.add_child(MeshKit.box_node(Vector3(w + 0.05, 0.25, d + 0.05), wood, Vector3(0, h * 0.5 + 0.4, 0)))
-			var prism := PrismMesh.new()
-			prism.size = Vector3(w + 1.4, 2.6, d + 1.2)
-			var r := MeshKit.mesh_instance(prism, roof)
-			r.position = Vector3(0, h + 0.4 + 1.3, 0)
-			root.add_child(r)
-			var porch := MeshKit.box_node(Vector3(w * 0.7, 0.14, 1.6), roof, Vector3(0, 2.9, -d * 0.5 - 0.7))
-			porch.rotation.x = 0.28
-			root.add_child(porch)
-			root.add_child(MeshKit.box_node(Vector3(1.8, 2.3, 0.1), wood, Vector3(-w * 0.2, 1.55, -d * 0.5 - 0.05)))
-			for k in 3:
-				root.add_child(MeshKit.box_node(Vector3(1.3, 1.1, 0.08), win, Vector3(-w * 0.3 + k * w * 0.3, h * 0.5 + 2.6, -d * 0.5 - 0.04)))
-			root.add_child(MeshKit.box_node(Vector3(1.4, 1.2, 0.08), win, Vector3(w * 0.25, 1.9, -d * 0.5 - 0.04)))
-			for k in 2:
-				root.add_child(MeshKit.box_node(Vector3(0.08, 1.1, 1.3), win, Vector3(w * 0.5 + 0.04, h * 0.5 + 2.6, -d * 0.2 + k * d * 0.4)))
-			root.add_child(MeshKit.box_node(Vector3(0.7, 1.4, 0.7), TexKit.std(Color(0.35, 0.3, 0.28), 0.9), Vector3(w * 0.3, h + 2.4, d * 0.15)))
-			root.add_child(MeshKit.box_node(Vector3(w + 3.0, 1.1, 0.25), TexKit.std(Color(0.6, 0.6, 0.58), 0.95), Vector3(0, 0.55, -d * 0.5 - 3.2)))
-			if rng.randf() < 0.6:
-				_vending_machine(root, Vector3(w * 0.5 + 0.8, 0, -d * 0.5 - 2.6))
-	return root
+## Transform on the ground at pos whose -Z faces the nearest point of the road.
+func _facing_xf(pos: Vector3) -> Transform3D:
+	var idx: int = track.nearest_index(pos)
+	var target: Vector3 = track.samples[idx]
+	var dir := Vector3(target.x - pos.x, 0, target.z - pos.z)
+	if dir.length_squared() < 0.01:
+		return Transform3D(Basis.IDENTITY, pos)
+	return Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), pos)
 
 
 func _window_material() -> StandardMaterial3D:
@@ -569,6 +657,8 @@ func set_night(n: float) -> void:
 		light.light_energy = float(l[1]) * n
 	for l in lamp_lights:
 		(l as Light3D).visible = lights_on
+	if details:
+		details.set_night(n)
 
 
 # ---------------------------------------------------------------------------
@@ -653,37 +743,154 @@ func _build_harbor_props() -> void:
 			_face_track(wh, pos)
 			occupy(pos, 26.0)
 			break
+	_build_container_yard()
+
+
+# ---------------------------------------------------------------------------
+# Container terminal: straight blocks of stacked containers (rows x bays x tiers), aligned with
+# the quay or the road, with rubber-tyred gantry cranes; loose straight stacks along the track.
+# All containers are instanced (two MultiMesh sets: 40 ft and 20 ft).
+# ---------------------------------------------------------------------------
+const CONT_W := 2.44
+const CONT_H := 2.59
+const CONT_LONG := 12.19
+const CONT_SHORT := 6.06
+const LINE_COLORS := [Color(0.1, 0.45, 0.7), Color(0.65, 0.12, 0.06), Color(0.15, 0.42, 0.2), Color(0.8, 0.45, 0.1),
+	Color(0.5, 0.5, 0.52), Color(0.88, 0.88, 0.86), Color(0.35, 0.15, 0.4), Color(0.08, 0.16, 0.35), Color(0.72, 0.62, 0.15),
+	Color(0.45, 0.25, 0.15)]
+
+
+func _build_container_yard() -> void:
+	var long_set := {}
+	var short_set := {}
+	var b: Rect2 = track.bounds.grow(80.0)
+	var wb: float = track.wall_base
+	var blocks := 0
+	var tries := 0
+	var cranes := 0
+	while blocks < 36 and tries < 3500:
+		tries += 1
+		var c := Vector3(rng.randf_range(b.position.x, b.end.x), 0, rng.randf_range(b.position.y, b.end.y))
+		if terrain.splat_at(c.x, c.z).r < 0.9 or terrain.distance_to_road(c.x, c.z) < wb + 8.0:
+			continue
+		var long := rng.randf() < 0.75
+		# big blocks first, smaller ones fill the gaps later
+		var big := tries < 1500
+		var rows := rng.randi_range(4, 7) if big else rng.randi_range(2, 4)
+		var bays := (rng.randi_range(3, 6) if long else rng.randi_range(5, 10)) if big else (rng.randi_range(1, 3) if long else rng.randi_range(2, 5))
+		var clen := CONT_LONG if long else CONT_SHORT
+		var bay_pitch := clen + 0.5
+		var row_pitch := CONT_W + 0.3
+		var sx := bays * bay_pitch
+		var sz := rows * row_pitch
+		var idx: int = track.nearest_index(c)
+		var t: Vector3 = track.tangents[idx]
+		var yaws := [0.0, PI * 0.5, atan2(-t.z, t.x)]
+		for yaw in yaws:
+			var basis := Basis(Vector3.UP, yaw)
+			if not _block_fits(c, basis, sx, sz):
+				continue
+			c.y = terrain.height_at(c.x, c.z) - 0.02
+			_fill_block(long_set if long else short_set, c, basis, rows, bays, bay_pitch, row_pitch, rng.randi_range(2, 4))
+			# keep trees, houses and other blocks away (the block plus a driving lane around it)
+			for k in int(ceil(sx / 7.0)) + 1:
+				var p: Vector3 = c + basis.x * (-sx * 0.5 + k * sx / maxf(ceil(sx / 7.0), 1.0))
+				occupy(p, sz * 0.5 + 5.0)
+			if rows >= 5 and cranes < 4 and rng.randf() < 0.6:
+				_rtg_crane(c + basis.x * rng.randf_range(-sx * 0.3, sx * 0.3), basis, sz)
+				cranes += 1
+			blocks += 1
+			break
+	# loose straight stacks close to the track, parallel to the road
 	var stacks := 0
 	var tries2 := 0
-	while stacks < 40 and tries2 < 1400:
+	while stacks < 26 and tries2 < 900:
 		tries2 += 1
-		var pos: Vector3
-		if rng.randf() < 0.75:
-			var i := rng.randi_range(0, track.sample_count() - 1)
-			pos = _roadside(i, rng.randf_range(4.0, 26.0), -1.0 if rng.randf() < 0.5 else 1.0)
-		else:
-			var b: Rect2 = track.bounds.grow(40.0)
-			pos = Vector3(rng.randf_range(b.position.x, b.end.x), 0, rng.randf_range(b.position.y, b.end.y))
-		if not free_at(pos, 7.0, 4.0):
+		var i := rng.randi_range(0, track.sample_count() - 1)
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		var pos := _roadside(i, rng.randf_range(5.0, 18.0), side)
+		if terrain.splat_at(pos.x, pos.z).r < 0.9 or not free_at(pos, 7.0, 3.0):
 			continue
-		if terrain.splat_at(pos.x, pos.z).r < 0.9:
-			continue
+		var t2: Vector3 = track.tangents[i]
+		var basis2 := Basis(Vector3.UP, atan2(-t2.z, t2.x))
 		pos.y = terrain.height_at(pos.x, pos.z)
-		var along := rng.randf() < 0.5
-		var levels := rng.randi_range(1, 3)
-		var row := rng.randi_range(1, 3)
-		var stack := Node3D.new()
-		for rr in row:
-			for lv in levels:
-				var long := rng.randf() < 0.7
-				var mi := MeshKit.mesh_instance(cont_long if long else cont_short, mats[rng.randi() % mats.size()])
-				mi.position = Vector3(rr * 2.6, 1.3 + lv * 2.6, rng.randf_range(-0.2, 0.2))
-				stack.add_child(mi)
-		stack.position = pos
-		stack.rotation.y = rng.randf_range(-0.1, 0.1) + (PI * 0.5 if along else 0.0)
-		add_child(stack)
+		var long2 := rng.randf() < 0.7
+		_fill_block(long_set if long2 else short_set, pos, basis2, rng.randi_range(1, 3), 1, (CONT_LONG if long2 else CONT_SHORT) + 0.5, CONT_W + 0.3, rng.randi_range(1, 3))
 		occupy(pos, 7.0)
 		stacks += 1
+	var mat := TexKit.container_material(Color.WHITE, true)
+	var ml := BoxMesh.new()
+	ml.size = Vector3(CONT_W, CONT_H, CONT_LONG)
+	ml.material = mat
+	var ms := BoxMesh.new()
+	ms.size = Vector3(CONT_W, CONT_H, CONT_SHORT)
+	ms.material = mat
+	_emit_chunks(ml, long_set, 0.0, 1800.0, "Containers", true, FAR_CHUNK)
+	_emit_chunks(ms, short_set, 0.0, 1800.0, "Containers", true, FAR_CHUNK)
+	_stats["Container_blocks"] = blocks
+
+
+## True when a block (centre c, long axis basis.x) lies on flat concrete, clear of the road and props.
+func _block_fits(c: Vector3, basis: Basis, sx: float, sz: float) -> bool:
+	var wb: float = track.wall_base
+	var h0: float = terrain.height_at(c.x, c.z)
+	var nx := int(ceil(sx / 6.0))
+	for ix in nx + 1:
+		for iz in 3:
+			var p: Vector3 = c + basis.x * (-sx * 0.5 - 2.0 + ix * (sx + 4.0) / nx) + basis.z * (-sz * 0.5 - 2.0 + iz * (sz + 4.0) * 0.5)
+			if terrain.distance_to_road(p.x, p.z) < wb + 4.0:
+				return false
+			if terrain.splat_at(p.x, p.z).r < 0.8:
+				return false
+			if absf(terrain.height_at(p.x, p.z) - h0) > 0.6:
+				return false
+			if not free_at(p, 2.5, 1.0):
+				return false
+	return true
+
+
+## Fills a block with stacks; containers sit exactly in rows and bays (no jitter).
+func _fill_block(set: Dictionary, c: Vector3, basis: Basis, rows: int, bays: int, bay_pitch: float, row_pitch: float, max_tiers := 4) -> void:
+	# a container's length runs along the block's long axis (basis.x)
+	var cb := Basis(basis.z, Vector3.UP, basis.x)
+	cb = Basis(-basis.z, Vector3.UP, basis.x) if cb.determinant() < 0.0 else cb
+	var sx := bays * bay_pitch
+	var sz := rows * row_pitch
+	var line: Color = LINE_COLORS[rng.randi() % LINE_COLORS.size()]
+	for k in bays:
+		for r in rows:
+			# neat stacks: nearly all at the block's height, a few one lower
+			var tiers := max_tiers if rng.randf() < 0.85 else max_tiers - 1
+			var p: Vector3 = c + basis.x * (-sx * 0.5 + (k + 0.5) * bay_pitch) + basis.z * (-sz * 0.5 + (r + 0.5) * row_pitch)
+			for tt in tiers:
+				if rng.randf() < 0.35:
+					line = LINE_COLORS[rng.randi() % LINE_COLORS.size()]
+				var v := rng.randf_range(0.85, 1.08)
+				var col := Color(line.r * v, line.g * v, line.b * v, rng.randf())
+				var flip := Basis(Vector3.UP, PI) if rng.randf() < 0.5 else Basis.IDENTITY
+				_push(set, p, [Transform3D(cb * flip, p + Vector3(0, CONT_H * 0.5 + tt * CONT_H, 0)), col], FAR_CHUNK)
+
+
+## Rubber-tyred gantry crane straddling a block (basis.z = across the rows).
+func _rtg_crane(c: Vector3, basis: Basis, sz: float) -> void:
+	var crane := Node3D.new()
+	crane.name = "RTG"
+	var yellow := TexKit.std(Color(0.9, 0.62, 0.08), 0.5, 0.4)
+	var dark := TexKit.std(Color(0.1, 0.1, 0.1), 0.8)
+	var h := CONT_H * 4.0 + 4.5
+	var half := sz * 0.5 + 1.6
+	for sxs: float in [-1.0, 1.0]:
+		for szs: float in [-1.0, 1.0]:
+			crane.add_child(MeshKit.box_node(Vector3(0.9, h, 0.9), yellow, Vector3(sxs * 3.2, h * 0.5, szs * half)))
+			crane.add_child(MeshKit.box_node(Vector3(1.0, 1.1, 0.7), dark, Vector3(sxs * 3.2, 0.55, szs * half)))
+		crane.add_child(MeshKit.box_node(Vector3(0.6, 0.6, half * 2.0 + 1.0), yellow, Vector3(sxs * 3.2, h, 0)))
+	for szs: float in [-1.0, 1.0]:
+		crane.add_child(MeshKit.box_node(Vector3(7.4, 1.2, 1.2), yellow, Vector3(0, h - 0.2, szs * half)))
+		crane.add_child(MeshKit.box_node(Vector3(6.4, 0.8, 0.8), yellow, Vector3(0, 1.4, szs * half)))
+	crane.add_child(MeshKit.box_node(Vector3(4.0, 2.2, 3.0), TexKit.std(Color(0.85, 0.85, 0.82), 0.5), Vector3(0, h + 1.3, rng.randf_range(-half * 0.6, half * 0.6))))
+	crane.add_child(MeshKit.box_node(Vector3(2.4, 2.0, 2.2), TexKit.std(Color(0.9, 0.62, 0.08), 0.5, 0.3), Vector3(-2.6, h - 2.4, -half + 1.8)))
+	add_child(crane)
+	crane.global_transform = Transform3D(basis, c)
 
 
 func _build_skyline() -> void:

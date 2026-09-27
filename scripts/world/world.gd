@@ -103,7 +103,7 @@ func _ready() -> void:
 	flares.name = "LensFlares"
 	add_child(flares)
 	flares.setup(atmosphere)
-	print("WORLD: terrain %d ms, scenery %d ms, meshes+grass %d ms (%s)" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2, scenery.stats_text()])
+	print("WORLD: terrain %d ms, scenery %d ms, meshes+grass %d ms (%s)" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2, scenery.stats_text() + (", " + scenery.details.stats_text() if scenery.details else "")])
 	skidmarks = Skidmarks.new()
 	skidmarks.name = "Skidmarks"
 	add_child(skidmarks)

@@ -14,6 +14,8 @@ func _ready() -> void:
 			args[kv[0]] = kv[1]
 	DirAccess.make_dir_recursive_absolute(args["out"])
 	Game.settings["car"] = args["car"]
+	if args.has("vd"):
+		Game.settings["view_distance"] = int(args["vd"])
 	var world := World.new()
 	world.setup({"track": args["track"], "mode": "free", "laps": 1, "time_of_day": args["tod"], "weather": args["weather"],
 		"day_cycle": int(args["cycle"]), "weather_seed": 7, "online": false})
@@ -63,6 +65,19 @@ func _ready() -> void:
 	var gp: Vector3 = tr.samples[i4] + tr.rights[i4] * (float(tr.wall_base) + 7.0)
 	gp.y = world.terrain.height_at(gp.x, gp.z)
 	views.append(["grass", gp + Vector3(0, 1.3, 0) - tr.tangents[i4] * 4.0, gp + tr.tangents[i4] * 10.0 + Vector3(0, 0.2, 0)])
+	# a house (village) and the container yard / a billboard
+	var houses: Array = world.scenery.find_children("House_*", "Node3D", false, false)
+	if not houses.is_empty():
+		var h: Node3D = houses[0]
+		var hf: Vector3 = -h.global_transform.basis.z
+		views.append(["house", h.global_position + hf * 22.0 + h.global_transform.basis.x * 6.0 + Vector3(0, 3.0, 0), h.global_position + Vector3(0, 3.0, 0)])
+	var cont: Array = world.scenery.find_children("Containers", "MultiMeshInstance3D", false, false)
+	if not cont.is_empty():
+		var mid := Vector3.ZERO
+		for cm in cont:
+			mid += (cm as Node3D).global_position
+		mid /= cont.size()
+		views.append(["yard", mid + Vector3(90, 110, 140), mid])
 	for v in views:
 		if wanted != "all" and not wanted.contains(str(v[0])):
 			continue

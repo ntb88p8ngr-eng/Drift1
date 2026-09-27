@@ -481,25 +481,36 @@ render_mode diffuse_burley;
 uniform vec3 base_color : source_color = vec3(0.6, 0.1, 0.05);
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float rib_freq = 9.0;
+uniform bool instanced = false;   // MultiMesh: colour per container from INSTANCE_CUSTOM
 
 varying vec3 opos;
 varying vec3 onrm;
+varying vec3 inst_col;
+varying float seed;
 
 void vertex() {
 	opos = VERTEX;
 	onrm = NORMAL;
+	inst_col = INSTANCE_CUSTOM.rgb;
+	seed = INSTANCE_CUSTOM.a;
 }
 
 void fragment() {
 	float along = abs(onrm.x) > 0.5 ? opos.z : opos.x;
-	float rib = sin(along * rib_freq * 6.2831);
-	float rust = texture(noise_tex, opos.xy * 0.3 + opos.zx * 0.2).r;
-	vec3 col = base_color * (0.85 + 0.15 * rib);
+	// fade the ribs out where they get finer than a pixel (no moire in the distance)
+	float rib_aa = clamp(1.5 - fwidth(along * rib_freq) * 3.0, 0.0, 1.0);
+	float rib = sin(along * rib_freq * 6.2831) * rib_aa;
+	float rust = texture(noise_tex, opos.xy * 0.3 + opos.zx * 0.2 + vec2(seed * 7.0, seed * 3.0)).r;
+	vec3 base = instanced ? inst_col : base_color;
+	// door end: darker frame, locking bars
+	float door = abs(onrm.z) > 0.5 && instanced ? 1.0 : 0.0;
+	float bars = door * step(0.92, fract(opos.x * 1.6 + 0.25));
+	vec3 col = base * (0.85 + 0.15 * rib * (1.0 - door)) * (1.0 - bars * 0.45);
 	col = mix(col, vec3(0.35, 0.18, 0.08), smoothstep(0.62, 0.8, rust) * 0.6);
 	ALBEDO = col;
 	ROUGHNESS = 0.6;
 	METALLIC = 0.35;
-	NORMAL_MAP = vec3(0.5 + 0.35 * cos(along * rib_freq * 6.2831), 0.5, 1.0);
+	NORMAL_MAP = vec3(0.5 + 0.35 * cos(along * rib_freq * 6.2831) * rib_aa, 0.5, 1.0);
 }
 """
 
@@ -658,12 +669,13 @@ static func water_material() -> ShaderMaterial:
 	return m
 
 
-static func container_material(color: Color) -> ShaderMaterial:
+static func container_material(color: Color, instanced := false) -> ShaderMaterial:
 	var sh: Shader = _shader("shader_container", CONTAINER_SHADER)
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	m.set_shader_parameter("base_color", color)
 	m.set_shader_parameter("noise_tex", noise_texture(41, 0.03, false, 256))
+	m.set_shader_parameter("instanced", instanced)
 	return m
 
 
@@ -680,7 +692,9 @@ static func leaf_material(kind: String, tint := Color.WHITE) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	var tex: Texture2D = leaf_texture()
-	if kind == "needle":
+	if kind == "oak":
+		tex = oak_leaf_texture()
+	elif kind == "needle":
 		tex = needle_texture()
 	elif kind == "fern":
 		tex = fern_texture()
@@ -694,6 +708,117 @@ static func leaf_material(kind: String, tint := Color.WHITE) -> ShaderMaterial:
 		m.set_shader_parameter("backlight_color", Color(0.12, 0.2, 0.04))
 		m.set_shader_parameter("wind", 2.2)
 	return m
+
+
+## Billboard impostor for trees beyond the 3D view distance: a camera-facing (upright) card from a
+## two-cell atlas (conifer | broadleaf, picked like the far LOD via custom alpha), tinted per tree.
+const IMPOSTOR_SHADER := """
+shader_type spatial;
+render_mode skip_vertex_transform, cull_disabled, diffuse_burley, shadows_disabled;
+
+uniform sampler2D atlas : source_color, filter_linear_mipmap;
+uniform vec2 pine_size = vec2(7.2, 16.5);
+uniform vec2 leaf_size = vec2(10.0, 12.0);
+uniform vec2 mesh_size = vec2(10.0, 17.0);
+
+varying vec3 tint;
+
+void vertex() {
+	vec3 origin = MODEL_MATRIX[3].xyz;
+	float s = length(MODEL_MATRIX[0].xyz);
+	float leaf = INSTANCE_CUSTOM.a > 0.9 ? 1.0 : 0.0;
+	tint = INSTANCE_CUSTOM.rgb;
+	vec2 size = mix(pine_size, leaf_size, leaf) * s;
+	vec3 to_cam = CAMERA_POSITION_WORLD - origin;
+	to_cam.y = 0.0;
+	to_cam = length(to_cam) > 0.001 ? normalize(to_cam) : vec3(0.0, 0.0, 1.0);
+	vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), to_cam));
+	vec2 q = vec2(VERTEX.x / mesh_size.x, VERTEX.y / mesh_size.y);   // x -0.5..0.5, y 0..1
+	vec3 w = origin + right * q.x * size.x + vec3(0.0, q.y * size.y - 0.3 * s, 0.0);
+	VERTEX = (VIEW_MATRIX * vec4(w, 1.0)).xyz;
+	NORMAL = normalize((VIEW_MATRIX * vec4(normalize(to_cam + vec3(0.0, 0.9, 0.0)), 0.0)).xyz);
+	UV = vec2(UV.x * 0.5 + leaf * 0.5, UV.y);
+}
+
+void fragment() {
+	vec4 t = texture(atlas, UV);
+	ALBEDO = t.rgb * tint;
+	ALPHA = t.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.45;
+	ROUGHNESS = 0.9;
+	SPECULAR = 0.15;
+	BACKLIGHT = vec3(0.08, 0.12, 0.04) * tint;
+}
+"""
+
+
+static func impostor_material() -> ShaderMaterial:
+	if _cache.has("mat_impostor"):
+		return _cache["mat_impostor"]
+	var m := ShaderMaterial.new()
+	m.shader = _shader("shader_impostor", IMPOSTOR_SHADER)
+	m.set_shader_parameter("atlas", impostor_texture())
+	_cache["mat_impostor"] = m
+	return m
+
+
+## 512 x 256 atlas: a layered conifer (left) and a round broadleaf crown (right), lit from above.
+static func impostor_texture() -> ImageTexture:
+	if _cache.has("tex_impostor"):
+		return _cache["tex_impostor"]
+	var w := 512
+	var h := 256
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.1, 0.18, 0.07, 0.0))
+	var noise := FastNoiseLite.new()
+	noise.seed = 77
+	noise.frequency = 0.08
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var blobs: Array = []
+	for k in 7:
+		var a := TAU * k / 7.0
+		blobs.append([Vector2(0.5 + cos(a) * rng.randf_range(0.16, 0.24), 0.36 + sin(a) * rng.randf_range(0.1, 0.18)), rng.randf_range(0.17, 0.24)])
+	blobs.append([Vector2(0.5, 0.3), 0.26])
+	for y in h:
+		for x in w:
+			var cell := 0 if x < 256 else 1
+			var u := float(x % 256) / 256.0
+			var v := float(y) / 256.0          # 0 = top
+			var n := noise.get_noise_2d(x, y) * 0.5 + 0.5
+			var col := Color(0, 0, 0, 0)
+			if cell == 0:
+				# trunk
+				if v > 0.86 and absf(u - 0.5) < 0.025:
+					col = Color(0.2, 0.15, 0.1, 1.0)
+				# five tiers, each a flared skirt; narrower towards the top
+				var tier := clampf((v - 0.02) / 0.84, 0.0, 1.0) * 5.0
+				var f := fposmod(tier, 1.0)
+				var taper := 0.12 + 0.88 * (tier / 5.0)
+				var half := (0.18 + 0.82 * f) * taper * 0.48 + (n - 0.5) * 0.05
+				if v > 0.02 and v < 0.88 and absf(u - 0.5) < half:
+					var shade := 0.7 + 0.45 * (1.0 - f) - absf(u - 0.5) / maxf(half, 0.01) * 0.25
+					col = Color(0.07, 0.17, 0.07) * shade * (0.75 + 0.5 * n)
+					col.a = 1.0
+			else:
+				if v > 0.62 and absf(u - 0.5) < 0.035 - (v - 0.62) * -0.02:
+					col = Color(0.22, 0.16, 0.1, 1.0)
+				var inside := 0.0
+				var light := 0.0
+				for b in blobs:
+					var c: Vector2 = b[0]
+					var r: float = b[1]
+					var d := Vector2(u, v).distance_to(c) / (r * (0.92 + 0.16 * n))
+					if d < 1.0:
+						inside = 1.0
+						light = maxf(light, (1.0 - d) * 0.5 + (c.y - v + r) / (2.0 * r) * 0.5)
+				if inside > 0.0:
+					col = Color(0.17, 0.3, 0.07) * (0.6 + 0.6 * light) * (0.75 + 0.5 * n)
+					col.a = 1.0
+			img.set_pixel(x, y, col)
+	var t := ImageTexture.create_from_image(coverage_mipmaps(img, 0.45))
+	_cache["tex_impostor"] = t
+	return t
 
 
 static func far_tree_material(foliage: Color) -> ShaderMaterial:
@@ -828,6 +953,67 @@ static func leaf_texture() -> ImageTexture:
 			img.set_pixel(x, y, col)
 	var result = ImageTexture.create_from_image(coverage_mipmaps(img, 0.45))
 	_cache["tex_leaf"] = result
+	return result
+
+
+## Oak twig: dark, leathery leaves with rounded lobes.
+static func oak_leaf_texture() -> ImageTexture:
+	if _cache.has("tex_oak"):
+		return _cache["tex_oak"]
+	var size := 256
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.12, 0.22, 0.06, 0.0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 19
+	var noise := FastNoiseLite.new()
+	noise.seed = 8
+	noise.frequency = 0.09
+	var leaves: Array = []
+	for i in 8:
+		var t := 0.2 + float(i) * 0.1
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var base := Vector2(0.5 + sin(t * 2.5) * 0.03, 1.0 - t)
+		var ang := -PI * 0.5 + side * rng.randf_range(0.5, 1.0)
+		if i == 7:
+			ang = -PI * 0.5
+		var length := rng.randf_range(0.19, 0.25) * (1.1 - t * 0.3)
+		var dir := Vector2(cos(ang), sin(ang))
+		leaves.append([base + dir * length, dir, length, length * rng.randf_range(0.42, 0.5), rng.randf_range(-0.05, 0.05), rng.randf() * TAU])
+	for y in size:
+		for x in size:
+			var p := Vector2((float(x) + 0.5) / size, (float(y) + 0.5) / size)
+			var col := Color(0, 0, 0, 0)
+			var tx := 0.5 + sin((1.0 - p.y) * 2.5) * 0.03
+			if absf(p.x - tx) < 0.011 and p.y > 0.14:
+				col = Color(0.3, 0.2, 0.1, 1.0)
+			for l in leaves:
+				var c: Vector2 = l[0]
+				var d: Vector2 = l[1]
+				var half_len: float = l[2]
+				var width: float = l[3]
+				var rel := p - c
+				var u := rel.dot(d) / half_len
+				var v := rel.dot(Vector2(-d.y, d.x))
+				if absf(u) >= 1.0:
+					continue
+				var tt := (u + 1.0) * 0.5
+				# obovate outline with 4-5 rounded lobes per side
+				var lobes := 0.62 + 0.38 * absf(sin(tt * PI * 4.5 + float(l[5]) * 0.1))
+				var w := width * pow(sin(PI * tt), 0.6) * (0.75 + 0.35 * tt) * lobes
+				if absf(v) < w:
+					var edge := absf(v) / w
+					var vein := 1.0 - smoothstep(0.0, 0.05, absf(v) / width)
+					var nv := noise.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+					var hue: float = l[4]
+					var base_col := Color(0.13 + hue, 0.27 + hue * 0.5, 0.07).lerp(Color(0.22, 0.36, 0.1), tt * 0.4)
+					base_col = base_col.darkened(edge * 0.2)
+					base_col = base_col.lerp(Color(0.4, 0.46, 0.2), vein * 0.5)
+					base_col = base_col * (0.85 + nv * 0.3)
+					base_col.a = 1.0
+					col = base_col
+			img.set_pixel(x, y, col)
+	var result = ImageTexture.create_from_image(coverage_mipmaps(img, 0.45))
+	_cache["tex_oak"] = result
 	return result
 
 

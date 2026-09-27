@@ -28,10 +28,11 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | Skybox | eigener Sky-Shader mit ziehenden Wolken in zwei Schichten, Sonne, Mond und Sternen |
 | Strecken | **Kurohana Ridge** (fließende Waldstrecke mit ~1,9 km) und **Harbor Drift Yard** (breiter Hafenkurs mit ~1,3 km und engen Kehren). Beide haben Curbs, Leitplanken bzw. Betonwände, ein Startportal mit Startampel, Tribüne und Straßenlaternen |
 | Gelände | Höhenfeld mit Hügeln, Böschungen, Einschnitten und Bergen hinter den Leitplanken (die Fahrbahn selbst bleibt eben), Fels an steilen Hängen, Waldboden, Kies, Wiesen; im Hafen eine Beton-Vorfläche und bewaldete Hügel an Land |
-| Wald & Pflanzen | **dichter Wald** überall um die Strecken (bis zu ~16.000 Bäume) mit 3 Detailstufen, dazu Büsche, kleine Sträucher, Farne und Felsen. Laub- und Nadelbäume, Herbstfärbung, Wind im Shader |
+| Wald & Pflanzen | **dichter Wald** überall um die Strecken (bis zu ~16.000 Bäume) mit 3 Detailstufen ohne Flackern beim Wechsel, dahinter **2D-Bäume bis zum Horizont** (einstellbare 3D-Sichtweite). Nadel-, Laub- und **Eichenbäume** (auch als große Einzelbäume auf Wiesen und im Dorf), Herbstfärbung, Wind im Shader. Dazu Büsche, Sträucher, Farne, **Felsgruppen und Steine** am Wegesrand |
 | Gras | wird nur **in der Nähe der Kamera** gezeichnet: tausende Grasbüschel in zwei Dichten, hohe Gräser und Blumen auf Wiesen, trockene Stellen, Wind, das Gras biegt sich unter dem Auto |
 | Zuschauer | Zuschauergruppen an den engsten Kurven hinter Fangnetzen, mit Fahnen und Pavillons, jubeln, klatschen oder winken; die Tribüne am Start ist voll |
-| Häuser | japanische Wohnhäuser, Laden mit Getränkeautomaten, Scheune, Büro, Lagerhallen, Container, Kräne, Schiffe, Skyline. Nachts leuchten die Fenster |
+| Häuser | detaillierte **japanische Wohnhäuser** (Walm- oder Satteldach mit Ziegeln, Balkon, Fensterrahmen, Rollladenkästen, Klimageräte, Regenrinnen, Antenne, Gartenmauer mit Briefkasten und Blumentöpfen), **Konbini „Hana Mart“** mit Glasfront, Parkplatz und Getränkeautomaten, Bürogebäude mit Fensterbändern und Firmenschild, Scheune mit Heuballen, Bushaltestelle. Im Hafen: Lagerhallen, **Containerterminal mit über 1.000 sauber gestapelten Containern** und Portalkränen, Kaikräne, Schiffe, Skyline. Nachts leuchten Fenster und Werbetafeln |
+| Deko | **Werbetafeln** mit Flutlicht, **Sponsor-Banner** an Leitplanken und Mauern, Banner-Bogen über der Strecke, **Verkehrsschilder** (Kurven-Leitpfeile an engen Kurven, Kurvenwarnungen, Tempolimits, Bremsschilder 100/50, Wegweiser), **Bänke**, Mülleimer, **Blumentöpfe** und Pflanzkübel, Reifenstapel und Pylonen. Alle Marken sind erfunden |
 | Autos | **Nissan Skyline GT-R R34** (Standard), **Ford Mustang GT**, **BMW M3 GT3**: detaillierte 3D-Modelle von Blend Swap, für das Spiel optimiert. Echte Getriebeübersetzungen (R34, Mustang), Drehzahlmesser wie im echten Auto (R34 bis 9.000, Mustang bis 8.000, M3 GT3 bis 10.000 U/min). Einfarbige Klarlack-Lackierungen plus eigene Farbe |
 | Hauptmenü | Das Auto dreht sich auf einer leuchtenden Plattform **mitten in einer alten Werkstatthalle** (Ziegelwände, Stahlträger, Reifenstapel, Poster), mit Studio-Softboxen und Hallenlicht |
 | Tuning | Motor, Getriebe, Fahrwerk, **Lenkwinkel**, Turbo und Nitro, je 3 Stufen, für jedes Auto einzeln. Das Getriebe-Tuning ändert die Übersetzung (**längerer 2. und 3. Gang** für Drifts, schnelleres Schalten); die Garage zeigt Übersetzungen und Endgeschwindigkeit pro Gang. Bezahlt wird mit Credits aus Driftpunkten und Rennen. Dazu kostenlos umstellbar der **Burble-Tune** (Aus/Mild/Sport/Brutal): Blubbern und Knallen im Schiebebetrieb, Flammen beim Gaswegnehmen und am Begrenzer – ab Werk ist er beim Mustang aus, beim R34 mild und beim M3 GT3 auf Sport |
@@ -89,8 +90,9 @@ Projektstruktur:
 ```
 scripts/autoload/  game.gd (Einstellungen, Autos, Leaderboard, Input), net.gd (Lobbys/ENet/UPnP/LAN)
 scripts/car/       car.gd (Physik), car_body.gd (Modell + Lack + Licht), car_audio.gd, tire_fx.gd, camera_rig.gd
-scripts/world/     world.gd (Rennablauf), track.gd, terrain.gd (Gelände), scenery.gd (Wald, Häuser, …), crowd.gd,
-                   grass.gd, atmosphere.gd (Tageszeit & Wetter), lens_flare.gd, tree_factory.gd, drift_scorer.gd, …
+scripts/world/     world.gd (Rennablauf), track.gd, terrain.gd (Gelände), scenery.gd (Wald, Container, …), crowd.gd,
+                   houses.gd (Gebäude), details.gd (Schilder, Werbung, Bänke, …), sign_atlas.gd (Schilder-/Werbetextur),
+                   prop_meshes.gd, grass.gd, atmosphere.gd (Tageszeit & Wetter), lens_flare.gd, tree_factory.gd, …
 scripts/ui/        menu.gd, hud.gd, pause_menu.gd, settings_ui.gd, gauge.gd, minimap.gd, ui_kit.gd
 scripts/util/      mesh_kit.gd (prozedurale Meshes), tex_kit.gd (Shader & Texturen)
 assets/cars/       r34.glb, mustang.glb, m3gt3.glb (+ Maße als JSON), CREDITS.md

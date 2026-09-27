@@ -22,6 +22,8 @@ static func _material(key: String) -> Material:
 				_mats[key] = TexKit.leaf_material("leaf", Color(1.0, 1.0, 1.0))
 			"leaf_autumn":
 				_mats[key] = TexKit.leaf_material("leaf", Color(1.6, 0.95, 0.45))
+			"leaf_oak":
+				_mats[key] = TexKit.leaf_material("oak", Color(1.0, 1.0, 1.0))
 			"needle":
 				_mats[key] = TexKit.leaf_material("needle", Color(1.0, 1.0, 1.0))
 			"fern":
@@ -75,9 +77,11 @@ static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float
 	var p := start
 	var d := dir
 	var end_ratio := 0.5 if depth < max_depth else 0.25
+	var gnarl: float = ctx.get("gnarl", 1.0)
+	var up_bias: float = ctx.get("up_bias", 0.06)
 	for s in segs:
-		var bend := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.4, 0.5), rng.randf_range(-1, 1)) * (0.1 + depth * 0.07)
-		d = (d + bend + Vector3.UP * (0.06 if depth > 0 else 0.03)).normalized()
+		var bend := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.4, 0.5), rng.randf_range(-1, 1)) * (0.1 + depth * 0.07) * gnarl
+		d = (d + bend + Vector3.UP * (up_bias if depth > 0 else 0.03)).normalized()
 		if depth >= 2:
 			d = (d + Vector3.DOWN * 0.05).normalized()
 		p = p + d * (length / segs)
@@ -93,9 +97,11 @@ static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float
 		children = 7 if detail > 0.3 else 6
 	if detail <= 0.3 and depth == 1:
 		children = 3
+	if depth == 0 and ctx.has("trunk_children"):
+		children = int(ctx["trunk_children"])
 	var az := rng.randf() * TAU
 	for c in children:
-		var t := rng.randf_range(0.38 if depth == 0 else 0.25, 0.97)
+		var t := rng.randf_range(float(ctx.get("t_min", 0.38)) if depth == 0 else 0.25, 0.97)
 		var fi := t * segs
 		var idx := mini(int(fi), segs - 1)
 		var frac := fi - idx
@@ -104,9 +110,11 @@ static func _branch(ctx: Dictionary, start: Vector3, dir: Vector3, length: float
 		az += 2.39996 + rng.randf_range(-0.3, 0.3)
 		var ref := Vector3.UP if absf(d.y) < 0.95 else Vector3.RIGHT
 		var side := d.cross(ref).normalized().rotated(d, az)
-		var angle := deg_to_rad(rng.randf_range(32.0, 58.0))
+		var angle := deg_to_rad(rng.randf_range(float(ctx.get("angle_min", 32.0)), float(ctx.get("angle_max", 58.0))))
 		var cdir := (d * cos(angle) + side * sin(angle)).normalized()
 		var clen := length * rng.randf_range(0.55, 0.75) * (1.15 - t * 0.45)
+		if depth == 0:
+			clen *= float(ctx.get("limb_scale", 1.0))
 		_branch(ctx, pt, cdir, clen, rad * 0.62, depth + 1)
 	if depth == max_depth - 1:
 		_leaf_cluster(ctx, p, length * 0.45 + 0.6)
@@ -135,6 +143,38 @@ static func _leaf_cluster(ctx: Dictionary, center: Vector3, radius: float) -> vo
 		var dd := pos - bx + by
 		MeshKit.tri(st, a, bb, c, nrm, nrm, nrm, Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), b.z, col)
 		MeshKit.tri(st, a, c, dd, nrm, nrm, nrm, Vector2(0, 1), Vector2(1, 0), Vector2(0, 0), b.z, col)
+
+
+# ---------------------------------------------------------------------------
+# Oak: short, thick trunk splitting into long, crooked, spreading limbs; broad dark crown
+# ---------------------------------------------------------------------------
+static func oak(seed_value: int, detail: float) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var bark := MeshKit.new_st()
+	var leaves := MeshKit.new_st()
+	var trunk := rng.randf_range(4.2, 5.2)
+	var ctx := {
+		"rng": rng, "bark": bark, "leaves": leaves, "detail": detail,
+		"max_depth": 3 if detail > 0.6 else 2,
+		"crown": Vector3(0, trunk + 3.2, 0),
+		"leaf_size": 1.5 if detail > 0.6 else (2.4 if detail > 0.3 else 3.1),
+		"leaf_count": 12 if detail > 0.6 else (10 if detail > 0.3 else 6),
+		"trunk_children": 6 if detail > 0.3 else 5,
+		"t_min": 0.62, "angle_min": 42.0, "angle_max": 72.0, "limb_scale": 2.1,
+		"up_bias": 0.035, "gnarl": 1.7,
+	}
+	var dir := Vector3(rng.randf_range(-0.05, 0.05), 1.0, rng.randf_range(-0.05, 0.05)).normalized()
+	_branch(ctx, Vector3(0, -0.3, 0), dir, trunk, 0.52, 0)
+	var roots := 6 if detail > 0.6 else 0
+	for k in roots:
+		var a := TAU * float(k) / float(roots) + rng.randf_range(-0.3, 0.3)
+		var out := Vector3(cos(a), 0, sin(a))
+		var pts := [Vector3(0, 1.1, 0) + out * 0.1, out * 0.7 + Vector3(0, 0.3, 0), out * 1.3 + Vector3(0, -0.12, 0)]
+		MeshKit.tube(bark, pts, [0.26, 0.15, 0.05], 5, Vector2(1, 0.4))
+	var mesh := MeshKit.commit(bark, _material("bark"), null, true)
+	MeshKit.commit(leaves, _material("leaf_oak"), mesh)
+	return mesh
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +285,15 @@ static func bush(seed_value: int) -> ArrayMesh:
 # (UV.x = 0 / 1); the instance custom alpha picks one (0.75 = conifer, 1.0 = broadleaf), so the
 # whole distant forest of a chunk is a single draw call. COLOR.a = 0 marks trunk vertices.
 # ---------------------------------------------------------------------------
+## Upright card for TexKit.IMPOSTOR_SHADER (10 x 17 m so the culling bounds cover the billboard).
+static func impostor_mesh() -> Mesh:
+	var q := QuadMesh.new()
+	q.size = Vector2(10.0, 17.0)
+	q.center_offset = Vector3(0, 8.5, 0)
+	q.material = TexKit.impostor_material()
+	return q
+
+
 static func far_forest_mesh(pine_seed: int, leaf_seed: int) -> ArrayMesh:
 	var st := MeshKit.new_st()
 	_far_pine(st, pine_seed)

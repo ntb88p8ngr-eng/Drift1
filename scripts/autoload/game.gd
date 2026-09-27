@@ -130,7 +130,7 @@ var settings := {
 	"gamma": 1.0,
 	"shadow_quality": 2,
 	"grass_quality": 2,
-	"view_distance": 2600,
+	"view_distance": 1200,
 	"lens_flares": true,
 	"quality": 2,
 	"weather": "dry",

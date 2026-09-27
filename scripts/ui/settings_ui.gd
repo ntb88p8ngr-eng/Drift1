@@ -94,8 +94,8 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		vd_val.text = "%d m" % int(x)
 		Game.settings["view_distance"] = int(x)
 		Game.save_settings(), 200)
-	vd.tooltip_text = "Bis zu dieser Entfernung werden Bäume, Büsche, Sträucher, Felsen und Deko gezeichnet. Weniger = mehr FPS. Wirkt sofort."
-	v.add_child(UiKit.labeled("Sichtweite Pflanzen", UiKit.row([vd, vd_val], 8)))
+	vd.tooltip_text = "Bis zu dieser Entfernung werden Bäume, Büsche, Sträucher, Felsen und Deko in 3D gezeichnet. Dahinter stehen die Bäume als 2D-Bilder bis zum Horizont – es fehlt nie ein Baum. Weniger = mehr FPS. Wirkt sofort."
+	v.add_child(UiKit.labeled("Sichtweite 3D-Bäume & Pflanzen", UiKit.row([vd, vd_val], 8)))
 	var lf := CheckBox.new()
 	lf.text = "Lens Flares (Sonne und Mond)"
 	lf.button_pressed = bool(Game.settings["lens_flares"])
