@@ -33,6 +33,10 @@ const STEER_SPEED := 5.5        # rad/s
 const DRAG := 0.34
 const ROLLING := 3.0
 const LAUNCH_RPM := 0.6         # launch control rpm as a fraction of the redline
+const KINETIC := 0.95           # spinning tyre: share of the peak grip it still pushes with
+const SPIN_HOLD := 0.78         # a spinning wheel keeps spinning while the drive exceeds this share of the grip
+const SPIN_MASS := 32.0         # kg – how hard the drivetrain resists spinning the wheels up (low = free-revving)
+const DRIFT_PUSH := 3.2         # m/s² – extra drive along the nose at full throttle in a drift
 
 # --- configuration (set before adding to the tree) ---
 var car_id := "r34"
@@ -96,6 +100,7 @@ var grounded_wheels := 0
 var headlights := false
 var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.get_underglow)
 var underglow: Node3D
+var _engine_stage := 0
 var braking_visual := false
 var track_hint := -1
 var surface_name := "asphalt"
@@ -245,7 +250,8 @@ func _apply_tuning(t: Dictionary) -> void:
 	var tu := int(t.get("turbo", 0))
 	var n := int(t.get("nitro", 0))
 	var st := clampi(int(t.get("steering", 0)), 0, Game.STEER_KIT.size() - 1)
-	max_torque *= 1.0 + 0.1 * e
+	max_torque *= 1.0 + 0.2 * e
+	_engine_stage = e
 	# gearbox stages change the ratios (longer 2nd/3rd gear), the final drive and the shift speed
 	var gb: Dictionary = Game.tuned_gearing(car_id)
 	gears = gb["gears"]
@@ -520,6 +526,15 @@ func _simulate(delta: float) -> void:
 			driven_count += wgt
 	if driven_count > 0.0:
 		driven_speed /= driven_count
+		# AWD: the axle that spins takes the engine with it (the centre coupling slips)
+		var fastest := 0.0
+		for w in wheels:
+			var drv: bool = (w["front"] and rear_split < 1.0) or (not w["front"] and rear_split > 0.0)
+			if drv:
+				var ws: float = float(w["v_long"]) + float(w["spin"])
+				if absf(ws) > absf(fastest):
+					fastest = ws
+		driven_speed = lerpf(driven_speed, fastest, 0.85)
 	var ratio := _gear_ratio()
 	var wheel_rpm := driven_speed / radius * 60.0 / TAU
 	var coupled_rpm := absf(wheel_rpm * ratio)
@@ -537,16 +552,22 @@ func _simulate(delta: float) -> void:
 		rpm = lerpf(rpm, maxf(coupled_rpm, idle_rpm), 1.0 - exp(-delta * 14.0))
 	elif engaged:
 		var floor_rpm := idle_rpm
+		var climb := 2600.0
 		if absi(gear) == 1:
 			# normal pull-away: the clutch slips just above idle (far below the launch-control revs)
 			floor_rpm = idle_rpm + throttle * (redline * 0.26 - idle_rpm)
+		if absi(gear) <= 2 and throttle > 0.85 and coupled_rpm < redline * 0.7:
+			# flat out from low speed: the clutch lets the engine rev up freely (burnout / clutch kick) –
+			# the torque then breaks the tyres loose and they keep the revs up by themselves
+			floor_rpm = redline * 0.96
+			climb = 5200.0 + 2600.0 * float(_engine_stage)
 		if launch_active:
 			floor_rpm = maxf(floor_rpm, launch_rpm * (1.0 + wobble * 0.5))
 		var target_rpm := maxf(coupled_rpm, floor_rpm)
 		var next := lerpf(rpm, target_rpm, 1.0 - exp(-delta * 18.0))
 		if not launch_active and next > rpm and coupled_rpm < floor_rpm:
-			# while the clutch is still slipping the revs climb gently
-			next = minf(next, rpm + 2600.0 * delta)
+			# while the clutch is still slipping the revs climb (gently at part throttle)
+			next = minf(next, rpm + climb * delta)
 		rpm = next
 	else:
 		var free_target := idle_rpm + throttle * (redline * 0.99 - idle_rpm)
@@ -722,20 +743,53 @@ func _simulate(delta: float) -> void:
 			f_lat = lerpf(float(w.get("f_lat", f_lat)), f_lat, 1.0 - exp(-delta / tau))
 		w["f_lat"] = f_lat
 
-		var spin_excess := 0.0
-		if power_slide:
-			# spinning tyre: kinetic friction forward, little side grip left
-			f_long = signf(f_drive) * max_f * 0.55 - v_long * ROLLING
-			if line_lock:
-				f_long = signf(f_drive) * max_f * 0.45
+		var driven_w := split > 0.0
+		var spinning_now := false
+		if power_slide and line_lock:
+			# line lock: the front brakes hold the car, the rears spin at the two-step revs
+			f_long = signf(f_drive) * max_f * 0.45
 			f_lat = clampf(f_lat, -max_f * 0.35, max_f * 0.35)
 			var spin_target := maxf(spin_surface - v_long, 6.0 * throttle)
 			w["spin"] = move_toward(float(w["spin"]), spin_target, 50.0 * delta)
+			spinning_now = true
+		elif driven_w and engaged and f_drive != 0.0 and not locked:
+			# wheel spin: the grip left over by the cornering force limits what the tyre can pass on;
+			# torque beyond that spins the wheel up (freely, up to the rev limiter in this gear), the
+			# spinning tyre still pushes with sliding friction along its slip direction – mostly
+			# along the car's nose, i.e. into the corner in a drift
+			var lat_use := minf(absf(f_lat), max_f * 0.9)
+			var long_cap := maxf(sqrt(maxf(max_f * max_f - lat_use * lat_use, 0.0)), max_f * 0.3)
+			var req := absf(f_drive)
+			var dsign := signf(f_drive)
+			var spin := maxf(float(w["spin"]) * dsign, 0.0)
+			var kin := max_f * KINETIC
+			if spin > 0.3 or req > long_cap * (0.35 if power_slide else 0.95):
+				spin += (req - max_f * SPIN_HOLD * (0.7 if power_slide else 1.0)) / SPIN_MASS * delta
+				var v_red := redline / 60.0 * TAU * radius / maxf(absf(ratio), 0.01)
+				spin = clampf(spin, 0.0, maxf(v_red - v_long * dsign, 0.0))
+			else:
+				spin = move_toward(spin, 0.0, 35.0 * delta)
+			if spin > 0.05:
+				spinning_now = true
+				var sv := Vector2(spin, -v_lat * dsign)
+				var dir := sv.normalized()
+				var blend := smoothstep(0.1, 1.5, spin)
+				var lat_rest := f_lat
+				var cap := sqrt(maxf(max_f * max_f - pow(minf(req, max_f), 2.0), 0.0))
+				lat_rest = clampf(f_lat, -maxf(cap, max_f * 0.3), maxf(cap, max_f * 0.3))
+				f_long = lerpf(clampf(f_long, -long_cap, long_cap), dsign * dir.x * kin, blend) - v_long * ROLLING
+				f_lat = lerpf(lat_rest, dir.y * dsign * kin, blend)
+			else:
+				var combined := sqrt(f_long * f_long + f_lat * f_lat)
+				if combined > max_f and max_f > 0.0:
+					var s2 := max_f / combined
+					f_long *= s2
+					f_lat *= s2
+			w["spin"] = spin * dsign
 		else:
 			var combined := sqrt(f_long * f_long + f_lat * f_lat)
 			if combined > max_f and max_f > 0.0:
 				if absf(f_long) > max_f * 0.98 or locked:
-					spin_excess = (absf(f_drive) - max_f) / max_f if absf(f_drive) > max_f else 0.0
 					f_long = clampf(f_long, -max_f, max_f) * 0.92
 					var remaining := sqrt(maxf(max_f * max_f - f_long * f_long, 0.0))
 					var lat_cap := maxf(remaining, max_f * (lerpf(0.5, 0.22, hb_strength) if locked else 0.3))
@@ -744,17 +798,10 @@ func _simulate(delta: float) -> void:
 					var s2 := max_f / combined
 					f_long *= s2
 					f_lat *= s2
-			if spin_excess > 0.0 and absf(f_drive) > 0.0:
-				# the tyre has broken loose: the extra torque spins it up (towards the rev limiter in
-				# this gear) instead of pushing the car – donuts and nitro in a drift rev out and smoke,
-				# the car doesn't get faster
-				var v_red := redline / 60.0 * TAU * radius / maxf(absf(ratio), 0.01)
-				var spin_cap := maxf(v_red * 1.02 - absf(v_long), 0.0)
-				w["spin"] = move_toward(float(w["spin"]), signf(f_drive) * spin_cap, (15.0 + 70.0 * minf(spin_excess, 2.0)) * delta)
-			else:
-				w["spin"] = move_toward(float(w["spin"]), 0.0, 35.0 * delta)
+			w["spin"] = move_toward(float(w["spin"]), 0.0, 35.0 * delta)
 			if locked:
 				w["spin"] = -v_long
+		w["spinning"] = spinning_now
 
 		var force_point := hit + up * 0.25 - global_position
 		apply_force(w_fwd * f_long + w_right * f_lat, force_point)
@@ -770,6 +817,13 @@ func _simulate(delta: float) -> void:
 			slip *= 0.4
 		w["slip"] = slip
 		total_slip += slip
+
+	# drive into the corner: flat out with the car sliding, the rear pushes along the nose
+	if engaged and grounded_wheels >= 3 and throttle > 0.6 and forward_speed > 5.0 and not line_lock:
+		var slide_k := smoothstep(0.12, 0.45, absf(slip_angle))
+		if slide_k > 0.0:
+			var push := DRIFT_PUSH * mass * slide_k * (throttle - 0.6) / 0.4 * (0.5 + 0.5 * absf(steer_input))
+			apply_central_force(fwd * push)
 
 	# anti-roll bars
 	for pair in [[0, 1], [2, 3]]:

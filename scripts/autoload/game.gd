@@ -64,7 +64,7 @@ const CAR_ORDER := ["r34", "mustang", "m3gt3"]
 
 ## Tuning shop: every category has 4 levels (0 = stock). Costs in credits per level.
 const TUNING := [
-	{"id": "engine", "name": "Motor", "desc": "+10 % Drehmoment und +250 U/min pro Stufe"},
+	{"id": "engine", "name": "Motor", "desc": "+20 % Drehmoment und +250 U/min pro Stufe – die Hinterräder drehen deutlich leichter durch"},
 	{"id": "gearbox", "name": "Getriebe", "desc": "Drift-Übersetzung: längerer 2. und 3. Gang, schnelleres Schalten, ab Stufe 2 kürzere Achse"},
 	{"id": "suspension", "name": "Fahrwerk", "desc": "Mehr Grip, straffere Federn und Stabilisatoren"},
 	{"id": "tyres", "name": "Reifen", "desc": "Weichere Mischung für mehr Grip: Sport / Semi-Slick / Slick (+6 % pro Stufe)"},

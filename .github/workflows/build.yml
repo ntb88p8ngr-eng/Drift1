@@ -57,6 +57,12 @@ jobs:
           if grep -E "SCRIPT ERROR" drive.log; then echo "::error::Drive test failed"; exit 1; fi
           grep -q "DRIVE m3gt3 y range" drive.log
 
+      - name: Handling test (burnout to the limiter, held drift keeps its speed)
+        run: |
+          timeout 300 ./godot --headless --path . res://tests/handling_test.tscn 2>&1 | tee handling.log || true
+          if grep -E "SCRIPT ERROR" handling.log; then echo "::error::Handling test failed"; exit 1; fi
+          grep -q "HANDLING TEST OK" handling.log
+
       - name: Camera test (no jitter at 75 fps with 120 Hz physics)
         run: |
           timeout 240 ./godot --headless --fixed-fps 75 --path . res://tests/camera_test.tscn 2>&1 | tee camera.log || true
