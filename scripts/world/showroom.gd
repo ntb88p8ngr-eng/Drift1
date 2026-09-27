@@ -143,6 +143,49 @@ func _load_garage() -> Node3D:
 	return g
 
 
+## Old prints in a dusty hall: faded (less saturated), darker, a greyish dust film that is
+## thicker towards the frame edges and a matte surface.
+const POSTER_SHADER := """
+shader_type spatial;
+uniform sampler2D tex : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform vec2 uv_scale = vec2(1.0);
+uniform vec2 uv_offset = vec2(0.0);
+uniform float fade = 0.5;        // 0 = original colours, 1 = grey
+uniform float dim = 0.6;
+uniform vec3 dust : source_color = vec3(0.46, 0.44, 0.41);
+
+float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y);
+}
+
+void fragment() {
+	vec2 uv = UV * uv_scale + uv_offset;
+	vec3 c = texture(tex, uv).rgb;
+	float l = dot(c, vec3(0.299, 0.587, 0.114));
+	c = mix(c, vec3(l), fade) * dim;
+	vec2 e = min(uv, 1.0 - uv);
+	float edge = 1.0 - smoothstep(0.0, 0.18, min(e.x, e.y));
+	float n = vnoise(uv * vec2(9.0, 12.0)) * 0.6 + vnoise(uv * vec2(40.0, 52.0)) * 0.4;
+	float film = clamp(0.12 + edge * 0.3 + (n - 0.5) * 0.18, 0.0, 0.7);
+	ALBEDO = mix(c, dust * 0.55, film);
+	ROUGHNESS = 0.78;
+	SPECULAR = 0.3;
+}
+"""
+static var _poster_sh: Shader
+
+
+static func _poster_shader() -> Shader:
+	if _poster_sh == null:
+		_poster_sh = Shader.new()
+		_poster_sh.code = POSTER_SHADER
+	return _poster_sh
+
+
 ## The five framed posters on the back wall show our own car pictures (assets/env/posters/poster_N.jpg,
 ## N = 1..5 from left to right). Each poster is a quad whose UVs point into the garage atlas; they are
 ## remapped to the whole picture.
@@ -160,13 +203,11 @@ func _replace_poster(mi: MeshInstance3D) -> void:
 		lo = lo.min(uv)
 		hi = hi.max(uv)
 	var size := (hi - lo).max(Vector2(1e-4, 1e-4))
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = load(path)
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	m.uv1_scale = Vector3(1.0 / size.x, 1.0 / size.y, 1.0)
-	m.uv1_offset = Vector3(-lo.x / size.x, -lo.y / size.y, 0.0)
-	m.roughness = 0.32      # glossy print behind glass
-	m.metallic_specular = 0.6
+	var m := ShaderMaterial.new()
+	m.shader = _poster_shader()
+	m.set_shader_parameter("tex", load(path))
+	m.set_shader_parameter("uv_scale", Vector2(1.0 / size.x, 1.0 / size.y))
+	m.set_shader_parameter("uv_offset", Vector2(-lo.x / size.x, -lo.y / size.y))
 	mi.material_override = m
 
 
