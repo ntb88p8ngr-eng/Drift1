@@ -65,12 +65,16 @@ jobs:
 
       - name: Online test (DTLS + lobby password, right and wrong password)
         run: |
-          ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim > host.log 2>&1 &
+          ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim --port=24590 > host.log 2>&1 &
+          H1=$!
           sleep 5
-          timeout 30 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=geheim 2>&1 | tee net.log || true
-          ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim > host2.log 2>&1 &
+          timeout 30 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=geheim --port=24590 2>&1 | tee net.log || true
+          wait $H1 || true
+          ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim --port=24591 > host2.log 2>&1 &
+          H2=$!
           sleep 5
-          timeout 30 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=falsch 2>&1 | tee net2.log || true
+          timeout 30 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=falsch --port=24591 2>&1 | tee net2.log || true
+          kill $H2 2>/dev/null || true
           cat host.log host2.log
           if grep -E "SCRIPT ERROR" net.log net2.log host.log host2.log; then echo "::error::Online test failed"; exit 1; fi
           grep -q "NET CLIENT IN LOBBY" net.log

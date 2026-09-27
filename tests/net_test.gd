@@ -3,12 +3,11 @@ extends Node
 ## Host:   godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim
 ## Client: godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=geheim
 
-const PORT := 24590
 
 
 func _ready() -> void:
 	Game.persist = false
-	var args := {"role": "host", "pw": ""}
+	var args := {"role": "host", "pw": "", "port": "24590"}
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--") and a.contains("="):
 			var kv := a.substr(2).split("=", true, 1)
@@ -17,12 +16,12 @@ func _ready() -> void:
 		print("NET TIMEOUT players=%d" % Net.players.size())
 		get_tree().quit(2))
 	if args["role"] == "host":
-		var err := Net.host_lobby("Test", PORT, 4, false, args["pw"])
+		var err := Net.host_lobby("Test", int(args["port"]), 4, false, args["pw"])
 		print("NET HOST ", "ok" if err == "" else err)
 		Net.public_ip = "127.0.0.1"
 		var code := Net.invite_code()
 		print("NET INVITE %d chars -> %s" % [code.length(), str(Net.parse_invite(code)).substr(0, 60)])
-		var f := FileAccess.open("user://net_test_invite.txt", FileAccess.WRITE)
+		var f := FileAccess.open("user://net_test_invite_%s.txt" % args["port"], FileAccess.WRITE)
 		f.store_string(code)
 		f.close()
 		Net.lobby_changed.connect(func():
@@ -39,7 +38,7 @@ func _ready() -> void:
 			if Net.players.size() >= 2:
 				print("NET CLIENT IN LOBBY ", Net.lobby.get("name", ""))
 				get_tree().quit(0))
-		var cf := FileAccess.open("user://net_test_invite.txt", FileAccess.READ)
+		var cf := FileAccess.open("user://net_test_invite_%s.txt" % args["port"], FileAccess.READ)
 		var code := cf.get_as_text() if cf else ""
 		var inv := Net.parse_invite(code)
 		# the right password comes with the invite; otherwise the same lobby with a wrong one
