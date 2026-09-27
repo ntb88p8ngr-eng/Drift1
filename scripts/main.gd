@@ -170,32 +170,37 @@ func _smoke_test() -> void:
 		await get_tree().process_frame
 	await _shot(shot_dir, "menu")
 	var i := 0
-	for tr in ["ridge", "harbor"]:
-		for md in ["race", "free"]:
-			print("SMOKE: world %s/%s" % [tr, md])
-			var tod: String = ["dusk", "night", "day", "morning"][i % 4]
-			i += 1
-			Game.settings["car"] = Game.CAR_ORDER[i % Game.CAR_ORDER.size()]
-			_start_world({"track": tr, "mode": md, "laps": 2, "time_of_day": tod, "online": false})
-			while world == null:
-				await get_tree().process_frame
-			for f in 120:
-				if f == 40:
-					Input.action_press("accelerate")
-				if f == 70:
-					Input.action_press("steer_left")
-					Input.action_press("handbrake")
-				await get_tree().physics_frame
-			Input.action_release("accelerate")
-			Input.action_release("steer_left")
-			Input.action_release("handbrake")
-			print("SMOKE: car speed %.1f km/h, gear %d, rpm %d, drift %.0f" % [world.local_car.speed_kmh(), world.local_car.gear, int(world.local_car.rpm), world.scorer.total + world.scorer.chain])
-			await _shot(shot_dir, "%s_%s" % [tr, md])
-			if md == "free":
-				world.end_free_session()
-			else:
-				world._finish()
+	var quick := "--quick" in OS.get_cmdline_user_args()
+	var runs: Array = [["ridge", "race"], ["ridge", "free"], ["harbor", "race"], ["harbor", "free"]]
+	if quick:
+		runs = [["ridge", "free"], ["harbor", "race"]]
+	for run in runs:
+		var tr: String = run[0]
+		var md: String = run[1]
+		print("SMOKE: world %s/%s" % [tr, md])
+		var tod: String = ["dusk", "night", "day", "morning"][i % 4]
+		i += 1
+		Game.settings["car"] = Game.CAR_ORDER[i % Game.CAR_ORDER.size()]
+		_start_world({"track": tr, "mode": md, "laps": 2, "time_of_day": tod, "online": false})
+		while world == null:
 			await get_tree().process_frame
+		for f in 120:
+			if f == 40:
+				Input.action_press("accelerate")
+			if f == 70:
+				Input.action_press("steer_left")
+				Input.action_press("handbrake")
+			await get_tree().physics_frame
+		Input.action_release("accelerate")
+		Input.action_release("steer_left")
+		Input.action_release("handbrake")
+		print("SMOKE: car speed %.1f km/h, gear %d, rpm %d, drift %.0f" % [world.local_car.speed_kmh(), world.local_car.gear, int(world.local_car.rpm), world.scorer.total + world.scorer.chain])
+		await _shot(shot_dir, "%s_%s" % [tr, md])
+		if md == "free":
+			world.end_free_session()
+		else:
+			world._finish()
+		await get_tree().process_frame
 	print("SMOKE: online host")
 	var err := Net.host_lobby("Smoke", 24599, 4, false)
 	print("SMOKE: host result '%s'" % err)

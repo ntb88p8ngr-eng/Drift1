@@ -125,10 +125,14 @@ func show_screen(screen: String) -> void:
 			current = "main"
 			_build_main()
 	# focus first button for gamepad users
+	_focus_first.call_deferred()
+
+
+func _focus_first() -> void:
 	for c in _content.get_children():
-		if c is Button:
-			(c as Button).grab_focus.call_deferred()
-			break
+		if c is Button and (c as Button).is_inside_tree() and (c as Button).is_visible_in_tree():
+			(c as Button).grab_focus()
+			return
 
 
 func _add(c: Control) -> void:

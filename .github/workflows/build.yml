@@ -53,8 +53,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
-          mkdir -p shots
-          timeout 900 xvfb-run -a -s "-screen 0 1600x900x24" ./godot --path . --rendering-driver vulkan -- --smoke-test --shot-dir="$PWD/shots" 2>&1 | tee render.log || true
+          mkdir -p "$RUNNER_TEMP/shots"
+          timeout 900 xvfb-run -a -s "-screen 0 1600x900x24" ./godot --path . --rendering-driver vulkan -- --smoke-test --quick --shot-dir="$RUNNER_TEMP/shots" 2>&1 | tee render.log || true
           if grep -E "SHADER ERROR|SCRIPT ERROR|shader compilation failed" render.log; then echo "::error::Render errors found"; exit 1; fi
           grep -q "SMOKE TEST OK" render.log
 
@@ -67,7 +67,7 @@ jobs:
             check.log
             smoke.log
             render.log
-            shots/
+            ${{ runner.temp }}/shots/
           if-no-files-found: ignore
 
       - name: Export Windows (.exe) and Linux
