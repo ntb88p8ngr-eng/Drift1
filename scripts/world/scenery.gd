@@ -70,6 +70,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		_build_houses(10, ["jp", "jp", "shop", "jp", "jp", "barn", "jp", "jp", "shop", "jp"])
 		if _village >= 0:
 			details.add_bus_stop(_village + 12, -1.0)
+	if id != "playground":
+		var tp := Playground.new()
+		tp.name = "TracksideProps"
+		add_child(tp)
+		tp.build_trackside(track, terrain, self, quality)
 	_build_lamps()
 	crowd = Crowd.new()
 	crowd.name = "Crowd"

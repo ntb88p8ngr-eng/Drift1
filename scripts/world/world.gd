@@ -575,6 +575,8 @@ func _warmup() -> void:
 		return
 	var extra: Array = []
 	var pg := scenery.get_node_or_null("Playground") if scenery else null
+	if pg == null and scenery:
+		pg = scenery.get_node_or_null("TracksideProps")
 	if pg:
 		extra = pg._meshes.values()
 	# make the car's flames and smoke part of it

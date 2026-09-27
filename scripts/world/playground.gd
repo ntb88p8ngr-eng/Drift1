@@ -42,6 +42,103 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	print("PLAYGROUND: ", _stats)
 
 
+## Ridge / harbor: physics props in the run-off – tyre walls lining the gravel traps, barrel and cone
+## groups at marshal posts along the straights, breakable crates (harbor) or cardboard boxes (ridge).
+func build_trackside(p_track, p_terrain, p_scenery, quality: int) -> void:
+	track = p_track
+	terrain = p_terrain
+	scenery = p_scenery
+	rng.seed = hash(track.track_id) + 77
+	_make_assets()
+	_tyre_walls(260 if quality >= 1 else 140)
+	_marshal_posts(quality)
+	print("TRACKSIDE PROPS: ", _stats)
+
+
+## Room between the road edge and the barrier on `side` at sample i (m).
+func _runoff_at(i: int, side: float) -> float:
+	var off: float = track.off_left[i] if side < 0.0 else track.off_right[i]
+	return off - float(track.half_w)
+
+
+func _tyre_walls(budget: int) -> void:
+	var n: int = track.sample_count()
+	var lat: float = float(track.half_w) + float(track.trap_w) + 0.05
+	var placed := 0
+	var last := Vector3.INF
+	for i in n:
+		var tw: float = track.trap[i]
+		if absf(tw) < 0.5 or placed >= budget:
+			continue
+		var side := signf(tw)
+		if _runoff_at(i, side) < float(track.trap_w) + 0.35:
+			continue
+		# two stacks per 2 m sample: a closed wall
+		var j: int = (i + 1) % n
+		for h in [0.0, 0.5]:
+			var c: Vector3 = track.samples[i].lerp(track.samples[j], h)
+			var r: Vector3 = track.rights[i].lerp(track.rights[j], h).normalized()
+			var p: Vector3 = c + r * side * lat
+			if last != Vector3.INF and p.distance_to(last) < 0.68:
+				continue
+			p.y = _ground(p.x, p.z) + 0.48
+			_body("tyres", "tyres", 45.0, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), p), Vector3(0, -0.48, 0))
+			last = p
+			placed += 1
+
+
+func _marshal_posts(quality: int) -> void:
+	var n: int = track.sample_count()
+	var every := 36 if quality >= 1 else 55    # samples (2 m each)
+	var side := 1.0
+	var i: int = (track.start_index + 45) % n
+	var count := 0
+	while count < n / every:
+		count += 1
+		i = (i + every + rng.randi_range(-8, 8)) % n
+		side = -side
+		# only on straights (no curbs, no traps) with enough run-off
+		var ok := true
+		for d in range(-4, 5):
+			var k: int = (i + d + n) % n
+			if track.curb_mask[k] == 1 or absf(track.trap[k]) > 0.2 or _runoff_at(k, side) < float(track.def["runoff"]) - 0.3:
+				ok = false
+				break
+		if not ok:
+			continue
+		var room := _runoff_at(i, side)
+		var c: Vector3 = track.samples[i] + track.rights[i] * side * (float(track.half_w) + room - 1.1)
+		c.y = _ground(c.x, c.z)
+		var t: Vector3 = track.tangents[i]
+		var b := Basis.looking_at(t, Vector3.UP)
+		match count % 3:
+			0:
+				# barrels
+				var key := "barrel_%d" % rng.randi_range(0, 2)
+				for k in rng.randi_range(3, 5):
+					var p := c + t * (-1.4 + k * 0.7) + Vector3(0, 0.45, 0)
+					_body(key, "barrel", 20.0, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), p))
+			1:
+				# stacked crates (harbor) or a cardboard-box wall (ridge)
+				if track.track_id == "harbor":
+					for x in [-0.55, 0.55]:
+						_breakable(_body("crate", "crate", 25.0, Transform3D(b, c + t * x + Vector3(0, 0.5, 0))), "plank", 6, 5.0)
+					_breakable(_body("crate", "crate", 25.0, Transform3D(b, c + Vector3(0, 1.5, 0))), "plank", 6, 5.0)
+				else:
+					for lv in 2:
+						for k in 4:
+							var p := c + t * (-1.26 + k * 0.84 + (0.42 if lv == 1 else 0.0)) + Vector3(0, 0.3 + lv * 0.6, 0)
+							if lv == 1 and k == 3:
+								continue
+							_breakable(_body("carton", "carton", 4.0, Transform3D(b.rotated(Vector3.UP, PI * 0.5), p)), "flap", 4, 3.0)
+			_:
+				# tyre stack + cones
+				_body("tyres", "tyres", 45.0, Transform3D(Basis.IDENTITY, c + Vector3(0, 0.48, 0)), Vector3(0, -0.48, 0))
+				for k in 3:
+					var p := c + t * (1.2 + k * 0.9) + Vector3(0, 0.37, 0)
+					_body("cone", "cone", 3.0, Transform3D(Basis.IDENTITY, p), Vector3(0, -0.35, 0))
+
+
 # ---------------------------------------------------------------------------
 # Assets
 # ---------------------------------------------------------------------------
