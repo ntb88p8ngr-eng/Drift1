@@ -6,6 +6,7 @@ extends Node3D
 ## houses add their own pots, benches and mailboxes through add().
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
+const Colliders = preload("res://scripts/util/colliders.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const SignAtlas = preload("res://scripts/world/sign_atlas.gd")
 const Props = preload("res://scripts/world/prop_meshes.gd")
@@ -464,6 +465,7 @@ func add_bus_stop(i: int, side: float) -> void:
 	var z: Vector3 = -track.rights[_idx(i)] * side
 	var basis := Basis(Vector3.UP.cross(z).normalized(), Vector3.UP, z)
 	add("bus_shelter", Transform3D(basis, pos))
+	Colliders.add_box(self, Transform3D(basis, pos + Vector3(0, 1.3, 0)), Vector3(3.6, 2.6, 1.5))
 	_sign(pos + basis.x * 2.4 + basis.z * 0.6, _facing(i, side, 0.0), "bus", Vector2(0.55, 0.55), 1.9)
 	add("bin", Transform3D(basis, pos - basis.x * 2.3))
 	scenery.occupy(pos, 3.0)

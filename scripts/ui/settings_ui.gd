@@ -53,7 +53,7 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 	res_opt.tooltip_text = "Im Vollbild ist das die 3D-Renderauflösung (Menüs bleiben scharf)."
 	v.add_child(UiKit.labeled("Auflösung", res_opt))
 	var aa := UiKit.option(Game.AA_MODES, int(Game.settings["aa"]), func(i): Game.set_setting("aa", i))
-	aa.tooltip_text = "MSAA glättet Kanten von Geometrie, FXAA/TAA zusätzlich Blätter, Gras und Shader-Kanten."
+	aa.tooltip_text = "Empfohlen: MSAA 4x + TAA – glättet auch in Bewegung (dünne Masten, Zäune, Blätter). FXAA flimmert in Bewegung stärker."
 	v.add_child(UiKit.labeled("Kantenglättung", aa))
 	var up := UiKit.option(Game.UPSCALERS, int(Game.settings["upscaler"]), func(i): Game.set_setting("upscaler", i))
 	up.tooltip_text = "Hochskalierung, wenn im Vollbild eine kleinere Auflösung gewählt ist. FSR 2.2 ersetzt TAA."

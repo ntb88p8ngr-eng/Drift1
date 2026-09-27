@@ -290,6 +290,9 @@ func _build_net(posts: Array) -> void:
 		_net_mat.albedo_color = Color(1.0, 0.45, 0.08)
 		_net_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 		_net_mat.alpha_scissor_threshold = 0.5
+		_net_mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE
+		_net_mat.alpha_antialiasing_edge = 0.3
+		_net_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		_net_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_net_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		_net_mat.roughness = 0.8

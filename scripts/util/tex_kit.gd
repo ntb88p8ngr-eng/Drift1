@@ -64,8 +64,8 @@ const ROAD_SHADER := """
 shader_type spatial;
 render_mode diffuse_burley, specular_schlick_ggx;
 
-uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 asphalt : source_color = vec3(0.10, 0.10, 0.11);
 uniform vec3 line_color : source_color = vec3(0.92, 0.92, 0.88);
 uniform float edge_line = 0.022;
@@ -124,8 +124,8 @@ const GROUND_SHADER := """
 shader_type spatial;
 render_mode diffuse_burley;
 
-uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 color_a : source_color = vec3(0.13, 0.22, 0.07);
 uniform vec3 color_b : source_color = vec3(0.20, 0.30, 0.09);
 uniform vec3 color_c : source_color = vec3(0.28, 0.25, 0.14);
@@ -162,8 +162,8 @@ const TERRAIN_SHADER := """
 shader_type spatial;
 render_mode diffuse_burley;
 
-uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 grass_a : source_color = vec3(0.1, 0.27, 0.045);
 uniform vec3 grass_b : source_color = vec3(0.17, 0.4, 0.07);
 uniform vec3 grass_dry : source_color = vec3(0.26, 0.33, 0.11);
@@ -298,8 +298,11 @@ void fragment() {
 	}
 	vec4 t = texture(leaf_tex, UV);
 	ALBEDO = t.rgb * COLOR.rgb * tint * inst_tint * (1.0 - wetness * 0.2);
+	// alpha to coverage: smooth leaf edges with MSAA that don't sparkle in motion
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cut;
+	ALPHA_ANTIALIASING_EDGE = 0.3;
+	ALPHA_TEXTURE_COORDINATE = UV * vec2(textureSize(leaf_tex, 0));
 	ROUGHNESS = mix(0.72, 0.35, wetness);
 	SPECULAR = 0.25 + wetness * 0.25;
 	BACKLIGHT = backlight_color * inst_tint;
@@ -849,6 +852,8 @@ void fragment() {
 	ALBEDO = t.rgb * tint;
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
+	ALPHA_ANTIALIASING_EDGE = 0.3;
+	ALPHA_TEXTURE_COORDINATE = UV * vec2(textureSize(atlas, 0));
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.15;
 	BACKLIGHT = vec3(0.08, 0.12, 0.04) * tint;

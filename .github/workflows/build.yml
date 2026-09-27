@@ -63,6 +63,12 @@ jobs:
           if grep -E "SCRIPT ERROR" camera.log; then echo "::error::Camera test failed"; exit 1; fi
           grep -q "CAMERA TEST OK" camera.log
 
+      - name: Collision test (breakable lamp, solid grandstand)
+        run: |
+          timeout 240 ./godot --headless --path . res://tests/collision_test.tscn 2>&1 | tee collision.log || true
+          if grep -E "SCRIPT ERROR" collision.log; then echo "::error::Collision test failed"; exit 1; fi
+          grep -q "COLLISION TEST OK" collision.log
+
       - name: Online test (DTLS + lobby password, right and wrong password)
         run: |
           ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim --port=24590 > host.log 2>&1 &

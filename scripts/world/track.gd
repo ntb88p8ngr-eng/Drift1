@@ -3,6 +3,7 @@ extends Node3D
 ## Also answers spatial queries (progress along the lap, surface type, respawn points).
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
+const Colliders = preload("res://scripts/util/colliders.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 
 const SPACING := 2.0
@@ -543,6 +544,8 @@ func _build_start() -> void:
 		g.add_child(step_box)
 	var roof := MeshKit.box_node(Vector3(6.0, 0.2, 31.0), TexKit.std(Color(0.35, 0.12, 0.55), 0.5), Vector3(span + 7.5, 6.5, 0))
 	g.add_child(roof)
+	# gantry pillars, grandstand and its roof are solid
+	Colliders.add_trimesh(g)
 
 
 ## state: 0 = off, 1..3 = number of red lights lit, 4 = green

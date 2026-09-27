@@ -128,7 +128,8 @@ var settings := {
 	"fullscreen": false,
 	"window_mode": 0,
 	"resolution": "",
-	"aa": 6,
+	"aa": 7,
+	"aa_rev": 1,
 	"upscaler": 0,
 	"sharpness": 0.6,
 	"vsync": 1,
@@ -257,6 +258,11 @@ func load_settings() -> void:
 				settings[k] = data[k]
 		if not data.has("window_mode") and bool(data.get("fullscreen", false)):
 			settings["window_mode"] = 1
+		# rev 1: the old default MSAA 4x + FXAA flickered on thin objects in motion -> MSAA 4x + TAA
+		if int(data.get("aa_rev", 0)) < 1:
+			if int(data.get("aa", 6)) == 6:
+				settings["aa"] = 7
+			settings["aa_rev"] = 1
 	if not CARS.has(settings["car"]):
 		settings["car"] = "r34"
 	var paint_known: bool = settings["paint"] == "custom"

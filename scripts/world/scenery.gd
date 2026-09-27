@@ -10,6 +10,7 @@ const Crowd = preload("res://scripts/world/crowd.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const Playground = preload("res://scripts/world/playground.gd")
+const Colliders = preload("res://scripts/util/colliders.gd")
 
 const CHUNK := 48.0
 const FAR_CHUNK := 192.0        # the coarse outer forest uses big chunks
@@ -651,6 +652,7 @@ func _build_houses(count: int, styles: Array) -> void:
 		var house := builder.make(style, xf)
 		add_child(house)
 		house.global_transform = xf
+		Colliders.add_trimesh(house)
 		if style == "shop":
 			for k in 3:
 				_vending_machine(house, Vector3(6.1, 0, -3.3 + k * 1.05))
@@ -1028,14 +1030,8 @@ func _build_lamps() -> void:
 		k += 1
 		var pos := _roadside(i, 1.4, side)
 		pos.y = terrain.height_at(pos.x, pos.z)
-		var lamp := Node3D.new()
-		lamp.name = "Lamp"
-		add_child(lamp)
 		var inward: Vector3 = -track.rights[i] * side
-		lamp.global_transform = Transform3D(Basis.looking_at(inward, Vector3.UP), pos)
-		lamp.add_child(MeshKit.cyl_node(0.08, 0.12, 8.0, pole_mat, Vector3(0, 4.0, 0), Vector3.ZERO, 10))
-		lamp.add_child(MeshKit.box_node(Vector3(0.12, 0.12, 2.6), pole_mat, Vector3(0, 7.9, -1.2)))
-		lamp.add_child(MeshKit.box_node(Vector3(0.5, 0.18, 0.9), head_mat, Vector3(0, 7.8, -2.4)))
+		var lamp := make_breakable_lamp(self, Transform3D(Basis.looking_at(inward, Vector3.UP), pos), pole_mat, head_mat)
 		var l := SpotLight3D.new()
 		l.light_color = Color(1.0, 0.82, 0.55)
 		l.light_energy = 6.0
@@ -1050,6 +1046,71 @@ func _build_lamps() -> void:
 		lamp_lights.append(l)
 		_night_lights.append([l, 6.0])
 		occupy(pos, 1.5)
+
+
+## Street lamp that stands solid (frozen rigid body) until a car hits it: then it snaps off at the
+## base, falls over with the impact and its light goes out.
+func make_breakable_lamp(parent: Node, xf: Transform3D, pole_mat: Material, head_mat: Material) -> RigidBody3D:
+	var lamp := RigidBody3D.new()
+	lamp.name = "Lamp"
+	lamp.freeze = true
+	lamp.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	lamp.collision_layer = 8          # props layer: cars collide with it
+	lamp.collision_mask = 1 | 2 | 4 | 8
+	lamp.mass = 140.0
+	lamp.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	lamp.center_of_mass = Vector3(0, 3.6, -0.3)
+	lamp.add_child(MeshKit.cyl_node(0.08, 0.12, 8.0, pole_mat, Vector3(0, 4.0, 0), Vector3.ZERO, 10))
+	lamp.add_child(MeshKit.box_node(Vector3(0.12, 0.12, 2.6), pole_mat, Vector3(0, 7.9, -1.2)))
+	lamp.add_child(MeshKit.box_node(Vector3(0.5, 0.18, 0.9), head_mat, Vector3(0, 7.8, -2.4)))
+	var pole := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = 0.13
+	cyl.height = 7.9
+	pole.shape = cyl
+	pole.position = Vector3(0, 4.0, 0)
+	lamp.add_child(pole)
+	var arm := CollisionShape3D.new()
+	var ab := BoxShape3D.new()
+	ab.size = Vector3(0.5, 0.25, 3.2)
+	arm.shape = ab
+	arm.position = Vector3(0, 7.85, -1.5)
+	lamp.add_child(arm)
+	# a sensor around the foot: a car arriving fast enough breaks the lamp before the impact
+	var sensor := Area3D.new()
+	sensor.collision_layer = 0
+	sensor.collision_mask = 2 | 4     # local and (colliding) remote cars
+	sensor.monitorable = false
+	var ss := CollisionShape3D.new()
+	var sc := CylinderShape3D.new()
+	sc.radius = 1.1
+	sc.height = 2.4
+	ss.shape = sc
+	ss.position = Vector3(0, 1.1, 0)
+	sensor.add_child(ss)
+	lamp.add_child(sensor)
+	parent.add_child(lamp)
+	lamp.global_transform = xf
+	sensor.body_entered.connect(_on_lamp_hit.bind(lamp))
+	return lamp
+
+
+func _on_lamp_hit(body: Node3D, lamp: RigidBody3D) -> void:
+	if not is_instance_valid(lamp) or not lamp.freeze or not (body is RigidBody3D):
+		return
+	var v: Vector3 = (body as RigidBody3D).linear_velocity
+	if v.length() < 3.0:
+		return      # parking against it doesn't knock it over
+	lamp.set_deferred("freeze", false)
+	var push := Vector3(v.x, 0, v.z) * lamp.mass * 0.3 + Vector3(0, lamp.mass * 1.5, 0)
+	lamp.call_deferred("apply_impulse", push, lamp.global_basis * Vector3(0, 1.2, 0))
+	lamp.call_deferred("apply_torque_impulse", Vector3(v.z, 0, -v.x).normalized() * lamp.mass * 6.0)
+	for l in lamp.find_children("*", "Light3D", true, false):
+		(l as Light3D).visible = false
+		lamp_lights.erase(l)
+		for k in range(_night_lights.size() - 1, -1, -1):
+			if _night_lights[k][0] == l:
+				_night_lights.remove_at(k)
 
 
 func stats_text() -> String:
