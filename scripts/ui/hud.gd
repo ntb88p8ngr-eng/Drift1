@@ -41,21 +41,49 @@ var _fps_label: Label
 var _fps_t := 0.0
 var _fps_frames := 0
 var _fps_worst := 0.0
+var _gpu_ms := 0.0
+var _cpu_ms := 0.0
+var _perf_measuring := false
 
 
 func _update_fps(delta: float) -> void:
-	var on := bool(Game.settings.get("show_fps", false))
-	_fps_label.visible = on
-	if not on:
+	var fps_on := bool(Game.settings.get("show_fps", false))
+	var perf_on := bool(Game.settings.get("show_perf", false))
+	_fps_label.visible = fps_on or perf_on
+	if perf_on != _perf_measuring:
+		# GPU/CPU render timings cost a little themselves: only measured while shown
+		_perf_measuring = perf_on
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), perf_on)
+	if not _fps_label.visible:
 		return
 	_fps_frames += 1
 	_fps_t += delta
 	_fps_worst = maxf(_fps_worst, delta)
+	if perf_on:
+		var vp := get_viewport().get_viewport_rid()
+		_gpu_ms += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+		# CPU: game scripts + physics steps of this frame + preparing the draw calls
+		var steps := maxf(float(Engine.physics_ticks_per_second) * delta, 1.0)
+		_cpu_ms += (Performance.get_monitor(Performance.TIME_PROCESS) + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * steps) * 1000.0 \
+			+ RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu()
 	if _fps_t >= 0.5:
-		_fps_label.text = "%d FPS  ·  %.1f ms  ·  max %.0f ms" % [roundi(_fps_frames / _fps_t), _fps_t / _fps_frames * 1000.0, _fps_worst * 1000.0]
+		var frame_ms := _fps_t / _fps_frames * 1000.0
+		var lines: Array = []
+		lines.append("%d FPS  ·  %.1f ms  ·  max %.0f ms" % [roundi(_fps_frames / _fps_t), frame_ms, _fps_worst * 1000.0])
+		if perf_on:
+			var gpu := _gpu_ms / _fps_frames
+			var cpu := _cpu_ms / _fps_frames
+			lines.append("GPU %.1f ms  (%d %%)   ·   CPU %.1f ms  (%d %%)" % [gpu, mini(roundi(gpu / frame_ms * 100.0), 100), cpu, mini(roundi(cpu / frame_ms * 100.0), 100)])
+			var limit := "GPU-limitiert" if gpu > cpu * 1.15 and gpu > frame_ms * 0.75 else ("CPU-limitiert" if cpu > gpu * 1.15 and cpu > frame_ms * 0.75 else "")
+			if limit == "" and gpu < frame_ms * 0.75 and cpu < frame_ms * 0.75:
+				limit = "begrenzt durch VSync / FPS-Limit"
+			lines.append(limit)
+		_fps_label.text = "\n".join(lines)
 		_fps_t = 0.0
 		_fps_frames = 0
 		_fps_worst = 0.0
+		_gpu_ms = 0.0
+		_cpu_ms = 0.0
 
 
 func _ready() -> void:
@@ -65,12 +93,15 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.theme = UiKit.theme()
 	add_child(_root)
-	# FPS counter (options: Grafik → FPS-Anzeige), bottom-left; shows the worst frame of the last
+	# FPS counter (options: Grafik → FPS-Anzeige / GPU- und CPU-Last), bottom-right; shows the worst frame of the last
 	# half second too, so hitches are visible
 	_fps_label = UiKit.label("", 16, Color(0.7, 1.0, 0.7))
 	_fps_label.add_theme_constant_override("outline_size", 6)
 	_fps_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	_anchor(_fps_label, 0, 1, 20, -40, 360, 30)
+	# bottom right, just above the tachometer
+	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_fps_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_anchor(_fps_label, 1, 1, -520, -372, 500, 80)
 	_root.add_child(_fps_label)
 
 	# --- top-left info panel ---

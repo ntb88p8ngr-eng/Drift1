@@ -43,6 +43,8 @@ func _ready() -> void:
 	await _shot(out.path_join("ui_lobby.png"))
 	Net.leave()
 	Game.settings["mode"] = "free"
+	Game.settings["show_fps"] = true
+	Game.settings["show_perf"] = true
 	main.start_offline()
 	while main.world == null:
 		await get_tree().process_frame

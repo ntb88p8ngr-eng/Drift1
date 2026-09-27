@@ -103,6 +103,14 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		Game.settings["show_fps"] = on
 		Game.save_settings())
 	v.add_child(fps)
+	var perf := CheckBox.new()
+	perf.text = "GPU- und CPU-Last im Rennen"
+	perf.tooltip_text = "Zeigt unten rechts neben den FPS, wie viele Millisekunden Grafikkarte und Prozessor pro Bild brauchen und wie ausgelastet sie damit sind."
+	perf.button_pressed = bool(Game.settings.get("show_perf", false))
+	perf.toggled.connect(func(on):
+		Game.settings["show_perf"] = on
+		Game.save_settings())
+	v.add_child(perf)
 	var lf := CheckBox.new()
 	lf.text = "Lens Flares (Sonne und Mond)"
 	lf.button_pressed = bool(Game.settings["lens_flares"])
