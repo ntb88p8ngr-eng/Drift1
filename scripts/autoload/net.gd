@@ -1,6 +1,17 @@
 extends Node
 ## Online mode: lobbies hosted by the lobby creator (ENet server + player in one process),
 ## LAN lobby discovery via UDP broadcast and optional UPnP port forwarding.
+##
+## Security (LAN and internet, game to game – no server in between):
+## - all traffic is DTLS-encrypted (ENet over DTLS). The host's self-signed certificate travels in the
+##   invite code (or the LAN announcement) and is pinned by the client, so nobody can sit in between
+## - joining needs the lobby password: challenge-response with HMAC-SHA256 over fresh nonces in both
+##   directions (SceneMultiplayer authentication), the password itself is never sent; until a peer is
+##   authenticated it can't call any RPC and nothing is relayed to/from it
+## - repeated wrong passwords from one address are banned for a while
+## - star topology: players only talk to the host, so they never learn each other's IP addresses;
+##   no IP is shown anywhere in the lobby. The host's address travels only inside the invite code the
+##   host hands out (direct connections always reveal the host's IP to those it invites).
 
 signal lobby_changed
 signal connected_ok
@@ -19,6 +30,13 @@ signal upnp_finished(ok: bool, message: String)
 const DEFAULT_PORT := 24570
 const DISCOVERY_PORT := 24571
 const GAME_TAG := "MidnightDrift"
+const INVITE_PREFIX := "MD1-"
+const AUTH_TIMEOUT := 8.0
+const BAN_AFTER := 5            # failed logins per address …
+const BAN_TIME_MS := 120000     # … lock it out for 2 minutes
+const HOST_CN := "midnight-drift-host"
+const KEY_PATH := "user://net_host.key"
+const CERT_PATH := "user://net_host.crt"
 
 var peer: ENetMultiplayerPeer
 var players := {}          # peer_id(int) -> info Dictionary
@@ -29,6 +47,13 @@ var results := {}          # peer_id -> result Dictionary (host)
 var result_list: Array = []
 var lan_lobbies := {}      # "ip:port" -> info Dictionary
 var upnp_message := ""
+var public_ip := ""        # host: from UPnP or the manual lookup, for the invite code
+var password := ""         # host: lobby password / client: password used to join
+var cert_body := ""        # host: its certificate (base64 DER) for invite codes and LAN announcements
+
+var _auth := {}            # peer_id -> {"hn": host nonce, "cn": client nonce}
+var _fails := {}           # remote address -> [failed logins, locked until (msec)]
+var _crypto := Crypto.new()
 
 var _loaded := {}
 var _broadcaster: PacketPeerUDP
@@ -46,6 +71,11 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+	var sm := multiplayer as SceneMultiplayer
+	sm.auth_callback = _on_auth_packet
+	sm.auth_timeout = AUTH_TIMEOUT
+	sm.peer_authenticating.connect(_on_peer_authenticating)
+	sm.peer_authentication_failed.connect(_on_peer_auth_failed)
 
 
 func _exit_tree() -> void:
@@ -67,13 +97,24 @@ func local_id() -> int:
 # Hosting / joining
 # ---------------------------------------------------------------------------
 ## Creates a lobby on this machine. Returns an error text or "" on success.
-func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool) -> String:
+func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool, lobby_password := "") -> String:
 	leave()
+	var tls := _server_tls()
+	if tls == null:
+		return "Verschlüsselung konnte nicht eingerichtet werden (Zertifikat)."
 	peer = ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, maxi(max_players - 1, 1))
 	if err != OK:
 		peer = null
 		return "Server konnte nicht gestartet werden – ist Port %d schon belegt?" % port
+	err = peer.host.dtls_server_setup(tls)
+	if err != OK:
+		peer.close()
+		peer = null
+		return "Verschlüsselung (DTLS) konnte nicht gestartet werden."
+	password = lobby_password.strip_edges()
+	public_ip = ""
+	_auth.clear()
 	multiplayer.multiplayer_peer = peer
 	is_online = true
 	in_race = false
@@ -89,6 +130,7 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool)
 		"day_cycle": int(Game.settings["day_cycle"]),
 		"collisions": true,
 		"host_id": 1,
+		"locked": password != "",
 	}
 	players = {1: Game.local_player_info()}
 	_start_broadcast()
@@ -99,20 +141,101 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool)
 	return ""
 
 
-func join_lobby(address: String, port: int) -> String:
+func join_lobby(address: String, port: int, lobby_password: String, host_cert: String) -> String:
 	leave()
 	address = address.strip_edges()
 	if address == "":
 		return "Bitte eine IP-Adresse eingeben."
+	var cert := X509Certificate.new()
+	if host_cert == "" or cert.load_from_string(_pem(host_cert)) != OK:
+		return "Ungültiger Einladungs-Code (Zertifikat fehlt)."
 	peer = ENetMultiplayerPeer.new()
 	var err := peer.create_client(address, port)
 	if err != OK:
 		peer = null
 		return "Verbindung zu %s:%d konnte nicht aufgebaut werden." % [address, port]
+	# encrypted before the first packet leaves (the host proves itself with the password, see _on_auth_packet)
+	err = peer.host.dtls_client_setup(address, TLSOptions.client(cert, HOST_CN))
+	if err != OK:
+		peer.close()
+		peer = null
+		return "Verschlüsselung (DTLS) konnte nicht gestartet werden."
+	password = lobby_password.strip_edges()
+	_auth.clear()
 	multiplayer.multiplayer_peer = peer
 	is_online = true
 	in_race = false
 	return ""
+
+
+## Joins with an invite code from the host (address, port and password in one string).
+func join_invite(code: String) -> String:
+	var inv := parse_invite(code)
+	if inv.is_empty():
+		return "Ungültiger Einladungs-Code."
+	return join_lobby(inv["ip"], int(inv["port"]), inv["pw"], inv["cert"])
+
+
+## Invite code for this lobby, "" while the public address is unknown.
+func invite_code() -> String:
+	if not is_host() or public_ip == "":
+		return ""
+	var raw := "%s|%d|%s" % [public_ip, int(lobby.get("port", DEFAULT_PORT)), password]
+	return INVITE_PREFIX + _b64url(raw.to_utf8_buffer()) + "." + _b64url(Marshalls.base64_to_raw(cert_body))
+
+
+static func parse_invite(code: String) -> Dictionary:
+	code = code.strip_edges().replace("\n", "").replace(" ", "")
+	if not code.begins_with(INVITE_PREFIX) or not code.contains("."):
+		return {}
+	var halves := code.substr(INVITE_PREFIX.length()).split(".", true, 1)
+	var parts := _unb64url(halves[0]).get_string_from_utf8().split("|", true, 2)
+	if parts.size() != 3 or not parts[1].is_valid_int():
+		return {}
+	var port := int(parts[1])
+	var der := _unb64url(halves[1])
+	if parts[0] == "" or port <= 0 or port > 65535 or der.size() < 200:
+		return {}
+	return {"ip": parts[0], "port": port, "pw": parts[2], "cert": Marshalls.raw_to_base64(der)}
+
+
+static func _b64url(raw: PackedByteArray) -> String:
+	return Marshalls.raw_to_base64(raw).replace("+", "-").replace("/", "_").replace("=", "")
+
+
+static func _unb64url(text: String) -> PackedByteArray:
+	var b64 := text.replace("-", "+").replace("_", "/")
+	while b64.length() % 4 != 0:
+		b64 += "="
+	return Marshalls.base64_to_raw(b64)
+
+
+## PEM text from a base64 DER certificate body.
+static func _pem(body: String) -> String:
+	var lines: Array = ["-----BEGIN CERTIFICATE-----"]
+	var i := 0
+	while i < body.length():
+		lines.append(body.substr(i, 64))
+		i += 64
+	lines.append("-----END CERTIFICATE-----")
+	return "\n".join(lines) + "\n"
+
+
+## Host: asks a public "what is my IP" service (only when the player presses the button).
+func lookup_public_ip() -> void:
+	var req := HTTPRequest.new()
+	req.timeout = 6.0
+	add_child(req)
+	req.request_completed.connect(func(result: int, code: int, _h, body: PackedByteArray):
+		req.queue_free()
+		var ip := body.get_string_from_utf8().strip_edges()
+		if result == HTTPRequest.RESULT_SUCCESS and code == 200 and ip.is_valid_ip_address():
+			public_ip = ip
+		else:
+			upnp_message = "Öffentliche IP konnte nicht ermittelt werden."
+		lobby_changed.emit())
+	if req.request("https://api.ipify.org") != OK:
+		req.queue_free()
 
 
 func leave() -> void:
@@ -127,6 +250,7 @@ func leave() -> void:
 	results.clear()
 	result_list.clear()
 	_loaded.clear()
+	_auth.clear()
 	is_online = false
 	in_race = false
 
@@ -138,6 +262,126 @@ func get_local_addresses() -> Array:
 		if s.count(".") == 3 and not s.begins_with("127.") and not s.begins_with("169.254."):
 			out.append(s)
 	return out
+
+
+# ---------------------------------------------------------------------------
+# Encryption & authentication
+# ---------------------------------------------------------------------------
+## The host's DTLS key and self-signed certificate (created once, kept in user://).
+func _server_tls() -> TLSOptions:
+	var key := CryptoKey.new()
+	var cert := X509Certificate.new()
+	if not (FileAccess.file_exists(KEY_PATH) and FileAccess.file_exists(CERT_PATH)
+			and key.load(KEY_PATH) == OK and cert.load(CERT_PATH) == OK):
+		key = _crypto.generate_rsa(2048)
+		cert = _crypto.generate_self_signed_certificate(key, "CN=%s,O=Midnight Drift,C=DE" % HOST_CN,
+			"20240101000000", "20440101000000")
+		if key == null or cert == null:
+			return null
+		key.save(KEY_PATH)
+		cert.save(CERT_PATH)
+	var pem := cert.save_to_string()
+	cert_body = ""
+	for line in pem.split("\n"):
+		if not line.begins_with("-----"):
+			cert_body += line.strip_edges()
+	return TLSOptions.server(key, cert)
+
+
+func _mac(label: String, a: PackedByteArray, b: PackedByteArray) -> PackedByteArray:
+	var k := ("MidnightDrift-lobby|" + password).sha256_buffer()
+	var msg := label.to_utf8_buffer()
+	msg.append_array(a)
+	msg.append_array(b)
+	return _crypto.hmac_digest(HashingContext.HASH_SHA256, k, msg)
+
+
+func _send_auth(id: int, msg: Array) -> void:
+	(multiplayer as SceneMultiplayer).send_auth(id, var_to_bytes(msg))
+
+
+func _remote_address(id: int) -> String:
+	if peer == null:
+		return ""
+	var pp := peer.get_peer(id)
+	return pp.get_remote_address() if pp else ""
+
+
+func _on_peer_authenticating(id: int) -> void:
+	if not multiplayer.is_server():
+		return   # the client waits for the host's challenge
+	var addr := _remote_address(id)
+	var f: Array = _fails.get(addr, [0, 0])
+	if int(f[1]) > Time.get_ticks_msec():
+		(multiplayer as SceneMultiplayer).disconnect_peer(id)
+		return
+	var hn := _crypto.generate_random_bytes(16)
+	_auth[id] = {"hn": hn}
+	_send_auth(id, ["chal", hn])
+
+
+func _on_auth_packet(id: int, data: PackedByteArray) -> void:
+	var msg = bytes_to_var(data) if data.size() <= 512 else null
+	if not (msg is Array) or (msg as Array).is_empty():
+		_auth_fail(id)
+		return
+	var kind := str(msg[0])
+	var sm := multiplayer as SceneMultiplayer
+	if multiplayer.is_server():
+		# client answers: its nonce + proof that it knows the password
+		if kind != "resp" or msg.size() != 3 or not _auth.has(id) or not (msg[1] is PackedByteArray) or not (msg[2] is PackedByteArray):
+			_auth_fail(id)
+			return
+		var hn: PackedByteArray = _auth[id]["hn"]
+		var cn: PackedByteArray = msg[1]
+		if cn.size() != 16 or not _crypto.constant_time_compare(_mac("c", hn, cn), msg[2]):
+			_auth_fail(id)
+			return
+		_fails.erase(_remote_address(id))
+		_send_auth(id, ["ok", _mac("h", hn, cn)])
+		_auth.erase(id)
+		sm.complete_auth(id)
+	else:
+		if kind == "chal" and msg.size() == 2 and msg[1] is PackedByteArray and (msg[1] as PackedByteArray).size() == 16:
+			var cn := _crypto.generate_random_bytes(16)
+			_auth[id] = {"hn": msg[1], "cn": cn}
+			_send_auth(id, ["resp", cn, _mac("c", msg[1], cn)])
+		elif kind == "ok" and msg.size() == 2 and _auth.has(id) and msg[1] is PackedByteArray:
+			# the host must know the password too (no fake lobbies)
+			if _crypto.constant_time_compare(_mac("h", _auth[id]["hn"], _auth[id]["cn"]), msg[1]):
+				_auth.erase(id)
+				sm.complete_auth(id)
+			else:
+				leave()
+				connection_failed.emit("Der Host konnte sich nicht ausweisen – Verbindung abgebrochen.")
+		elif kind == "bad":
+			leave()
+			connection_failed.emit("Falsches Lobby-Passwort.")
+		else:
+			_auth_fail(id)
+
+
+func _auth_fail(id: int) -> void:
+	if multiplayer.is_server():
+		var addr := _remote_address(id)
+		var f: Array = _fails.get(addr, [0, 0])
+		f[0] = int(f[0]) + 1
+		if int(f[0]) >= BAN_AFTER:
+			f = [0, Time.get_ticks_msec() + BAN_TIME_MS]
+		_fails[addr] = f
+		_auth.erase(id)
+		_send_auth(id, ["bad"])
+		_disconnect_later(id)
+	else:
+		leave()
+		connection_failed.emit("Anmeldung an der Lobby fehlgeschlagen.")
+
+
+func _on_peer_auth_failed(id: int) -> void:
+	_auth.erase(id)
+	if not multiplayer.is_server() and is_online:
+		leave()
+		connection_failed.emit("Anmeldung fehlgeschlagen (Zeitüberschreitung oder falsches Passwort).")
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +734,7 @@ func _process(delta: float) -> void:
 				"game": GAME_TAG, "v": Game.VERSION, "name": lobby.get("name", "Lobby"),
 				"port": lobby.get("port", DEFAULT_PORT), "players": players.size(),
 				"max": lobby.get("max_players", 8), "track": lobby.get("track", "ridge"),
-				"mode": lobby.get("mode", "race"), "in_race": in_race,
+				"mode": lobby.get("mode", "race"), "in_race": in_race, "locked": password != "", "cert": cert_body,
 			}
 			_broadcaster.put_packet(JSON.stringify(info).to_utf8_buffer())
 	if _listener:
@@ -533,7 +777,7 @@ func _upnp_worker(port: int) -> void:
 		var r: int = upnp.add_port_mapping(port, port, "Midnight Drift", "UDP")
 		if r == UPNP.UPNP_RESULT_SUCCESS:
 			ok = true
-			msg = "UPnP aktiv – Port %d offen. Öffentliche IP: %s" % [port, upnp.query_external_address()]
+			msg = "UPnP aktiv – Port %d offen." % port
 		else:
 			msg = "UPnP: Portfreigabe fehlgeschlagen (Code %d). Port %d/UDP ggf. manuell freigeben." % [r, port]
 	else:
@@ -547,6 +791,9 @@ func _upnp_done(ok: bool, msg: String, upnp: UPNP, port: int) -> void:
 	if ok and is_host():
 		_upnp = upnp
 		_upnp_port = port
+		var ext := upnp.query_external_address()
+		if ext.is_valid_ip_address():
+			public_ip = ext
 	elif ok and upnp:
 		upnp.delete_port_mapping(port, "UDP")
 	upnp_message = msg

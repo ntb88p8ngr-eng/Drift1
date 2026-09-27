@@ -63,6 +63,20 @@ jobs:
           if grep -E "SCRIPT ERROR" camera.log; then echo "::error::Camera test failed"; exit 1; fi
           grep -q "CAMERA TEST OK" camera.log
 
+      - name: Online test (DTLS + lobby password, right and wrong password)
+        run: |
+          ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim > host.log 2>&1 &
+          sleep 5
+          timeout 30 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=geheim 2>&1 | tee net.log || true
+          ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim > host2.log 2>&1 &
+          sleep 5
+          timeout 30 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=falsch 2>&1 | tee net2.log || true
+          cat host.log host2.log
+          if grep -E "SCRIPT ERROR" net.log net2.log host.log host2.log; then echo "::error::Online test failed"; exit 1; fi
+          grep -q "NET CLIENT IN LOBBY" net.log
+          grep -q "NET HOST SEES PLAYER" host.log
+          grep -q "Falsches Lobby-Passwort" net2.log
+
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
           timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true

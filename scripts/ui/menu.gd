@@ -21,6 +21,8 @@ var _lobby_settings: VBoxContainer
 var _lobby_info: Label
 var _chat_log: RichTextLabel
 var _chat_input: LineEdit
+var _lan_pw: LineEdit
+var _invite_box: VBoxContainer
 var _ready_btn: Button
 var _start_btn: Button
 var _lan_list: VBoxContainer
@@ -381,6 +383,21 @@ func _build_online() -> void:
 	_add(UiKit.labeled("Max. Spieler", UiKit.row([UiKit.slider(2, 8, 1, float(Game.settings["max_players"]), func(v):
 		Game.set_setting("max_players", int(v))
 		max_label.text = str(int(v)), 200), max_label])))
+	var pw_edit := LineEdit.new()
+	pw_edit.text = str(Game.settings.get("lobby_password", ""))
+	pw_edit.placeholder_text = "leer = ohne Passwort (nur LAN empfohlen)"
+	pw_edit.secret = true
+	pw_edit.max_length = 40
+	pw_edit.custom_minimum_size = Vector2(300, 42)
+	var show_pw := UiKit.button("👁", func(): pw_edit.secret = not pw_edit.secret, 50)
+	var gen_pw := UiKit.button("Zufällig", func():
+		var chars := "abcdefghjkmnpqrstuvwxyz23456789"
+		var t := ""
+		for k in 10:
+			t += chars[randi() % chars.length()]
+		pw_edit.text = t
+		pw_edit.secret = false, 120)
+	_add(UiKit.labeled("Lobby-Passwort", UiKit.row([pw_edit, show_pw, gen_pw])))
 	var upnp := CheckBox.new()
 	upnp.text = "Port automatisch per UPnP öffnen"
 	upnp.button_pressed = bool(Game.settings["use_upnp"])
@@ -390,7 +407,8 @@ func _build_online() -> void:
 		var port := int(port_edit.text) if port_edit.text.is_valid_int() else Net.DEFAULT_PORT
 		Game.settings["port"] = port
 		Game.set_setting("lobby_name", lobby_name.text)
-		var err := Net.host_lobby(lobby_name.text, port, int(Game.settings["max_players"]), bool(Game.settings["use_upnp"]))
+		Game.set_setting("lobby_password", pw_edit.text.strip_edges())
+		var err := Net.host_lobby(lobby_name.text, port, int(Game.settings["max_players"]), bool(Game.settings["use_upnp"]), pw_edit.text)
 		if err != "":
 			show_status(err, UiKit.BAD)
 		else:
@@ -398,22 +416,27 @@ func _build_online() -> void:
 			show_screen("lobby"), 360))
 
 	_add(UiKit.spacer(10))
-	_add(UiKit.label("Lobby beitreten", 22, UiKit.ACCENT.lightened(0.3)))
-	var ip_edit := LineEdit.new()
-	ip_edit.text = str(Game.settings["last_ip"])
-	ip_edit.placeholder_text = "IP-Adresse des Hosts"
-	ip_edit.custom_minimum_size = Vector2(300, 42)
-	var jport := LineEdit.new()
-	jport.text = str(int(Game.settings["port"]))
-	jport.custom_minimum_size = Vector2(110, 42)
-	_add(UiKit.labeled("Adresse : Port", UiKit.row([ip_edit, jport])))
-	_add(UiKit.button("Beitreten", func():
-		var port := int(jport.text) if jport.text.is_valid_int() else Net.DEFAULT_PORT
-		Game.set_setting("last_ip", ip_edit.text.strip_edges())
-		_join(ip_edit.text, port), 360))
-
+	_add(UiKit.label("Lobby beitreten (Internet)", 22, UiKit.ACCENT.lightened(0.3)))
+	_add(UiKit.label("Füge den Einladungs-Code des Hosts ein – verschlüsselt, mit Passwort.", 16, UiKit.TEXT_DIM))
+	var code_edit := LineEdit.new()
+	code_edit.placeholder_text = "MD1-…"
+	code_edit.secret = true
+	code_edit.custom_minimum_size = Vector2(420, 42)
+	_add(UiKit.labeled("Einladungs-Code", UiKit.row([code_edit, UiKit.button("Einfügen", func():
+		code_edit.text = DisplayServer.clipboard_get().strip_edges(), 120)])))
+	_add(UiKit.button("Mit Code beitreten", func():
+		var err := Net.join_invite(code_edit.text)
+		if err != "":
+			show_status(err, UiKit.BAD)
+		else:
+			show_status("Verbinde verschlüsselt …"), 360))
 	_add(UiKit.spacer(10))
 	_add(UiKit.label("Lobbys im lokalen Netzwerk", 22, UiKit.ACCENT.lightened(0.3)))
+	_lan_pw = LineEdit.new()
+	_lan_pw.placeholder_text = "Passwort (falls die Lobby 🔒 hat)"
+	_lan_pw.secret = true
+	_lan_pw.custom_minimum_size = Vector2(300, 42)
+	_add(UiKit.labeled("LAN-Passwort", _lan_pw))
 	_lan_list = VBoxContainer.new()
 	_add(_lan_list)
 	Net.start_lan_scan()
@@ -422,12 +445,12 @@ func _build_online() -> void:
 	_add(UiKit.button("Zurück", func(): show_screen("main"), 360))
 
 
-func _join(ip: String, port: int) -> void:
-	var err := Net.join_lobby(ip, port)
+func _join(ip: String, port: int, cert: String) -> void:
+	var err := Net.join_lobby(ip, port, _lan_pw.text if _lan_pw and is_instance_valid(_lan_pw) else "", cert)
 	if err != "":
 		show_status(err, UiKit.BAD)
 	else:
-		show_status("Verbinde mit %s:%d …" % [ip.strip_edges(), port])
+		show_status("Verbinde verschlüsselt …")
 
 
 func _refresh_lan() -> void:
@@ -440,11 +463,13 @@ func _refresh_lan() -> void:
 		return
 	for key in Net.lan_lobbies.keys():
 		var info: Dictionary = Net.lan_lobbies[key]
-		var text := "%s  –  %s  –  %d/%d Spieler%s" % [info.get("name", "Lobby"), Game.track_name(str(info.get("track", ""))),
-			int(info.get("players", 0)), int(info.get("max", 8)), "  (Rennen läuft)" if info.get("in_race", false) else ""]
+		var text := "%s%s  –  %s  –  %d/%d Spieler%s" % ["🔒 " if info.get("locked", false) else "", info.get("name", "Lobby"),
+			Game.track_name(str(info.get("track", ""))), int(info.get("players", 0)), int(info.get("max", 8)),
+			"  (Rennen läuft)" if info.get("in_race", false) else ""]
 		var ip: String = info.get("ip", "")
 		var port := int(info.get("port", Net.DEFAULT_PORT))
-		_lan_list.add_child(UiKit.button(text, func(): _join(ip, port), 600))
+		var cert := str(info.get("cert", ""))
+		_lan_list.add_child(UiKit.button(text, func(): _join(ip, port, cert), 600))
 
 
 func _on_connected() -> void:
@@ -461,6 +486,9 @@ func _build_lobby() -> void:
 	_lobby_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_lobby_info.custom_minimum_size = Vector2(640, 0)
 	_add(_lobby_info)
+	_invite_box = VBoxContainer.new()
+	_invite_box.add_theme_constant_override("separation", 6)
+	_add(_invite_box)
 	_add(UiKit.label("Spieler", 22, UiKit.ACCENT.lightened(0.3)))
 	_lobby_players = VBoxContainer.new()
 	_add(_lobby_players)
@@ -505,6 +533,41 @@ func _build_lobby() -> void:
 	_refresh_lobby()
 
 
+## Host: the invite code for internet players (contains this lobby's public address, port, password and
+## certificate – only hand it to people you want to play with).
+func _refresh_invite(host: bool) -> void:
+	if _invite_box == null or not is_instance_valid(_invite_box):
+		return
+	for c in _invite_box.get_children():
+		c.queue_free()
+	if not host:
+		return
+	var code := Net.invite_code()
+	if code == "":
+		var ip_edit := LineEdit.new()
+		ip_edit.placeholder_text = "öffentliche IP"
+		ip_edit.custom_minimum_size = Vector2(220, 40)
+		_invite_box.add_child(UiKit.label("Für Internet-Spieler wird deine öffentliche IP gebraucht (UPnP hat sie nicht geliefert):", 16, UiKit.TEXT_DIM))
+		_invite_box.add_child(UiKit.row([ip_edit, UiKit.button("Übernehmen", func():
+			if ip_edit.text.strip_edges().is_valid_ip_address():
+				Net.public_ip = ip_edit.text.strip_edges()
+				_refresh_lobby()
+			else:
+				show_status("Keine gültige IP-Adresse.", UiKit.BAD), 150),
+			UiKit.button("Automatisch ermitteln (ipify.org)", func(): Net.lookup_public_ip(), 330)]))
+		return
+	var code_edit := LineEdit.new()
+	code_edit.text = code
+	code_edit.editable = false
+	code_edit.secret = true
+	code_edit.custom_minimum_size = Vector2(420, 40)
+	_invite_box.add_child(UiKit.labeled("Einladungs-Code", UiKit.row([code_edit, UiKit.button("Kopieren", func():
+		DisplayServer.clipboard_set(code)
+		show_status("Einladungs-Code kopiert – nur an Mitspieler weitergeben (enthält IP & Passwort)."), 130)])))
+	if int(Net.lobby.get("port", Net.DEFAULT_PORT)) > 0 and Net.upnp_message.begins_with("Kein UPnP"):
+		_invite_box.add_child(UiKit.label("Ohne UPnP: Port %d/UDP im Router auf diesen PC weiterleiten." % int(Net.lobby.get("port", Net.DEFAULT_PORT)), 16, UiKit.TEXT_DIM))
+
+
 func _refresh_lobby() -> void:
 	if current != "lobby" or _lobby_players == null or not is_instance_valid(_lobby_players):
 		return
@@ -515,14 +578,14 @@ func _refresh_lobby() -> void:
 	var info_lines: Array = []
 	info_lines.append("Lobby: %s" % Net.lobby.get("name", "…"))
 	if host:
-		var ips := Net.get_local_addresses()
-		info_lines.append("Du hostest diese Lobby. Mitspieler verbinden sich mit deiner IP und Port %d:" % int(Net.lobby.get("port", Net.DEFAULT_PORT)))
-		info_lines.append("LAN: %s" % (", ".join(ips) if not ips.is_empty() else "unbekannt"))
+		info_lines.append("Du hostest diese Lobby (Port %d/UDP, verschlüsselt%s). Im LAN erscheint sie automatisch in der Liste." % [
+			int(Net.lobby.get("port", Net.DEFAULT_PORT)), ", mit Passwort" if Net.password != "" else ", OHNE Passwort"])
 		if Net.upnp_message != "":
 			info_lines.append(Net.upnp_message)
 	else:
-		info_lines.append("Verbunden – warte darauf, dass der Host das Rennen startet.")
+		info_lines.append("Verbunden (verschlüsselt) – warte darauf, dass der Host das Rennen startet.")
 	_lobby_info.text = "\n".join(info_lines)
+	_refresh_invite(host)
 
 	for c in _lobby_players.get_children():
 		c.queue_free()

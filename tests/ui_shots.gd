@@ -21,6 +21,17 @@ func _ready() -> void:
 		for f in 8:
 			await get_tree().process_frame
 		await _shot(out.path_join("ui_%s.png" % screen))
+	main.menu.show_screen("online")
+	for f in 8:
+		await get_tree().process_frame
+	await _shot(out.path_join("ui_online.png"))
+	Net.host_lobby("Test Lobby", 24598, 4, false, "geheim")
+	Net.public_ip = "203.0.113.7"
+	main.menu.show_screen("lobby")
+	for f in 8:
+		await get_tree().process_frame
+	await _shot(out.path_join("ui_lobby.png"))
+	Net.leave()
 	main.start_offline()
 	while main.world == null:
 		await get_tree().process_frame

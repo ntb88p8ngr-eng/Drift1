@@ -148,6 +148,7 @@ var settings := {
 	"show_fps": false,
 	"units_kmh": true,
 	"last_ip": "127.0.0.1",
+	"lobby_password": "",
 	"port": 24570,
 	"lobby_name": "",
 	"max_players": 8,
