@@ -13,6 +13,7 @@ var _t := 0.0
 
 
 const GARAGE_SCENE := "res://assets/env/garage.glb"
+const POSTER_DIR := "res://assets/env/posters/"
 const GARAGE_INFO := "res://assets/env/garage.json"
 
 
@@ -137,7 +138,36 @@ func _load_garage() -> Node3D:
 	add_child(g)
 	for mi in g.find_children("*", "MeshInstance3D", true, false):
 		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if str(mi.name).begins_with("Poster_T"):
+			_replace_poster(mi as MeshInstance3D)
 	return g
+
+
+## The five framed posters on the back wall show our own car pictures (assets/env/posters/poster_N.jpg,
+## N = 1..5 from left to right). Each poster is a quad whose UVs point into the garage atlas; they are
+## remapped to the whole picture.
+func _replace_poster(mi: MeshInstance3D) -> void:
+	var k := str(mi.name).substr(8, 1).to_int()
+	var path := POSTER_DIR + "poster_%d.jpg" % k
+	if k < 1 or mi.mesh == null or not ResourceLoader.exists(path):
+		return
+	var uvs: PackedVector2Array = mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]
+	if uvs.is_empty():
+		return
+	var lo := uvs[0]
+	var hi := uvs[0]
+	for uv in uvs:
+		lo = lo.min(uv)
+		hi = hi.max(uv)
+	var size := (hi - lo).max(Vector2(1e-4, 1e-4))
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = load(path)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	m.uv1_scale = Vector3(1.0 / size.x, 1.0 / size.y, 1.0)
+	m.uv1_offset = Vector3(-lo.x / size.x, -lo.y / size.y, 0.0)
+	m.roughness = 0.32      # glossy print behind glass
+	m.metallic_specular = 0.6
+	mi.material_override = m
 
 
 ## Warm work lights under the roof trusses so the whole hall is visible behind the car.
