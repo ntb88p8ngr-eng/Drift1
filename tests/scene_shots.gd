@@ -45,6 +45,19 @@ func _ready() -> void:
 		tag += "_t%s" % args["elapsed"]
 	var prefix: String = str(args["out"]).path_join(tag)
 	var wanted: String = args["views"]
+	if args.has("burnout"):
+		# line-lock burnout (W + S at a standstill) to fill the air with tyre smoke
+		world.local_car.controls_locked = false
+		Input.action_press("brake")
+		for f in 20:
+			await get_tree().physics_frame
+		Input.action_press("accelerate")
+		for f in int(float(args["burnout"]) * 120.0):
+			await get_tree().physics_frame
+		Input.action_release("accelerate")
+		Input.action_release("brake")
+		for f in int(float(args.get("linger", "0")) * 120.0):
+			await get_tree().physics_frame
 	if wanted == "all" or wanted.contains("chase"):
 		await _shot(prefix + "_chase.png")
 	var cam: Camera3D = world.camera

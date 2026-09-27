@@ -1235,27 +1235,33 @@ static func bark_textures() -> Array:
 
 
 ## Soft puffy smoke sprite.
-static func smoke_texture() -> ImageTexture:
-	if _cache.has("tex_smoke"):
-		return _cache["tex_smoke"]
+## Soft puff with noise. fine = wispy variant (finer, more broken-up detail) for tyre smoke.
+static func smoke_texture(fine := false) -> ImageTexture:
+	var key := "tex_smoke_fine" if fine else "tex_smoke"
+	if _cache.has(key):
+		return _cache[key]
 	var size := 128
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	var noise := FastNoiseLite.new()
-	noise.seed = 17
-	noise.frequency = 0.045
-	noise.fractal_octaves = 4
+	noise.seed = 17 if not fine else 23
+	noise.frequency = 0.045 if not fine else 0.085
+	noise.fractal_octaves = 4 if not fine else 5
 	for y in size:
 		for x in size:
 			var p := Vector2(float(x) / size - 0.5, float(y) / size - 0.5) * 2.0
 			var r := p.length()
 			var n := noise.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
 			var a := clampf(1.0 - r, 0.0, 1.0)
-			a = pow(a, 1.6) * (0.55 + 0.9 * n)
+			if fine:
+				# soft falloff, thin wisps: the noise decides where there is smoke at all
+				a = pow(a, 1.3) * smoothstep(0.25, 0.8, n) * 1.25
+			else:
+				a = pow(a, 1.6) * (0.55 + 0.9 * n)
 			img.set_pixel(x, y, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
 	img.generate_mipmaps()
 
 	var result = ImageTexture.create_from_image(img)
-	_cache["tex_smoke"] = result
+	_cache[key] = result
 	return result
 
 

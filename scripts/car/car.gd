@@ -8,7 +8,7 @@ extends RigidBody3D
 ## Remote (network) cars use the same node as a kinematic, interpolated puppet.
 
 signal shifted(up: bool, boost: float)
-signal blow_off(amount: float)
+signal blow_off(amount: float, full: bool)   # full = lifting off the throttle, else a gear change
 signal wall_hit(strength: float)
 ## strength 1 = loud bang with a big flame, below 1 = small overrun pop (Burble-Tune)
 signal backfire(strength: float)
@@ -438,7 +438,7 @@ func _shift(dir: int) -> void:
 	gear = ng
 	shift_timer = shift_time_auto if transmission == "auto" else shift_time_manual
 	if up and boost > 0.25:
-		blow_off.emit(boost)
+		blow_off.emit(boost, false)
 		boost *= 0.45
 	shifted.emit(dir > 0, boost)
 
@@ -546,7 +546,7 @@ func _simulate(delta: float) -> void:
 			boost_target = clampf((rpm - redline * 0.3) / (redline * 0.35), 0.0, 1.0) * throttle
 		boost = move_toward(boost, boost_target, (spool_rate if boost_target > boost else 3.0) * delta)
 		if _prev_throttle > 0.6 and throttle < 0.2 and boost > 0.35:
-			blow_off.emit(boost)
+			blow_off.emit(boost, true)
 			boost *= 0.3
 	_update_backfire(delta)
 	_prev_throttle = throttle

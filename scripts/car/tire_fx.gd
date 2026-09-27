@@ -44,55 +44,66 @@ func _ready() -> void:
 
 
 func _make_smoke(rear: bool) -> GPUParticles3D:
+	# fine, long-lived smoke: many small, thin puffs that lose their speed quickly, hang in the air,
+	# slowly spread out and drift apart in wisps before they fade
 	var p := GPUParticles3D.new()
-	p.amount = 170 if rear else 90
-	p.lifetime = 3.2
+	p.amount = 440 if rear else 220
+	p.lifetime = 7.0
 	p.local_coords = false
 	p.emitting = false
 	p.fixed_fps = 60
 	p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
-	p.visibility_aabb = AABB(Vector3(-60, -5, -60), Vector3(120, 40, 120))
+	p.visibility_aabb = AABB(Vector3(-80, -5, -80), Vector3(160, 45, 160))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m := ParticleProcessMaterial.new()
 	m.direction = Vector3(0, 1, 0)
-	m.spread = 70.0
-	m.initial_velocity_min = 0.5
-	m.initial_velocity_max = 2.4
-	m.gravity = Vector3(0, 0.3, 0)
-	m.damping_min = 0.7
-	m.damping_max = 1.4
-	m.scale_min = 0.7
-	m.scale_max = 1.3
+	m.spread = 75.0
+	m.initial_velocity_min = 0.6
+	m.initial_velocity_max = 2.6
+	m.gravity = Vector3(0, 0.07, 0)
+	m.damping_min = 1.6
+	m.damping_max = 2.6
+	m.scale_min = 0.55
+	m.scale_max = 1.1
 	m.angle_min = 0.0
 	m.angle_max = 360.0
-	m.angular_velocity_min = -25.0
-	m.angular_velocity_max = 25.0
+	m.angular_velocity_min = -12.0
+	m.angular_velocity_max = 12.0
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	m.emission_sphere_radius = 0.3
+	m.emission_sphere_radius = 0.28
+	m.turbulence_enabled = true
+	m.turbulence_noise_strength = 0.6
+	m.turbulence_noise_scale = 5.0
+	m.turbulence_noise_speed_random = 0.25
+	m.turbulence_influence_min = 0.03
+	m.turbulence_influence_max = 0.09
 	var sc := Curve.new()
-	sc.max_value = 4.0
-	sc.add_point(Vector2(0.0, 0.4))
-	sc.add_point(Vector2(0.35, 1.8))
+	sc.max_value = 5.0
+	sc.add_point(Vector2(0.0, 0.35))
+	sc.add_point(Vector2(0.15, 1.3))
+	sc.add_point(Vector2(0.5, 2.5))
 	sc.add_point(Vector2(1.0, 3.6))
 	var sct := CurveTexture.new()
 	sct.curve = sc
 	m.scale_curve = sct
 	var grad := Gradient.new()
-	grad.set_color(0, Color(0.92, 0.92, 0.94, 0.62))
-	grad.set_color(1, Color(0.85, 0.85, 0.88, 0.0))
-	grad.add_point(0.35, Color(0.9, 0.9, 0.92, 0.38))
+	grad.set_color(0, Color(0.93, 0.93, 0.95, 0.42))
+	grad.set_color(1, Color(0.86, 0.86, 0.9, 0.0))
+	grad.add_point(0.25, Color(0.92, 0.92, 0.94, 0.36))
+	grad.add_point(0.6, Color(0.9, 0.9, 0.92, 0.26))
+	grad.add_point(0.85, Color(0.88, 0.88, 0.91, 0.12))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	m.color_ramp = gt
 	p.process_material = m
 	var quad := QuadMesh.new()
-	quad.size = Vector2(1.7, 1.7)
+	quad.size = Vector2(1.15, 1.15)
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mat.billboard_keep_scale = true
 	mat.vertex_color_use_as_albedo = true
-	mat.albedo_texture = TexKit.smoke_texture()
+	mat.albedo_texture = TexKit.smoke_texture(true)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
 	mat.proximity_fade_enabled = true
 	mat.proximity_fade_distance = 0.8

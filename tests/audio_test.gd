@@ -59,7 +59,7 @@ func _ready() -> void:
 			elif t < 6.0:
 				if not lifted:
 					lifted = true
-					fc.blow_off.emit(fc.boost)
+					fc.blow_off.emit(fc.boost, true)
 					if fc.burble > 0:
 						fc.backfire.emit(1.0)
 				fc.throttle = 0.0

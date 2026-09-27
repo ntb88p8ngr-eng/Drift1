@@ -2,7 +2,7 @@ extends Node
 ## Minimal stand-in for car.gd so car_audio.gd can be rendered offline (tests/audio_test.gd).
 
 signal shifted(up: bool, boost: float)
-signal blow_off(amount: float)
+signal blow_off(amount: float, full: bool)
 signal wall_hit(strength: float)
 signal backfire(strength: float)
 

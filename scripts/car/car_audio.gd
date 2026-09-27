@@ -20,6 +20,7 @@ const SAMPLED := {"r34": R34Data, "m3gt3": M3Data}
 const SAMPLE_DIR := "res://assets/audio/"
 const ENGINE_SAMPLE_GAIN := 0.7
 const SPOOL_GAIN := 0.16
+const SHIFT_CHUFF := 0.22      # seconds of the blow-off sample played on a gear change
 const LIFT_GAIN := 0.85
 ## Overall engine level against tyres/wind/rain: the engine voice ends up at 0.5 (-6 dB), turbo,
 ## blow-off, gear whine and exhaust pops at 0.7 (-3 dB).
@@ -222,8 +223,9 @@ var _on_f := PackedFloat32Array()
 var _off_f := PackedFloat32Array()
 var _spool_f := PackedFloat32Array()
 var _lifts: Array = []
-var _lift_slots: Array = [[-1, 0.0, 0.0, 1.0], [-1, 0.0, 0.0, 1.0]]   # [sample, pos, gain, rate]
+var _lift_slots: Array = [[-1, 0.0, 0.0, 1.0, 0.0], [-1, 0.0, 0.0, 1.0, 0.0]]   # [sample, pos, gain, rate, end (0 = whole sample)]
 var _last_lift := -1
+var _bov_short := false
 var _load_s := 0.0
 var _eng_block := PackedFloat32Array()
 var _lp_eng := 0.0
@@ -495,7 +497,10 @@ func _on_shift(up: bool, _boost_val: float) -> void:
 			_pop_strength = 0.5
 
 
-func _on_blow_off(amount: float) -> void:
+## Blow-off valve. full = lifting off the throttle: the whole "pssst" with flutter and falling whistle.
+## A gear change only vents briefly: just the sharp first part of the sample, quieter, fading quickly
+## (more like a short intake chuff than a full blow-off).
+func _on_blow_off(amount: float, full := true) -> void:
 	if _sampled and _lifts.size() > 0:
 		var k := randi() % _lifts.size()
 		if k == _last_lift and _lifts.size() > 1:
@@ -509,13 +514,15 @@ func _on_blow_off(amount: float) -> void:
 			slot = _lift_slots[1]
 		slot[0] = k
 		slot[1] = 0.0
-		slot[2] = clampf(0.35 + 0.75 * amount, 0.4, 1.0) * LIFT_GAIN
-		slot[3] = randf_range(0.96, 1.04)
+		slot[2] = clampf(0.35 + 0.75 * amount, 0.4, 1.0) * LIFT_GAIN * (1.0 if full else 0.55)
+		slot[3] = randf_range(0.96, 1.04) * (1.0 if full else 1.06)
+		slot[4] = 0.0 if full else SHIFT_CHUFF * MIX_RATE
 		return
 	if _bov_level <= 0.0:
 		return
-	_bov_env = 1.0
+	_bov_env = 1.0 if full else 0.5
 	_bov_t = 0.0
+	_bov_short = not full
 	_bov_amount = clampf(amount, 0.35, 1.0)
 
 
@@ -587,6 +594,7 @@ func render(frames: int) -> PackedVector2Array:
 	var fire_mid := maxf(t_rpm, 300.0) / 60.0 * float(_cyl) * 0.5
 	var pulse_decay := exp(-dt * fire_mid / _decay)
 	var bov_decay := exp(-dt / 0.3)
+	var bov_decay_short := exp(-dt / 0.06)
 	var att_k := 1.0 - exp(-dt / 0.0009)
 	var imp_decay := exp(-dt / 0.18)
 	var dip_decay := exp(-dt / 0.12)
@@ -739,11 +747,11 @@ func render(frames: int) -> PackedVector2Array:
 			_lp_bov += (n - _lp_bov) * 0.5
 			var attack := minf(_bov_t / 0.006, 1.0)
 			var amp := _bov_env * attack * _bov_amount * _bov_level
-			if _bov_t > 0.12:
+			if _bov_t > 0.12 and not _bov_short:
 				var fl := 0.5 + 0.5 * sin((_bov_t - 0.12) * TAU * 17.0)
 				amp *= 1.0 - 0.45 * fl * _bov_amount
 			out += (vy * 1.25 + (n - _lp_bov) * 0.22) * amp * 0.7
-			_bov_env *= bov_decay
+			_bov_env *= bov_decay if not _bov_short else bov_decay_short
 			_bov_t += dt
 
 		# --- recorded lift-off: blow-off "pssst" + compressor flutter + falling whistle ---
@@ -755,10 +763,15 @@ func render(frames: int) -> PackedVector2Array:
 				var lb: PackedFloat32Array = _lifts[li]
 				var lp: float = slot[1]
 				var k := int(lp)
-				if k + 1 >= lb.size():
+				var end: float = slot[4]
+				if k + 1 >= lb.size() or (end > 0.0 and lp >= end):
 					slot[0] = -1
 					continue
-				out += (lb[k] + (lb[k + 1] - lb[k]) * (lp - float(k))) * float(slot[2])
+				var fade := 1.0
+				if end > 0.0:
+					# short gear-change version: fades out over its last 40 %
+					fade = clampf((end - lp) / (end * 0.4), 0.0, 1.0)
+				out += (lb[k] + (lb[k + 1] - lb[k]) * (lp - float(k))) * float(slot[2]) * fade
 				slot[1] = lp + float(slot[3])
 
 		# --- nitro hiss ---
