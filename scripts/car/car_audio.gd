@@ -14,6 +14,9 @@ extends Node
 
 const MIX_RATE := 22050.0
 const R34Data = preload("res://scripts/car/r34_sound_data.gd")
+const M3Data = preload("res://scripts/car/m3_sound_data.gd")
+## recorded engines: car id -> generated sample tables
+const SAMPLED := {"r34": R34Data, "m3gt3": M3Data}
 const SAMPLE_DIR := "res://assets/audio/"
 const ENGINE_SAMPLE_GAIN := 0.7
 const SPOOL_GAIN := 0.16
@@ -200,8 +203,16 @@ var _vy1 := 0.0
 var _vy2 := 0.0
 var _lp_bov := 0.0
 
-# sampled voice (R34)
+# sampled voice (R34, M3)
 var _sampled := false
+var _sd: GDScript = R34Data
+var _on_order := 3.0
+var _off_order := 4.5
+var _fref_on := 65.0
+var _fref_off := 75.0
+var _fref_turbo := 2800.0
+var _idle_rec := 1100.0
+var _sample_gain := 1.0
 var _g_on: Granular
 var _g_off: Granular
 var _g_spool: Granular
@@ -264,8 +275,8 @@ func _ready() -> void:
 	if car:
 		engine_type = str(Game.get_car(str(car.car_id)).get("engine", "i6"))
 		setup_voice(engine_type)
-		if str(car.car_id) == "r34":
-			setup_samples()
+		if SAMPLED.has(str(car.car_id)):
+			setup_samples(SAMPLED[str(car.car_id)], str(car.car_id))
 		_rpm = car.idle_rpm
 		car.shifted.connect(_on_shift)
 		car.blow_off.connect(_on_blow_off)
@@ -330,26 +341,35 @@ func setup_voice(engine: String) -> void:
 	_whine_ratio = float(v.get("whine_ratio", 19.0))
 
 
-## Loads the R34 recordings; falls back to the synthesized voice when they are missing.
-func setup_samples() -> bool:
-	var on := _load_sample("r34_engine_on")
-	var off := _load_sample("r34_engine_off")
-	var idle := _load_sample("r34_idle")
-	var spool := _load_sample("r34_turbo_spool")
+## Loads a car's recordings (`prefix`_*.bin, tables in `data`); falls back to the synthesized voice
+## when they are missing.
+func setup_samples(data: GDScript = R34Data, prefix := "r34") -> bool:
+	var on := _load_sample(prefix + "_engine_on")
+	var off := _load_sample(prefix + "_engine_off")
+	var idle := _load_sample(prefix + "_idle")
 	if on.size() < 4096 or off.size() < 4096 or idle.size() < 4096:
-		push_warning("R34 engine samples missing – using the synthesized engine")
+		push_warning("%s engine samples missing – using the synthesized engine" % prefix)
 		return false
-	_g_on = Granular.new(on, MIX_RATE / R34Data.F_REF_ON, 4.0, 6)
-	_g_off = Granular.new(off, MIX_RATE / R34Data.F_REF_OFF, 4.0, 6)
+	_sd = data
+	_on_order = float(data.ON_ORDER)
+	_off_order = float(data.OFF_ORDER)
+	_fref_on = float(data.F_REF_ON)
+	_fref_off = float(data.F_REF_OFF)
+	_fref_turbo = float(data.F_REF_TURBO)
+	_idle_rec = float(data.IDLE_RPM)
+	_sample_gain = float(data.get_script_constant_map().get("GAIN", 1.0))
+	var spool := _load_sample(prefix + "_turbo_spool") if data.LIFT_COUNT > 0 else PackedFloat32Array()
+	_g_on = Granular.new(on, MIX_RATE / _sd.F_REF_ON, 4.0, 6)
+	_g_off = Granular.new(off, MIX_RATE / _sd.F_REF_OFF, 4.0, 6)
 	_idle_buf = idle
-	_on_f = PackedFloat32Array(R34Data.ON_F)
-	_off_f = PackedFloat32Array(R34Data.OFF_F)
+	_on_f = PackedFloat32Array(_sd.ON_F)
+	_off_f = PackedFloat32Array(_sd.OFF_F)
 	if spool.size() > 4096:
-		_g_spool = Granular.new(spool, MIX_RATE / R34Data.F_REF_TURBO, 60.0, 40)
-		_spool_f = PackedFloat32Array(R34Data.SPOOL_F)
+		_g_spool = Granular.new(spool, MIX_RATE / _sd.F_REF_TURBO, 60.0, 40)
+		_spool_f = PackedFloat32Array(_sd.SPOOL_F)
 	_lifts.clear()
-	for k in R34Data.LIFT_COUNT:
-		var l := _load_sample("r34_turbo_lift_%d" % (k + 1))
+	for k in _sd.LIFT_COUNT:
+		var l := _load_sample(prefix + "_turbo_lift_%d" % (k + 1))
 		if l.size() > 0:
 			_lifts.append(l)
 	_sampled = true
@@ -404,26 +424,28 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 		_eng_block.resize(frames)
 	_eng_block.fill(0.0)
 	# each recording has its own tracked engine order (dyno: 3rd, HKS rev-down: 4.5th)
-	var fn0 := r0 * R34Data.ON_ORDER / 60.0
-	var fn1 := r1 * R34Data.ON_ORDER / 60.0
-	var ff0 := r0 * R34Data.OFF_ORDER / 60.0
-	var ff1 := r1 * R34Data.OFF_ORDER / 60.0
+	var fn0 := r0 * _on_order / 60.0
+	var fn1 := r1 * _on_order / 60.0
+	var ff0 := r0 * _off_order / 60.0
+	var ff1 := r1 * _off_order / 60.0
 	var load0 := _load_s
 	_load_s += (clampf(thr * 1.15, 0.0, 1.0) - _load_s) * 0.35
 	var load1 := _load_s
 	# idle loop weight: only near idle and without load
-	var x0 := r0 / R34Data.IDLE_RPM
-	var x1 := r1 / R34Data.IDLE_RPM
-	var wi0 := (1.0 - smoothstep(1.04, 1.45, x0)) * (1.0 - load0 * 0.8)
-	var wi1 := (1.0 - smoothstep(1.04, 1.45, x1)) * (1.0 - load1 * 0.8)
+	var x0 := r0 / _idle_rec
+	var x1 := r1 / _idle_rec
+	# the loop plays at rpm / recorded idle rpm; its weight follows the car's own idle
+	var ref := (float(car.idle_rpm) if car else _idle_rec)
+	var wi0 := (1.0 - smoothstep(1.04, 1.45, r0 / ref)) * (1.0 - load0 * 0.8)
+	var wi1 := (1.0 - smoothstep(1.04, 1.45, r1 / ref)) * (1.0 - load1 * 0.8)
 	var g_on0 := sqrt(load0) * (1.0 - wi0)
 	var g_on1 := sqrt(load1) * (1.0 - wi1)
 	var g_off0 := sqrt(1.0 - load0) * (1.0 - wi0)
 	var g_off1 := sqrt(1.0 - load1) * (1.0 - wi1)
 	if maxf(g_on0, g_on1) > 0.001:
-		_g_on.mix(_eng_block, frames, _pos_for(_on_f, (fn0 + fn1) * 0.5), fn0 / R34Data.F_REF_ON, fn1 / R34Data.F_REF_ON, g_on0, g_on1)
+		_g_on.mix(_eng_block, frames, _pos_for(_on_f, (fn0 + fn1) * 0.5), fn0 / _fref_on, fn1 / _fref_on, g_on0, g_on1)
 	if maxf(g_off0, g_off1) > 0.001:
-		_g_off.mix(_eng_block, frames, _pos_for(_off_f, (ff0 + ff1) * 0.5), ff0 / R34Data.F_REF_OFF, ff1 / R34Data.F_REF_OFF, g_off0, g_off1)
+		_g_off.mix(_eng_block, frames, _pos_for(_off_f, (ff0 + ff1) * 0.5), ff0 / _fref_off, ff1 / _fref_off, g_off0, g_off1)
 	if maxf(wi0, wi1) > 0.001:
 		var n := _idle_buf.size()
 		var inv := 1.0 / float(frames)
@@ -437,7 +459,7 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 			if _idle_pos >= float(n):
 				_idle_pos -= float(n)
 	# above the recorded range the grains are pitched up: soften the top end a little
-	var top := float(_on_f[_on_f.size() - 1]) * 60.0 / R34Data.ON_ORDER
+	var top := float(_on_f[_on_f.size() - 1]) * 60.0 / _on_order
 	var k := lerpf(1.0, 0.5, clampf((r1 / top - 1.0) / 0.4, 0.0, 1.0))
 	if k < 0.999:
 		for i in frames:
@@ -449,8 +471,8 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 		var fw1 := 3000.0 + 3900.0 * boost1
 		var ga := pow(boost0, 1.3) * (0.35 + 0.65 * load0) * SPOOL_GAIN
 		var gb := pow(boost1, 1.3) * (0.35 + 0.65 * load1) * SPOOL_GAIN
-		_g_spool.mix(_eng_block, frames, _pos_for(_spool_f, (fw0 + fw1) * 0.5), fw0 / R34Data.F_REF_TURBO,
-			fw1 / R34Data.F_REF_TURBO, ga, gb)
+		_g_spool.mix(_eng_block, frames, _pos_for(_spool_f, (fw0 + fw1) * 0.5), fw0 / _fref_turbo,
+			fw1 / _fref_turbo, ga, gb)
 	return _eng_block
 
 
@@ -621,7 +643,7 @@ func render(frames: int) -> PackedVector2Array:
 
 		var eng := 0.0
 		if _sampled:
-			eng = eblock[i] * ENGINE_SAMPLE_GAIN / 0.42
+			eng = eblock[i] * ENGINE_SAMPLE_GAIN * _sample_gain / 0.42
 		else:
 			# --- engine: exhaust pulses (one per firing) ---
 			var fire := rpm / 60.0 * float(_cyl) * 0.5
