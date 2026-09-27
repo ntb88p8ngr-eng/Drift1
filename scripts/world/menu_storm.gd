@@ -1,10 +1,9 @@
 extends Node3D
 ## Stormy night outside the menu garage: dark cloud sky with lightning (flashing clouds and a jagged
 ## bolt), a cold flash of light falling through the gate and the skylights (it also shows in the car
-## paint), rain around the hall, wet asphalt outside the gate, rain sound and thunder after each flash.
+## paint), rain around the hall and wet asphalt outside the gate. Silent: no rain or thunder sound.
 
 const TexKit = preload("res://scripts/util/tex_kit.gd")
-const Atmosphere = preload("res://scripts/world/atmosphere.gd")
 
 const SKY_SHADER := """
 shader_type sky;
@@ -138,12 +137,6 @@ var _rain_mats: Array = []
 var _next := 3.0
 var _pulses: Array = []       # [start time, strength]
 var _t := 0.0
-var _thunder_at := -1.0
-var _thunder_gain := 1.0
-var _thunder_player: AudioStreamPlayer
-var _rain_player: AudioStreamPlayer
-var _rain_playback: AudioStreamGeneratorPlayback
-var _rain_gen: Node          # an unparented Atmosphere, only used for its rain sound synthesis
 
 
 ## hall: floor rectangle of the garage (x/z) – rain falls only outside of it.
@@ -171,7 +164,6 @@ func setup(env: Environment, hall: Rect2) -> void:
 	add_child(light)
 	_build_ground(hall)
 	_build_rain(hall)
-	_build_audio()
 
 
 func _build_ground(hall: Rect2) -> void:
@@ -242,61 +234,6 @@ func _build_rain(hall: Rect2) -> void:
 		add_child(p)
 
 
-func _build_audio() -> void:
-	var vol := float(Game.settings.get("weather_volume", 0.6))
-	_rain_gen = Atmosphere.new()
-	_rain_gen.rain = 0.75
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = 22050.0
-	gen.buffer_length = 0.2
-	_rain_player = AudioStreamPlayer.new()
-	_rain_player.stream = gen
-	_rain_player.volume_db = linear_to_db(maxf(vol * 0.55, 0.001))   # heard from inside the hall
-	add_child(_rain_player)
-	_rain_player.play()
-	_rain_playback = _rain_player.get_stream_playback()
-	_thunder_player = AudioStreamPlayer.new()
-	_thunder_player.stream = _thunder_stream()
-	add_child(_thunder_player)
-
-
-func _exit_tree() -> void:
-	if _rain_gen:
-		_rain_gen.free()
-		_rain_gen = null
-
-
-## A rolling thunder clap: a sharp crack followed by a long, uneven rumble (brown noise).
-static func _thunder_stream() -> AudioStreamWAV:
-	var rate := 22050
-	var n := rate * 5
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	var lp := 0.0
-	var lp2 := 0.0
-	var crack := 0.0
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 911
-	var wobble := 1.0
-	for i in n:
-		var t := float(i) / rate
-		var w := rng.randf() * 2.0 - 1.0
-		lp += (w - lp) * 0.02
-		lp2 += (lp - lp2) * 0.05
-		crack += (w - crack) * 0.35
-		if i % 1100 == 0:
-			wobble = rng.randf_range(0.55, 1.0)
-		var rumble := lp2 * 9.0 * (1.0 - exp(-t / 0.08)) * exp(-t / 1.6) * wobble
-		var snap := crack * 0.6 * exp(-t / 0.12)
-		var v := clampf(rumble + snap, -1.0, 1.0)
-		data.encode_s16(i * 2, int(v * 30000.0))
-	var s := AudioStreamWAV.new()
-	s.format = AudioStreamWAV.FORMAT_16_BITS
-	s.mix_rate = rate
-	s.data = data
-	return s
-
-
 func _strike() -> void:
 	var az := randf() * TAU
 	var el := randf_range(0.18, 0.5)
@@ -310,10 +247,6 @@ func _strike() -> void:
 	for k in n:
 		_pulses.append([t0, randf_range(0.5, 1.0) if k > 0 else 1.0])
 		t0 += randf_range(0.06, 0.18)
-	# thunder: the further away (the longer the delay), the quieter
-	var delay := randf_range(0.4, 3.0)
-	_thunder_at = _t + delay
-	_thunder_gain = lerpf(1.0, 0.35, (delay - 0.4) / 2.6)
 
 
 func _process(delta: float) -> void:
@@ -336,14 +269,3 @@ func _process(delta: float) -> void:
 	light.light_energy = f * 2.2
 	for m in _rain_mats:
 		(m as StandardMaterial3D).albedo_color = Color(0.6 + f * 0.4, 0.65 + f * 0.35, 0.75 + f * 0.25, 0.12 + f * 0.35)
-	if _thunder_at > 0.0 and _t >= _thunder_at:
-		_thunder_at = -1.0
-		var vol := float(Game.settings.get("weather_volume", 0.6))
-		_thunder_player.volume_db = linear_to_db(maxf(vol * _thunder_gain * 0.8, 0.001))
-		_thunder_player.pitch_scale = randf_range(0.8, 1.1)
-		_thunder_player.play()
-	# rain sound
-	if _rain_playback:
-		var frames := _rain_playback.get_frames_available()
-		if frames > 0:
-			_rain_playback.push_buffer(_rain_gen.render_rain(frames))
