@@ -23,9 +23,9 @@ const DEFS := {
 		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.10, 0.10, 0.11),
 	},
 	"playground": {
-		"points": [Vector2(0, 0), Vector2(73, -71), Vector2(134, -100), Vector2(176, -71), Vector2(190, 0), Vector2(176, 71),
-			Vector2(134, 100), Vector2(73, 71), Vector2(0, 0), Vector2(-73, -71), Vector2(-134, -100), Vector2(-176, -71),
-			Vector2(-190, 0), Vector2(-176, 71), Vector2(-134, 100), Vector2(-73, 71)],
+		"points": [Vector2(0, 0), Vector2(45, -44), Vector2(83, -62), Vector2(109, -44), Vector2(118, 0), Vector2(109, 44),
+			Vector2(83, 62), Vector2(45, 44), Vector2(0, 0), Vector2(-45, -44), Vector2(-83, -62), Vector2(-109, -44),
+			Vector2(-118, 0), Vector2(-109, 44), Vector2(-83, 62), Vector2(-45, 44)],
 		"width": 16.0, "runoff": 6.0, "start_dist": 40.0,
 		"ground": "asphalt", "offroad_grip": 0.97, "wall": "none", "asphalt": Color(0.075, 0.075, 0.085),
 	},
@@ -70,6 +70,8 @@ var stand_x := 0.0
 
 var _grid := {}
 var _edge: Dictionary = {}
+## optional ground override (playground grass islands): func(pos: Vector3) -> [grip, name] or []
+var ground_fn: Callable
 var _puddle_index := {}     # sample index -> Array of puddle ids
 var _start_lights: Array = []
 var _lamp_lights: Array = []
@@ -251,14 +253,35 @@ func _build_ground() -> void:
 func _build_road() -> void:
 	var st := MeshKit.new_st()
 	var n := samples.size()
+	# a figure eight crosses itself: the second pass over the crossing lies 8 mm higher, so the two
+	# road ribbons don't z-fight (they use the same world-space texture, the step is invisible)
+	var lift := PackedFloat32Array()
+	lift.resize(n)
+	lift.fill(0.0)
+	for i in (n if str(def.get("wall", "")) == "none" else 0):
+		for j in range(i + n / 4, i + n * 3 / 4):
+			var k := j % n
+			if Vector2(samples[i].x - samples[k].x, samples[i].z - samples[k].z).length() < width * 1.6:
+				# lift the pass that lies in the middle of the lap (no step at the lap seam)
+				if absi(i - n / 2) < absi(k - n / 2):
+					lift[i] = 1.0
+				break
+	var lift_s := lift.duplicate()
+	for i in n:
+		var acc := 0.0
+		for d in range(-10, 11):
+			acc += lift[(i + d + n) % n]
+		lift_s[i] = minf(acc / 6.0, 1.0) * 0.008
 	for i in n:
 		var i2 := (i + 1) % n
 		var d0 := dists[i]
 		var d1 := dists[i2] if i2 != 0 else length
-		var a := samples[i] - rights[i] * half_w + Vector3(0, ROAD_Y, 0)
-		var b := samples[i] + rights[i] * half_w + Vector3(0, ROAD_Y, 0)
-		var c := samples[i2] + rights[i2] * half_w + Vector3(0, ROAD_Y, 0)
-		var d := samples[i2] - rights[i2] * half_w + Vector3(0, ROAD_Y, 0)
+		var y0 := Vector3(0, ROAD_Y + lift_s[i], 0)
+		var y1 := Vector3(0, ROAD_Y + lift_s[i2], 0)
+		var a := samples[i] - rights[i] * half_w + y0
+		var b := samples[i] + rights[i] * half_w + y0
+		var c := samples[i2] + rights[i2] * half_w + y1
+		var d := samples[i2] - rights[i2] * half_w + y1
 		MeshKit.quad(st, a, b, c, d, Vector3.UP, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
 	road_material = mat
@@ -689,6 +712,10 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 		return [0.97 * (1.0 - 0.3 * wetness), "curb"]
 	if trap.size() > idx and trap[idx] * side_d > 0.0 and absf(trap[idx]) > 0.4 and lat < half_w + trap_w:
 		return [0.5 * (1.0 - 0.1 * wetness), "gravel"]
+	if ground_fn.is_valid():
+		var g2: Array = ground_fn.call(pos)
+		if not g2.is_empty():
+			return g2
 	return [float(def["offroad_grip"]) * (1.0 - 0.12 * wetness), str(def["ground"])]
 
 

@@ -1030,6 +1030,8 @@ func _build_lamps() -> void:
 		k += 1
 		var pos := _roadside(i, 1.4, side)
 		pos.y = terrain.height_at(pos.x, pos.z)
+		if track.distance_to_center(pos) < float(track.half_w) + 3.0 or not free_at(pos, 1.0, -100.0):
+			continue      # figure eight: that spot is on the other part of the track (or taken)
 		var inward: Vector3 = -track.rights[i] * side
 		var lamp := make_breakable_lamp(self, Transform3D(Basis.looking_at(inward, Vector3.UP), pos), pole_mat, head_mat)
 		var l := SpotLight3D.new()

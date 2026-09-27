@@ -73,6 +73,15 @@ func _ready() -> void:
 	var i5: int = (tr.start_index + 60) % n
 	var eb: Vector3 = tr.samples[i5] + tr.rights[i5] * (float(tr.half_w) + 1.0)
 	views.append(["edge_straight", eb + Vector3(0, 2.0, 0) - tr.tangents[i5] * 6.0 - tr.rights[i5] * 3.0, eb + tr.tangents[i5] * 6.0])
+	# high overview of the whole area
+	var oc: Vector2 = tr.bounds.get_center()
+	views.append(["overview", Vector3(oc.x, 230.0, oc.y + 230.0), Vector3(oc.x, 0.0, oc.y + 10.0)])
+	# playground: pit lane and the crossing of the figure eight
+	var pgn = world.scenery.get_node_or_null("Playground")
+	if pgn:
+		var pit: Rect2 = pgn._pit
+		views.append(["pit", Vector3(pit.get_center().x - 20.0, 9.0, pit.end.y + 30.0), Vector3(pit.get_center().x, 1.5, pit.get_center().y)])
+		views.append(["crossing", Vector3(oc.x + 25.0, 18.0, oc.y + 25.0), Vector3(oc.x, 0.0, oc.y)])
 	# distant skyline (harbor: north of the track)
 	var cc: Vector2 = tr.bounds.get_center()
 	views.append(["skyline", Vector3(cc.x, 12.0, cc.y), Vector3(cc.x, 60.0, cc.y - 800.0)])

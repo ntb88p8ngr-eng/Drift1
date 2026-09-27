@@ -40,6 +40,7 @@ var _n_blend := FastNoiseLite.new()
 var _n_forest := FastNoiseLite.new()
 var _n_meadow := FastNoiseLite.new()
 var _center := Vector2.ZERO
+var islands: Array = []        # playground: grass islands [Vector2 centre, radius]
 var _quay_z := 1e9
 
 
@@ -67,6 +68,8 @@ func generate(p_track: Node3D) -> void:
 	nx = int(round((end.x - origin.x) / CELL)) + 1
 	nz = int(round((end.y - origin.y) / CELL)) + 1
 	_build_distance_field()
+	if track_id == "playground":
+		_setup_islands()
 	heights.resize(nx * nz)
 	splat.resize(nx * nz)
 	for iz in nz:
@@ -161,6 +164,44 @@ const PAD_MARGIN := 70.0
 const PAD_CORNER := 45.0
 
 
+## Playground grass islands: one inside each loop of the figure eight, one in each pad corner.
+func _setup_islands() -> void:
+	islands.clear()
+	var tc: Vector2 = track.bounds.get_center()
+	for side: float in [-1.0, 1.0]:
+		var sum := Vector2.ZERO
+		var cnt := 0
+		for p in track.samples:
+			if (p.x - tc.x) * side > 0.0:
+				sum += Vector2(p.x, p.z)
+				cnt += 1
+		var c := sum / maxf(cnt, 1)
+		var md := 1e9
+		for p in track.samples:
+			md = minf(md, c.distance_to(Vector2(p.x, p.z)))
+		var r := md - float(track.half_w) - 8.0
+		if r > 6.0:
+			islands.append([c, r])
+	var pr := pad_rect()
+	var inset := PAD_CORNER * 0.55 + 16.0
+	for cx: float in [pr.position.x + inset, pr.end.x - inset]:
+		# the pit lane runs along the north edge (small z): only the south corners get islands
+		islands.append([Vector2(cx, pr.end.y - inset), 15.0])
+	track.ground_fn = func(pos: Vector3) -> Array:
+		if pad_grass(pos.x, pos.z) > 0.5:
+			return [0.62 * (1.0 - 0.12 * float(track.wetness)), "grass"]
+		return []
+
+
+## 1 on a grass island, 0 on the asphalt (slightly wavy edge).
+func pad_grass(x: float, z: float) -> float:
+	var g := 0.0
+	for isl in islands:
+		var d := Vector2(x, z).distance_to(isl[0]) + _n_small.get_noise_2d(x * 2.0, z * 2.0) * 1.2
+		g = maxf(g, 1.0 - smoothstep(float(isl[1]) - 1.0, float(isl[1]) + 0.6, d))
+	return g
+
+
 func pad_rect() -> Rect2:
 	return track.bounds.grow(PAD_MARGIN)
 
@@ -206,7 +247,8 @@ func _splat_fn(x: float, z: float, d: float) -> Color:
 	var dirt := 0.0
 	if track_id == "playground":
 		var sd := pad_sd(x, z)
-		paved = 1.0 - smoothstep(-1.0, 1.5, sd)
+		var gr := pad_grass(x, z)
+		paved = (1.0 - smoothstep(-1.0, 1.5, sd)) * (1.0 - gr)
 		dirt = smoothstep(0.5, 2.0, sd) * (1.0 - smoothstep(3.0, 8.0, sd)) * 0.7
 	elif track_id == "harbor":
 		var apron := float(track.wall_base) + 30.0 + _n_blend.get_noise_2d(x, z) * 10.0
