@@ -274,6 +274,13 @@ func _build_forest(id: String) -> void:
 			_cached("tree_%s_%d_mid" % [kind, sd], func(): return _tree_mesh(kind, sd, false)),
 		])
 	var far_mesh: Mesh = _cached("far_forest", func(): return TreeFactory.far_forest_mesh(404, 101))
+	# horizontal reach of each variant (branch tips), for keeping crowns off the road
+	var crowns: Array = []
+	for m in meshes:
+		var bb: AABB = (m[0] as Mesh).get_aabb()
+		var rx := maxf(absf(bb.position.x), absf(bb.end.x))
+		var rz := maxf(absf(bb.position.z), absf(bb.end.z))
+		crowns.append(sqrt(rx * rx + rz * rz))
 	var chunks: Array = []
 	for i in kinds.size():
 		chunks.append({})
@@ -311,7 +318,18 @@ func _build_forest(id: String) -> void:
 			var v: int = options[rng.randi() % options.size()]
 			var s := rng.randf_range(0.78, 1.3) * (1.0 + smoothstep(wb + 30.0, wb + 150.0, d) * 0.15)
 			# every tree a little different: uneven width per axis, height, a slight random tilt
-			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * rng.randf_range(0.82, 1.18), s * rng.randf_range(0.85, 1.15), s * rng.randf_range(0.82, 1.18)))
+			var sx := s * rng.randf_range(0.82, 1.18)
+			var sz := s * rng.randf_range(0.82, 1.18)
+			# keep every crown off the asphalt: shrink its width near the road, drop it if that's not enough
+			var room: float = track.distance_to_center(pos) - float(track.half_w) - 1.0
+			var need: float = float(crowns[v]) * maxf(sx, sz) + (1.0 - nrm.y) * 8.0 + 1.0
+			if need > room:
+				var k := room / need
+				if k < 0.6:
+					continue
+				sx *= k
+				sz *= k
+			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sx, s * rng.randf_range(0.85, 1.15), sz))
 			basis = Basis(Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.0, 0.05)) * basis
 			# lean slightly downhill
 			basis = Basis(Vector3(nrm.z, 0, -nrm.x).normalized(), (1.0 - nrm.y) * 0.4) * basis if nrm.y < 0.98 else basis
@@ -320,7 +338,11 @@ func _build_forest(id: String) -> void:
 			_push(chunks[v], pos, [xf, tint])
 			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 0.75 if kinds[v][0] == "pine" else 1.0)])
 		gz += spacing
-	_solitary_oaks(kinds, chunks, far_chunks)
+	var oak_reach := 0.0
+	for i in kinds.size():
+		if kinds[i][0] == "oak":
+			oak_reach = maxf(oak_reach, float(crowns[i]))
+	_solitary_oaks(kinds, chunks, far_chunks, oak_reach)
 	var lod1_shadow := quality >= 3
 	# neighbouring levels overlap by the fade band (+ a little, the bounds centre sits higher than the
 	# node) and cross-fade with complementary dither patterns
@@ -347,7 +369,7 @@ static func _tree_mesh(kind: String, sd: int, hi: bool) -> Mesh:
 
 
 ## Big solitary oaks on the meadows and around the houses.
-func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary) -> void:
+func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary, kinds_reach := 0.0) -> void:
 	var v := -1
 	for i in kinds.size():
 		if kinds[i][0] == "oak":
@@ -375,6 +397,12 @@ func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary) -> void
 				continue
 			pos.y = terrain.height_at(pos.x, pos.z) - 0.3
 			var s := rng.randf_range(1.15, 1.6)
+			var reach := (kinds_reach if kinds_reach > 0.0 else 9.0) * s
+			var room2: float = track.distance_to_center(pos) - float(track.half_w) - 2.0
+			if reach > room2:
+				s *= room2 / reach
+				if s < 0.8:
+					continue
 			var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.05), s)), pos)
 			var tint := _foliage_tint(false, 0.05)
 			_push(chunks[v], pos, [xf, tint])

@@ -484,9 +484,8 @@ func _simulate(delta: float) -> void:
 		launch_time += delta
 		if launch_time > 1.3 or forward_speed > 13.0 or throttle < 0.3 or gear < 1:
 			launch_active = false
-	elif gear >= 1 and throttle > 0.6 and absf(forward_speed) < 1.5 and not controls_locked:
-		launch_active = true
-		launch_time = 0.0
+	# launch control only through the two-step (W + S at a standstill, then release S) – a normal
+	# pull-away just slips the clutch at low revs
 
 	# --- gearbox / engine ---
 	shift_timer = maxf(shift_timer - delta, 0.0)
@@ -496,8 +495,10 @@ func _simulate(delta: float) -> void:
 	for w in wheels:
 		var driven: bool = (w["front"] and rear_split < 1.0) or (not w["front"] and rear_split > 0.0)
 		if driven:
-			driven_speed += float(w["v_long"]) + float(w["spin"])
-			driven_count += 1.0
+			# AWD: the engine follows the axles weighted by the torque split (spinning rears rev it up)
+			var wgt: float = (1.0 - rear_split) if w["front"] else rear_split
+			driven_speed += (float(w["v_long"]) + float(w["spin"])) * wgt
+			driven_count += wgt
 	if driven_count > 0.0:
 		driven_speed /= driven_count
 	var ratio := _gear_ratio()
@@ -518,10 +519,16 @@ func _simulate(delta: float) -> void:
 	elif engaged:
 		var floor_rpm := idle_rpm
 		if absi(gear) == 1:
-			floor_rpm = idle_rpm + throttle * (redline * 0.5 - idle_rpm)
+			# normal pull-away: the clutch slips just above idle (far below the launch-control revs)
+			floor_rpm = idle_rpm + throttle * (redline * 0.26 - idle_rpm)
 		if launch_active:
 			floor_rpm = maxf(floor_rpm, launch_rpm * (1.0 + wobble * 0.5))
-		rpm = lerpf(rpm, maxf(coupled_rpm, floor_rpm), 1.0 - exp(-delta * 18.0))
+		var target_rpm := maxf(coupled_rpm, floor_rpm)
+		var next := lerpf(rpm, target_rpm, 1.0 - exp(-delta * 18.0))
+		if not launch_active and next > rpm and coupled_rpm < floor_rpm:
+			# while the clutch is still slipping the revs climb gently
+			next = minf(next, rpm + 2600.0 * delta)
+		rpm = next
 	else:
 		var free_target := idle_rpm + throttle * (redline * 0.99 - idle_rpm)
 		rpm = move_toward(rpm, free_target, (7000.0 if free_target > rpm else 4000.0) * delta)
@@ -567,7 +574,9 @@ func _simulate(delta: float) -> void:
 		# with spinning wheels – but never right after the last automatic shift (no hunting)
 		var gear_done := ground_rpm > redline * 0.8 or _limit_time > 0.6
 		var may_down := _auto_hold <= 0.0 or throttle < 0.3
-		if rpm > redline * 0.94 and gear < gears.size() and throttle > 0.2 and gear_done and not hold_for_drift and not launch_active:
+		# no upshift while the tyres just spin at low road speed (donuts, burnouts)
+		var spin_only := spinning and ground_rpm < redline * 0.35
+		if rpm > redline * 0.94 and gear < gears.size() and throttle > 0.2 and gear_done and not hold_for_drift and not launch_active and not spin_only:
 			_shift(1)
 			_auto_hold = 1.2
 		elif gear > 1 and may_down and ground_rpm < redline * 0.42 and rpm < redline * 0.55:
@@ -717,7 +726,12 @@ func _simulate(delta: float) -> void:
 					f_long *= s2
 					f_lat *= s2
 			if spin_excess > 0.0 and absf(f_drive) > 0.0:
-				w["spin"] = move_toward(float(w["spin"]), signf(f_drive) * minf(spin_excess * 10.0, 25.0), 60.0 * delta)
+				# the tyre has broken loose: the extra torque spins it up (towards the rev limiter in
+				# this gear) instead of pushing the car – donuts and nitro in a drift rev out and smoke,
+				# the car doesn't get faster
+				var v_red := redline / 60.0 * TAU * radius / maxf(absf(ratio), 0.01)
+				var spin_cap := maxf(v_red * 1.02 - absf(v_long), 0.0)
+				w["spin"] = move_toward(float(w["spin"]), signf(f_drive) * spin_cap, (15.0 + 70.0 * minf(spin_excess, 2.0)) * delta)
 			else:
 				w["spin"] = move_toward(float(w["spin"]), 0.0, 35.0 * delta)
 			if locked:
