@@ -36,9 +36,15 @@ jobs:
       - name: Import project
         run: timeout 300 ./godot --headless --editor --quit --path . 2>&1 | tee import.log || true
 
+      - name: Compile all scripts
+        run: |
+          timeout 120 ./godot --headless --path . --script res://tests/check_scripts.gd 2>&1 | tee check.log || true
+          grep -q "SCRIPT CHECK DONE" check.log
+          if grep -E "SCRIPT CHECK FAILED|Parse Error|SCRIPT ERROR" check.log; then echo "::error::Script compile errors"; exit 1; fi
+
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
-          timeout 500 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true
+          timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true
           if grep -E "SCRIPT ERROR|Parse Error|Compile Error" smoke.log; then echo "::error::Script errors found"; exit 1; fi
           grep -q "SMOKE TEST OK" smoke.log
 
@@ -48,7 +54,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
           mkdir -p shots
-          timeout 1500 xvfb-run -a -s "-screen 0 1600x900x24" ./godot --path . --rendering-driver vulkan -- --smoke-test --shot-dir="$PWD/shots" 2>&1 | tee render.log || true
+          timeout 900 xvfb-run -a -s "-screen 0 1600x900x24" ./godot --path . --rendering-driver vulkan -- --smoke-test --shot-dir="$PWD/shots" 2>&1 | tee render.log || true
           if grep -E "SHADER ERROR|SCRIPT ERROR|shader compilation failed" render.log; then echo "::error::Render errors found"; exit 1; fi
           grep -q "SMOKE TEST OK" render.log
 
@@ -58,6 +64,7 @@ jobs:
         with:
           name: test-output
           path: |
+            check.log
             smoke.log
             render.log
             shots/
