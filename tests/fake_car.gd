@@ -4,9 +4,10 @@ extends Node
 signal shifted(up: bool, boost: float)
 signal blow_off(amount: float)
 signal wall_hit(strength: float)
-signal backfire
+signal backfire(strength: float)
 
 var car_id := "r34"
+var burble := 1
 var redline := 8000.0
 var idle_rpm := 900.0
 var rpm := 900.0

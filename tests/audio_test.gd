@@ -16,11 +16,13 @@ func _ready() -> void:
 		"r34synth": ["i6", 8000.0, 1100.0, 0.45],
 		"mustang": ["v8", 7400.0, 800.0, 0.0],
 		"m3gt3": ["v8race", 9000.0, 1100.0, 0.0],
+		"mustang_brutal": ["v8", 7400.0, 800.0, 0.0],
 	}
 	for cid in specs.keys():
 		var sp: Array = specs[cid]
 		var fc := FakeCar.new()
-		fc.car_id = "r34" if cid.begins_with("r34") else cid
+		fc.car_id = "r34" if cid.begins_with("r34") else cid.get_slice("_", 0)
+		fc.burble = 3 if cid.ends_with("_brutal") else int(Game.get_car(fc.car_id)["burble"])
 		fc.redline = sp[1]
 		fc.idle_rpm = sp[2]
 		fc.turbo_gain = sp[3]
@@ -55,6 +57,8 @@ func _ready() -> void:
 				if not lifted:
 					lifted = true
 					fc.blow_off.emit(fc.boost)
+					if fc.burble > 0:
+						fc.backfire.emit(1.0)
 				fc.throttle = 0.0
 				fc.boost = move_toward(fc.boost, 0.0, 0.02)
 				fc.rpm = lerpf(fc.redline * 0.95, fc.redline * 0.45, (t - 4.0) / 2.0)

@@ -126,6 +126,7 @@ func _ready() -> void:
 		Net.peer_left.connect(_on_peer_left)
 		Net.countdown_requested.connect(_start_countdown)
 		Net.results_updated.connect(_on_results_updated)
+		Net.lobby_changed.connect(_on_lobby_changed)
 		state = "waiting"
 		local_car.controls_locked = true
 		hud.set_countdown("…")
@@ -178,6 +179,8 @@ func _make_car(info: Dictionary, remote: bool) -> Car:
 	car.track = track
 	car.skidmarks = skidmarks
 	car.transmission = str(info.get("transmission", "auto"))
+	if remote:
+		car.burble = clampi(int(info.get("burble", Game.get_car(car.car_id).get("burble", 1))), 0, Game.BURBLE_LEVELS.size() - 1)
 	car.name = "Car_%s" % car.player_name.validate_node_name()
 	add_child(car)
 	if remote:
@@ -409,6 +412,15 @@ func _on_peer_left(peer_id: int) -> void:
 		hud.show_message("%s hat das Spiel verlassen" % c.player_name, "", UiKit.TEXT_DIM, 2.0)
 		c.queue_free()
 		cars.erase(peer_id)
+
+
+## Player info changed (e.g. someone switched their Burble-Tune in the pause menu).
+func _on_lobby_changed() -> void:
+	for id in cars.keys():
+		var c: Car = cars[id]
+		if c != local_car and Net.players.has(id):
+			var info: Dictionary = Net.players[id]
+			c.burble = clampi(int(info.get("burble", c.burble)), 0, Game.BURBLE_LEVELS.size() - 1)
 
 
 func _on_results_updated(_arr: Array) -> void:

@@ -15,7 +15,7 @@ const MIX_RATE := 22050.0
 const R34Data = preload("res://scripts/car/r34_sound_data.gd")
 const SAMPLE_DIR := "res://assets/audio/"
 const ENGINE_SAMPLE_GAIN := 0.7
-const SPOOL_GAIN := 0.5
+const SPOOL_GAIN := 0.16
 const LIFT_GAIN := 0.85
 
 static var _sample_cache := {}
@@ -82,25 +82,31 @@ class Granular:
 			pos_a += rate
 			pos_b += rate
 
+## Burble-Tune (overrun pops): pop rate per second right after lifting off, how long (s) the tune keeps
+## popping, and loudness. Index = Game.BURBLE_LEVELS.
+const BURBLE_RATE := [0.0, 3.0, 7.0, 13.0]
+const BURBLE_TIME := [0.0, 1.0, 2.2, 6.0]
+const BURBLE_GAIN := [0.0, 0.55, 0.8, 1.0]
+
 const VOICES := {
 	"i6": {
 		"cyl": 6, "pattern": [1.0, 0.94, 0.98, 0.95, 1.0, 0.93], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
 		"body": 170.0, "body_q": 1.4, "high": 1250.0, "high_q": 2.5, "decay": 0.28, "grit": 0.35,
 		"tone": 0.42, "bass": 0.9, "rasp": 1.0, "click": 0.25, "drive": 1.2, "hard": 0.0,
-		"whine": 0.0, "crackle": 2.5, "turbo": 1.0, "bov": 1.0, "gain": 1.0, "upshift_bang": 0.0,
+		"whine": 0.0, "pop_pitch": 1.1, "turbo": 1.0, "bov": 1.0, "gain": 1.0, "upshift_bang": 0.0,
 	},
 	"v8": {
 		"cyl": 8, "pattern": [1.0, 0.62, 0.9, 0.7, 0.96, 0.58, 0.86, 0.74],
 		"timing": [1.06, 0.94, 1.03, 0.97, 1.05, 0.95, 1.02, 0.98],
 		"body": 95.0, "body_q": 1.1, "high": 620.0, "high_q": 1.8, "decay": 0.42, "grit": 0.5,
 		"tone": 0.36, "bass": 1.6, "rasp": 0.55, "click": 0.3, "drive": 1.5, "hard": 0.0,
-		"whine": 0.0, "crackle": 8.0, "turbo": 0.15, "bov": 0.0, "gain": 1.05, "upshift_bang": 0.35,
+		"whine": 0.0, "pop_pitch": 0.82, "turbo": 0.15, "bov": 0.0, "gain": 1.05, "upshift_bang": 0.35,
 	},
 	"v8race": {
 		"cyl": 8, "pattern": [1.0, 0.86, 0.97, 0.9, 1.0, 0.84, 0.95, 0.9], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
 		"body": 210.0, "body_q": 1.3, "high": 1500.0, "high_q": 2.0, "decay": 0.22, "grit": 0.6,
 		"tone": 0.3, "bass": 0.8, "rasp": 1.5, "click": 0.35, "drive": 2.1, "hard": 0.35,
-		"whine": 1.0, "crackle": 12.0, "turbo": 0.15, "bov": 0.0, "gain": 0.95, "upshift_bang": 1.0,
+		"whine": 1.0, "pop_pitch": 1.25, "turbo": 0.15, "bov": 0.0, "gain": 0.95, "upshift_bang": 1.0,
 	},
 }
 
@@ -124,7 +130,7 @@ var _click := 0.25
 var _drive := 1.2
 var _hard := 0.0
 var _whine := 0.0
-var _crackle := 2.5
+var _pop_pitch := 1.0
 var _turbo_level := 1.0
 var _bov_level := 1.0
 var _gain := 1.0
@@ -180,14 +186,29 @@ var _lift_slots: Array = [[-1, 0.0, 0.0, 1.0], [-1, 0.0, 0.0, 1.0]]   # [sample,
 var _last_lift := -1
 var _load_s := 0.0
 var _eng_block := PackedFloat32Array()
+var _lp_eng := 0.0
 
-# pops, crackle, impacts
-var _pop_env := 0.0
+# exhaust pops (backfire bangs and Burble-Tune overrun pops): a low, pitch-dropping thump with a
+# noisy body plus a short band-passed crack – no bright hiss, so it doesn't sound tinny
 var _pops_left := 0
 var _pop_gap := 0.0
-var _lp_pop := 0.0
-var _crk_env := 0.0
-var _lp_crk := 0.0
+var _pop_strength := 1.0
+var _burst_left := 0
+var _burst_gap := 0.0
+var _overrun_t := 0.0
+var _pb_env := 0.0      # body envelope
+var _pb_att := 1.0      # body attack (soft onset, no click)
+var _pc_env := 0.0      # crack envelope
+var _p_amp := 0.0
+var _p_ph := 0.0
+var _p_f0 := 90.0
+var _p_bdec := 0.999
+var _p_cdec := 0.99
+var _p_svf := 0.1
+var _p_svl := 0.0
+var _p_svb := 0.0
+var _p_lpn := 0.0
+var _p_lpo := 0.0
 var _impact_env := 0.0
 var _impact_amount := 0.0
 var _ph_thump := 0.0
@@ -260,7 +281,7 @@ func setup_voice(engine: String) -> void:
 	_drive = float(v["drive"])
 	_hard = float(v["hard"])
 	_whine = float(v["whine"])
-	_crackle = float(v["crackle"])
+	_pop_pitch = float(v["pop_pitch"])
 	_turbo_level = float(v["turbo"])
 	_bov_level = float(v["bov"])
 	_gain = float(v["gain"])
@@ -278,9 +299,8 @@ func setup_samples() -> bool:
 	if on.size() < 4096 or off.size() < 4096 or idle.size() < 4096:
 		push_warning("R34 engine samples missing – using the synthesized engine")
 		return false
-	var period := MIX_RATE / R34Data.F_REF
-	_g_on = Granular.new(on, period, 4.0, 6)
-	_g_off = Granular.new(off, period, 4.0, 6)
+	_g_on = Granular.new(on, MIX_RATE / R34Data.F_REF_ON, 4.0, 6)
+	_g_off = Granular.new(off, MIX_RATE / R34Data.F_REF_OFF, 4.0, 6)
 	_idle_buf = idle
 	_on_f = PackedFloat32Array(R34Data.ON_F)
 	_off_f = PackedFloat32Array(R34Data.OFF_F)
@@ -343,27 +363,27 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 	if _eng_block.size() != frames:
 		_eng_block.resize(frames)
 	_eng_block.fill(0.0)
-	var order: float = R34Data.ORDER
-	var f0 := r0 * order / 60.0
-	var f1 := r1 * order / 60.0
-	var rate0 := f0 / R34Data.F_REF
-	var rate1 := f1 / R34Data.F_REF
+	# each recording has its own tracked engine order (dyno: 3rd, HKS rev-down: 4.5th)
+	var fn0 := r0 * R34Data.ON_ORDER / 60.0
+	var fn1 := r1 * R34Data.ON_ORDER / 60.0
+	var ff0 := r0 * R34Data.OFF_ORDER / 60.0
+	var ff1 := r1 * R34Data.OFF_ORDER / 60.0
 	var load0 := _load_s
 	_load_s += (clampf(thr * 1.15, 0.0, 1.0) - _load_s) * 0.35
 	var load1 := _load_s
 	# idle loop weight: only near idle and without load
-	var wi0 := (1.0 - smoothstep(1.04, 1.45, f0 / R34Data.IDLE_LINE)) * (1.0 - load0 * 0.8)
-	var wi1 := (1.0 - smoothstep(1.04, 1.45, f1 / R34Data.IDLE_LINE)) * (1.0 - load1 * 0.8)
-	var idle_gain := 0.5
-	var fm := (f0 + f1) * 0.5
+	var x0 := r0 / R34Data.IDLE_RPM
+	var x1 := r1 / R34Data.IDLE_RPM
+	var wi0 := (1.0 - smoothstep(1.04, 1.45, x0)) * (1.0 - load0 * 0.8)
+	var wi1 := (1.0 - smoothstep(1.04, 1.45, x1)) * (1.0 - load1 * 0.8)
 	var g_on0 := sqrt(load0) * (1.0 - wi0)
 	var g_on1 := sqrt(load1) * (1.0 - wi1)
-	var g_off0 := sqrt(1.0 - load0) * (1.0 - wi0) * 0.7
-	var g_off1 := sqrt(1.0 - load1) * (1.0 - wi1) * 0.7
+	var g_off0 := sqrt(1.0 - load0) * (1.0 - wi0)
+	var g_off1 := sqrt(1.0 - load1) * (1.0 - wi1)
 	if maxf(g_on0, g_on1) > 0.001:
-		_g_on.mix(_eng_block, frames, _pos_for(_on_f, fm), rate0, rate1, g_on0, g_on1)
+		_g_on.mix(_eng_block, frames, _pos_for(_on_f, (fn0 + fn1) * 0.5), fn0 / R34Data.F_REF_ON, fn1 / R34Data.F_REF_ON, g_on0, g_on1)
 	if maxf(g_off0, g_off1) > 0.001:
-		_g_off.mix(_eng_block, frames, _pos_for(_off_f, fm), rate0, rate1, g_off0, g_off1)
+		_g_off.mix(_eng_block, frames, _pos_for(_off_f, (ff0 + ff1) * 0.5), ff0 / R34Data.F_REF_OFF, ff1 / R34Data.F_REF_OFF, g_off0, g_off1)
 	if maxf(wi0, wi1) > 0.001:
 		var n := _idle_buf.size()
 		var inv := 1.0 / float(frames)
@@ -372,10 +392,17 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 			var ii := int(_idle_pos)
 			var fr := _idle_pos - float(ii)
 			var v := _idle_buf[ii] + (_idle_buf[(ii + 1) % n] - _idle_buf[ii]) * fr
-			_eng_block[i] += v * lerpf(wi0, wi1, f) * idle_gain
-			_idle_pos += lerpf(f0, f1, f) / R34Data.IDLE_LINE
+			_eng_block[i] += v * lerpf(wi0, wi1, f)
+			_idle_pos += lerpf(x0, x1, f)
 			if _idle_pos >= float(n):
 				_idle_pos -= float(n)
+	# above the recorded range the grains are pitched up: soften the top end a little
+	var top := float(_on_f[_on_f.size() - 1]) * 60.0 / R34Data.ON_ORDER
+	var k := lerpf(1.0, 0.5, clampf((r1 / top - 1.0) / 0.4, 0.0, 1.0))
+	if k < 0.999:
+		for i in frames:
+			_lp_eng += (_eng_block[i] - _lp_eng) * k
+			_eng_block[i] = _lp_eng
 	# turbo whistle follows the boost
 	if _g_spool and maxf(boost0, boost1) > 0.02:
 		var fw0 := 3000.0 + 3900.0 * boost0
@@ -397,10 +424,13 @@ static func _bandpass(freq: float, q: float) -> PackedFloat32Array:
 
 func _on_shift(up: bool, _boost_val: float) -> void:
 	_shift_dip = 1.0
-	if up and _upshift_bang > 0.0 and car.throttle > 0.5:
-		_pop_env = _upshift_bang
-		_pops_left = 1 if _upshift_bang >= 1.0 else 0
-		_pop_gap = 0.045
+	# ignition cut on a flat-out upshift (sequential race box / tuned map)
+	if up and _upshift_bang > 0.0 and car.throttle > 0.5 and _burble_level() > 0:
+		_trigger_pop(_upshift_bang * 0.55, true)
+		if _upshift_bang >= 1.0:
+			_pops_left = 1
+			_pop_gap = 0.05
+			_pop_strength = 0.5
 
 
 func _on_blow_off(amount: float) -> void:
@@ -427,9 +457,30 @@ func _on_blow_off(amount: float) -> void:
 	_bov_amount = clampf(amount, 0.35, 1.0)
 
 
-func _on_backfire() -> void:
-	_pops_left = randi_range(1, 3) if car.line_lock else randi_range(2, 4)
+func _on_backfire(strength := 1.0) -> void:
+	if strength >= 0.9:
+		_pops_left = randi_range(1, 2) if car.line_lock else randi_range(2, 3)
+	else:
+		_pops_left = 1
+	_pop_strength = strength
 	_pop_gap = 0.0
+
+
+func _burble_level() -> int:
+	return clampi(int(car.burble), 0, BURBLE_RATE.size() - 1) if car and "burble" in car else 1
+
+
+## Starts one exhaust pop. `big`: backfire bang (deep, longer), otherwise a short overrun "blub".
+func _trigger_pop(amp: float, big: bool) -> void:
+	if _pb_env < 0.05:
+		_pb_att = 0.0
+	_p_amp = maxf(amp, _p_amp * _pb_env)
+	_pb_env = 1.0
+	_pc_env = 1.0 if big else randf_range(0.45, 0.9)
+	_p_f0 = (randf_range(55.0, 80.0) if big else randf_range(85.0, 135.0)) * _pop_pitch
+	_p_bdec = exp(-1.0 / (MIX_RATE * (randf_range(0.085, 0.12) if big else randf_range(0.03, 0.05))))
+	_p_cdec = exp(-1.0 / (MIX_RATE * (0.014 if big else 0.006)))
+	_p_svf = 2.0 * sin(PI * (randf_range(600.0, 900.0) if big else randf_range(800.0, 1300.0)) / MIX_RATE)
 
 
 func _on_hit(strength: float) -> void:
@@ -474,8 +525,7 @@ func render(frames: int) -> PackedVector2Array:
 	var fire_mid := maxf(t_rpm, 300.0) / 60.0 * float(_cyl) * 0.5
 	var pulse_decay := exp(-dt * fire_mid / _decay)
 	var bov_decay := exp(-dt / 0.3)
-	var pop_decay := exp(-dt / 0.03)
-	var crk_decay := exp(-dt / 0.012)
+	var att_k := 1.0 - exp(-dt / 0.0009)
 	var imp_decay := exp(-dt / 0.18)
 	var dip_decay := exp(-dt / 0.12)
 	var cb0 := _bcoef[0]
@@ -487,7 +537,14 @@ func render(frames: int) -> PackedVector2Array:
 	var ha1 := _hcoef[2]
 	var ha2 := _hcoef[3]
 	var idle_rough := clampf(1.0 - (t_rpm - idle) / 1500.0, 0.0, 1.0)
-	var crackle_rate := _crackle * (1.0 if overrun else 0.0)
+	# Burble-Tune: overrun pops, most right after lifting off, dying away with the overrun time
+	var blvl := _burble_level()
+	_overrun_t = _overrun_t + float(frames) * dt if overrun else 0.0
+	var burble_rate := 0.0
+	if overrun and blvl > 0:
+		burble_rate = float(BURBLE_RATE[blvl]) * exp(-_overrun_t / float(BURBLE_TIME[blvl])) \
+			* clampf((t_rpm / redline - 0.3) / 0.4, 0.25, 1.0)
+	var burble_gain: float = BURBLE_GAIN[blvl]
 	# tyre squeal parameters change slowly: compute the filter coefficients once per buffer
 	var sq_target := clampf((t_slip - 3.0) / 13.0, 0.0, 1.0)
 	if off_road:
@@ -614,24 +671,42 @@ func render(frames: int) -> PackedVector2Array:
 			_lp_nitro += (n - _lp_nitro) * 0.6
 			out += (n - _lp_nitro) * 0.09
 
-		# --- exhaust pops (backfire, upshift bang) ---
+		# --- exhaust pops (backfire bangs, upshift cut, Burble-Tune overrun) ---
 		if _pops_left > 0:
 			_pop_gap -= dt
 			if _pop_gap <= 0.0:
-				_pop_env = 1.0
+				var big := _pop_strength >= 0.9
+				_trigger_pop((randf_range(0.5, 0.62) if big else randf_range(0.3, 0.4)) * _pop_strength, big)
+				_pop_strength *= 0.7
 				_pops_left -= 1
-				_pop_gap = randf_range(0.05, 0.13)
-		if _pop_env > 0.002:
-			_lp_pop += (n - _lp_pop) * 0.25
-			out += _lp_pop * _pop_env * 1.3
-			_pop_env *= pop_decay
-		# --- overrun crackle ---
-		if crackle_rate > 0.0 and randf() < crackle_rate * dt:
-			_crk_env = randf_range(0.4, 1.0)
-		if _crk_env > 0.002:
-			_lp_crk += (n - _lp_crk) * 0.45
-			out += _lp_crk * _crk_env * 0.7
-			_crk_env *= crk_decay
+				_pop_gap = randf_range(0.06, 0.14)
+		if burble_rate > 0.0 and randf() < burble_rate * dt:
+			_trigger_pop(randf_range(0.14, 0.34) * burble_gain, false)
+			# pops come in little bursts ("brrap-pap")
+			if randf() < 0.4:
+				_burst_left = randi_range(1, 2)
+				_burst_gap = randf_range(0.025, 0.055)
+		if _burst_left > 0:
+			_burst_gap -= dt
+			if _burst_gap <= 0.0:
+				_trigger_pop(randf_range(0.1, 0.24) * burble_gain, false)
+				_burst_left -= 1
+				_burst_gap = randf_range(0.025, 0.06)
+		if _pb_env > 0.0008 or _pc_env > 0.0008:
+			_pb_att += (1.0 - _pb_att) * att_k
+			_p_ph = fposmod(_p_ph + _p_f0 * (0.6 + 0.4 * _pb_env) * dt, 1.0)
+			_p_lpn += (n - _p_lpn) * 0.05
+			var body := (sin(_p_ph * TAU) * 0.55 + _p_lpn * 3.2) * _pb_env * _pb_att
+			_p_svl += _p_svf * _p_svb
+			_p_svb += _p_svf * (n - _p_svl - 1.2 * _p_svb)
+			var pop := (body + _p_svb * _pc_env * 0.5) * _p_amp
+			# gentle low-pass (~3 kHz) takes the edge off
+			_p_lpo += (pop - _p_lpo) * 0.35
+			out += _p_lpo
+			_pb_env *= _p_bdec
+			_pc_env *= _p_cdec
+		else:
+			_p_amp = 0.0
 
 		# --- tyre squeal: resonant band-pass noise with smooth envelope ---
 		_sq_env += (sq_target - _sq_env) * (sq_attack if sq_target > _sq_env else sq_release)

@@ -5,6 +5,7 @@ extends Node
 
 const World = preload("res://scripts/world/world.gd")
 func _ready() -> void:
+	Game.persist = false
 	for cid in ["r34", "mustang", "m3gt3"]:
 		Game.settings["car"] = cid
 		var world := World.new()

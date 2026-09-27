@@ -43,19 +43,19 @@ const CARS := {
 		"name": "Nissan Skyline GT-R R34", "mass": 1540.0, "torque": 440.0, "tach": 9000.0,
 		"redline": 8000.0, "idle": 1100.0, "gears": [3.827, 2.36, 1.685, 1.312, 1.0, 0.793], "reverse": 3.28,
 		"final": 3.545, "rear_split": 0.8, "turbo": 0.45, "grip": 1.08, "steer_lock": 44.0, "engine": "i6",
-		"transmission": "auto", "desc": "RB26DETT-Reihensechser mit Twin-Turbo, Allrad auf Drift getrimmt (80 % hinten).",
+		"burble": 1, "transmission": "auto", "desc": "RB26DETT-Reihensechser mit Twin-Turbo, Allrad auf Drift getrimmt (80 % hinten).",
 	},
 	"mustang": {
 		"name": "Ford Mustang GT", "mass": 1690.0, "torque": 560.0, "tach": 8000.0,
 		"redline": 7500.0, "idle": 750.0, "gears": [3.66, 2.43, 1.69, 1.32, 1.0, 0.65], "reverse": 3.24,
 		"final": 3.73, "rear_split": 1.0, "turbo": 0.0, "grip": 1.05, "steer_lock": 46.0, "engine": "v8",
-		"transmission": "auto", "desc": "5.0-Liter-V8-Sauger mit Hinterradantrieb – viel Drehmoment, lange Drifts.",
+		"burble": 0, "transmission": "auto", "desc": "5.0-Liter-V8-Sauger mit Hinterradantrieb – viel Drehmoment, lange Drifts.",
 	},
 	"m3gt3": {
 		"name": "BMW M3 GT3", "mass": 1260.0, "torque": 470.0, "tach": 10000.0,
 		"redline": 9000.0, "idle": 1100.0, "gears": [3.1, 2.25, 1.75, 1.42, 1.19, 1.02], "reverse": 3.3,
 		"final": 4.1, "rear_split": 1.0, "turbo": 0.0, "grip": 1.16, "steer_lock": 43.0, "engine": "v8race",
-		"transmission": "auto", "desc": "Hochdrehender Renn-V8, Leichtbau und Rennfahrwerk – präzise und schnell.",
+		"burble": 2, "transmission": "auto", "desc": "Hochdrehender Renn-V8, Leichtbau und Rennfahrwerk – präzise und schnell.",
 	},
 }
 const CAR_ORDER := ["r34", "mustang", "m3gt3"]
@@ -70,6 +70,14 @@ const TUNING := [
 	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
 ]
 const TUNING_LEVELS := ["Serie", "Stufe 1", "Stufe 2", "Stufe 3"]
+## Burble-Tune (software map for overrun pops and backfire flames) – free to change per car.
+const BURBLE_LEVELS := ["Aus", "Mild", "Sport", "Brutal"]
+const BURBLE_DESC := [
+	"Keine Fehlzündungen – sauberes Schiebegeräusch.",
+	"Leises Blubbern beim Gaswegnehmen, selten eine Flamme.",
+	"Deutliches Knallen und Blubbern im Schiebebetrieb, Flammen beim Gaswegnehmen und am Begrenzer.",
+	"Dauerfeuer im Schiebebetrieb, Knaller und Flammen bei jedem Gaswegnehmen.",
+]
 
 ## Video options
 const WINDOW_MODES := ["Fenster", "Vollbild (randlos)", "Exklusives Vollbild"]
@@ -129,6 +137,8 @@ var settings := {
 	"fov": 75.0,
 	"mouse_sensitivity": 0.25,
 	"steer_assist": 0.55,
+	"handbrake_strength": 0.75,
+	"slide": 0.5,
 	"camera_mode": 0,
 	"units_kmh": true,
 	"last_ip": "127.0.0.1",
@@ -138,6 +148,7 @@ var settings := {
 	"use_upnp": true,
 	"credits": 12000,
 	"tuning": {},
+	"burble": {},
 }
 
 ## leaderboard[track_id][category] = Array of entries (sorted best first)
@@ -146,6 +157,8 @@ var leaderboard := {}
 
 ## Set by the menu before loading the world.
 var pending_config := {}
+## False while automated tests run, so they never overwrite the player's settings file.
+var persist := true
 
 
 func _ready() -> void:
@@ -251,10 +264,13 @@ func load_settings() -> void:
 	settings["resolution"] = str(settings["resolution"])
 	if not (settings["tuning"] is Dictionary):
 		settings["tuning"] = {}
+	if not (settings["burble"] is Dictionary):
+		settings["burble"] = {}
 
 
 func save_settings() -> void:
-	_write_json(SETTINGS_PATH, settings)
+	if persist:
+		_write_json(SETTINGS_PATH, settings)
 	settings_changed.emit()
 
 
@@ -477,6 +493,20 @@ func downgrade_tuning(car_id: String, category: String) -> void:
 	save_settings()
 
 
+## Burble-Tune level of a car (0 = off … 3 = brutal); the car's factory default until changed.
+func get_burble(car_id: String) -> int:
+	var all: Dictionary = settings["burble"]
+	return clampi(int(all.get(car_id, get_car(car_id).get("burble", 1))), 0, BURBLE_LEVELS.size() - 1)
+
+
+func set_burble(car_id: String, level: int) -> void:
+	var all: Dictionary = settings["burble"]
+	all[car_id] = clampi(level, 0, BURBLE_LEVELS.size() - 1)
+	settings["burble"] = all
+	save_settings()
+	settings_changed.emit()
+
+
 func add_credits(amount: int) -> void:
 	if amount <= 0:
 		return
@@ -523,6 +553,7 @@ func local_player_info() -> Dictionary:
 		"paint": settings["paint"],
 		"custom_color": settings["custom_color"],
 		"transmission": settings["transmission"],
+		"burble": get_burble(str(settings["car"])),
 		"ready": false,
 		"version": VERSION,
 	}
@@ -537,7 +568,8 @@ func load_leaderboard() -> void:
 
 
 func save_leaderboard() -> void:
-	_write_json(LEADERBOARD_PATH, leaderboard)
+	if persist:
+		_write_json(LEADERBOARD_PATH, leaderboard)
 
 
 ## Returns the 1-based rank the entry landed on, or 0 if it did not make the list.

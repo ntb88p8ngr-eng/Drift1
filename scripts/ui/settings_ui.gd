@@ -117,6 +117,20 @@ static func gameplay_page() -> VBoxContainer:
 		Game.set_setting("mouse_sensitivity", x))))
 	v.add_child(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]), func(x):
 		Game.set_setting("steer_assist", x))))
+	var hb_val := UiKit.label("%d %%" % int(float(Game.settings["handbrake_strength"]) * 100.0), 16, UiKit.TEXT_DIM)
+	var hb := UiKit.slider(0.1, 1.0, 0.05, float(Game.settings["handbrake_strength"]), func(x):
+		hb_val.text = "%d %%" % int(x * 100.0)
+		Game.settings["handbrake_strength"] = x
+		Game.save_settings(), 200)
+	hb.tooltip_text = "Wie stark die Handbremse (Leertaste) greift: schwach = sanftes Einleiten, stark = Räder blockieren."
+	v.add_child(UiKit.labeled("Handbremse", UiKit.row([hb, hb_val], 8)))
+	var sl_val := UiKit.label("%d %%" % int(float(Game.settings["slide"]) * 100.0), 16, UiKit.TEXT_DIM)
+	var sl := UiKit.slider(0.0, 1.0, 0.05, float(Game.settings["slide"]), func(x):
+		sl_val.text = "%d %%" % int(x * 100.0)
+		Game.settings["slide"] = x
+		Game.save_settings(), 200)
+	sl.tooltip_text = "Wie weit die Autos seitlich rutschen: mehr = weichere, flüssigere Übergänge (Transitions)."
+	v.add_child(UiKit.labeled("Seitliches Rutschen", UiKit.row([sl, sl_val], 8)))
 	v.add_child(UiKit.labeled("Einheit", UiKit.option(["km/h", "mph"], 0 if Game.settings["units_kmh"] else 1, func(i):
 		Game.set_setting("units_kmh", i == 0))))
 	return v

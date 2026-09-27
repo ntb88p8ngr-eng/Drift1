@@ -10,7 +10,8 @@ extends RigidBody3D
 signal shifted(up: bool, boost: float)
 signal blow_off(amount: float)
 signal wall_hit(strength: float)
-signal backfire
+## strength 1 = loud bang with a big flame, below 1 = small overrun pop (Burble-Tune)
+signal backfire(strength: float)
 
 const CarBody = preload("res://scripts/car/car_body.gd")
 const CarAudio = preload("res://scripts/car/car_audio.gd")
@@ -24,6 +25,8 @@ const SUSP_TRAVEL := 0.30
 const SAG := 0.09
 const PEAK_SLIP := 0.14         # rad – slip angle at maximum lateral grip
 const SLIDE_GRIP := 0.78        # lateral grip multiplier when fully sliding
+const REAR_SOFT := 2.2          # rear peak slip angle multiplier at 100 % "slide" setting
+const RELAX_MAX := 0.06         # s – tyre relaxation time at 100 % "slide" setting
 const STEER_SPEED := 5.5        # rad/s
 const DRAG := 0.34
 const ROLLING := 3.0
@@ -107,6 +110,9 @@ var _prev_throttle := 0.0
 var _prev_velocity := Vector3.ZERO
 var _hit_cooldown := 0.0
 var _backfire_cooldown := 0.0
+var _overrun_time := 0.0
+## Burble-Tune level 0..3 (local car: Game.get_burble, remote cars: from the player info)
+var burble := -1
 
 # remote interpolation
 var _net_pos := Vector3.ZERO
@@ -143,6 +149,10 @@ func _ready() -> void:
 	antiroll_k = spring_k * 0.35
 	if not is_display:
 		_apply_tuning(Game.get_tuning(car_id))
+	if burble < 0:
+		burble = Game.get_burble(car_id) if not is_remote else int(spec.get("burble", 1))
+	if not is_remote and not is_display:
+		Game.settings_changed.connect(_on_settings_changed)
 	turbo_gain = maxf(turbo_base, turbo_extra)
 	rpm = idle_rpm
 
@@ -168,6 +178,43 @@ func _ready() -> void:
 		audio.positional = is_remote
 		add_child(audio)
 	_update_lights()
+
+
+## Burble-Tune: bangs on lift-off, on the rev limiter / two-step and flame pops on the overrun.
+## Level 0 (Mustang default) never backfires. Runs for local and remote cars (throttle/rpm are synced).
+func _update_backfire(delta: float) -> void:
+	_backfire_cooldown -= delta
+	var lvl := burble
+	if lvl <= 0:
+		return
+	var overrun := throttle < 0.08 and rpm > redline * 0.42 and speed > 6.0
+	_overrun_time = _overrun_time + delta if overrun else 0.0
+	if _backfire_cooldown > 0.0:
+		return
+	var lift_rpm: float = [1.0, 0.72, 0.58, 0.45][lvl]
+	var lift_chance: float = [0.0, 0.45, 0.85, 1.0][lvl]
+	if _prev_throttle > 0.7 and throttle < 0.1 and rpm > redline * lift_rpm:
+		_backfire_cooldown = 0.5
+		if randf() < lift_chance:
+			backfire.emit(1.0)
+		return
+	var limiter := line_lock or (controls_locked and throttle > 0.4) or (rpm > redline * 0.975 and throttle > 0.3)
+	if limiter:
+		var rate: float = [0.0, 1.2, 3.5, 6.0][lvl]
+		if randf() < delta * rate:
+			_backfire_cooldown = 0.12
+			backfire.emit(1.0)
+	elif overrun and lvl >= 2:
+		# the tune keeps a little fuel in the overrun: occasional flame pops, dying away
+		var rate: float = (0.5 if lvl == 2 else 2.2) * exp(-_overrun_time / (1.5 if lvl == 2 else 5.0))
+		if randf() < delta * rate:
+			_backfire_cooldown = 0.15
+			backfire.emit(0.5)
+
+
+func _on_settings_changed() -> void:
+	if not is_remote:
+		burble = Game.get_burble(car_id)
 
 
 func _apply_tuning(t: Dictionary) -> void:
@@ -460,10 +507,6 @@ func _simulate(delta: float) -> void:
 		rpm = lerpf(rpm, launch_rpm * (1.0 + wobble) * clampf(throttle * 1.2, 0.3, 1.0), 1.0 - exp(-delta * 16.0))
 		if turbo_gain > 0.0:
 			boost = move_toward(boost, 0.85, 0.7 * delta)
-		_backfire_cooldown -= delta
-		if randf() < delta * 5.0 and _backfire_cooldown <= 0.0:
-			_backfire_cooldown = 0.12
-			backfire.emit()
 	elif ratio != 0.0 and shift_timer > 0.0:
 		# clutch open during a gear change: revs drop to the next gear's speed (no free revving)
 		rpm = lerpf(rpm, maxf(coupled_rpm, idle_rpm), 1.0 - exp(-delta * 14.0))
@@ -491,11 +534,7 @@ func _simulate(delta: float) -> void:
 		if _prev_throttle > 0.6 and throttle < 0.2 and boost > 0.35:
 			blow_off.emit(boost)
 			boost *= 0.3
-	# backfire on lift-off at high rpm
-	_backfire_cooldown -= delta
-	if _prev_throttle > 0.7 and throttle < 0.1 and rpm > redline * 0.6 and _backfire_cooldown <= 0.0:
-		_backfire_cooldown = 0.6
-		backfire.emit()
+	_update_backfire(delta)
 	_prev_throttle = throttle
 
 	var drive_total := 0.0
@@ -539,6 +578,11 @@ func _simulate(delta: float) -> void:
 	total_slip = 0.0
 	var front_brake := 0.62
 	var brake_force_max := mass * 9.8 * 1.25
+	# player settings: handbrake strength and how much the cars slide sideways
+	var hb_strength := clampf(float(Game.settings.get("handbrake_strength", 0.75)), 0.1, 1.0)
+	var slide := clampf(float(Game.settings.get("slide", 0.5)), 0.0, 1.0)
+	var rear_slide_grip := lerpf(0.86, 0.62, slide)
+	var slide_width := lerpf(2.2, 4.2, slide)
 	var mass_per_wheel := mass / 4.0
 	var spin_surface := rpm / 60.0 * TAU * radius / maxf(absf(ratio), 0.01) if ratio != 0.0 else 0.0
 	for i in 4:
@@ -616,8 +660,9 @@ func _simulate(delta: float) -> void:
 				# handbrake + throttle: the rear keeps spinning instead of locking
 				power_slide = true
 			else:
-				f_long = -clampf(v_long / 0.4, -1.0, 1.0) * max_f * 0.95
-				locked = absf(v_long) > 0.5
+				f_long = -clampf(v_long / 0.4, -1.0, 1.0) * max_f * 0.95 * hb_strength
+				# a strong handbrake locks the rear wheels, a soft one only drags them
+				locked = absf(v_long) > 0.5 and hb_strength > 0.45
 		f_long -= v_long * ROLLING
 		# parking hold when nearly stopped and no input
 		if throttle < 0.02 and brake_input < 0.02 and absf(v_long) < 1.2 and speed < 1.5:
@@ -625,15 +670,24 @@ func _simulate(delta: float) -> void:
 
 		# lateral: slip-angle curve
 		var alpha := atan2(v_lat, maxf(absf(v_long), 3.5))
-		var ratio_a := alpha / PEAK_SLIP
+		# softer rear tyres (higher slip angle at peak grip) slide more progressively
+		var peak := PEAK_SLIP if is_front else PEAK_SLIP * lerpf(1.0, REAR_SOFT, slide)
+		var ratio_a := alpha / peak
 		var curve := 0.0
+		var slide_grip := SLIDE_GRIP if is_front else rear_slide_grip
 		if absf(ratio_a) <= 1.0:
 			curve = ratio_a
 		else:
-			curve = signf(ratio_a) * lerpf(1.0, SLIDE_GRIP, clampf((absf(ratio_a) - 1.0) / 2.5, 0.0, 1.0))
+			curve = signf(ratio_a) * lerpf(1.0, slide_grip, clampf((absf(ratio_a) - 1.0) / slide_width, 0.0, 1.0))
 		var f_lat := -curve * max_f
 		if speed < 2.0 and not power_slide:
 			f_lat = clampf(-v_lat * mass_per_wheel * 6.0, -max_f, max_f)
+		elif speed > 4.0:
+			# tyre relaxation: side force builds up over a short time, so direction changes (transitions)
+			# flow smoothly with the car sliding sideways instead of snapping back to grip
+			var tau := lerpf(0.01, RELAX_MAX, slide) * (0.5 if is_front else 1.0)
+			f_lat = lerpf(float(w.get("f_lat", f_lat)), f_lat, 1.0 - exp(-delta / tau))
+		w["f_lat"] = f_lat
 
 		var spin_excess := 0.0
 		if power_slide:
@@ -651,7 +705,7 @@ func _simulate(delta: float) -> void:
 					spin_excess = (absf(f_drive) - max_f) / max_f if absf(f_drive) > max_f else 0.0
 					f_long = clampf(f_long, -max_f, max_f) * 0.92
 					var remaining := sqrt(maxf(max_f * max_f - f_long * f_long, 0.0))
-					var lat_cap := maxf(remaining, max_f * (0.22 if locked else 0.3))
+					var lat_cap := maxf(remaining, max_f * (lerpf(0.5, 0.22, hb_strength) if locked else 0.3))
 					f_lat = clampf(f_lat, -lat_cap, lat_cap)
 				else:
 					var s2 := max_f / combined
@@ -858,6 +912,8 @@ func apply_net_state(s: Array) -> void:
 func _remote_step(delta: float) -> void:
 	if not _net_has:
 		return
+	_update_backfire(delta)
+	_prev_throttle = throttle
 	_net_time += delta
 	var predicted := _net_pos + _net_vel * minf(_net_time, 0.25)
 	var cur := global_transform

@@ -1,6 +1,6 @@
 extends Node3D
-## Studio scene behind the menu: the selected car on a slowly turning platform, softbox lights that
-## reflect in the colour-shifting paint, and an orbiting camera.
+## Scene behind the menu: the selected car on a slowly turning platform in the middle of an old
+## garage hall (assets/env/garage.glb), softbox lights that reflect in the paint and an orbiting camera.
 
 const Car = preload("res://scripts/car/car.gd")
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
@@ -12,64 +12,76 @@ var cam: Camera3D
 var _t := 0.0
 
 
+const GARAGE_SCENE := "res://assets/env/garage.glb"
+const GARAGE_INFO := "res://assets/env/garage.json"
+
+
 func _ready() -> void:
+	var garage := _load_garage()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.015, 0.01, 0.03)
+	env.background_color = Color(0.012, 0.016, 0.03)   # night sky through the skylights
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.25, 0.2, 0.35)
-	env.ambient_light_energy = 0.4
+	env.ambient_light_color = Color(0.55, 0.5, 0.45) if garage else Color(0.25, 0.2, 0.35)
+	env.ambient_light_energy = 0.35 if garage else 0.4
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_BG
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.1
 	env.glow_enabled = true
-	env.glow_intensity = 0.8
-	env.glow_bloom = 0.05
+	env.glow_intensity = 0.7
+	env.glow_bloom = 0.04
 	env.ssao_enabled = Game.quality() >= 2
 	env.ssr_enabled = false
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.08, 0.04, 0.14)
-	env.fog_density = 0.02
+	env.fog_light_color = Color(0.1, 0.08, 0.07) if garage else Color(0.08, 0.04, 0.14)
+	env.fog_density = 0.012 if garage else 0.02
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
-	# glossy floor
-	var floor_mat := StandardMaterial3D.new()
-	floor_mat.albedo_color = Color(0.035, 0.035, 0.045)
-	floor_mat.roughness = 0.35
-	floor_mat.metallic = 0.2
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(80, 80)
-	var floor_mi := MeshKit.mesh_instance(plane, floor_mat, false)
-	floor_mi.position.y = -0.002
-	add_child(floor_mi)
-	# glowing ring first (slightly lower and wider), then the turntable disc on top of it
-	var ring := MeshKit.cyl_node(3.78, 3.78, 0.05, TexKit.emissive(Color(0.6, 0.25, 1.0), 2.5), Vector3(0, 0.025, 0), Vector3.ZERO, 96)
+	if garage == null:
+		# fallback studio floor when the garage asset is missing
+		var floor_mat := StandardMaterial3D.new()
+		floor_mat.albedo_color = Color(0.035, 0.035, 0.045)
+		floor_mat.roughness = 0.35
+		floor_mat.metallic = 0.2
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(80, 80)
+		var floor_mi := MeshKit.mesh_instance(plane, floor_mat, false)
+		floor_mi.position.y = -0.002
+		add_child(floor_mi)
+	# turntable in the middle of the hall: glowing ring first (slightly lower and wider), then the disc
+	var r := 3.25 if garage else 3.7
+	var ring := MeshKit.cyl_node(r + 0.08, r + 0.08, 0.05, TexKit.emissive(Color(0.6, 0.25, 1.0), 2.5), Vector3(0, 0.025, 0), Vector3.ZERO, 96)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ring)
-	var disc := MeshKit.cyl_node(3.62, 3.7, 0.07, TexKit.std(Color(0.08, 0.08, 0.1), 0.35, 0.6), Vector3(0, 0.035, 0), Vector3.ZERO, 96)
+	var disc_mat := TexKit.std(Color(0.08, 0.08, 0.1), 0.35, 0.6)
+	var disc := MeshKit.cyl_node(r - 0.08, r, 0.07, disc_mat, Vector3(0, 0.035, 0), Vector3.ZERO, 96)
 	disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(disc)
 	turntable = Node3D.new()
 	turntable.position.y = 0.07
 	add_child(turntable)
 
-	# softboxes (emissive panels) – they show up as reflections in the paint
+	# softboxes (emissive panels hung from the roof trusses) – they show up as reflections in the paint
 	for k in 3:
-		var sb := MeshKit.box_node(Vector3(6.0, 0.05, 1.2), TexKit.emissive(Color(1, 1, 1), 2.5), Vector3(0, 5.0, -3.0 + k * 3.0))
+		var sb := MeshKit.box_node(Vector3(5.0, 0.05, 1.0), TexKit.emissive(Color(1, 0.97, 0.92), 2.2), Vector3(0, 4.6, -2.6 + k * 2.6))
 		sb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(sb)
-	var side_panel := MeshKit.box_node(Vector3(0.05, 2.5, 8.0), TexKit.emissive(Color(0.65, 0.35, 1.0), 1.5), Vector3(-7.0, 1.8, 0))
-	add_child(side_panel)
-	var side_panel2 := MeshKit.box_node(Vector3(0.05, 2.5, 8.0), TexKit.emissive(Color(0.3, 0.8, 1.0), 0.9), Vector3(7.0, 1.8, 0))
-	add_child(side_panel2)
+	if garage == null:
+		var side_panel := MeshKit.box_node(Vector3(0.05, 2.5, 8.0), TexKit.emissive(Color(0.65, 0.35, 1.0), 1.5), Vector3(-7.0, 1.8, 0))
+		add_child(side_panel)
+		var side_panel2 := MeshKit.box_node(Vector3(0.05, 2.5, 8.0), TexKit.emissive(Color(0.3, 0.8, 1.0), 0.9), Vector3(7.0, 1.8, 0))
+		add_child(side_panel2)
+	else:
+		_hall_lights()
 
 	var key := SpotLight3D.new()
-	key.position = Vector3(3, 6, 4)
+	key.position = Vector3(3, 4.4, 4)
 	key.look_at_from_position(key.position, Vector3(0, 0.5, 0), Vector3.UP)
 	key.spot_range = 20.0
 	key.spot_angle = 40.0
-	key.light_energy = 10.0
+	key.light_energy = 9.0
 	key.shadow_enabled = true
 	key.shadow_bias = 0.08
 	key.shadow_normal_bias = 1.5
@@ -80,28 +92,66 @@ func _ready() -> void:
 	fill.look_at_from_position(fill.position, Vector3(0, 0.5, 0), Vector3.UP)
 	fill.spot_range = 20.0
 	fill.spot_angle = 45.0
-	fill.light_energy = 4.0
+	fill.light_energy = 3.5
 	fill.light_color = Color(0.7, 0.55, 1.0)
 	add_child(fill)
 	var rim := OmniLight3D.new()
 	rim.position = Vector3(0, 1.5, -5)
 	rim.omni_range = 9.0
-	rim.light_energy = 2.0
+	rim.light_energy = 1.6
 	rim.light_color = Color(0.4, 0.8, 1.0)
 	add_child(rim)
 
 	var probe := ReflectionProbe.new()
-	probe.size = Vector3(20, 10, 20)
-	probe.position = Vector3(0, 2.0, 0)
+	probe.size = Vector3(26, 7.5, 20) if garage else Vector3(20, 10, 20)
+	probe.position = Vector3(0, 3.0, 0)
 	probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	probe.box_projection = true
+	probe.interior = garage != null
 	add_child(probe)
 
 	cam = Camera3D.new()
-	cam.fov = 45.0
+	cam.fov = 48.0
 	cam.current = true
 	add_child(cam)
 	rebuild_car()
+
+
+## The garage hall (converted from the 3ds Max scene, see tools/convert_garage.py), moved so that the
+## middle of the hall – where the turntable stands – is the origin.
+func _load_garage() -> Node3D:
+	if not ResourceLoader.exists(GARAGE_SCENE):
+		return null
+	var scene := load(GARAGE_SCENE) as PackedScene
+	if scene == null:
+		return null
+	var g := scene.instantiate() as Node3D
+	var stage := Vector3.ZERO
+	var f := FileAccess.open(GARAGE_INFO, FileAccess.READ)
+	if f:
+		var info = JSON.parse_string(f.get_as_text())
+		if info is Dictionary and info.has("stage"):
+			var st: Array = info["stage"]
+			stage = Vector3(float(st[0]), float(st[1]), float(st[2]))
+	g.position = -stage
+	add_child(g)
+	for mi in g.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return g
+
+
+## Warm work lights under the roof trusses so the whole hall is visible behind the car.
+func _hall_lights() -> void:
+	# kept away from the walls and the office box so they don't burn hot spots into the textures
+	for p in [Vector3(-5, 5.2, -4), Vector3(5, 5.2, -4), Vector3(-5, 5.2, 5.5), Vector3(5, 5.2, 5.5),
+			Vector3(-10.5, 5.2, 3.0), Vector3(9.5, 5.2, 0.5), Vector3(0, 5.2, -7.5)]:
+		var l := OmniLight3D.new()
+		l.position = p
+		l.omni_range = 8.5
+		l.omni_attenuation = 1.6
+		l.light_energy = 0.9
+		l.light_color = Color(1.0, 0.82, 0.62)
+		add_child(l)
 
 
 func rebuild_car() -> void:
@@ -125,5 +175,5 @@ func _process(delta: float) -> void:
 	_t += delta
 	turntable.rotation.y = _t * 0.25
 	var a := 0.6 + sin(_t * 0.12) * 0.25
-	cam.position = Vector3(sin(a) * 7.2 - 1.6, 1.6 + sin(_t * 0.2) * 0.2, cos(a) * 7.2)
-	cam.look_at(Vector3(-1.2, 0.6, 0), Vector3.UP)
+	cam.position = Vector3(sin(a) * 8.0 - 1.7, 1.75 + sin(_t * 0.2) * 0.2, cos(a) * 8.0)
+	cam.look_at(Vector3(-1.3, 0.75, 0), Vector3.UP)

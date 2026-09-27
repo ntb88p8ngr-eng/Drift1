@@ -58,6 +58,13 @@ func _ready() -> void:
 		world.local_car.transmission = "auto" if i == 0 else "manual"
 		Game.set_setting("transmission", world.local_car.transmission))
 	_options_box.add_child(UiKit.labeled("Getriebe", trans))
+	var car_id: String = world.local_car.car_id
+	var burble := UiKit.option(Game.BURBLE_LEVELS, Game.get_burble(car_id), func(i):
+		Game.set_burble(car_id, i)
+		if world.online:
+			Net.update_local_info())
+	burble.tooltip_text = "Fehlzündungen im Schiebebetrieb: Blubbern, Knallen und Flammen."
+	_options_box.add_child(UiKit.labeled("Burble-Tune", burble))
 	_options_box.add_child(UiKit.button("Zurück", func(): _show(_main_box)))
 	_options_box.visible = false
 	stack.add_child(_options_box)

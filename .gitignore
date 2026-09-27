@@ -4,3 +4,5 @@ build/
 export_credentials.cfg
 *.tmp
 __pycache__/
+# textures Godot extracts from the garage GLB on import
+assets/env/garage_*.jpg

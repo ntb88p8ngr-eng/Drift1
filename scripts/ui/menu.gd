@@ -720,6 +720,19 @@ func _update_tuning(car_id: String) -> void:
 		elif cid == "steering":
 			var lock := float(Game.get_car(car_id)["steer_lock"]) + float(Game.STEER_KIT[lvl])
 			_tuning_box.add_child(UiKit.label("Lenkeinschlag: %d°" % int(lock), 14, UiKit.ACCENT.lightened(0.45)))
+	# Burble-Tune: software map, free to switch
+	var bl := Game.get_burble(car_id)
+	var b_name := UiKit.label("Burble-Tune", 19)
+	b_name.custom_minimum_size = Vector2(110, 0)
+	var b_desc := UiKit.label(str(Game.BURBLE_DESC[bl]), 14, UiKit.TEXT_DIM)
+	var b_opt := UiKit.option(Game.BURBLE_LEVELS, bl, func(i):
+		Game.set_burble(car_id, i)
+		b_desc.text = str(Game.BURBLE_DESC[i])
+		Net.update_local_info(), 200)
+	b_opt.tooltip_text = "Fehlzündungen im Schiebebetrieb (Blubbern, Knallen, Flammen) – kostenlos umstellbar."
+	var b_def := UiKit.label("Werkseinstellung: %s" % Game.BURBLE_LEVELS[int(Game.get_car(car_id).get("burble", 1))], 14, UiKit.TEXT_DIM)
+	_tuning_box.add_child(UiKit.row([b_name, b_opt, b_def], 10))
+	_tuning_box.add_child(b_desc)
 
 
 func _build_controls() -> void:

@@ -11,6 +11,7 @@ var _flames: Array = []
 var _nitro_flames: Array = []
 var _flash: OmniLight3D
 var _flash_t := 0.0
+var _flash_k := 1.0
 var _key_base := 0
 
 
@@ -159,12 +160,15 @@ func _make_flame(nitro: bool, pipe_r: float) -> GPUParticles3D:
 	return p
 
 
-func _on_backfire() -> void:
+func _on_backfire(strength := 1.0) -> void:
 	for f in _flames:
 		var fl: GPUParticles3D = f
+		# small overrun pops only puff a short tongue of flame
+		fl.amount_ratio = 1.0 if strength >= 0.9 else 0.4
 		fl.restart()
 		fl.emitting = true
 	_flash_t = 0.12
+	_flash_k = strength
 
 
 func _process(delta: float) -> void:
@@ -216,7 +220,7 @@ func _process(delta: float) -> void:
 		_flash_t -= delta
 		_flash.visible = true
 		_flash.light_color = Color(1.0, 0.5, 0.15)
-		_flash.light_energy = 3.0 * (_flash_t / 0.12)
+		_flash.light_energy = 3.0 * _flash_k * (_flash_t / 0.12)
 	elif nitro_on:
 		_flash.visible = true
 		_flash.light_color = Color(0.35, 0.5, 1.0)

@@ -155,6 +155,7 @@ func _on_disconnected(reason: String) -> void:
 # Smoke test used by CI: builds every screen, both tracks, drives a few seconds, tests hosting.
 # ---------------------------------------------------------------------------
 func _smoke_test() -> void:
+	Game.persist = false
 	var shot_dir := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot-dir="):

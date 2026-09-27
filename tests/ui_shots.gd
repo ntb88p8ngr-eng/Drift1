@@ -6,6 +6,7 @@ const Main = preload("res://scripts/main.gd")
 
 
 func _ready() -> void:
+	Game.persist = false
 	var out := "/tmp/shots"
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):

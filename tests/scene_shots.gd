@@ -6,6 +6,7 @@ const World = preload("res://scripts/world/world.gd")
 
 
 func _ready() -> void:
+	Game.persist = false
 	var args := {"track": "ridge", "tod": "dusk", "weather": "dry", "out": "/tmp/shots", "car": "r34", "cycle": "0", "views": "all"}
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--") and a.contains("="):

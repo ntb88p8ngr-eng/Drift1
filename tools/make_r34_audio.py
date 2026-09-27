@@ -1,17 +1,18 @@
-"""Cuts the two R34 recordings into the sample sets used by scripts/car/car_audio.gd.
+"""Cuts the R34 recordings into the sample sets used by scripts/car/car_audio.gd.
 
-Usage:  python3 tools/make_r34_audio.py <engine.mp3> <turbo.mp3>
+Usage:  python3 tools/make_r34_audio.py <dyno.mp3> <engine.mp3> <turbo.mp3>
 Needs:  numpy, scipy, soundfile (pip install numpy scipy soundfile)
 
-engine.mp3 – "Top Speed Autosport HKS Hi-Power Exhaust Nissan GTR R34" (revs in place + idle)
-turbo.mp3  – "Nissan Skyline GTR R34 Turbo Sound" (turbo whistle, blow-off with compressor flutter)
+dyno.mp3   – "R34 SKYLINE DYNO TEST (COMPILATION)": long full-load pull (on-load sound)
+engine.mp3 – "Top Speed Autosport HKS Hi-Power Exhaust Nissan GTR R34": rev-down (off-load) and idle
+turbo.mp3  – "Nissan Skyline GTR R34 Turbo Sound": turbo whistle, blow-off with compressor flutter
 
-Engine: the rev-ups (on-load) and the long rev-down (off-load) are tracked (strongest engine-order line,
-4.5th order: rpm = f * 60 / 4.5) and time-warped so that this line has a constant pitch (F_REF). The game
-then picks the position whose recorded rpm matches the current rpm and plays short, phase-aligned
-grains at rate = f_target / F_REF, so timbre and pitch both follow the rpm. The idle is a seamless loop.
-Turbo: the whistle rise is warped the same way (driven by boost); the lift-off events (blow-off
-"pssst" + flutter + falling whistle) are high-passed one-shots.
+Engine: the dyno pull (on-load; strongest line = firing frequency, 3rd order, rpm = f * 20) and the
+HKS rev-down (off-load; strongest line = 4.5th order) are tracked and time-warped so that the tracked
+line has a constant pitch (F_REF_*). The game picks the position whose recorded rpm matches the current
+rpm and plays short, phase-aligned grains at rate = f_target / F_REF, so timbre and pitch follow the rpm.
+The idle is a seamless loop. Turbo: the whistle rise is warped the same way (driven by boost); the
+lift-off events (blow-off "pssst" + flutter + falling whistle) are high-passed one-shots.
 
 Output: assets/audio/r34_*.bin (float32 LE, mono, 22050 Hz) and scripts/car/r34_sound_data.gd.
 """
@@ -21,15 +22,15 @@ import soundfile as sf
 from scipy import signal
 
 OUT_RATE = 22050
-ORDER = 4.5          # engine order of the tracked line
-F_REF = 75.0         # engine buffers are normalized to this line frequency (Hz)
+ON_ORDER = 3.0       # dyno: tracked line = firing frequency
+OFF_ORDER = 4.5      # HKS rev-down: tracked line = 4.5th order
+F_REF_ON = 65.0      # on-load buffer normalized to this line frequency (Hz)
+F_REF_OFF = 75.0     # off-load buffer normalization (Hz)
 F_REF_TURBO = 2800.0 # turbo whistle buffer normalization (Hz)
 
-# (start s, end s, initial line frequency Hz) – see the spectrograms in the commit description
-ENGINE_REV_LOW = (3.60, 4.46, 82.0)     # rev-up used below the join frequency
-ENGINE_REV_HIGH = (7.66, 8.28, 162.0)   # cleanest rev-up, used above the join
-ENGINE_JOIN_HZ = 162.0
-ENGINE_DECAY = (8.36, 10.75, 345.0)     # lift-off rev-down (off-load)
+# (start s, end s, initial line frequency Hz)
+DYNO_PULL = (6.95, 23.5, 71.0)          # full-load pull, ~1400 -> ~6000 rpm
+ENGINE_DECAY = (8.36, 10.75, 345.0)     # HKS lift-off rev-down (off-load)
 ENGINE_IDLE = (11.2, 17.9)
 TURBO_RISE = (9.18, 9.95, 3050.0)       # whistle spool-up
 TURBO_LIFTS = [(8.10, 1.25), (9.95, 2.0), (14.20, 1.0), (15.70, 1.6)]   # (peak time, length)
@@ -149,42 +150,38 @@ def write_bin(path, x):
 
 
 def main():
-    eng_path, turbo_path = sys.argv[-2], sys.argv[-1]
+    dyno_path, eng_path, turbo_path = sys.argv[-3], sys.argv[-2], sys.argv[-1]
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out_dir = os.path.join(root, "assets", "audio")
     os.makedirs(out_dir, exist_ok=True)
 
     # ---------------- engine ----------------
+    dm, dfs = load(dyno_path)
+    dml = lowpass(dm, dfs, 10500)
+    t_on, f_on = track(dm, dfs, *DYNO_PULL, lo=0.95, hi=1.05, harm=(1, 2, 3), smooth=81)
+    f_on = np.maximum.accumulate(f_on)
+    on, on_f = warp(dml, dfs, t_on, f_on, F_REF_ON)
+    on = fade(on, 400, 400)
+
     m, fs = load(eng_path)
     ml = lowpass(m, fs, 10500)
-    t_lo, f_lo = track(m, fs, *ENGINE_REV_LOW)
-    t_hi, f_hi = track(m, fs, *ENGINE_REV_HIGH)
     t_dn, f_dn = track(m, fs, *ENGINE_DECAY, lo=0.9, hi=1.06)
-    # low rev-up: up to the join frequency; high rev-up: from the join to its peak
-    k = np.searchsorted(f_lo, ENGINE_JOIN_HZ)
-    t_lo, f_lo = t_lo[:k], f_lo[:k]
-    peak = int(np.argmax(f_hi))
-    k2 = np.searchsorted(f_hi[:peak], ENGINE_JOIN_HZ)
-    t_hi, f_hi = t_hi[k2:peak], f_hi[k2:peak]
-    y_lo, fl_lo = warp(ml, fs, t_lo, np.maximum.accumulate(f_lo), F_REF)
-    y_hi, fl_hi = warp(ml, fs, t_hi, np.maximum.accumulate(f_hi), F_REF)
-    xf = int(2 * OUT_RATE / F_REF)
-    on = crossfade_join(y_lo, y_hi, xf)
-    on_f = np.concatenate([fl_lo[:-xf], fl_hi[:len(on) - len(fl_lo) + xf]])
     f_dn = np.minimum.accumulate(f_dn)
-    off, off_f = warp(ml, fs, t_dn, f_dn, F_REF)
+    off, off_f = warp(ml, fs, t_dn, f_dn, F_REF_OFF)
     idle = resample(ml[int(ENGINE_IDLE[0] * fs):int(ENGINE_IDLE[1] * fs)], fs)
     idle = make_loop(idle, int(0.35 * OUT_RATE))
-    # idle rpm: the firing frequency (3rd order) is the strongest idle peak between 45 and 65 Hz;
-    # convert it to the tracked 4.5th-order line
+    # idle rpm: the firing frequency (3rd order) is the strongest idle peak between 45 and 65 Hz
     fq, P = signal.welch(ml[int(ENGINE_IDLE[0] * fs):int(ENGINE_IDLE[1] * fs)], fs, nperseg=32768)
     sel = (fq > 45) & (fq < 65)
-    idle_line = float(fq[sel][np.argmax(P[sel])]) * ORDER / 3.0
-    gain = 0.92 / max(np.abs(on).max(), np.abs(off).max(), np.abs(idle).max())
-    on, off, idle = on * gain, off * gain, idle * gain
-    rpm = 60.0 / ORDER
-    print("engine: on %.0f-%.0f rpm, off %.0f-%.0f rpm, idle line %.1f Hz (%.0f rpm)" % (
-        on_f.min() * rpm, on_f.max() * rpm, off_f.min() * rpm, off_f.max() * rpm, idle_line, idle_line * rpm))
+    idle_rpm = float(fq[sel][np.argmax(P[sel])]) * 20.0
+    # levels: full load loudest, lift-off a bit quieter, idle quiet
+    rms = lambda a: float(np.sqrt(np.mean(a ** 2)))
+    on *= 0.9 / np.abs(on).max()
+    off *= (0.62 * rms(on)) / rms(off)
+    idle *= (0.4 * rms(on)) / rms(idle)
+    print("engine: on %.0f-%.0f rpm, off %.0f-%.0f rpm, idle %.0f rpm" % (
+        on_f.min() * 60 / ON_ORDER, on_f.max() * 60 / ON_ORDER, off_f.min() * 60 / OFF_ORDER,
+        off_f.max() * 60 / OFF_ORDER, idle_rpm))
 
     # ---------------- turbo ----------------
     tm, tfs = load(turbo_path)
@@ -215,11 +212,13 @@ def main():
         "## *_F tables: tracked line frequency (Hz) every %d samples of the matching buffer." % step,
         "",
         "const RATE := %d" % OUT_RATE,
-        "const ORDER := %.2f" % ORDER,
-        "const F_REF := %.2f" % F_REF,
+        "const ON_ORDER := %.2f" % ON_ORDER,
+        "const OFF_ORDER := %.2f" % OFF_ORDER,
+        "const F_REF_ON := %.2f" % F_REF_ON,
+        "const F_REF_OFF := %.2f" % F_REF_OFF,
         "const F_REF_TURBO := %.2f" % F_REF_TURBO,
         "const TABLE_STEP := %d" % step,
-        "const IDLE_LINE := %.2f" % idle_line,
+        "const IDLE_RPM := %.1f" % idle_rpm,
         "const LIFT_COUNT := %d" % len(lifts),
         "const ON_F := %s" % table(on_f, step),
         "const OFF_F := %s" % table(off_f, step),
