@@ -32,6 +32,7 @@ var _window_mats: Array = []     # [material, lit]
 var _glow_mats: Array = []       # [material, day energy, night energy]
 var _night_lights: Array = []    # lights that only exist at night: [light, energy]
 var _stats := {}
+var _ranged: Array = []          # [GeometryInstance3D, range begin, range end] – capped by the view distance
 
 
 func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -> void:
@@ -59,6 +60,8 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	if id == "harbor":
 		_build_skyline()
 	set_night(night)
+	apply_view_distance()
+	Game.settings_changed.connect(apply_view_distance)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +168,19 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		if shadow_only:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		add_child(mmi)
+		_ranged.append([mmi, range_begin, range_end])
 		_stats[label] = int(_stats.get(label, 0)) + items.size()
+
+
+## Caps every tree, bush, rock and prop chunk at the "view_distance" setting (metres); updates live.
+func apply_view_distance() -> void:
+	var vd := float(Game.settings.get("view_distance", FAR_END))
+	for r in _ranged:
+		var gi: GeometryInstance3D = r[0]
+		if not is_instance_valid(gi):
+			continue
+		gi.visible = float(r[1]) < vd
+		gi.visibility_range_end = minf(float(r[2]), vd)
 
 
 static func _chunk_key(p: Vector3, size := CHUNK) -> Vector2i:

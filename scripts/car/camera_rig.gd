@@ -16,6 +16,8 @@ var _look_yaw := 0.0
 var _look_pitch := 0.0
 var _dir := Vector3.FORWARD
 var _pos := Vector3.ZERO
+var _anchor := Vector3.ZERO     # smoothed car position the chase camera hangs on
+var _vel_s := Vector3.ZERO      # low-passed car velocity (feed-forward for the anchor)
 var _initialized := false
 var _base_fov := 75.0
 var _space_query: PhysicsRayQueryParameters3D
@@ -93,6 +95,20 @@ func _process(delta: float) -> void:
 	var vel: Vector3 = car.linear_velocity
 	var vflat := Vector3(vel.x, 0, vel.z)
 	var spd := vflat.length()
+	# "Kamera-Glättung" 0 … 1: how strongly bumps, suspension pitch/heave and surges are filtered
+	var smooth := clampf(float(Game.settings.get("camera_smoothing", 0.6)), 0.0, 1.0)
+	if not _initialized:
+		_anchor = car_pos
+		_vel_s = vel
+	# the anchor moves with the (low-passed) car velocity, so it doesn't lag at constant speed, and is
+	# pulled onto the car by a soft spring – horizontally firmer, vertically softer (suspension bounce)
+	_vel_s = _vel_s.lerp(vel, 1.0 - exp(-delta * lerpf(14.0, 5.0, smooth)))
+	_anchor += _vel_s * delta
+	var kh := 1.0 - exp(-delta * lerpf(18.0, 6.0, smooth))
+	var kv := 1.0 - exp(-delta * lerpf(12.0, 2.5, smooth))
+	_anchor = Vector3(lerpf(_anchor.x, car_pos.x, kh), lerpf(_anchor.y, car_pos.y, kv), lerpf(_anchor.z, car_pos.z, kh))
+	if _anchor.distance_to(car_pos) > 6.0:
+		_anchor = car_pos   # reset / teleport
 
 	# gamepad right stick look
 	var stick := Vector2(Input.get_action_strength("look_right") - Input.get_action_strength("look_left"),
@@ -112,8 +128,8 @@ func _process(delta: float) -> void:
 	var smooth_pos := true
 	if free_look:
 		var off := Vector3(sin(_free_yaw) * cos(_free_pitch), sin(_free_pitch), cos(_free_yaw) * cos(_free_pitch)) * _free_dist
-		target_pos = car_pos + Vector3(0, 0.9, 0) + off
-		look_target = car_pos + Vector3(0, 0.8, 0)
+		target_pos = _anchor + Vector3(0, 0.9, 0) + off
+		look_target = _anchor + Vector3(0, 0.8, 0)
 	elif mode <= 1:
 		# chase: blend heading with velocity direction so drifts show their angle
 		var d := heading
@@ -122,7 +138,7 @@ func _process(delta: float) -> void:
 			d = heading.lerp(vflat / spd, blend).normalized()
 		elif car.forward_speed < -2.0:
 			d = heading
-		_dir = _dir.lerp(d, 1.0 - exp(-delta * 4.5)).normalized() if _initialized else d
+		_dir = _dir.lerp(d, 1.0 - exp(-delta * lerpf(6.0, 3.2, smooth))).normalized() if _initialized else d
 		var dir := _dir.rotated(Vector3.UP, _look_yaw)
 		if Input.is_action_pressed("look_back"):
 			dir = -dir
@@ -162,7 +178,8 @@ func _process(delta: float) -> void:
 		_pos = target_pos
 		_initialized = true
 	else:
-		_pos = _pos.lerp(target_pos, 1.0 - exp(-delta * (14.0 if free_look else 9.0)))
+		# the anchor is already smooth: this only eases wall avoidance and view changes
+		_pos = _pos.lerp(target_pos, 1.0 - exp(-delta * (14.0 if free_look else 16.0)))
 
 	global_position = _pos
 	if global_position.distance_to(look_target) > 0.01:

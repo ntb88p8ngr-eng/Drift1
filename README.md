@@ -22,7 +22,7 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | Bereich | Umsetzung |
 |---|---|
 | Grafik | Forward+-Renderer, dynamische Schatten (Sonne/Mond mit bis zu 4 Kaskaden, Scheinwerfer werfen Schatten), SSAO, SSR, Glow, ACES-Tonemapping, Nebel, **Lens Flares** von Sonne (Strahlen, Halo, Geisterbilder) und Mond, die hinter Bäumen und Hügeln verschwinden |
-| Grafikoptionen | Anzeigemodus (Fenster, randloses/exklusives Vollbild), Auflösung, **Kantenglättung** (FXAA, TAA, MSAA 2x/4x/8x und Kombinationen), Upscaling (Bilinear, AMD FSR 1.0/2.2) mit Schärfe, VSync, FPS-Limit, **Gamma**, Grafikqualität, Schatten, Gras-Stufe, Lens Flares – im Hauptmenü und im Pausenmenü |
+| Grafikoptionen | Anzeigemodus (Fenster, randloses/exklusives Vollbild), Auflösung, **Kantenglättung** (FXAA, TAA, MSAA 2x/4x/8x und Kombinationen), Upscaling (Bilinear, AMD FSR 1.0/2.2) mit Schärfe, VSync, FPS-Limit, **Gamma**, Grafikqualität, Schatten, Gras-Stufe, **Sichtweite für Bäume und Pflanzen in Metern** (wirkt sofort), Lens Flares – im Hauptmenü und im Pausenmenü |
 | Tageszeit | Start zur gewählten Tageszeit (Morgennebel, Mittag, Sonnenuntergang, Nacht). Optional läuft die Zeit weiter (**Tagesverlauf** 8–60 Minuten pro Tag): Die Sonne wandert, der Himmel färbt sich über Sonnenuntergang und Dämmerung zur Nacht, der Mond übernimmt, Laternen, Fenster und das Autolicht gehen automatisch an |
 | Wetter | **Trocken, Regen oder wechselhaft** (Schauer kommen und gehen). Wolken ziehen vor dem Regen auf, Regentropfen mit Spritzern und eigenem Regengeräusch. Die Straße wird nass (dunkler, spiegelnd) und **rutschiger**, **Pfützen** auf der Fahrbahn sind extra rutschig, die Reifen wirbeln Gischt auf. Online sehen alle Spieler dasselbe Wetter |
 | Skybox | eigener Sky-Shader mit ziehenden Wolken in zwei Schichten, Sonne, Mond und Sternen |
@@ -38,7 +38,7 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | Nitro | **Shift** gibt Nitro. Die blauen Flammen kommen genau aus den Endrohren. In der Serie ist der Boost klein, mit Tuning wird er stärker und hält länger |
 | Launch Control | **W + S im Stand**: Die Drehzahl pendelt am Zwei-Stufen-Begrenzer (mit Fehlzündungen), die Vorderbremse hält und die Hinterräder drehen durch (Burnout). S loslassen = Start mit Radschlupf |
 | Licht | Scheinwerfer mit dynamischen Spotlights (L), Bremslicht, Rückfahrlicht, Unterbodenbeleuchtung. Bei Dämmerung und Nacht schaltet sich das Licht automatisch ein |
-| Physik | eigenes Raycast-Fahrwerk: Federung, Dämpfer, Stabis, Reifenmodell mit Schräglaufwinkel und Reibungskreis. Radschlupf und Handbremse lassen das Heck ausbrechen. Einstellbar: Konter-Lenkhilfe, **Stärke der Handbremse** und **seitliches Rutschen** (weichere Übergänge). Die Darstellung wird zwischen den Physikschritten interpoliert – kein Ruckeln oder Wackeln bei hohem Tempo |
+| Physik | eigenes Raycast-Fahrwerk: Federung, Dämpfer, Stabis, Reifenmodell mit Schräglaufwinkel und Reibungskreis. Radschlupf und Handbremse lassen das Heck ausbrechen. Einstellbar: Konter-Lenkhilfe, **Stärke der Handbremse** und **seitliches Rutschen** (weichere Übergänge). Die Darstellung wird zwischen den letzten beiden Physikschritten interpoliert – kein Ruckeln bei hohem Tempo, auch bei 75/144 Hz oder schwankender Bildrate. Die Verfolgerkamera filtert Federbewegungen und Ruckler beim Gasgeben und Bremsen (**Kamera-Glättung** einstellbar) |
 | Getriebe | alle Autos starten mit **Automatik** (schaltet auch bei durchdrehenden Rädern ohne Pendeln). **Manuell** lässt sich jederzeit in der Garage oder beim Fahren mit **M** umschalten |
 | Sound | **R34 mit echten Aufnahmen**: Vollgas aus einem Prüfstandslauf, Schiebebetrieb vom HKS-Auspuff, echtes Turbopfeifen (leise) und Blow-off „pssst“ mit Flattern beim Gaswegnehmen. Mustang (V8-Blubbern) und M3 GT3 (Renn-V8, Getriebesingen, Zündunterbrechung beim Hochschalten) klingen jeweils eigen. Fehlzündungen sind tiefe, dumpfe Knaller statt Zischen. Dazu Reifenquietschen, Wind, Regen, Aufprall |
 | Effekte | Reifenrauch, Staub auf Gras bzw. Beton, Gischt bei Nässe, Bremsspuren, Flammen aus dem Auspuff |
@@ -98,7 +98,7 @@ assets/audio/      R34-Motor- und Turbo-Samples (aus tools/make_r34_audio.py)
 assets/env/        garage.glb (Hauptmenü-Halle, aus tools/convert_garage.py) + garage.json (Mitte der Halle)
 tools/             convert_cars.py (Blend → GLB), preview_car.py, make_r34_audio.py (Aufnahmen → Samples),
                    convert_garage.py (3ds-Max-Szene → GLB)
-tests/             Skript-, Audio-, Fahr- und Screenshot-Tests (scene_shots, ui_shots)
+tests/             Skript-, Audio-, Fahr-, Kamera- und Screenshot-Tests (scene_shots, ui_shots, garage_shots)
 ```
 
 ## Credits

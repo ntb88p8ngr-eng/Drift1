@@ -99,7 +99,8 @@ var total_slip := 0.0
 var flip_timer := 0.0
 var nitro := 1.0            # 0..1 tank
 var nitro_active := false
-var _xf_prev := Transform3D.IDENTITY
+var _xf_prev := Transform3D.IDENTITY   # the last two physics states, interpolated for drawing
+var _xf_curr := Transform3D.IDENTITY
 var _auto_hold := 0.0      # automatic gearbox: pause after a shift
 var launch_active := false  # launch control / clutch dump phase
 var line_lock := false      # W+S at standstill: front brakes hold, rear wheels spin (burnout)
@@ -163,6 +164,7 @@ func _ready() -> void:
 	if not is_display:
 		body.top_level = true
 		_xf_prev = global_transform
+		_xf_curr = global_transform
 
 	_setup_physics()
 	_setup_wheels()
@@ -323,8 +325,11 @@ func _setup_wheels() -> void:
 func _physics_process(delta: float) -> void:
 	if is_display:
 		return
-	# state before this physics step, used to interpolate the visuals between steps
-	_xf_prev = global_transform
+	# Godot 4.3 writes a rigid body's new transform back only at the start of the next physics tick, so
+	# global_transform here is the result of the previous step: keep the last two states and draw
+	# between them (one tick of latency, but smooth at any frame rate, e.g. 75/144 Hz)
+	_xf_prev = _xf_curr
+	_xf_curr = global_transform
 	if is_remote:
 		_remote_step(delta)
 		return
@@ -775,7 +780,7 @@ func _check_flip(delta: float) -> void:
 func visual_transform() -> Transform3D:
 	if is_display:
 		return global_transform
-	return _xf_prev.interpolate_with(global_transform, clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0))
+	return _xf_prev.interpolate_with(_xf_curr, clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0))
 
 
 func reset_to_track() -> void:
@@ -789,6 +794,7 @@ func reset_to_track() -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	_xf_prev = global_transform
+	_xf_curr = global_transform
 	gear = 1
 	boost = 0.0
 	for w in wheels:
@@ -798,6 +804,7 @@ func reset_to_track() -> void:
 func place(xf: Transform3D) -> void:
 	global_transform = xf
 	_xf_prev = xf
+	_xf_curr = xf
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	_net_pos = xf.origin

@@ -130,6 +130,7 @@ var settings := {
 	"gamma": 1.0,
 	"shadow_quality": 2,
 	"grass_quality": 2,
+	"view_distance": 2600,
 	"lens_flares": true,
 	"quality": 2,
 	"weather": "dry",
@@ -140,6 +141,7 @@ var settings := {
 	"handbrake_strength": 0.75,
 	"slide": 0.5,
 	"camera_mode": 0,
+	"camera_smoothing": 0.6,
 	"units_kmh": true,
 	"last_ip": "127.0.0.1",
 	"port": 24570,
@@ -259,7 +261,7 @@ func load_settings() -> void:
 	settings["max_players"] = int(settings["max_players"])
 	settings["camera_mode"] = int(settings["camera_mode"])
 	settings["credits"] = int(settings["credits"])
-	for key in ["window_mode", "aa", "upscaler", "vsync", "max_fps", "shadow_quality", "grass_quality", "day_cycle"]:
+	for key in ["window_mode", "aa", "upscaler", "vsync", "max_fps", "shadow_quality", "grass_quality", "day_cycle", "view_distance"]:
 		settings[key] = int(settings[key])
 	settings["resolution"] = str(settings["resolution"])
 	if not (settings["tuning"] is Dictionary):

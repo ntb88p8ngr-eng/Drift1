@@ -89,6 +89,13 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		Game.set_setting("grass_quality", i))
 	grass.tooltip_text = "Gras wird nur in der Nähe der Kamera gezeichnet – höhere Stufen: dichter und weiter."
 	v.add_child(UiKit.labeled("Gras", grass))
+	var vd_val := UiKit.label("%d m" % int(Game.settings["view_distance"]), 16, UiKit.TEXT_DIM)
+	var vd := UiKit.slider(100, 3000, 50, float(Game.settings["view_distance"]), func(x):
+		vd_val.text = "%d m" % int(x)
+		Game.settings["view_distance"] = int(x)
+		Game.save_settings(), 200)
+	vd.tooltip_text = "Bis zu dieser Entfernung werden Bäume, Büsche, Sträucher, Felsen und Deko gezeichnet. Weniger = mehr FPS. Wirkt sofort."
+	v.add_child(UiKit.labeled("Sichtweite Pflanzen", UiKit.row([vd, vd_val], 8)))
 	var lf := CheckBox.new()
 	lf.text = "Lens Flares (Sonne und Mond)"
 	lf.button_pressed = bool(Game.settings["lens_flares"])
@@ -113,6 +120,13 @@ static func gameplay_page() -> VBoxContainer:
 	var v := _page()
 	v.add_child(UiKit.labeled("Sichtfeld (FOV)", UiKit.slider(60, 100, 1, float(Game.settings["fov"]), func(x):
 		Game.set_setting("fov", x))))
+	var cs_val := UiKit.label("%d %%" % int(float(Game.settings["camera_smoothing"]) * 100.0), 16, UiKit.TEXT_DIM)
+	var cs := UiKit.slider(0.0, 1.0, 0.05, float(Game.settings["camera_smoothing"]), func(x):
+		cs_val.text = "%d %%" % int(x * 100.0)
+		Game.settings["camera_smoothing"] = x
+		Game.save_settings(), 200)
+	cs.tooltip_text = "Wie stark die Verfolgerkamera Bodenwellen, Federbewegungen und Ruckler beim Gasgeben und Bremsen ausfiltert."
+	v.add_child(UiKit.labeled("Kamera-Glättung", UiKit.row([cs, cs_val], 8)))
 	v.add_child(UiKit.labeled("Maus-Empfindlichkeit", UiKit.slider(0.05, 1.0, 0.05, float(Game.settings["mouse_sensitivity"]), func(x):
 		Game.set_setting("mouse_sensitivity", x))))
 	v.add_child(UiKit.labeled("Konter-Lenkhilfe", UiKit.slider(0, 1, 0.05, float(Game.settings["steer_assist"]), func(x):

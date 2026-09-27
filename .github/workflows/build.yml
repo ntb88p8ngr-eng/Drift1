@@ -55,6 +55,12 @@ jobs:
           if grep -E "SCRIPT ERROR" drive.log; then echo "::error::Drive test failed"; exit 1; fi
           grep -q "DRIVE m3gt3 y range" drive.log
 
+      - name: Camera test (no jitter at 75 fps with 120 Hz physics)
+        run: |
+          timeout 240 ./godot --headless --fixed-fps 75 --path . res://tests/camera_test.tscn 2>&1 | tee camera.log || true
+          if grep -E "SCRIPT ERROR" camera.log; then echo "::error::Camera test failed"; exit 1; fi
+          grep -q "CAMERA TEST OK" camera.log
+
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
           timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true
@@ -80,6 +86,7 @@ jobs:
             check.log
             audio.log
             drive.log
+            camera.log
             smoke.log
             render.log
             ${{ runner.temp }}/shots/
