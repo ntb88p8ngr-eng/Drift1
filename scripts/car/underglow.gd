@@ -1,72 +1,141 @@
 extends Node3D
-## Underglow: four neon strips under the car (front, rear, left, right), each with its own colour,
-## lighting the ground below. Every side can join the flasher mode or stay lit steadily.
-## Config (Game.get_underglow): {"on", "mode", "speed", "sides": {side: {"color": "#rrggbb", "flash"}}}
+## Underglow: neon tubes along the whole front, rear and both sides of the car. Each tube lights a
+## continuous strip of ground (an emissive decal the length of that side) plus the underbody (two
+## soft lights per side). Every side can join the flasher mode or stay lit steadily; holding the
+## flash key (N) strobes all tubes, flashers installed or not.
+## Config (Game.get_underglow): {"on", "mode", "speed", "sides": {side: {"on", "color": "#rrggbb", "flash"}}}
 
 const SIDES := ["front", "rear", "left", "right"]
 
 var cfg: Dictionary = {}
-var _strips: Array = []      # [StandardMaterial3D, OmniLight3D, Color, flash, side index]
+var manual := false          # flash key held (set by the car every frame)
+
+var _strips: Array = []      # {mat, decal, lights, color, flash, side}
 var _t := 0.0
+var _mt := 0.0               # time since the flash key went down
+static var _glow_tex: Texture2D
 
 
 ## dims: CarBody.physics_spec (track, axle_f, axle_r, base).
 func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 	cfg = p_cfg
+	# remove the old tubes right away (queue_free would leave them flashing until the frame ends)
 	for c in get_children():
-		c.queue_free()
+		remove_child(c)
+		c.free()
 	_strips.clear()
 	visible = bool(cfg.get("on", false))
+	set_process(visible)
 	if not visible:
-		set_process(false)
 		return
-	set_process(true)
 	var tr: float = float(dims.get("track", 0.75))
 	var af: float = float(dims.get("axle_f", -1.3))
 	var ar: float = float(dims.get("axle_r", 1.3))
 	var y: float = float(dims.get("base", 0.15)) + 0.02
-	var zf := af + signf(af) * 0.55
-	var zr := ar + signf(ar) * 0.45
-	var side_len := absf(ar - af) - 0.9
+	var zf := af + signf(af) * 0.62
+	var zr := ar + signf(ar) * 0.5
+	var zc := (zf + zr) * 0.5
+	var side_len := absf(zr - zf) - 0.35
 	var sides: Dictionary = cfg.get("sides", {})
 	for i in SIDES.size():
 		var sd: Dictionary = sides.get(SIDES[i], {})
-		var col := Color.from_string(str(sd.get("color", "#8a3dff")), Color(0.55, 0.25, 1.0))
 		if not bool(sd.get("on", true)):
 			continue
+		var col := Color.from_string(str(sd.get("color", "#8a3dff")), Color(0.55, 0.25, 1.0))
+		# tube: centre, direction along it (x = across the car, z = along it) and length
+		var along_x := i < 2
 		var pos: Vector3
-		var size: Vector3
+		var length: float
 		match i:
-			0: pos = Vector3(0, y, zf); size = Vector3(tr * 1.7, 0.03, 0.05)
-			1: pos = Vector3(0, y, zr); size = Vector3(tr * 1.6, 0.03, 0.05)
-			2: pos = Vector3(-tr + 0.05, y, (af + ar) * 0.5); size = Vector3(0.05, 0.03, side_len)
-			_: pos = Vector3(tr - 0.05, y, (af + ar) * 0.5); size = Vector3(0.05, 0.03, side_len)
+			0:
+				pos = Vector3(0, y, zf)
+				length = tr * 1.85
+			1:
+				pos = Vector3(0, y, zr)
+				length = tr * 1.75
+			2:
+				pos = Vector3(-tr - 0.02, y, zc)
+				length = side_len
+			_:
+				pos = Vector3(tr + 0.02, y, zc)
+				length = side_len
 		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.albedo_color = col
 		mat.emission_enabled = true
 		mat.emission = col
 		mat.emission_energy_multiplier = 6.0
-		var strip := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = size
-		bm.material = mat
-		strip.mesh = bm
-		strip.position = pos
-		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(strip)
-		var l: OmniLight3D = null
+		var tube := MeshInstance3D.new()
+		var cm := CapsuleMesh.new()
+		cm.radius = 0.018
+		cm.height = length
+		cm.radial_segments = 8
+		cm.rings = 1
+		cm.material = mat
+		tube.mesh = cm
+		tube.position = pos
+		# capsules stand along y: lay them along the side
+		tube.rotation = Vector3(PI * 0.5, 0, 0) if not along_x else Vector3(0, 0, PI * 0.5)
+		tube.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(tube)
+		# the neon wash on the ground: one decal the length of the tube, spilling outwards
+		var decal := Decal.new()
+		decal.texture_emission = _glow_texture()
+		decal.texture_albedo = _glow_texture()
+		decal.albedo_mix = 0.0
+		decal.emission_energy = 3.0
+		decal.modulate = col
+		decal.upper_fade = 0.2
+		decal.lower_fade = 0.4
+		decal.cull_mask = 1
+		var out := 0.45
+		var across := 1.9
+		if along_x:
+			decal.size = Vector3(length + 0.8, 1.0, across)
+			decal.position = Vector3(0, y - 0.45, pos.z + signf(pos.z) * out)
+		else:
+			decal.size = Vector3(across, 1.0, length + 0.8)
+			decal.position = Vector3(pos.x + signf(pos.x) * out, y - 0.45, zc)
+			decal.rotation = Vector3(0, PI * 0.5, 0)
+			decal.size = Vector3(length + 0.8, 1.0, across)
+		add_child(decal)
+		var ls: Array = []
 		if lights:
-			# the glow on the ground: a flat-ish light just under the strip
-			l = OmniLight3D.new()
-			l.light_color = col
-			l.omni_range = 2.6 if i >= 2 else 2.2
-			l.omni_attenuation = 1.6
-			l.light_energy = 3.0
-			l.shadow_enabled = false
-			l.light_specular = 0.2
-			l.position = pos + Vector3(0, -0.05, 0) + (Vector3(0, 0, 0) if i < 2 else Vector3(signf(pos.x) * 0.15, 0, 0))
-			add_child(l)
-		_strips.append([mat, l, col, bool(sd.get("flash", false)), i])
+			# two soft lights per side (one at the ends) tint the underbody and the wheels
+			var n := 1 if along_x else 2
+			for k in n:
+				var l := OmniLight3D.new()
+				l.light_color = col
+				l.omni_range = 1.9
+				l.omni_attenuation = 1.4
+				l.light_energy = 1.6
+				l.shadow_enabled = false
+				l.light_specular = 0.15
+				var f := 0.0 if n == 1 else (float(k) / (n - 1) - 0.5) * 0.6
+				l.position = pos + (Vector3(f * length, -0.06, 0) if along_x else Vector3(signf(pos.x) * 0.15, -0.06, f * length))
+				add_child(l)
+				ls.append(l)
+		_strips.append({"mat": mat, "decal": decal, "lights": ls, "color": col, "flash": bool(sd.get("flash", false)), "side": i})
+
+
+## Soft neon stripe: bright line along the middle, falling off across it, fading out at both ends.
+static func _glow_texture() -> Texture2D:
+	if _glow_tex:
+		return _glow_tex
+	var w := 128
+	var h := 32
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var across := absf((float(y) + 0.5) / h - 0.5) * 2.0
+		var a := exp(-across * across * 5.5)
+		for x in w:
+			var t := (float(x) + 0.5) / w
+			var ends := smoothstep(0.0, 0.18, t) * smoothstep(1.0, 0.82, t)
+			var v := a * ends
+			img.set_pixel(x, y, Color(v, v, v, v))
+	img.generate_mipmaps()
+	_glow_tex = ImageTexture.create_from_image(img)
+	return _glow_tex
 
 
 ## Brightness 0..1 of a flashing side at time t (side index 0 front, 1 rear, 2 left, 3 right).
@@ -99,20 +168,29 @@ static func pattern(mode: int, t: float, side: int) -> float:
 
 func _process(delta: float) -> void:
 	_t += delta * float(cfg.get("speed", 1.0))
+	_mt = _mt + delta if manual else 0.0
 	var mode := int(cfg.get("mode", 0))
 	for s in _strips:
 		var k := 1.0
-		var col: Color = s[2]
-		if bool(s[3]) and mode > 0:
-			k = pattern(mode, _t, int(s[4]))
+		var col: Color = s["color"]
+		var side: int = s["side"]
+		if manual:
+			# flash key: fast double strobe on every tube
+			var p := fmod(_mt * 3.0, 1.0)
+			k = 1.0 if (p < 0.12 or (p > 0.25 and p < 0.37)) else 0.0
+		elif bool(s["flash"]) and mode > 0:
+			k = pattern(mode, _t, side)
 			if mode == 7:
-				col = Color.from_hsv(fposmod(_t * 0.25 + int(s[4]) * 0.25, 1.0), 0.9, 1.0)
-		var mat: StandardMaterial3D = s[0]
+				col = Color.from_hsv(fposmod(_t * 0.25 + side * 0.25, 1.0), 0.9, 1.0)
+		var mat: StandardMaterial3D = s["mat"]
 		mat.emission = col
-		mat.albedo_color = col
-		mat.emission_energy_multiplier = 0.3 + 5.7 * k
-		var l: OmniLight3D = s[1]
-		if l:
-			l.light_color = col
-			l.light_energy = 3.0 * k
-			l.visible = k > 0.02
+		mat.albedo_color = col * (0.25 + 0.75 * k)
+		mat.emission_energy_multiplier = 0.25 + 5.75 * k
+		var decal: Decal = s["decal"]
+		decal.modulate = col
+		decal.emission_energy = 3.0 * k
+		decal.visible = k > 0.02
+		for l in s["lights"]:
+			(l as OmniLight3D).light_color = col
+			(l as OmniLight3D).light_energy = 1.6 * k
+			(l as OmniLight3D).visible = k > 0.02

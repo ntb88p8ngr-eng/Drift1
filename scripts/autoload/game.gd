@@ -236,6 +236,7 @@ func _setup_input() -> void:
 	_add_action("look_back", [KEY_B], [JOY_BUTTON_X], [])
 	_add_action("reset_car", [KEY_R], [JOY_BUTTON_BACK], [])
 	_add_action("lights", [KEY_L], [JOY_BUTTON_DPAD_UP], [])
+	_add_action("neon_flash", [KEY_N], [JOY_BUTTON_DPAD_RIGHT], [])
 	_add_action("pause", [KEY_ESCAPE], [JOY_BUTTON_START], [])
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
 	_add_action("look_left", [], [], [[JOY_AXIS_RIGHT_X, -1.0]])
@@ -278,6 +279,7 @@ const CONTROLS_HELP := [
 	["B / (X)", "Nach hinten schauen"],
 	["R / Back", "Auto auf Strecke zurücksetzen"],
 	["L", "Licht an/aus"],
+	["N / Steuerkreuz →", "Neon blitzen (halten, bei eingebautem Underglow)"],
 	["Tab", "Leaderboard / Spielerliste"],
 	["Esc / Start", "Pause"],
 ]

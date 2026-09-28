@@ -81,6 +81,12 @@ jobs:
           if grep -E "SCRIPT ERROR" track.log; then echo "::error::Track test failed"; exit 1; fi
           grep -q "TRACK: PASS" track.log
 
+      - name: Underglow test (flasher off stays steady, flash key strobes)
+        run: |
+          timeout 120 ./godot --headless --path . res://tests/underglow_test.tscn 2>&1 | tee underglow.log || true
+          if grep -E "SCRIPT ERROR" underglow.log; then echo "::error::Underglow test failed"; exit 1; fi
+          grep -q "UNDERGLOW TEST OK" underglow.log
+
       - name: Playground test (props settle, grass islands)
         run: |
           timeout 240 ./godot --headless --path . res://tests/playground_test.tscn 2>&1 | tee playground.log || true

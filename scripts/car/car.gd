@@ -400,6 +400,9 @@ func _read_input(delta: float) -> void:
 				_shift(-1)
 		if Input.is_action_just_pressed("lights"):
 			headlights = not headlights
+		# hold N: strobe the underglow (works without flasher tuning)
+		if underglow:
+			underglow.manual = Input.is_action_pressed("neon_flash")
 	# smoothed steering for digital input
 	var rate := 4.5 if absf(steer_target) > absf(steer_input) and signf(steer_target) == signf(steer_input) else 7.0
 	steer_input = move_toward(steer_input, steer_target, rate * delta)
@@ -967,6 +970,8 @@ func get_net_state(progress: float, lap: int, drift_total: float, best_chain := 
 		flags |= 8
 	if line_lock:
 		flags |= 16
+	if underglow and underglow.manual:
+		flags |= 32
 	var rear_slip := 0.0
 	var front_slip := 0.0
 	if wheels.size() == 4:
@@ -1000,6 +1005,8 @@ func apply_net_state(s: Array) -> void:
 	gear = -1 if (remote_flags & 4) != 0 else 1
 	nitro_active = (remote_flags & 8) != 0
 	line_lock = (remote_flags & 16) != 0
+	if underglow:
+		underglow.manual = (remote_flags & 32) != 0
 	if wheels.size() == 4:
 		wheels[0]["slip"] = front_slip
 		wheels[1]["slip"] = front_slip
