@@ -57,7 +57,7 @@ const CARS := {
 	"m3gt3": {
 		"name": "BMW M3 GT3", "mass": 1260.0, "torque": 470.0, "tach": 10000.0,
 		"redline": 9000.0, "idle": 900.0, "gears": [3.1, 2.25, 1.75, 1.42, 1.19, 1.02], "reverse": 3.3,
-		"final": 4.1, "rear_split": 1.0, "turbo": 0.0, "grip": 1.16, "steer_lock": 43.0, "engine": "v8race",
+		"final": 4.1, "rear_split": 1.0, "turbo": 0.0, "grip": 1.16, "steer_lock": 43.0, "engine": "v8deep",
 		"spin_hold": 0.88, "yaw_damp": 1.6,
 		"burble": 2, "transmission": "auto", "desc": "Hochdrehender Renn-V8, Leichtbau und Rennfahrwerk – präzise und schnell.",
 	},

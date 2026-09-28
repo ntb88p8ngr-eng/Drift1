@@ -14,9 +14,8 @@ extends Node
 
 const MIX_RATE := 22050.0
 const R34Data = preload("res://scripts/car/r34_sound_data.gd")
-const M3Data = preload("res://scripts/car/m3_sound_data.gd")
 ## recorded engines: car id -> generated sample tables
-const SAMPLED := {"r34": R34Data, "m3gt3": M3Data}
+const SAMPLED := {"r34": R34Data}
 const SAMPLE_DIR := "res://assets/audio/"
 const ENGINE_SAMPLE_GAIN := 0.7
 const SPOOL_GAIN := 0.16
@@ -116,6 +115,17 @@ const VOICES := {
 		"tone": 0.26, "bass": 2.3, "rasp": 0.4, "click": 0.1, "drive": 1.3, "hard": 0.0,
 		"sub": [0.3, 0.34], "lp": [420.0, 0.15], "lope": 0.08,
 		"whine": 0.0, "pop_pitch": 0.82, "turbo": 0.15, "bov": 0.0, "gain": 1.0, "upshift_bang": 0.35,
+	},
+	# M3: the same cross-plane V8 burble, but very muffled and deep – low body resonances, lots of
+	# sub (crank orders 1 and 2), a low-pass that only opens a little with revs, almost no rasp
+	"v8deep": {
+		"cyl": 8, "pattern": [1.0, 0.84, 0.95, 0.87, 1.0, 0.82, 0.93, 0.88],
+		"timing": [1.03, 0.97, 1.02, 0.98, 1.03, 0.97, 1.02, 0.98],
+		"banks": [0, 1, 0, 1, 1, 0, 1, 0], "bank_gain": 0.75, "body2": 55.0,
+		"body": 72.0, "body_q": 1.9, "high": 220.0, "high_q": 1.0, "decay": 0.7, "grit": 0.12,
+		"tone": 0.22, "bass": 2.9, "rasp": 0.18, "click": 0.05, "drive": 1.15, "hard": 0.0,
+		"sub": [0.45, 0.5], "lp": [240.0, 0.07], "lope": 0.09,
+		"whine": 0.0, "pop_pitch": 0.75, "turbo": 0.0, "bov": 0.0, "gain": 1.25, "upshift_bang": 0.3,
 	},
 	"v8race": {
 		"cyl": 8, "pattern": [1.0, 0.86, 0.97, 0.9, 1.0, 0.84, 0.95, 0.9], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],

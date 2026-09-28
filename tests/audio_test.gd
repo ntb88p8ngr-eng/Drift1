@@ -15,8 +15,7 @@ func _ready() -> void:
 		"r34": ["i6", 8000.0, 1100.0, 0.45],
 		"r34synth": ["i6", 8000.0, 1100.0, 0.45],
 		"mustang": ["v8", 7400.0, 800.0, 0.0],
-		"m3gt3": ["v8race", 9000.0, 900.0, 0.0],
-		"m3gt3synth": ["v8race", 9000.0, 900.0, 0.0],
+		"m3gt3": ["v8deep", 9000.0, 900.0, 0.0],
 		"mustang_brutal": ["v8", 7400.0, 800.0, 0.0],
 	}
 	for cid in specs.keys():
@@ -31,8 +30,6 @@ func _ready() -> void:
 		au.car = fc
 		au.setup_voice(sp[0])
 		if cid == "r34" and not au.setup_samples():
-			print("AUDIO SAMPLES MISSING")
-		if cid == "m3gt3" and not au.setup_samples(CarAudio.M3Data, "m3"):
 			print("AUDIO SAMPLES MISSING")
 		fc.shifted.connect(au._on_shift)
 		fc.blow_off.connect(au._on_blow_off)
