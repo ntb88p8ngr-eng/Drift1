@@ -6,6 +6,8 @@ var _pts := PackedVector2Array()
 var _scale := 1.0
 var _offset := Vector2.ZERO
 var _center := Vector2.ZERO
+var _mapped := PackedVector2Array()
+var _mapped_size := Vector2.ZERO
 
 
 func setup(p_world) -> void:
@@ -30,10 +32,14 @@ func _draw() -> void:
 	_scale = minf((size.x - margin * 2.0) / maxf(b.size.x, 1.0), (size.y - margin * 2.0) / maxf(b.size.y, 1.0))
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.015, 0.04, 0.6))
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.45, 0.22, 0.8, 0.7), false, 1.5)
-	var mapped := PackedVector2Array()
-	for p in _pts:
-		mapped.append(_to_map(p))
-	mapped.append(mapped[0])
+	# the track outline only changes with the widget size (20 km track: thousands of points)
+	if _mapped_size != size or _mapped.is_empty():
+		_mapped_size = size
+		_mapped = PackedVector2Array()
+		for p in _pts:
+			_mapped.append(_to_map(p))
+		_mapped.append(_mapped[0])
+	var mapped := _mapped
 	draw_polyline(mapped, Color(0, 0, 0, 0.6), 7.0, true)
 	draw_polyline(mapped, Color(0.85, 0.85, 0.9, 0.9), 3.5, true)
 	if world.graffiti:

@@ -43,9 +43,11 @@ var _night_lights: Array = []    # lights that only exist at night: [light, ener
 var _stats := {}
 var _ranged: Array = []          # [GeometryInstance3D, begin, end, impostor] – follow the view distance
 var big := false                 # data track (Grüne Hölle): 35 km² of map, scenery only along the road
-## chunk size of the vegetation sets: 96 m on data tracks (a 48 m grid along 20 km of road would make
-## ~100k MultiMesh nodes; the tree LOD distance is measured per chunk, so bigger chunks stay seamless)
+## chunk size of the tree sets: 160 m on data tracks (a 48 m grid along 20 km of road makes ~100k
+## MultiMesh nodes to cull every frame; trees fade by their own distance, so big chunks don't pop).
+## Bushes and rocks have hard ranges and keep smaller chunks (usize).
 var csize := CHUNK
+var usize := CHUNK
 const BLOCK := 32.0
 const NEAR_BAND := 140.0         # data tracks: full forest this close to the road, sparse far trees beyond
 const BIG_FAR_END := 1100.0      # data tracks: 3D far trees end here, only 2D impostors beyond
@@ -65,8 +67,9 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	var id: String = track.track_id
 	big = bool(track.elevated)
 	if big:
-		csize = 96.0
-		# 96 m chunks switch as a whole: hand over to the lighter tree meshes sooner
+		csize = 160.0
+		usize = 64.0
+		# long track: hand over to the lighter tree meshes a little sooner
 		LOD0_END *= 0.6
 		LOD1_END *= 0.7
 		_build_block_distance()
@@ -258,6 +261,13 @@ static func _cached(key: String, maker: Callable) -> Mesh:
 ## impostor = 2D billboard trees that take over beyond the view distance (begin follows the setting).
 ## lod_fade: (fade-in start, end, fade-out start, end) for the dithered LOD cross-fade in the tree shaders.
 func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end: float, label: String, shadows: bool, size := CHUNK, shadow_only := false, impostor := false, lod_fade := Vector4.ZERO) -> void:
+	# ranges are measured to the chunk centre: widen them by the chunk radius so nothing near the
+	# camera drops out; the tree shaders fade each tree by its own distance within that
+	var reach := (size - CHUNK) * 0.72 if lod_fade == Vector4.ZERO else size * 0.72
+	if not impostor and reach > 0.0:
+		if lod_fade != Vector4.ZERO and range_begin > 0.0:
+			range_begin = maxf(range_begin - reach, 0.0)
+		range_end += reach
 	for key in chunks.keys():
 		var items: Array = chunks[key]
 		if items.is_empty():
@@ -745,12 +755,12 @@ func _build_undergrowth(id: String) -> void:
 			var tint := _foliage_tint(false, 0.06)
 			if kind == 2:
 				tint = Color(rng.randf_range(0.85, 1.1), rng.randf_range(0.9, 1.15), rng.randf_range(0.8, 1.0), 1.0)
-			_push(sets[kind], pos, [Transform3D(basis, pos), tint], csize)
+			_push(sets[kind], pos, [Transform3D(basis, pos), tint], usize)
 		gz += spacing
 	var far: float = [110.0, 140.0, 170.0, 200.0][quality]
-	_emit_chunks(bush, sets[0], 0.0, far, "Bushes", quality >= 3, csize)
-	_emit_chunks(shrub, sets[1], 0.0, far * 0.6, "Shrubs", false, csize)
-	_emit_chunks(fern, sets[2], 0.0, far * 0.5, "Ferns", false, csize)
+	_emit_chunks(bush, sets[0], 0.0, far, "Bushes", quality >= 3, usize)
+	_emit_chunks(shrub, sets[1], 0.0, far * 0.6, "Shrubs", false, usize)
+	_emit_chunks(fern, sets[2], 0.0, far * 0.5, "Ferns", false, usize)
 
 
 # ---------------------------------------------------------------------------
@@ -796,17 +806,17 @@ func _build_rocks(id: String) -> void:
 			if rng.randf() < 0.1:
 				s *= 2.2
 			var set: Dictionary = rocks if rng.randf() < 0.5 else rocks2
-			_push(set, pos, [_rock_xf(pos, s), _rock_tint()], csize)
+			_push(set, pos, [_rock_xf(pos, s), _rock_tint()], usize)
 			# big boulders come with a few smaller ones around them
 			if s > 1.3:
 				for k in rng.randi_range(2, 5):
 					var a := rng.randf() * TAU
 					var q := pos + Vector3(cos(a), 0, sin(a)) * s * rng.randf_range(1.1, 1.9)
 					q.y = terrain.height_at(q.x, q.z) - 0.1
-					_push(rocks2 if k % 2 == 0 else rocks, q, [_rock_xf(q, s * rng.randf_range(0.2, 0.45)), _rock_tint()], csize)
+					_push(rocks2 if k % 2 == 0 else rocks, q, [_rock_xf(q, s * rng.randf_range(0.2, 0.45)), _rock_tint()], usize)
 		gz += spacing
-	_emit_chunks(rock_mesh, rocks, 0.0, 420.0, "Rocks", true, csize)
-	_emit_chunks(rock_mesh2, rocks2, 0.0, 420.0, "Rocks", true, csize)
+	_emit_chunks(rock_mesh, rocks, 0.0, 420.0, "Rocks", true, usize)
+	_emit_chunks(rock_mesh2, rocks2, 0.0, 420.0, "Rocks", true, usize)
 	# small stones: along the verges behind the barriers and scattered over the forest floor
 	var sp2 := 3.2
 	gz = ext.position.y
@@ -833,9 +843,9 @@ func _build_rocks(id: String) -> void:
 				continue
 			pos.y = terrain.height_at(pos.x, pos.z) - 0.03
 			var s := rng.randf_range(0.07, 0.3)
-			_push(stones, pos, [_rock_xf(pos, s), _rock_tint()], csize)
+			_push(stones, pos, [_rock_xf(pos, s), _rock_tint()], usize)
 		gz += sp2
-	_emit_chunks(rock_mesh2, stones, 0.0, 110.0, "Stones", false, csize)
+	_emit_chunks(rock_mesh2, stones, 0.0, 110.0, "Stones", false, usize)
 
 
 func _rock_xf(pos: Vector3, s: float) -> Transform3D:

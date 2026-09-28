@@ -862,7 +862,8 @@ func sample_count() -> int:
 
 func minimap_points() -> PackedVector2Array:
 	var pts := PackedVector2Array()
-	for i in range(0, samples.size(), 3):
+	# ~1200 points at most: plenty for a minimap, cheap to draw on the 20 km track
+	for i in range(0, samples.size(), maxi(3, samples.size() / 1200)):
 		pts.append(Vector2(samples[i].x, samples[i].z))
 	return pts
 

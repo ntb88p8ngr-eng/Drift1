@@ -329,7 +329,8 @@ uniform float wetness = 0.0;
 varying vec3 inst_tint;
 
 void vertex() {
-	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	// per tree (MultiMesh instance) distance: every tree fades on its own, no chunk-wide pop
+	float lod_d = distance((MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz, main_cam_pos);
 	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
 	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	// per-instance colour variation (MultiMesh custom data, alpha = 1 marks it as set)
@@ -382,7 +383,8 @@ varying vec3 wpos;
 varying float is_leaf;
 
 void vertex() {
-	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	// per tree (MultiMesh instance) distance: every tree fades on its own, no chunk-wide pop
+	float lod_d = distance((MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz, main_cam_pos);
 	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
 	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	inst_tint = INSTANCE_CUSTOM.a > 0.5 ? INSTANCE_CUSTOM.rgb : vec3(1.0);
@@ -464,7 +466,8 @@ uniform vec3 tint : source_color = vec3(1.0);
 uniform float wind = 1.0;
 
 void vertex() {
-	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	// per tree (MultiMesh instance) distance: every tree fades on its own, no chunk-wide pop
+	float lod_d = distance((MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz, main_cam_pos);
 	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
 	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -1028,7 +1031,8 @@ uniform vec2 mesh_size = vec2(10.0, 17.0);
 varying vec3 tint;
 
 void vertex() {
-	float lod_d = distance(NODE_POSITION_WORLD, main_cam_pos);
+	// per tree (MultiMesh instance) distance: every tree fades on its own, no chunk-wide pop
+	float lod_d = distance((MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz, main_cam_pos);
 	lod_in = smoothstep(lod_fade.x, lod_fade.y, lod_d);
 	lod_out = smoothstep(lod_fade.z, lod_fade.w, lod_d);
 	vec3 origin = MODEL_MATRIX[3].xyz;

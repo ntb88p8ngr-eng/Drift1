@@ -128,9 +128,10 @@ func _process(delta: float) -> void:
 	_vel_s = _vel_s.lerp(vel, 1.0 - exp(-delta * lerpf(14.0, 5.0, smooth)))
 	_anchor += _vel_s * delta
 	var kh := 1.0 - exp(-delta * lerpf(18.0, 6.0, smooth))
-	var kv := 1.0 - exp(-delta * lerpf(12.0, 2.5, smooth))
+	# vertically much softer: crests, dips and bumps at speed must not jerk the view
+	var kv := 1.0 - exp(-delta * lerpf(6.0, 1.6, smooth))
 	_anchor = Vector3(lerpf(_anchor.x, car_pos.x, kh), lerpf(_anchor.y, car_pos.y, kv), lerpf(_anchor.z, car_pos.z, kh))
-	if _anchor.distance_to(car_pos) > 6.0:
+	if _anchor.distance_to(car_pos) > 12.0:
 		_anchor = car_pos   # reset / teleport
 
 	# gamepad right stick look
@@ -174,8 +175,9 @@ func _process(delta: float) -> void:
 		dist = rad * cos(ang)
 		height = rad * sin(ang)
 		dist += spd * 0.02
-		target_pos = car_pos - dir * dist + up * (height + _look_pitch * 3.0)
-		look_target = car_pos + up * 0.95 + dir * 2.5
+		# follow the smoothed car position only (not its pitch or bounce)
+		target_pos = _anchor - dir * dist + up * (height + _look_pitch * 3.0)
+		look_target = _anchor + up * 0.95 + dir * 2.5
 	else:
 		smooth_pos = false
 		var local_pos := Vector3(0, 1.08, -0.35)
@@ -200,7 +202,11 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			var hp: Vector3 = hit["position"]
 			var hn: Vector3 = hit["normal"]
-			target_pos = hp + hn * 0.35
+			if hn.y > 0.6:
+				# ground (a crest behind the car): lift the camera over it instead of pulling it in
+				target_pos.y = maxf(target_pos.y, hp.y + 0.6)
+			else:
+				target_pos = hp + hn * 0.35
 		# never below the car's feet (relative: on the Grüne Hölle the road runs 280 m below y = 0)
 		target_pos.y = maxf(target_pos.y, car_pos.y + 0.05)
 
@@ -209,7 +215,9 @@ func _process(delta: float) -> void:
 		_initialized = true
 	else:
 		# the anchor is already smooth: this only eases wall avoidance and view changes
-		_pos = _pos.lerp(target_pos, 1.0 - exp(-delta * (14.0 if free_look else 16.0)))
+		var kxz := 1.0 - exp(-delta * (14.0 if free_look else 16.0))
+		var ky := 1.0 - exp(-delta * (14.0 if free_look else 7.0))
+		_pos = Vector3(lerpf(_pos.x, target_pos.x, kxz), lerpf(_pos.y, target_pos.y, ky), lerpf(_pos.z, target_pos.z, kxz))
 
 	global_position = _pos
 	if global_position.distance_to(look_target) > 0.01:

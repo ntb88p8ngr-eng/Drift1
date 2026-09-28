@@ -654,12 +654,37 @@ func build_meshes(wet_capable := true) -> void:
 			if _fine_chunks()[cz * cx_count + cx]:
 				_build_chunk(x0, z0, w, h, 1, 0.0, FINE_RANGE)
 				_build_chunk(x0, z0, w, h, COARSE, FINE_RANGE, 0.0)
-			else:
+			elif not _in_far_block(cx, cz, cx_count, cz_count):
 				_build_chunk(x0, z0, w, h, COARSE)
+	if big:
+		# far from the road: one 16 m mesh per 4x4 chunks (fewer nodes to cull every frame)
+		for bz in range(0, cz_count, FAR_BLOCK):
+			await Game.load_tick()
+			for bx in range(0, cx_count, FAR_BLOCK):
+				if _far_block_ok(bx, bz, cx_count, cz_count):
+					var x0 := bx * CHUNK
+					var z0 := bz * CHUNK
+					_build_chunk(x0, z0, mini(CHUNK * FAR_BLOCK, nx - 1 - x0), mini(CHUNK * FAR_BLOCK, nz - 1 - z0), COARSE)
 	await Game.load_tick()
 	_build_outer()
 	await Game.load_tick()
 	await _build_collision()
+
+
+## Data tracks: a block of FAR_BLOCK x FAR_BLOCK chunks without any 4 m chunk is built as one mesh.
+const FAR_BLOCK := 4
+
+
+func _far_block_ok(bx: int, bz: int, cx_count: int, cz_count: int) -> bool:
+	for cz in range(bz, mini(bz + FAR_BLOCK, cz_count)):
+		for cx in range(bx, mini(bx + FAR_BLOCK, cx_count)):
+			if _fine_chunks()[cz * cx_count + cx]:
+				return false
+	return true
+
+
+func _in_far_block(cx: int, cz: int, cx_count: int, cz_count: int) -> bool:
+	return big and _far_block_ok(cx - cx % FAR_BLOCK, cz - cz % FAR_BLOCK, cx_count, cz_count)
 
 
 func _vertex_normal(ix: int, iz: int, e := 1) -> Vector3:
