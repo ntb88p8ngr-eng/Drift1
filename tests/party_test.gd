@@ -47,7 +47,12 @@ func _ready() -> void:
 			coin["active"] = true
 			party._place_coin(ci)
 		var before: Vector3 = (coin["node"] as Node3D).global_position
-		car.place(Transform3D(car.global_transform.basis, before + Vector3(0, -0.8, 0)))
+		# at speed and sliding, like in a real run through the coin
+		var proj0: Array = tr.project(before, -1)
+		var xf0: Transform3D = tr.transform_at(int(proj0[0]) - 4, float(proj0[2]), 0.6)
+		car.place(xf0)
+		car.linear_velocity = -xf0.basis.z * 30.0 + xf0.basis.x * 2.0
+		car.angular_velocity = Vector3(0, 1.5, 0)
 		var rt: float = world.race_time
 		var waited := 0
 		while party.state == "idle" and waited < 60:
@@ -66,6 +71,13 @@ func _ready() -> void:
 			print("FAIL: %s: no props put up" % gid); fails += 1
 		while party.state == "travel":
 			await get_tree().physics_frame
+		# released at the start: the car must stay put (not be flung away)
+		var fling := 0.0
+		for f in 90:
+			await get_tree().physics_frame
+			fling = maxf(fling, Vector2(car.linear_velocity.x, car.linear_velocity.z).length())
+		if fling > 2.5:
+			print("FAIL: %s: car flung at the start (%.1f m/s)" % [gid, fling]); fails += 1
 		# play: full throttle straight ahead (a few seconds), then the clock is cut short
 		Input.action_press("accelerate", 1.0)
 		var v := 0.0
@@ -90,11 +102,18 @@ func _ready() -> void:
 		party._t = 99.0
 		while party.state != "idle":
 			await get_tree().physics_frame
-		if car.global_position.distance_to(before) > 6.0:
+		var race_clock_ok := absf(world.race_time - rt) < 0.5 or not world.crossed_start
+		var fling2 := 0.0
+		for f in 90:
+			await get_tree().physics_frame
+			fling2 = maxf(fling2, Vector2(car.linear_velocity.x, car.linear_velocity.z).length())
+		if fling2 > 2.5:
+			print("FAIL: %s: car flung when put back (%.1f m/s)" % [gid, fling2]); fails += 1
+		if car.global_position.distance_to(before) > 10.0:
 			print("FAIL: %s: car not put back (%.1f m off)" % [gid, car.global_position.distance_to(before)]); fails += 1
 		if party.sites._course != null:
 			print("FAIL: %s: props left on the track" % gid); fails += 1
-		if absf(world.race_time - rt) > 0.5 and world.crossed_start:
+		if not race_clock_ok:
 			print("FAIL: race clock ran during the minigame"); fails += 1
 		if car.surface_override.is_valid() or car.respawn_fn.is_valid():
 			print("FAIL: minigame hooks left on the car"); fails += 1

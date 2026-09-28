@@ -118,6 +118,8 @@ var nitro_active := false
 var _xf_prev := Transform3D.IDENTITY   # the last two physics states, interpolated for drawing
 var _xf_curr := Transform3D.IDENTITY
 var _auto_hold := 0.0      # automatic gearbox: pause after a shift
+var _paddle_hold := 0.0    # automatic gearbox: a paddle shift keeps the chosen gear this long
+const PADDLE_HOLD := 4.0
 var launch_active := false  # launch control / clutch dump phase
 var line_lock := false      # W+S at standstill: front brakes hold, rear wheels spin (burnout)
 var launch_time := 0.0
@@ -403,6 +405,16 @@ func _read_input(delta: float) -> void:
 				_shift(1)
 			if Input.is_action_just_pressed("shift_down"):
 				_shift(-1)
+		elif transmission == "auto" and not controls_locked and gear >= 1:
+			# paddles in automatic mode: [E]/[Q] pick a gear by hand, the box then holds it for a while
+			var paddle := 0
+			if Input.is_action_just_pressed("shift_up") and gear < gears.size():
+				paddle = 1
+			if Input.is_action_just_pressed("shift_down") and gear > 1:
+				paddle = -1
+			if paddle != 0:
+				_shift(paddle)
+				_paddle_hold = PADDLE_HOLD
 		if Input.is_action_just_pressed("lights"):
 			headlights = not headlights
 		# hold N: strobe the underglow (works without flasher tuning)
@@ -527,6 +539,7 @@ func _simulate(delta: float) -> void:
 	# --- gearbox / engine ---
 	shift_timer = maxf(shift_timer - delta, 0.0)
 	_auto_hold = maxf(_auto_hold - delta, 0.0)
+	_paddle_hold = maxf(_paddle_hold - delta, 0.0)
 	var driven_speed := 0.0
 	var driven_count := 0.0
 	for w in wheels:
@@ -614,8 +627,8 @@ func _simulate(delta: float) -> void:
 			tq = -max_torque * 0.14 * (rpm / redline) * signf(ratio * driven_speed) * signf(ratio)
 		drive_total = tq * ratio * 0.85 / radius
 
-	# automatic gearbox – never runs in manual mode
-	if transmission == "auto" and shift_timer <= 0.0 and gear >= 1 and not controls_locked and not line_lock:
+	# automatic gearbox – never runs in manual mode, and pauses after a paddle shift
+	if transmission == "auto" and shift_timer <= 0.0 and gear >= 1 and not controls_locked and not line_lock and _paddle_hold <= 0.0:
 		var ground_rpm := absf(forward_speed / radius * 60.0 / TAU * ratio)
 		var sliding := absf(slip_angle) > 0.35 and forward_speed > 5.0
 		var hold_for_drift := sliding and _limit_time < 0.45
@@ -913,6 +926,7 @@ func reset_to_track() -> void:
 	boost = 0.0
 	for w in wheels:
 		w["spin"] = 0.0
+		w.erase("f_lat")
 
 
 func place(xf: Transform3D) -> void:
@@ -921,6 +935,13 @@ func place(xf: Transform3D) -> void:
 	_xf_curr = xf
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	_prev_velocity = Vector3.ZERO
+	# forget the tyres' state from before (spin, built-up side force, suspension travel): carried over
+	# a teleport it would kick the car away on the first step
+	for w in wheels:
+		w["spin"] = 0.0
+		w.erase("f_lat")
+		w["prev_compression"] = w["compression"]
 	_net_pos = xf.origin
 	_net_rot = xf.basis.get_rotation_quaternion()
 

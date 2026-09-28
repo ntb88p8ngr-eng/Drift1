@@ -700,7 +700,7 @@ func _party_up(msg: Dictionary) -> void:
 	if not is_host() or msg.size() > 8:
 		return
 	var t := str(msg.get("t", ""))
-	if t != "claim" and t != "res":
+	if t != "claim" and t != "res" and t != "pick":
 		return
 	party_msg.emit(multiplayer.get_remote_sender_id(), msg)
 

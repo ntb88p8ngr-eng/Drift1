@@ -25,6 +25,7 @@ const RESULTS_TIME := 6.0
 const COIN_RESPAWN := 20.0
 const REWARDS := [2500, 1200, 600, 300]
 const KOTH_STEP := 10.0
+const CHOOSE_TIME := 12.0
 
 var world: Node3D
 var sites: PartySites
@@ -40,6 +41,13 @@ var _seed := 0
 var _slot := 0
 var _ids: Array = []         # participants (peer ids) of the current minigame
 var _return_xf := Transform3D.IDENTITY
+var _coin := -1
+var _chooser := 1            # peer who took the coin (picks the minigame online)
+var _picked := false
+var _skip_roulette := false
+var _choices: VBoxContainer
+var _pin := false
+var _pin_xf := Transform3D.IDENTITY
 var _coins: Array = []       # {node, gen, active, timer}
 var _value := 0.0            # local score of the current minigame (higher is better)
 var _done := false
@@ -54,7 +62,6 @@ var _last_yaw := 0.0
 var _hint := -1              # track sample near the car (for projecting)
 var _zone := Vector2.ZERO     # king of the zone: current spot (along, lateral)
 var _coin_mat: StandardMaterial3D
-var _beam_mat: StandardMaterial3D
 
 # UI
 var _layer: CanvasLayer
@@ -105,12 +112,6 @@ func _make_coins() -> void:
 	_coin_mat.emission_energy_multiplier = 1.6
 	_coin_mat.rim_enabled = true
 	_coin_mat.rim = 1.0
-	_beam_mat = StandardMaterial3D.new()
-	_beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_beam_mat.albedo_color = Color(1.0, 0.75, 0.1, 0.12)
 	for i in coin_count:
 		var node := _coin_node()
 		add_child(node)
@@ -156,26 +157,6 @@ func _coin_node() -> Node3D:
 		l.position = Vector3(0, 0, 0.12 * side)
 		l.rotation = Vector3(0, 0.0 if side > 0.0 else PI, 0)
 		spin.add_child(l)
-	# a faint light column so the coin can be found from far away
-	var beam := CylinderMesh.new()
-	beam.top_radius = 0.25
-	beam.bottom_radius = 0.7
-	beam.height = 30.0
-	beam.cap_top = false
-	beam.cap_bottom = false
-	beam.radial_segments = 16
-	var bmi := MeshInstance3D.new()
-	bmi.mesh = beam
-	bmi.material_override = _beam_mat
-	bmi.position = Vector3(0, 15.0, 0)
-	bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(bmi)
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.75, 0.2)
-	light.omni_range = 6.0
-	light.light_energy = 1.2
-	light.shadow_enabled = false
-	root.add_child(light)
 	return root
 
 
@@ -251,11 +232,28 @@ func _host_start(coin: int, by: int) -> void:
 		if is_instance_valid(world.cars[id]):
 			ids.append(int(id))
 	ids.sort()
-	var msg := {"t": "start", "i": coin, "g": g, "s": r.randi() % 1000000, "by": by, "ids": ids}
 	if world.online:
-		Net.party_broadcast(msg)
-	else:
-		_on_start(msg)
+		# multiplayer: whoever took the coin picks the minigame (random if they don't within the time)
+		Net.party_broadcast({"t": "choose", "i": coin, "by": by, "ids": ids})
+		return
+	_on_start({"t": "start", "i": coin, "g": g, "s": r.randi() % 1000000, "by": by, "ids": ids})
+
+
+## Host: the minigame is decided (picked by the collector, or at random when the time is up).
+func _host_decide(g: int) -> void:
+	if state != "choose" or not sites.sites.has(GAMES[clampi(g, 0, GAMES.size() - 1)]["id"]):
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([seed_base, games_played, Time.get_ticks_usec()])
+	Net.party_broadcast({"t": "start", "i": _coin, "g": clampi(g, 0, GAMES.size() - 1), "s": r.randi() % 1000000, "by": _chooser, "ids": _ids})
+
+
+func _available_games() -> Array:
+	var out: Array = []
+	for k in GAMES.size():
+		if sites.sites.has(GAMES[k]["id"]):
+			out.append(k)
+	return out
 
 
 func _on_msg(from_id: int, msg: Dictionary) -> void:
@@ -267,6 +265,11 @@ func _on_msg(from_id: int, msg: Dictionary) -> void:
 			if Net.is_host() and state != "idle" and _ids.has(from_id):
 				_results[from_id] = float(msg.get("v", 0.0))
 				_host_check_final(false)
+		"choose":
+			_on_choose(msg)
+		"pick":
+			if Net.is_host() and from_id == _chooser:
+				_host_decide(int(msg.get("g", -1)))
 		"start":
 			_on_start(msg)
 		"final":
@@ -295,8 +298,10 @@ func _host_check_final(force: bool) -> void:
 # ---------------------------------------------------------------------------
 # Minigame flow (every machine)
 # ---------------------------------------------------------------------------
-func _on_start(msg: Dictionary) -> void:
+## The race stops for everybody: coin bookkeeping, cars held, where to come back to.
+func _stop_race(msg: Dictionary) -> void:
 	var coin := int(msg.get("i", 0))
+	_coin = coin
 	if coin >= 0 and coin < _coins.size():
 		var c: Dictionary = _coins[coin]
 		c["active"] = false
@@ -304,8 +309,6 @@ func _on_start(msg: Dictionary) -> void:
 		c["timer"] = COIN_RESPAWN
 		(c["node"] as Node3D).visible = false
 	games_played += 1
-	_game = clampi(int(msg.get("g", 0)), 0, GAMES.size() - 1)
-	_seed = int(msg.get("s", 0))
 	_ids = msg.get("ids", [1])
 	var me: int = Net.local_id() if world.online else 1
 	_slot = maxi(_ids.find(me), 0)
@@ -313,12 +316,15 @@ func _on_start(msg: Dictionary) -> void:
 	_value = 0.0
 	_done = false
 	var car = world.local_car
-	_return_xf = car.global_transform
+	# back to the track later: level, on the road where the coin was, facing the race direction
+	var proj: Array = world.track.project(car.global_position, car.track_hint)
+	var lat := clampf(float(proj[2]), -float(world.track.half_w) + 2.5, float(world.track.half_w) - 2.5)
+	_return_xf = world.track.transform_at(int(proj[0]), lat, 0.6)
 	car.controls_locked = true
-	car.freeze = true
-	state = "announce"
+	_hold(car.global_transform)
 	_t = 0.0
 	var by := int(msg.get("by", 1))
+	_chooser = by
 	var who := "Du hast" if by == me else "%s hat" % _name(by)
 	_b_by.text = "%s eine Minispiel-Münze eingesammelt!" % who
 	_b_title.text = "MINISPIEL %d / %d" % [games_played, games_total]
@@ -326,6 +332,86 @@ func _on_start(msg: Dictionary) -> void:
 	_banner.visible = true
 	_table.visible = false
 	_update_info()
+
+
+## Multiplayer: the race stops and the collector picks the minigame.
+func _on_choose(msg: Dictionary) -> void:
+	if state != "idle":
+		return
+	_stop_race(msg)
+	state = "choose"
+	var me: int = Net.local_id()
+	_b_game.add_theme_color_override("font_color", UiKit.GOLD)
+	for c in _choices.get_children():
+		c.queue_free()
+	if _chooser == me:
+		_b_game.text = "Wähle ein Minispiel!"
+		_b_desc.text = "Klicken oder Taste 1–%d" % _available_games().size()
+		var n := 1
+		for k in _available_games():
+			var gk: int = k
+			var b := UiKit.button("%d  %s" % [n, GAMES[gk]["name"]], func(): _pick(gk), 300)
+			b.tooltip_text = GAMES[gk]["desc"]
+			_choices.add_child(b)
+			n += 1
+		_choices.visible = true
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	else:
+		_b_game.text = "%s wählt ein Minispiel …" % _name(_chooser)
+		_b_desc.text = ""
+		_choices.visible = false
+
+
+func _pick(g: int) -> void:
+	if state != "choose" or _picked:
+		return
+	_picked = true
+	_choices.visible = false
+	_b_game.text = GAMES[g]["name"]
+	_b_desc.text = "Warte auf den Start …"
+	Net.party_to_host({"t": "pick", "g": g})
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# number keys pick the minigame (for the collector)
+	if state != "choose" or _picked or not (event is InputEventKey) or not event.pressed:
+		return
+	if _chooser != Net.local_id():
+		return
+	var k: int = (event as InputEventKey).keycode - KEY_1
+	var avail := _available_games()
+	if k >= 0 and k < avail.size():
+		_pick(avail[k])
+		get_viewport().set_input_as_handled()
+
+
+func _on_start(msg: Dictionary) -> void:
+	if state == "idle":
+		_stop_race(msg)
+	elif state != "choose":
+		return
+	_game = clampi(int(msg.get("g", 0)), 0, GAMES.size() - 1)
+	_seed = int(msg.get("s", 0))
+	# a picked game is shown straight away, the offline draw spins the roulette
+	_skip_roulette = state == "choose"
+	_choices.visible = false
+	_picked = false
+	state = "announce"
+	_t = 0.0
+
+
+## Holds the car still at xf (placed again every physics step, so it neither rolls nor keeps any
+## speed – freezing the body brought the old velocity back when released and flung the car).
+func _hold(xf: Transform3D) -> void:
+	_pin = true
+	_pin_xf = xf
+	world.local_car.place(xf)
+
+
+func _release() -> void:
+	if _pin:
+		world.local_car.place(_pin_xf)
+	_pin = false
 
 
 func _name(id: int) -> String:
@@ -338,6 +424,8 @@ func _physics_process(delta: float) -> void:
 	if world == null or not world.is_loaded:
 		return
 	_process_coins(delta)
+	if _pin:
+		world.local_car.place(_pin_xf)
 	_status_t -= delta
 	if _status_t <= 0.0 and _status.text != "" and state != "play":
 		_status.text = ""
@@ -346,9 +434,18 @@ func _physics_process(delta: float) -> void:
 	_t += delta
 	var g: Dictionary = GAMES[_game]
 	match state:
+		"choose":
+			# host: nobody picked in time -> random
+			if Net.is_host() and _t >= CHOOSE_TIME:
+				var avail := _available_games()
+				_host_decide(avail[randi() % avail.size()])
+			elif _chooser != Net.local_id():
+				_b_desc.text = "noch %d s" % int(ceil(maxf(CHOOSE_TIME - _t, 0.0)))
 		"announce":
 			# roulette: names flicker, slowing down, then the drawn game stays
 			var k := _t / (ANNOUNCE_TIME - 1.5)
+			if _skip_roulette:
+				k = 1.0
 			if k < 1.0:
 				var idx := int(pow(k, 0.45) * 22.0) % GAMES.size()
 				_b_game.text = GAMES[(idx + _game + 1) % GAMES.size()]["name"]
@@ -357,7 +454,7 @@ func _physics_process(delta: float) -> void:
 				_b_game.text = g["name"]
 				_b_game.add_theme_color_override("font_color", UiKit.GOLD)
 				_b_desc.text = g["desc"]
-			if _t >= ANNOUNCE_TIME:
+			if _t >= (2.5 if _skip_roulette else ANNOUNCE_TIME):
 				_begin_travel()
 		"travel":
 			var left := COUNTDOWN_TIME - _t
@@ -369,7 +466,7 @@ func _physics_process(delta: float) -> void:
 				_banner.visible = false
 				state = "play"
 				_t = 0.0
-				world.local_car.freeze = false
+				_release()
 				world.local_car.controls_locked = false
 		"play":
 			_play(delta, g)
@@ -390,7 +487,7 @@ func _physics_process(delta: float) -> void:
 				world.hud.set_countdown(str(step2), Color(1.0, 0.3, 0.2))
 			if _t >= COUNTDOWN_TIME:
 				world.hud.set_countdown("GO!", UiKit.GOOD)
-				world.local_car.freeze = false
+				_release()
 				world.local_car.controls_locked = false
 				state = "idle"
 				_update_info()
@@ -402,8 +499,7 @@ func _begin_travel() -> void:
 	var car = world.local_car
 	# the props of this minigame go up on its stretch of the track (and come down afterwards)
 	sites.build_course(id)
-	car.place(sites.start_xf(id, _slot, _ids.size()))
-	car.freeze = true
+	_hold(sites.start_xf(id, _slot, _ids.size()))
 	car.controls_locked = true
 	car.gear = 1
 	car.nitro = 1.0
@@ -484,14 +580,13 @@ func _play(delta: float, g: Dictionary) -> void:
 					_show_status("ROT – STOPP!", UiKit.BAD)
 					# a short reaction time, then any movement is caught
 					if _t - _red_since > 0.45 and car.speed > 0.9:
-						car.reset_to_track()
-						car.freeze = true
+						_hold(sites.start_xf(id, _slot, _ids.size()))
 						_hint = -1
 						_penalty = 1.5
 						_status_t = 1.5
 						world.hud.show_message("ERWISCHT!", "Zurück zum Start", UiKit.BAD, 1.8)
-				if _penalty <= 0.0 and car.freeze:
-					car.freeze = false
+				if _penalty <= 0.0 and _pin:
+					_release()
 				if along > sites.rlgl_finish():
 					_value = 10000.0 - _t
 					_finish_t = _t
@@ -599,7 +694,7 @@ func _on_final(rows: Array) -> void:
 	_line.text = ""
 	sites.set_rlgl_light(-1)
 	world.local_car.controls_locked = true
-	world.local_car.freeze = true
+	_hold(world.local_car.global_transform)
 	state = "results"
 	_t = 0.0
 
@@ -621,8 +716,7 @@ func _begin_back() -> void:
 	car.respawn_fn = Callable()
 	car.arena_kill_y = -1e9
 	sites.clear_course()
-	car.place(_return_xf)
-	car.freeze = true
+	_hold(_return_xf)
 	car.controls_locked = true
 	_banner.visible = false
 	_table.visible = false
@@ -679,7 +773,11 @@ func _build_ui() -> void:
 	_b_by = UiKit.label("", 17, UiKit.ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
 	_table = VBoxContainer.new()
 	_table.add_theme_constant_override("separation", 4)
-	for c in [_b_title, _b_game, _b_desc, _b_by, _table]:
+	_choices = VBoxContainer.new()
+	_choices.add_theme_constant_override("separation", 6)
+	_choices.alignment = BoxContainer.ALIGNMENT_CENTER
+	_choices.visible = false
+	for c in [_b_title, _b_game, _b_desc, _b_by, _choices, _table]:
 		box.add_child(c)
 	_banner.add_child(box)
 	_banner.visible = false
