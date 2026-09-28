@@ -121,6 +121,11 @@ Exhaust Nissan GTR R34“ (Schiebebetrieb, Leerlauf) und „Nissan Skyline GTR R
 vom Projektinhaber bereitgestellt und mit `tools/make_r34_audio.py` geschnitten und aufbereitet. Bevor du das Spiel weitergibst, kläre die Rechte an diesen
 Aufnahmen – ohne sie nutzt der R34 automatisch den synthetischen Motorsound.
 
+M3-Sound: „BMW E90 M3 Megan Racing Supremo Back box sound check“ (Leerlauf, Gasstöße bis ~3000 U/min, Ausrollen)
+und für die hohen Drehzahlen „BMW E90 M3 S65 V8 4.0 Original Stock Exhaust Pure Sound“ – vom Projektinhaber
+bereitgestellt, mit `tools/make_m3_audio.py <backbox.mp3> <stock.mp3>` geschnitten. Auch hier vor der Weitergabe die
+Rechte klären.
+
 Garage im Hauptmenü: Die 3ds-Max-Szene „Garage.max“ samt Texturen wurde vom Projektinhaber bereitgestellt und mit
 `tools/convert_garage.py` umgewandelt (Parser: Blender-Add-on „Import Autodesk MAX“, GPL, wird nur zum Konvertieren
 benutzt und nicht mitgeliefert). Die Halle und die Poster darin stammen vermutlich aus einem anderen Spiel – kläre auch
