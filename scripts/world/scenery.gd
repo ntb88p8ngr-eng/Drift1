@@ -1248,10 +1248,11 @@ func _skyline_texture(lights: bool) -> ImageTexture:
 		for y in 64:
 			for x in 64:
 				# columns every 16 px (6 m), 3 px wide; glass in between with a soft sky reflection
-				var col_x := (x % 16) < 3
-				var floor_y := (y % 8) == 0
-				var glass := 0.38 + 0.18 * (float(y) / 63.0) + 0.06 * sin(float(x) * 0.4)
-				var v := 0.92 if col_x else (0.62 if floor_y else glass)
+				# strong contrast: the haze at ~1 km eats most of it
+				var col_x := (x % 16) < 4
+				var floor_y := (y % 8) < 2
+				var glass := 0.12 + 0.14 * (float(y) / 63.0) + 0.04 * sin(float(x) * 0.4)
+				var v := 1.0 if col_x else (0.78 if floor_y else glass)
 				img.set_pixel(x, y, Color(v, v, v * 1.04))
 	for y in range(2, 64, 4):
 		for x in range(2, 64, 4):
