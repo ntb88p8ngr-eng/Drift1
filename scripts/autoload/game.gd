@@ -96,6 +96,8 @@ const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 9
 const AA_MODES := ["Aus", "FXAA", "TAA", "MSAA 2x", "MSAA 4x", "MSAA 8x", "MSAA 4x + FXAA", "MSAA 4x + TAA"]
 const UPSCALERS := ["Bilinear", "AMD FSR 1.0", "AMD FSR 2.2"]
 const VSYNC_MODES := ["Aus", "An", "Adaptiv", "Mailbox"]
+## Motion blur (camera post effect, see camera_rig.gd): off / strength levels
+const MOTION_BLUR_NAMES := ["Aus", "Leicht", "Mittel", "Stark"]
 const FPS_LIMITS := [0, 30, 60, 90, 120, 144, 165, 240]
 const QUALITY_NAMES := ["Niedrig", "Mittel", "Hoch", "Ultra"]
 const GRASS_NAMES := ["Aus", "Niedrig", "Mittel", "Hoch", "Ultra"]
@@ -127,6 +129,10 @@ var settings := {
 	"mode": "free",
 	"laps": 3,
 	"graffiti_minutes": 5,
+	"motion_blur": 0,
+	"party": false,
+	"party_games": 3,
+	"party_coins": 5,
 	"time_of_day": "dusk",
 	"master_volume": 0.8,
 	"audio_output": "Default",

@@ -26,6 +26,36 @@ var _zoom := 1.0          # chase distance factor (mouse wheel), saved in the se
 var _tilt := 0.0          # chase elevation (left mouse button + drag up/down), saved in the settings
 var _tilt_drag := false
 var _space_query: PhysicsRayQueryParameters3D
+var _blur_rect: ColorRect
+var _blur_mat: ShaderMaterial
+var _prev_fwd := Vector3.ZERO
+var _swipe := 0.0
+
+## Motion blur like the eye at speed: the centre (where you look) stays sharp, towards the sides the
+## picture smears outwards, more the faster you go; quick camera swings smear sideways.
+const BLUR_SHADER := """
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+uniform float strength = 0.0;   // radial smear (speed)
+uniform float swipe = 0.0;      // sideways smear (camera turning), in screen widths
+uniform float aspect = 1.7778;
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	vec2 c = uv - 0.5;
+	// sharp fovea in the middle, the smear grows towards the edges – wider sideways than up/down
+	float e = smoothstep(0.1, 0.62, length(vec2(c.x * aspect * 0.72, c.y * 1.3)));
+	vec2 d = c * strength * e * 0.16 + vec2(swipe * (0.3 + 0.7 * e), 0.0);
+	vec3 col = vec3(0.0);
+	float wsum = 0.0;
+	for (int i = 0; i < 12; i++) {
+		float t = float(i) / 11.0;
+		float w = 1.0 - t * 0.6;
+		col += textureLod(screen_tex, uv - d * t, 0.0).rgb * w;
+		wsum += w;
+	}
+	COLOR = vec4(col / wsum, 1.0);
+}
+"""
 
 
 func _ready() -> void:
@@ -39,6 +69,47 @@ func _ready() -> void:
 	_tilt = clampf(float(Game.settings.get("camera_tilt", 0.0)), TILT_MIN, TILT_MAX)
 	_space_query = PhysicsRayQueryParameters3D.new()
 	_space_query.collision_mask = 1
+	# below the HUD layers, so only the 3D picture is blurred
+	var layer := CanvasLayer.new()
+	layer.layer = -5
+	add_child(layer)
+	_blur_rect = ColorRect.new()
+	_blur_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_blur_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = BLUR_SHADER
+	_blur_mat = ShaderMaterial.new()
+	_blur_mat.shader = sh
+	_blur_rect.material = _blur_mat
+	_blur_rect.visible = false
+	layer.add_child(_blur_rect)
+
+
+## Motion blur strength from the settings, the car's speed and how fast the view turns.
+func _update_blur(delta: float, spd: float) -> void:
+	var level := clampi(int(Game.settings.get("motion_blur", 0)), 0, 3)
+	var fwd := -global_transform.basis.z
+	var turn := 0.0
+	if _prev_fwd != Vector3.ZERO and delta > 0.0:
+		# signed yaw rate of the view (rad/s)
+		var a := Vector2(_prev_fwd.x, _prev_fwd.z)
+		var b := Vector2(fwd.x, fwd.z)
+		if a.length_squared() > 0.001 and b.length_squared() > 0.001:
+			turn = a.angle_to(b) / delta
+	_prev_fwd = fwd
+	if level == 0:
+		_blur_rect.visible = false
+		return
+	var k: float = [0.0, 0.55, 1.0, 1.6][level]
+	var strength := k * clampf((spd - 6.0) / 45.0, 0.0, 1.0)
+	_swipe = lerpf(_swipe, clampf(turn * 0.012, -0.03, 0.03) * k, 1.0 - exp(-delta * 12.0))
+	var on := strength > 0.01 or absf(_swipe) > 0.0008
+	_blur_rect.visible = on
+	if on:
+		var vs := get_viewport().get_visible_rect().size
+		_blur_mat.set_shader_parameter("strength", strength)
+		_blur_mat.set_shader_parameter("swipe", _swipe)
+		_blur_mat.set_shader_parameter("aspect", vs.x / maxf(vs.y, 1.0))
 
 
 func mode_name() -> String:
@@ -227,3 +298,4 @@ func _process(delta: float) -> void:
 	if mode >= 2 and not free_look:
 		target_fov += 5.0
 	fov = lerpf(fov, target_fov, 1.0 - exp(-delta * 3.0))
+	_update_blur(delta, spd)

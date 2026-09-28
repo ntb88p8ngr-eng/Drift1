@@ -87,6 +87,14 @@ jobs:
           if grep -E "SCRIPT ERROR" underglow.log; then echo "::error::Underglow test failed"; exit 1; fi
           grep -q "UNDERGLOW TEST OK" underglow.log
 
+      - name: Party test (venues fit on every map, each minigame runs and returns the car)
+        run: |
+          for t in ridge harbor playground; do
+            timeout 600 ./godot --headless --path . res://tests/party_test.tscn -- --track=$t 2>&1 | tee party.log || true
+            if grep -E "SCRIPT ERROR" party.log; then echo "::error::Party test failed on $t"; exit 1; fi
+            grep -q "PARTY TEST: PASS" party.log
+          done
+
       - name: Idle test (no input = the car stands still, also on a 10 % grade)
         run: |
           timeout 300 ./godot --headless --path . res://tests/idle_test.tscn 2>&1 | tee idle.log || true

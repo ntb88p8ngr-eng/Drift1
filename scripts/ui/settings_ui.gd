@@ -76,6 +76,10 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		gamma_val.text = "%.2f" % x
 		Game.set_setting("gamma", x), 200)
 	v.add_child(UiKit.labeled("Gamma", UiKit.row([gamma, gamma_val], 8)))
+	var mb := UiKit.option(Game.MOTION_BLUR_NAMES, clampi(int(Game.settings.get("motion_blur", 0)), 0, Game.MOTION_BLUR_NAMES.size() - 1), func(i):
+		Game.set_setting("motion_blur", i))
+	mb.tooltip_text = "Wie das Auge bei Tempo: die Mitte bleibt scharf, zum Rand hin verschwimmt das Bild –\nje schneller, desto stärker. Schnelle Kameraschwenks verwischen seitlich."
+	v.add_child(UiKit.labeled("Motion Blur", mb))
 	v.add_child(UiKit.sep())
 	var q := UiKit.option(Game.QUALITY_NAMES, int(Game.settings["quality"]), func(i):
 		Game.set_setting("quality", i)

@@ -230,9 +230,11 @@ func _build_single() -> void:
 		Game.set_setting("laps", int(v))
 		laps_label.text = "%d" % int(v), 220)
 	var laps_row := UiKit.labeled("Runden", UiKit.row([laps_slider, laps_label]))
+	var party_rows := _party_rows(Game.settings, func(key, v): Game.set_setting(key, v))
 	var update_desc := func():
 		graffiti_row.visible = Game.settings["mode"] == "graffiti"
 		laps_row.visible = Game.settings["mode"] != "graffiti"
+		party_rows.visible = Game.settings["track"] != "gruene_hoelle"
 		var t: Dictionary = Game.TRACKS[track_names.find(Game.track_name(Game.settings["track"]))]
 		var m_desc := ""
 		for m in Game.MODES:
@@ -247,6 +249,7 @@ func _build_single() -> void:
 		update_desc.call())))
 	_add(laps_row)
 	_add(graffiti_row)
+	_add(party_rows)
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 	_add(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(Game.settings["day_cycle"]), func(m): Game.set_setting("day_cycle", m))))
@@ -680,6 +683,11 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.labeled("Tageszeit", UiKit.option(tods, tdi, func(i): Net.host_set_option("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 		_lobby_settings.add_child(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(lobby.get("day_cycle", 0)), func(m): Net.host_set_option("day_cycle", m))))
 		_lobby_settings.add_child(UiKit.labeled("Wetter", _weather_option(str(lobby.get("weather", "dry")), func(w): Net.host_set_option("weather", w))))
+		var prow := _party_rows(lobby, func(key, v):
+			if Net.lobby.get(key) != v:
+				Net.host_set_option(key, v))
+		prow.visible = str(lobby.get("track", "")) != "gruene_hoelle"
+		_lobby_settings.add_child(prow)
 		var coll := UiKit.option(["An – Autos prallen aneinander ab", "Aus – Geister-Modus (durchfahren)"], 0 if bool(lobby.get("collisions", true)) else 1, func(i):
 			Net.host_set_option("collisions", i == 0))
 		coll.tooltip_text = "Im Geister-Modus fahren alle durcheinander hindurch, die anderen Autos sind halbtransparent."
@@ -690,6 +698,8 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  %s" % [Game.mode_name(str(lobby.get("mode", "race"))), len_text], 18))
 		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))
 		_lobby_settings.add_child(UiKit.label("Wetter: %s  ·  Tagesverlauf: %s" % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
+		if bool(lobby.get("party", false)) and str(lobby.get("track", "")) != "gruene_hoelle":
+			_lobby_settings.add_child(UiKit.label("★ Party-Modus: %d Minispiele, %d Münzen" % [int(lobby.get("party_games", 3)), int(lobby.get("party_coins", 5))], 18, UiKit.GOLD))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
 	_ready_btn.visible = not host
 	_ready_btn.text = "Nicht bereit" if me_ready else "Bereit"
@@ -909,6 +919,33 @@ func _underglow_ui(car_id: String) -> void:
 			(pk[0] as ColorPickerButton).color = Color.from_string(str(front["color"]), Color.WHITE)
 		apply.call(), 240))
 	_tuning_box.add_child(details)
+
+
+## Party mode options (minigame coins on the track): on/off, number of minigames, number of coins.
+## `src` holds the current values, `set_fn(key, value)` stores a change.
+func _party_rows(src: Dictionary, set_fn: Callable) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	var details := VBoxContainer.new()
+	details.add_theme_constant_override("separation", 6)
+	details.visible = bool(src.get("party", false))
+	var on := UiKit.option(["Aus", "An – Minispiel-Münzen auf der Strecke"], 1 if bool(src.get("party", false)) else 0, func(i):
+		details.visible = i == 1
+		set_fn.call("party", i == 1))
+	on.tooltip_text = "Wer durch eine Münze fährt, hält das Rennen für alle an und startet ein Minispiel\n(Rotes Licht Grünes Licht, Offroad-Parkour, König des Hügels, Donut-Duell).\nNicht auf der Grünen Hölle."
+	box.add_child(UiKit.labeled("Party-Modus", on))
+	var g_label := UiKit.label(str(int(src.get("party_games", 3))), 19)
+	g_label.custom_minimum_size = Vector2(40, 0)
+	details.add_child(UiKit.labeled("Minispiele", UiKit.row([UiKit.slider(1, 10, 1, float(src.get("party_games", 3)), func(v):
+		g_label.text = str(int(v))
+		set_fn.call("party_games", int(v)), 220), g_label])))
+	var c_label := UiKit.label(str(int(src.get("party_coins", 5))), 19)
+	c_label.custom_minimum_size = Vector2(40, 0)
+	details.add_child(UiKit.labeled("Münzen", UiKit.row([UiKit.slider(1, 15, 1, float(src.get("party_coins", 5)), func(v):
+		c_label.text = str(int(v))
+		set_fn.call("party_coins", int(v)), 220), c_label])))
+	box.add_child(details)
+	return box
 
 
 func _build_controls() -> void:

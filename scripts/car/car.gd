@@ -82,6 +82,11 @@ var fx: TireFX
 var wheels: Array = []
 var input_enabled := true
 var controls_locked := false
+## Party minigames: ground of the venue (pos -> [grip, surface name]), where a reset puts the car and
+## the height below which it has fallen off.
+var surface_override: Callable
+var respawn_fn: Callable
+var arena_kill_y := -1e9
 var throttle := 0.0
 var brake_input := 0.0
 var steer_input := 0.0
@@ -681,7 +686,12 @@ func _simulate(delta: float) -> void:
 
 		var sg := 1.0
 		var sname := "asphalt"
-		if track and track_hint >= 0:
+		if surface_override.is_valid():
+			# party minigame venue: its own ground
+			var so: Array = surface_override.call(hit)
+			sg = so[0]
+			sname = so[1]
+		elif track and track_hint >= 0:
 			var s: Array = track.surface_at(hit, track_hint)
 			sg = s[0]
 			sname = s[1]
@@ -873,7 +883,8 @@ func _check_flip(delta: float) -> void:
 			reset_to_track()
 	else:
 		flip_timer = 0.0
-	if global_position.y < (float(track.kill_y) if track else -20.0):
+	var ky := arena_kill_y if respawn_fn.is_valid() else (float(track.kill_y) if track else -20.0)
+	if global_position.y < ky:
 		reset_to_track()
 
 
@@ -886,7 +897,9 @@ func visual_transform() -> Transform3D:
 
 func reset_to_track() -> void:
 	flip_timer = 0.0
-	if track == null:
+	if respawn_fn.is_valid():
+		global_transform = respawn_fn.call()
+	elif track == null:
 		global_transform = Transform3D(Basis.IDENTITY, Vector3(0, 1, 0))
 	else:
 		var proj: Array = track.project(global_position, track_hint)

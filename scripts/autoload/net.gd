@@ -27,6 +27,7 @@ signal return_to_lobby_requested
 signal lan_lobbies_changed
 signal upnp_finished(ok: bool, message: String)
 signal graffiti_claimed(owner_id: int, cells: PackedInt32Array)
+signal party_msg(from_id: int, msg: Dictionary)
 
 const DEFAULT_PORT := 24570
 const DISCOVERY_PORT := 24571
@@ -126,6 +127,9 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 		"track": Game.settings["track"],
 		"laps": int(Game.settings["laps"]),
 		"graffiti_minutes": int(Game.settings.get("graffiti_minutes", 5)),
+		"party": bool(Game.settings.get("party", false)),
+		"party_games": int(Game.settings.get("party_games", 3)),
+		"party_coins": int(Game.settings.get("party_coins", 5)),
 		"mode": Game.settings["mode"] if Game.settings["mode"] != "free" else "race",
 		"time_of_day": Game.settings["time_of_day"],
 		"weather": Game.settings["weather"],
@@ -569,6 +573,9 @@ func host_start_race() -> String:
 		"track": lobby.get("track", "ridge"),
 		"laps": int(lobby.get("laps", 3)),
 		"graffiti_minutes": int(lobby.get("graffiti_minutes", 5)),
+		"party": bool(lobby.get("party", false)),
+		"party_games": clampi(int(lobby.get("party_games", 3)), 1, 20),
+		"party_coins": clampi(int(lobby.get("party_coins", 5)), 1, 20),
 		"mode": lobby.get("mode", "race"),
 		"time_of_day": lobby.get("time_of_day", "dusk"),
 		"weather": lobby.get("weather", "dry"),
@@ -668,6 +675,39 @@ func _graffiti_claim(cells: PackedInt32Array) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _graffiti_sync(owner_id: int, cells: PackedInt32Array) -> void:
 	graffiti_claimed.emit(owner_id, cells)
+
+
+## Party mode: requests to the host (coin claims, minigame results) and the host's decisions for
+## everybody (minigame start, final ranking). The host is the referee.
+func party_to_host(msg: Dictionary) -> void:
+	if not is_online:
+		return
+	if is_host():
+		party_msg.emit(1, msg)
+	else:
+		_party_up.rpc_id(1, msg)
+
+
+func party_broadcast(msg: Dictionary) -> void:
+	if not is_host():
+		return
+	_party_down.rpc(msg)
+	party_msg.emit(1, msg)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _party_up(msg: Dictionary) -> void:
+	if not is_host() or msg.size() > 8:
+		return
+	var t := str(msg.get("t", ""))
+	if t != "claim" and t != "res":
+		return
+	party_msg.emit(multiplayer.get_remote_sender_id(), msg)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _party_down(msg: Dictionary) -> void:
+	party_msg.emit(1, msg)
 
 
 func report_result(result: Dictionary) -> void:

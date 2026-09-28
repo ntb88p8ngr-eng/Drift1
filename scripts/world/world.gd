@@ -20,6 +20,8 @@ const PauseMenu = preload("res://scripts/ui/pause_menu.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const ShaderWarmup = preload("res://scripts/world/shader_warmup.gd")
 const Graffiti = preload("res://scripts/world/graffiti.gd")
+const Party = preload("res://scripts/world/party.gd")
+const PartySites = preload("res://scripts/world/party_sites.gd")
 
 const SECTORS := 8
 
@@ -42,6 +44,8 @@ var pause_menu: PauseMenu
 var scorer: DriftScorer
 var graffiti: Graffiti      # graffiti mode only
 var time_limit := 0.0       # graffiti mode: seconds
+var party: Party            # party mode (minigame coins) or null
+var party_sites: PartySites
 
 var state := "loading"      # loading, waiting, countdown, running, finished
 var race_time := 0.0
@@ -97,10 +101,22 @@ func _ready() -> void:
 	add_child(terrain)
 	Game.load_begin("Gelände", 0.06, 0.34)
 	await terrain.generate(track)
+	# party mode: the minigame venues get their spots (and level ground) before any scenery is placed.
+	# Not on the long data tracks (their loading time is long enough already).
+	if bool(config.get("party", false)) and not track.elevated:
+		party_sites = PartySites.new()
+		party_sites.name = "PartySites"
+		if await party_sites.plan(track, terrain):
+			add_child(party_sites)
+		else:
+			party_sites.free()
+			party_sites = null
 	var t1 := Time.get_ticks_msec()
 	scenery = Scenery.new()
 	scenery.name = "Scenery"
 	add_child(scenery)
+	if party_sites:
+		party_sites.reserve(scenery)
 	Game.load_begin("Streckenrand", 0.34, 0.36)
 	await scenery.build(track, terrain, atmosphere.night, quality)
 	var t2 := Time.get_ticks_msec()
@@ -148,6 +164,12 @@ func _ready() -> void:
 	local_car.wall_hit.connect(_on_wall_hit)
 	if mode == "graffiti":
 		_setup_graffiti()
+	if party_sites:
+		party_sites.build()
+		party = Party.new()
+		party.name = "Party"
+		party.setup(self, party_sites, config)
+		add_child(party)
 
 	if online:
 		Net.remote_state.connect(_on_remote_state)
@@ -281,9 +303,11 @@ func _physics_process(delta: float) -> void:
 					race_time = 0.0
 					local_car.controls_locked = false
 		"running", "finished":
-			race_time += delta
-			_update_progress()
-	if state == "running" and not finished:
+			# a party minigame stops the race clock and the lap counting
+			if party == null or not party.active():
+				race_time += delta
+				_update_progress()
+	if state == "running" and not finished and (party == null or not party.active()):
 		scorer.update(local_car, delta, get_world_3d().direct_space_state)
 		for ev in scorer.events:
 			hud.on_drift_event(ev)
