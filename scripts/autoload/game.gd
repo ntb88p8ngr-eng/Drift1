@@ -180,6 +180,7 @@ var settings := {
 	"credits": 12000,
 	"tuning": {},
 	"burble": {},
+	"response": {},
 	"underglow": {},
 }
 
@@ -330,6 +331,8 @@ func load_settings() -> void:
 		settings["tuning"] = {}
 	if not (settings["burble"] is Dictionary):
 		settings["burble"] = {}
+	if not (settings.get("response") is Dictionary):
+		settings["response"] = {}
 
 
 func save_settings() -> void:
@@ -634,6 +637,24 @@ func set_burble(car_id: String, level: int) -> void:
 	var all: Dictionary = settings["burble"]
 	all[car_id] = clampi(level, 0, BURBLE_LEVELS.size() - 1)
 	settings["burble"] = all
+	save_settings()
+	settings_changed.emit()
+
+
+## Throttle response per car (tuning menu, free): 1.0 = the stock profile, down to 0.2 = the pedal
+## and the revs build up more gently.
+const RESPONSE_MIN := 0.2
+
+
+func get_response(car_id: String) -> float:
+	var all: Dictionary = settings.get("response", {})
+	return clampf(float(all.get(car_id, 1.0)), RESPONSE_MIN, 1.0)
+
+
+func set_response(car_id: String, value: float) -> void:
+	var all: Dictionary = settings.get("response", {})
+	all[car_id] = clampf(value, RESPONSE_MIN, 1.0)
+	settings["response"] = all
 	save_settings()
 	settings_changed.emit()
 

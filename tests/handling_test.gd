@@ -15,6 +15,8 @@ func _ready() -> void:
 	for cid in ["r34", "mustang", "m3gt3"]:
 		Game.settings["car"] = cid
 		Game.settings["tuning"] = {cid: {"engine": stage}}
+		# RESPONSE=0.4: throttle response from the tuning menu (default 100 %)
+		Game.settings["response"] = {cid: float(OS.get_environment("RESPONSE"))} if OS.get_environment("RESPONSE") != "" else {}
 		Game.settings["transmission"] = "manual"
 		var world := World.new()
 		world.setup({"track": "playground", "mode": "free", "laps": 1, "time_of_day": "day", "weather": "dry", "weather_seed": 3, "online": false})

@@ -110,6 +110,9 @@ var spin_hold := SPIN_HOLD     # per car: spinning rear wheels grip again below 
 ## Driving aids (settings): ABS keeps the wheels turning under hard braking (steering keeps working),
 ## ESP cuts the throttle and brakes the rotation when the car starts to slide. *_active = intervening
 ## right now (the dashboard lights blink).
+## Throttle response (tuning): 1 = stock; lower = the pedal, the revs and the wheel spin build up gentler
+var response := 1.0
+var _thr_prev := 0.0
 var abs_on := true
 var esp_on := false
 var abs_active := false
@@ -179,6 +182,7 @@ func _ready() -> void:
 		_apply_tuning(Game.get_tuning(car_id))
 	if burble < 0:
 		burble = Game.get_burble(car_id) if not is_remote else int(spec.get("burble", 1))
+		response = Game.get_response(car_id) if not is_remote else 1.0
 	if not is_remote and not is_display:
 		Game.settings_changed.connect(_on_settings_changed)
 	turbo_gain = maxf(turbo_base, turbo_extra)
@@ -249,6 +253,7 @@ func _update_backfire(delta: float) -> void:
 func _on_settings_changed() -> void:
 	if not is_remote:
 		burble = Game.get_burble(car_id)
+		response = Game.get_response(car_id)
 		var ug := Game.get_underglow(car_id)
 		if underglow and ug != underglow.cfg:
 			set_underglow(ug)
@@ -463,6 +468,11 @@ func _read_input(delta: float) -> void:
 	else:
 		throttle = thr
 		brake_input = brk
+	# throttle response: below 100 % the pedal travels in over a short time instead of snapping to full
+	# (0.2 -> about half a second to full throttle); lifting off stays immediate
+	if response < 0.999 and throttle > _thr_prev:
+		throttle = minf(throttle, _thr_prev + delta * 2.0 * pow(15.0, (response - Game.RESPONSE_MIN) / (1.0 - Game.RESPONSE_MIN)))
+	_thr_prev = throttle
 	abs_on = bool(Game.settings.get("abs", true))
 	esp_on = bool(Game.settings.get("esp", false))
 	esp_active = false
@@ -481,6 +491,12 @@ func _read_input(delta: float) -> void:
 	else:
 		var regen := 0.035 + (0.07 if absf(slip_angle) > 0.25 and speed > 8.0 else 0.0)
 		nitro = minf(nitro + regen * delta, 1.0)
+
+
+## How quickly the revs build up: 1 at 100 % response, 0.45 at the minimum. Spinning wheels are held
+## back less (spin=true), so burnouts and drifts still work at any setting.
+func _response_factor(spin := false) -> float:
+	return lerpf(0.75 if spin else 0.45, 1.0, (response - Game.RESPONSE_MIN) / (1.0 - Game.RESPONSE_MIN))
 
 
 func _gear_ratio() -> float:
@@ -608,14 +624,15 @@ func _simulate(delta: float) -> void:
 		if launch_active:
 			floor_rpm = maxf(floor_rpm, launch_rpm * (1.0 + wobble * 0.5))
 		var target_rpm := maxf(coupled_rpm, floor_rpm)
-		var next := lerpf(rpm, target_rpm, 1.0 - exp(-delta * 18.0))
+		var rf := _response_factor()
+		var next := lerpf(rpm, target_rpm, 1.0 - exp(-delta * (18.0 * rf if target_rpm > rpm else 18.0)))
 		if not launch_active and next > rpm and coupled_rpm < floor_rpm:
 			# while the clutch is still slipping the revs climb (gently at part throttle)
-			next = minf(next, rpm + climb * delta)
+			next = minf(next, rpm + climb * (_response_factor(true) if floor_rpm > redline * 0.9 else rf) * delta)
 		rpm = next
 	else:
 		var free_target := idle_rpm + throttle * (redline * 0.99 - idle_rpm)
-		rpm = move_toward(rpm, free_target, (7000.0 if free_target > rpm else 4000.0) * delta)
+		rpm = move_toward(rpm, free_target, (7000.0 * _response_factor() if free_target > rpm else 4000.0) * delta)
 	rpm = clampf(rpm, idle_rpm * 0.9, redline)
 	var at_limit := rpm > redline * 0.975
 	limiter_timer = 0.1 if at_limit and throttle > 0.3 else maxf(limiter_timer - delta, 0.0)
@@ -818,7 +835,7 @@ func _simulate(delta: float) -> void:
 			var spin := maxf(float(w["spin"]) * dsign, 0.0)
 			var kin := max_f * KINETIC
 			if spin > 0.3 or req > long_cap * (0.35 if power_slide else 0.95):
-				spin += (req - max_f * spin_hold * (0.7 if power_slide else 1.0)) / SPIN_MASS * delta
+				spin += (req - max_f * spin_hold * (0.7 if power_slide else 1.0)) / SPIN_MASS * _response_factor(true) * delta
 				var v_red := redline / 60.0 * TAU * radius / maxf(absf(ratio), 0.01)
 				spin = clampf(spin, 0.0, maxf(v_red - v_long * dsign, 0.0))
 			else:

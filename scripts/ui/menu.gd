@@ -848,6 +848,16 @@ func _update_tuning(car_id: String) -> void:
 	var b_def := UiKit.label("Werkseinstellung: %s" % Game.BURBLE_LEVELS[int(Game.get_car(car_id).get("burble", 1))], 14, UiKit.TEXT_DIM)
 	_tuning_box.add_child(UiKit.row([b_name, b_opt, b_def], 10))
 	_tuning_box.add_child(b_desc)
+	# throttle response: free fine tuning of how eagerly the engine revs up with the throttle
+	var r_name := UiKit.label("Ansprechverhalten", 19)
+	r_name.custom_minimum_size = Vector2(110, 0)
+	var r_val := UiKit.label("%d %%" % int(round(Game.get_response(car_id) * 100.0)), 16, UiKit.TEXT_DIM)
+	r_val.custom_minimum_size = Vector2(56, 0)
+	var r_sl := UiKit.slider(Game.RESPONSE_MIN, 1.0, 0.05, Game.get_response(car_id), func(x):
+		r_val.text = "%d %%" % int(round(x * 100.0))
+		Game.set_response(car_id, x), 200)
+	r_sl.tooltip_text = "Wie spontan der Motor auf Gas hochdreht. 100 % = Serie, weniger = Gaspedal, Drehzahl und\ndurchdrehende Räder bauen sich sanfter auf – leichter zu dosieren. Kostenlos umstellbar."
+	_tuning_box.add_child(UiKit.row([r_name, r_sl, r_val], 10))
 	_underglow_ui(car_id)
 
 
