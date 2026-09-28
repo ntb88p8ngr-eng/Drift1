@@ -114,6 +114,9 @@ func _ready() -> void:
 		if m.shader and "wetness" in m.shader.code:
 			atmosphere.materials_wet.append(m)
 	atmosphere.night_changed.connect(_on_night_changed)
+	if track.road_material:
+		track.road_material.set_shader_parameter("night", atmosphere.night)
+	terrain.material.set_shader_parameter("night", atmosphere.night)
 	grass = Grass.new()
 	grass.name = "Grass"
 	add_child(grass)
@@ -626,6 +629,10 @@ func scoreboard_data() -> Dictionary:
 func _on_night_changed(n: float) -> void:
 	if scenery:
 		scenery.set_night(n)
+	if track and track.road_material:
+		track.road_material.set_shader_parameter("night", n)
+	if terrain and terrain.material:
+		terrain.material.set_shader_parameter("night", n)
 	if local_car == null:
 		return
 	if n > 0.45 and not _auto_lights:

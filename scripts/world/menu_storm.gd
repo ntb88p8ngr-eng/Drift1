@@ -163,13 +163,32 @@ void sky() {
 		col = mix(col * 0.6, vec3(0.006, 0.007, 0.009), clamp(-h * 6.0, 0.0, 1.0)) + vec3(0.2, 0.22, 0.3) * flash * 0.04;
 	}
 	// the city on the horizon, a few kilometres away: three rows, the further ones hazier
-	if (h < 0.12 && h > -0.03) {
+	// (seen through the gate the view goes slightly down: the skyline starts well below the
+	// horizon, so the opening shows towers from the street up, no empty land)
+	if (h < 0.34 && h > -0.32) {
+		vec3 dc = vec3(d.x, d.y + 0.26 * length(d.xz), d.z);
 		vec3 haze = vec3(0.07, 0.05, 0.045);
-		vec4 c3 = city_layer(d, 260.0, 0.004, 0.028, 0.0011, 3.0, flash);
-		col = mix(col, mix(c3.rgb, haze, 0.55), c3.a);
-		vec4 c2 = city_layer(d, 170.0, 0.006, 0.042, 0.0015, 1.0, flash);
-		col = mix(col, mix(c2.rgb, haze, 0.35), c2.a);
-		vec4 c1 = city_layer(d, 110.0, 0.008, 0.07, 0.002, 2.0, flash);
+		// back row: a closed wall of towers (no empty lots) so nothing shows between the rows
+		// the dense city behind the rows: dark facades with a random scatter of lit windows
+		float be = dc.y / max(length(dc.xz), 1e-4);
+		if (be < 0.262) {
+			float ax = (atan(dc.z, dc.x) / 6.2831853 + 0.5) * 5200.0;
+			float ay = be / 0.0021;
+			vec2 wcell = floor(vec2(ax, ay));
+			vec2 wf = fract(vec2(ax, ay));
+			float wwin = step(0.2, wf.x) * step(wf.x, 0.7) * step(0.3, wf.y) * step(wf.y, 0.75);
+			float wlit = step(0.8, h1(wcell.x + wcell.y * 57.0, 41.0));
+			vec3 wcol = h1(wcell.x * 3.0 + wcell.y, 43.0) < 0.6 ? vec3(1.0, 0.72, 0.42) : vec3(0.8, 0.88, 1.0);
+			vec3 bcol = vec3(0.011, 0.011, 0.013) + wcol * wwin * wlit * 0.45;
+			col = mix(bcol, haze * 0.5, 0.25);
+		}
+		vec4 c4 = city_layer(dc, 420.0, 0.25, 0.28, 0.0024, 5.0, flash);
+		col = mix(col, mix(c4.rgb, haze, 0.5), c4.a);
+		vec4 c3 = city_layer(dc, 260.0, 0.255, 0.295, 0.003, 3.0, flash);
+		col = mix(col, mix(c3.rgb, haze, 0.4), c3.a);
+		vec4 c2 = city_layer(dc, 170.0, 0.26, 0.31, 0.0038, 1.0, flash);
+		col = mix(col, mix(c2.rgb, haze, 0.25), c2.a);
+		vec4 c1 = city_layer(dc, 110.0, 0.265, 0.335, 0.005, 2.0, flash);
 		col = mix(col, mix(c1.rgb, haze, 0.1), c1.a);
 	}
 	COLOR = col;
@@ -237,54 +256,7 @@ func _build_ground(hall: Rect2) -> void:
 	mi.position = Vector3(hall.get_center().x, -0.03, hall.get_center().y)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
-	# wide, wet grass fields out to the city (patchwork of meadows, mown strips, field edges)
-	var fields := PlaneMesh.new()
-	fields.size = Vector2(3000, 3000)
-	var fm := ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = FIELD_SHADER
-	fm.shader = sh
-	fm.set_shader_parameter("noise_tex", TexKit.noise_texture(71, 0.02))
-	var fi := MeshInstance3D.new()
-	fi.mesh = fields
-	fi.material_override = fm
-	fi.position = Vector3(hall.get_center().x, -0.06, hall.get_center().y)
-	fi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(fi)
-
-
-const FIELD_SHADER := """
-shader_type spatial;
-render_mode diffuse_burley;
-uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
-varying vec3 wpos;
-float fh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-void vertex() {
-	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-}
-void fragment() {
-	vec2 p = wpos.xz;
-	// fields of 40-90 m, each with its own shade of green, some mown in strips
-	vec2 fc = floor(p / vec2(70.0, 55.0));
-	float f = fh(fc);
-	vec3 base = mix(vec3(0.03, 0.055, 0.02), vec3(0.05, 0.075, 0.025), f);
-	base = mix(base, vec3(0.06, 0.06, 0.03), step(0.82, f));
-	// fine detail only close by (far away it would flicker at the flat viewing angle)
-	float dist = length(wpos - CAMERA_POSITION_WORLD);
-	float near = 1.0 - smoothstep(25.0, 90.0, dist);
-	float n1 = texture(noise_tex, p * 0.05).r;
-	float n2 = mix(0.5, texture(noise_tex, p * 0.9).r, near);
-	float strips = step(0.6, f) * step(0.5, fract((f > 0.8 ? p.x : p.y) / 6.0)) * 0.15;
-	vec3 col = base * (0.75 + 0.5 * n1) * (0.85 + 0.3 * n2) * (1.0 - strips);
-	// darker hedges / ditches along the field edges
-	vec2 e = abs(fract(p / vec2(70.0, 55.0)) - 0.5);
-	float edge = smoothstep(0.485, 0.497, max(e.x, e.y));
-	col = mix(col, vec3(0.02, 0.035, 0.015), edge * 0.8);
-	ALBEDO = col;
-	ROUGHNESS = 0.8;
-	SPECULAR = 0.15;
-}
-"""
+	# (no fields beyond the apron: the skyline in the sky shader starts right behind it)
 
 
 func _build_rain(hall: Rect2) -> void:

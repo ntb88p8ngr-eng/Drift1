@@ -90,6 +90,8 @@ func _start_world(cfg: Dictionary) -> void:
 	add_child(world)
 	if not world.is_loaded:
 		await world.loaded
+	# half a second more: the first frames still stream in shaders and scenery in front of the camera
+	await get_tree().create_timer(0.5).timeout
 	_hide_loading()
 
 
