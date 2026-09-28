@@ -287,7 +287,8 @@ func _open_spots() -> Array:
 		var gx := r.position.x + 10.0
 		while gx < r.end.x - 10.0:
 			var p := Vector3(gx, 0, gz)
-			if terrain.pad_sd(p.x, p.z) < -8.0 and track.distance_to_center(p) > float(track.half_w) + 7.0 \
+			# clusters (slaloms, box walls) reach a few metres: keep them clear of the grass belt too
+			if terrain.pad_sd(p.x, p.z) < -8.0 and track.distance_to_center(p) > float(track.half_w) + terrain.BELT_GAP + terrain.BELT_WIDTH + 3.0 \
 					and not _pit.grow(4.0).has_point(Vector2(p.x, p.z)) and terrain.pad_grass(p.x, p.z) < 0.01:
 				p.y = _ground(p.x, p.z)
 				out.append(p)
@@ -321,6 +322,8 @@ func _donut_circles(spots: Array, count: int) -> void:
 		for k in 16:
 			var a := TAU * k / 16.0
 			var p := c + Vector3(cos(a), 0, sin(a)) * 11.0
+			if terrain.pad_grass(p.x, p.z) > 0.01:
+				continue
 			p.y = _ground(p.x, p.z) + 0.02
 			_body("cone", "cone", 3.0, Transform3D(Basis.IDENTITY, p), Vector3(0, -0.35, 0)).position.y += 0.35
 		# a barrel in the middle to circle around
@@ -336,7 +339,7 @@ func _slaloms(spots: Array, count: int) -> void:
 		dir = Vector3(1, 0, 0) if rng.randf() < 0.5 else Vector3(0, 0, 1)
 		for k in 9:
 			var p := c + dir * (-48.0 + k * 12.0)
-			if terrain.pad_sd(p.x, p.z) > -4.0 or track.distance_to_center(p) < float(track.half_w) + 2.0:
+			if terrain.pad_sd(p.x, p.z) > -4.0 or track.distance_to_center(p) < float(track.half_w) + 2.0 or terrain.pad_grass(p.x, p.z) > 0.01:
 				continue
 			p.y = _ground(p.x, p.z) + 0.37
 			_body("cone", "cone", 3.0, Transform3D(Basis.IDENTITY, p), Vector3(0, -0.35, 0))
@@ -420,7 +423,8 @@ func _water_barriers() -> void:
 	for side in [-1.0, 1.0]:
 		for k in 10:
 			var i: int = (s0 + 30 + k + n) % n
-			var p: Vector3 = track.samples[i] + track.rights[i] * side * (float(track.half_w) + 3.5)
+			# on the strip of asphalt between the road and the grass belt
+			var p: Vector3 = track.samples[i] + track.rights[i] * side * (float(track.half_w) + terrain.BELT_GAP * 0.45)
 			p.y = _ground(p.x, p.z) + 0.4
 			var b := Basis.looking_at(track.tangents[i], Vector3.UP).rotated(Vector3.UP, PI * 0.5)
 			_body("water_red" if k % 2 == 0 else "water_white", "water_red", 60.0, Transform3D(b, p))

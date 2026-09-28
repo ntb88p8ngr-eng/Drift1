@@ -402,6 +402,7 @@ const PAD_CORNER := 45.0
 ## Playground grass islands: one inside each loop of the figure eight, one in each pad corner.
 func _setup_islands() -> void:
 	islands.clear()
+	_setup_driveways()
 	var tc: Vector2 = track.bounds.get_center()
 	for side: float in [-1.0, 1.0]:
 		var sum := Vector2.ZERO
@@ -428,13 +429,53 @@ func _setup_islands() -> void:
 		return []
 
 
-## 1 on a grass island, 0 on the asphalt (slightly wavy edge).
+## 1 on a grass island or the grass belt around the figure eight, 0 on the asphalt (slightly wavy edge).
 func pad_grass(x: float, z: float) -> float:
 	var g := 0.0
 	for isl in islands:
 		var d := Vector2(x, z).distance_to(isl[0]) + _n_small.get_noise_2d(x * 2.0, z * 2.0) * 1.2
 		g = maxf(g, 1.0 - smoothstep(float(isl[1]) - 1.0, float(isl[1]) + 0.6, d))
+	return maxf(g, _grass_belt(x, z))
+
+
+## Playground: a 10 m grass belt along both sides of the figure eight (1.5 m of asphalt left beside the
+## road), with two driveways through it – north of the east loop (towards the pit lane) and south
+## of the west loop.
+const BELT_GAP := 1.5
+const BELT_WIDTH := 10.0
+const BELT_DRIVEWAY := 8.0     # half width of a driveway
+
+
+func _grass_belt(x: float, z: float) -> float:
+	var hw: float = float(track.half_w)
+	var d := _dist_raw(x, z)
+	var outer := hw + BELT_GAP + BELT_WIDTH + _n_small.get_noise_2d(x * 1.5, z * 1.5) * 0.8
+	var g := smoothstep(hw + BELT_GAP - 0.4, hw + BELT_GAP + 0.4, d) * (1.0 - smoothstep(outer - 0.5, outer + 0.5, d))
+	if g <= 0.0:
+		return 0.0
+	# driveways: straight through the belt, outside the loops' northernmost / southernmost point
+	for dw in _driveways:
+		var p: Vector2 = dw[0]
+		if (z - p.y) * float(dw[1]) > hw * 0.5:
+			var k := 1.0 - smoothstep(BELT_DRIVEWAY - 0.5, BELT_DRIVEWAY + 0.5, absf(x - p.x))
+			g *= 1.0 - k
 	return g
+
+
+## [point on the centreline, direction (-1 north, +1 south)] of the two driveways.
+var _driveways: Array = []
+
+
+func _setup_driveways() -> void:
+	var tc: Vector2 = track.bounds.get_center()
+	var north := Vector2(0, 1e9)
+	var south := Vector2(0, -1e9)
+	for s in track.samples:
+		if s.x > tc.x and s.z < north.y:
+			north = Vector2(s.x, s.z)
+		if s.x < tc.x and s.z > south.y:
+			south = Vector2(s.x, s.z)
+	_driveways = [[north, -1.0], [south, 1.0]]
 
 
 func pad_rect() -> Rect2:
