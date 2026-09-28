@@ -107,6 +107,13 @@ var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.
 var underglow: Node3D
 var _engine_stage := 0
 var spin_hold := SPIN_HOLD     # per car: spinning rear wheels grip again below this share of the grip
+## Driving aids (settings): ABS keeps the wheels turning under hard braking (steering keeps working),
+## ESP cuts the throttle and brakes the rotation when the car starts to slide. *_active = intervening
+## right now (the dashboard lights blink).
+var abs_on := true
+var esp_on := false
+var abs_active := false
+var esp_active := false
 var yaw_damp := 0.0            # per car: extra yaw damping while sliding (keeps light, powerful cars calmer)
 var braking_visual := false
 var track_hint := -1
@@ -456,6 +463,15 @@ func _read_input(delta: float) -> void:
 	else:
 		throttle = thr
 		brake_input = brk
+	abs_on = bool(Game.settings.get("abs", true))
+	esp_on = bool(Game.settings.get("esp", false))
+	esp_active = false
+	if esp_on and not handbrake and speed > 5.0 and gear >= 1:
+		# ESP: less power as soon as the rear steps out
+		var cut := smoothstep(0.08, 0.25, absf(slip_angle))
+		if cut > 0.0 and throttle > 0.1:
+			throttle *= 1.0 - 0.85 * cut
+			esp_active = true
 	# W + S at (near) standstill = launch control with line lock (burnout)
 	line_lock = gear >= 1 and thr > 0.5 and brk > 0.5 and absf(forward_speed) < 3.0
 	# nitro
@@ -517,13 +533,16 @@ func _simulate(delta: float) -> void:
 		track_hint = proj[0]
 
 	# --- steering (speed sensitive + counter-steer assist) ---
-	var speed_factor := clampf(1.0 - absf(forward_speed) / 55.0, 0.4, 1.0)
+	# finer steering the faster you go (60 km/h ~54 %, 120 km/h ~23 %, 170 km/h ~13 % of the lock), so a
+	# full keyboard input at speed doesn't throw the car into a slide; counter-steer stays unlimited
+	var vs := absf(forward_speed) / 18.0
+	var speed_factor := 1.0 / (1.0 + vs * vs)
 	var target := steer_input * steer_lock * speed_factor
 	if forward_speed > 4.0 and absf(slip_angle) > 0.08:
 		var assist := float(Game.settings.get("steer_assist", 0.5))
 		target += clampf(slip_angle, -steer_lock, steer_lock) * assist * (1.0 - absf(steer_input) * 0.4)
 	target = clampf(target, -steer_lock, steer_lock)
-	steer_angle = move_toward(steer_angle, target, STEER_SPEED * delta)
+	steer_angle = move_toward(steer_angle, target, STEER_SPEED * lerpf(1.0, 0.45, smoothstep(15.0, 45.0, absf(forward_speed))) * delta)
 
 	# --- launch control state ---
 	if line_lock:
@@ -655,12 +674,15 @@ func _simulate(delta: float) -> void:
 	# --- per wheel forces ---
 	grounded_wheels = 0
 	total_slip = 0.0
+	abs_active = false
 	var front_brake := 0.62
 	var brake_force_max := mass * 9.8 * 1.25
 	# player settings: handbrake strength and how much the cars slide sideways
 	var hb_strength := clampf(float(Game.settings.get("handbrake_strength", 0.75)), 0.1, 1.0)
 	var slide := clampf(float(Game.settings.get("slide", 0.5)), 0.0, 1.0)
-	var rear_slide_grip := lerpf(0.86, 0.62, slide)
+	# at speed the car sits firmer (like downforce): stiffer, quicker, grippier rear tyres – no pendulum
+	var hs := smoothstep(20.0, 45.0, speed)
+	var rear_slide_grip := lerpf(lerpf(0.86, 0.62, slide), 0.9, hs * 0.7)
 	var slide_width := lerpf(2.2, 4.2, slide)
 	var mass_per_wheel := mass / 4.0
 	var spin_surface := rpm / 60.0 * TAU * radius / maxf(absf(ratio), 0.01) if ratio != 0.0 else 0.0
@@ -721,7 +743,7 @@ func _simulate(delta: float) -> void:
 		w["v_long"] = v_long
 
 		var is_front: bool = w["front"]
-		var axle_grip := 1.03 if is_front else 0.97
+		var axle_grip := 1.03 if is_front else 0.97 + 0.1 * hs
 		var max_f := grip * sg * axle_grip * wheel_load
 
 		# longitudinal request
@@ -757,7 +779,7 @@ func _simulate(delta: float) -> void:
 		# lateral: slip-angle curve
 		var alpha := atan2(v_lat, maxf(absf(v_long), 3.5))
 		# softer rear tyres (higher slip angle at peak grip) slide more progressively
-		var peak := PEAK_SLIP if is_front else PEAK_SLIP * lerpf(1.0, REAR_SOFT, slide)
+		var peak := PEAK_SLIP if is_front else PEAK_SLIP * lerpf(lerpf(1.0, REAR_SOFT, slide), 1.0, hs * 0.75)
 		var ratio_a := alpha / peak
 		var curve := 0.0
 		var slide_grip := SLIDE_GRIP if is_front else rear_slide_grip
@@ -771,7 +793,7 @@ func _simulate(delta: float) -> void:
 		elif speed > 4.0:
 			# tyre relaxation: side force builds up over a short time, so direction changes (transitions)
 			# flow smoothly with the car sliding sideways instead of snapping back to grip
-			var tau := lerpf(0.01, RELAX_MAX, slide) * (0.5 if is_front else 1.0)
+			var tau := lerpf(0.01, RELAX_MAX, slide) * (0.5 if is_front else 1.0) * (1.0 - 0.7 * hs)
 			f_lat = lerpf(float(w.get("f_lat", f_lat)), f_lat, 1.0 - exp(-delta / tau))
 		w["f_lat"] = f_lat
 
@@ -820,6 +842,14 @@ func _simulate(delta: float) -> void:
 			w["spin"] = spin * dsign
 		else:
 			var combined := sqrt(f_long * f_long + f_lat * f_lat)
+			if abs_on and brake_input > 0.01 and not locked and combined > max_f * 0.95 and max_f > 0.0:
+				# ABS: the brake force is held just below the limit that is left over by the cornering
+				# force – the wheel never locks, the tyre keeps its side grip (the car still steers)
+				var room := sqrt(maxf(max_f * max_f * 0.9 - f_lat * f_lat, max_f * max_f * 0.04))
+				if absf(f_long) > room:
+					f_long = clampf(f_long, -room, room)
+					abs_active = true
+				combined = sqrt(f_long * f_long + f_lat * f_lat)
 			if combined > max_f and max_f > 0.0:
 				if absf(f_long) > max_f * 0.98 or locked:
 					f_long = clampf(f_long, -max_f, max_f) * 0.92
@@ -861,6 +891,23 @@ func _simulate(delta: float) -> void:
 	if yaw_damp > 0.0 and grounded_wheels >= 3 and speed > 8.0:
 		var slide_y := smoothstep(0.1, 0.4, absf(slip_angle))
 		apply_torque(-up * angular_velocity.dot(up) * yaw_damp * mass * slide_y)
+
+	# at speed: damp any rotation beyond what the steering asks for (the car doesn't pendulum after a
+	# quick lane change) – not with the handbrake pulled or flat out in a drift, so drifting still works
+	var hs_y := smoothstep(20.0, 40.0, speed)
+	if hs_y > 0.0 and grounded_wheels >= 3 and not handbrake and forward_speed > 0.0:
+		var wb := absf(float(body_spec["axle_r"]) - float(body_spec["axle_f"]))
+		var yaw_ref := -forward_speed * tan(steer_angle) / maxf(wb, 1.0)
+		var excess := angular_velocity.dot(up) - yaw_ref
+		var k := hs_y * (1.0 - 0.7 * smoothstep(0.6, 1.0, throttle) * smoothstep(0.2, 0.5, absf(slip_angle)))
+		apply_torque(-up * excess * mass * 1.2 * k)
+	# ESP: from walking pace up, any rotation beyond the steering is braked away (no drifting)
+	if esp_on and grounded_wheels >= 3 and not handbrake and forward_speed > 4.0:
+		var wb2 := absf(float(body_spec["axle_r"]) - float(body_spec["axle_f"]))
+		var excess2 := angular_velocity.dot(up) + forward_speed * tan(steer_angle) / maxf(wb2, 1.0)
+		if absf(excess2) > 0.12 or absf(slip_angle) > 0.08:
+			esp_active = true
+		apply_torque(-up * excess2 * mass * 2.5 * smoothstep(4.0, 10.0, forward_speed))
 
 	# anti-roll bars
 	for pair in [[0, 1], [2, 3]]:

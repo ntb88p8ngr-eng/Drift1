@@ -95,6 +95,14 @@ jobs:
             grep -q "PARTY TEST: PASS" party.log
           done
 
+      - name: Stability test (quick lane change at 120/170 km/h, with and without ABS/ESP)
+        run: |
+          timeout 300 ./godot --headless --path . res://tests/stability_test.tscn 2>&1 | tee stab.log || true
+          if grep -E "SCRIPT ERROR" stab.log; then echo "::error::Stability test failed"; exit 1; fi
+          grep -q "STABILITY TEST: PASS" stab.log
+          timeout 300 ./godot --headless --path . res://tests/stability_test.tscn -- --abs --esp 2>&1 | tee stab2.log || true
+          grep -q "STABILITY TEST: PASS" stab2.log
+
       - name: Idle test (no input = the car stands still, also on a 10 % grade)
         run: |
           timeout 300 ./godot --headless --path . res://tests/idle_test.tscn 2>&1 | tee idle.log || true
