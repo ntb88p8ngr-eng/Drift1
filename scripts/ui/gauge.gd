@@ -92,24 +92,25 @@ func _assist_icons(c: Vector2, r: float) -> void:
 	var off := Color(1, 1, 1, 0.18)
 	var font := ThemeDB.fallback_font
 	# ABS: "ABS" in a circle with a bracket on each side
-	var pa := c + Vector2(-r * 0.56, r * 0.02)
+	# small, inside the number ring: left and right of the gear
+	var pa := c + Vector2(-r * 0.36, -r * 0.22)
 	var ca: Color = (amber if blink else green) if bool(car.abs_active) and bool(car.abs_on) else (green if bool(car.abs_on) else off)
-	var rr := r * 0.15
-	draw_arc(pa, rr, 0.0, TAU, 28, ca, 2.0, true)
-	draw_arc(pa, rr * 1.35, deg_to_rad(140), deg_to_rad(220), 10, ca, 2.0, true)
-	draw_arc(pa, rr * 1.35, deg_to_rad(-40), deg_to_rad(40), 10, ca, 2.0, true)
-	draw_string(font, pa + Vector2(-rr, rr * 0.36), "ABS", HORIZONTAL_ALIGNMENT_CENTER, rr * 2.0, int(rr * 0.8), ca)
+	var rr := r * 0.08
+	draw_arc(pa, rr, 0.0, TAU, 24, ca, 1.5, true)
+	draw_arc(pa, rr * 1.35, deg_to_rad(140), deg_to_rad(220), 8, ca, 1.5, true)
+	draw_arc(pa, rr * 1.35, deg_to_rad(-40), deg_to_rad(40), 8, ca, 1.5, true)
+	draw_string(font, pa + Vector2(-rr, rr * 0.36), "ABS", HORIZONTAL_ALIGNMENT_CENTER, rr * 2.0, maxi(int(rr * 0.85), 7), ca)
 	# ESP: a car seen from behind with two skid lines below
-	var pe := c + Vector2(r * 0.56, r * 0.0)
+	var pe := c + Vector2(r * 0.36, -r * 0.26)
 	var ce: Color = (amber if blink else green) if bool(car.esp_active) and bool(car.esp_on) else (green if bool(car.esp_on) else off)
-	var w := r * 0.2
-	var h := r * 0.1
+	var w := r * 0.1
+	var h := r * 0.05
 	var body := PackedVector2Array([pe + Vector2(-w, h * 0.2), pe + Vector2(-w * 0.7, -h), pe + Vector2(w * 0.7, -h),
 		pe + Vector2(w, h * 0.2), pe + Vector2(w, h * 0.8), pe + Vector2(-w, h * 0.8), pe + Vector2(-w, h * 0.2)])
-	draw_polyline(body, ce, 2.0, true)
+	draw_polyline(body, ce, 1.5, true)
 	for sx: float in [-0.5, 0.5]:
 		var pts := PackedVector2Array()
 		for k in 9:
 			var f := float(k) / 8.0
 			pts.append(pe + Vector2(w * sx + sin(f * TAU) * w * 0.22, h * 1.2 + f * h * 1.6))
-		draw_polyline(pts, ce, 1.6, true)
+		draw_polyline(pts, ce, 1.2, true)
