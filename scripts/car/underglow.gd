@@ -104,13 +104,13 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		# a brighter tube throws a wider glow
 		var across := 1.9 * (0.6 + 0.4 * br)
 		if along_x:
-			decal.size = Vector3(length + 0.8, 1.0, across)
+			decal.size = Vector3(length + 1.4, 1.0, across)
 			decal.position = Vector3(0, y - 0.45, pos.z + signf(pos.z) * out)
 		else:
-			decal.size = Vector3(across, 1.0, length + 0.8)
+			decal.size = Vector3(across, 1.0, length + 1.4)
 			decal.position = Vector3(pos.x + signf(pos.x) * out, y - 0.45, zc)
 			decal.rotation = Vector3(0, PI * 0.5, 0)
-			decal.size = Vector3(length + 0.8, 1.0, across)
+			decal.size = Vector3(length + 1.4, 1.0, across)
 		add_child(decal)
 		var ls: Array = []
 		if lights:
@@ -146,8 +146,9 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 			d.upper_fade = 0.2
 			d.lower_fade = 0.4
 			d.cull_mask = 1
-			d.size = Vector3(1.8, 1.0, 1.8)
-			d.position = Vector3(float(cx[1]) * hx, y - 0.45, float(cz[1]) + signf(float(cz[1])) * 0.3)
+			# a wide soft patch reaching out diagonally from the corner, over both washes' fading ends
+			d.size = Vector3(3.4, 1.0, 3.4)
+			d.position = Vector3(float(cx[1]) * (hx + 0.35), y - 0.45, float(cz[1]) + signf(float(cz[1])) * 0.75)
 			add_child(d)
 			_corners.append({"decal": d, "a": idx[cz[0]], "b": idx[cx[0]]})
 
@@ -164,7 +165,7 @@ static func _corner_texture() -> Texture2D:
 	for y in n:
 		for x in n:
 			var p := Vector2((x + 0.5) / n - 0.5, (y + 0.5) / n - 0.5) * 2.0
-			var v := clampf(exp(-p.length_squared() * 3.5) * 0.45 * (1.0 - smoothstep(0.8, 1.0, p.length())), 0.0, 1.0)
+			var v := clampf(exp(-p.length_squared() * 2.6) * 0.42 * (1.0 - smoothstep(0.6, 1.0, p.length())), 0.0, 1.0)
 			img.set_pixel(x, y, Color(v, v, v, v))
 	img.generate_mipmaps()
 	_corner_tex = ImageTexture.create_from_image(img)
