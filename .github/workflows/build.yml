@@ -87,6 +87,14 @@ jobs:
           if grep -E "SCRIPT ERROR" underglow.log; then echo "::error::Underglow test failed"; exit 1; fi
           grep -q "UNDERGLOW TEST OK" underglow.log
 
+      - name: Idle test (no input = the car stands still, also on a 10 % grade)
+        run: |
+          timeout 300 ./godot --headless --path . res://tests/idle_test.tscn 2>&1 | tee idle.log || true
+          if grep -E "SCRIPT ERROR" idle.log; then echo "::error::Idle test failed"; exit 1; fi
+          grep -q "IDLE TEST: PASS" idle.log
+          timeout 600 ./godot --headless --path . res://tests/idle_test.tscn -- --track=gruene_hoelle --km=4.3 2>&1 | tee idle2.log || true
+          grep -q "IDLE TEST: PASS" idle2.log
+
       - name: Playground test (props settle, grass islands)
         run: |
           timeout 240 ./godot --headless --path . res://tests/playground_test.tscn 2>&1 | tee playground.log || true

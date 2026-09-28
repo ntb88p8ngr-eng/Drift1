@@ -725,9 +725,11 @@ func _simulate(delta: float) -> void:
 				# a strong handbrake locks the rear wheels, a soft one only drags them
 				locked = absf(v_long) > 0.5 and hb_strength > 0.45
 		f_long -= v_long * ROLLING
-		# parking hold when nearly stopped and no input
-		if throttle < 0.02 and brake_input < 0.02 and absf(v_long) < 1.2 and speed < 1.5:
-			f_long -= v_long * mass_per_wheel * 8.0
+		# parking hold when nearly stopped and no input: static friction keeps the car where it is –
+		# it also cancels the downhill pull, so it doesn't creep away on a slope (or roll backwards)
+		if throttle < 0.02 and brake_input < 0.02 and absf(v_long) < 1.2 and speed < 1.5 and not line_lock:
+			var g_along := -9.8 * w_fwd.y
+			f_long = clampf(-v_long * mass_per_wheel * 30.0 - g_along * mass_per_wheel, -max_f, max_f)
 
 		# lateral: slip-angle curve
 		var alpha := atan2(v_lat, maxf(absf(v_long), 3.5))

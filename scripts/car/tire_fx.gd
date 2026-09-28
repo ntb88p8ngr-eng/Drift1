@@ -23,14 +23,14 @@ func _ready() -> void:
 		_smokes.append(_make_smoke(i >= 2))
 	var r: float = car.body.exhaust_radius
 	for p in car.body.exhaust_points:
-		var fl := _make_flame(false, r)
-		fl.position = p
-		_flames.append(fl)
-		var nf := _make_flame(true, r)
-		nf.position = p
-		_nitro_flames.append(nf)
+		for layer in _make_flame(false, r):
+			(layer as GPUParticles3D).position = p
+			_flames.append(layer)
+		for layer in _make_flame(true, r):
+			(layer as GPUParticles3D).position = p
+			_nitro_flames.append(layer)
 	_flash = OmniLight3D.new()
-	_flash.light_color = Color(1.0, 0.5, 0.15)
+	_flash.light_color = Color(0.85, 0.45, 1.0)
 	_flash.omni_range = 5.0
 	_flash.light_energy = 0.0
 	_flash.visible = false
@@ -115,44 +115,93 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	return p
 
 
-func _make_flame(nitro: bool, pipe_r: float) -> GPUParticles3D:
+## Flame of one tail pipe: a bright core right at the tip plus a soft, swirling plume that slows down,
+## swells and fades from lavender through violet to pink – the "volumetric" backfire look.
+## Returns [core, plume].
+func _make_flame(nitro: bool, pipe_r: float) -> Array:
+	var core := _flame_layer(nitro, pipe_r, true)
+	var plume := _flame_layer(nitro, pipe_r, false)
+	return [core, plume]
+
+
+func _flame_layer(nitro: bool, pipe_r: float, core: bool) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	var size := clampf(pipe_r * 5.0, 0.12, 0.34)
-	p.amount = 40 if nitro else 24
-	p.lifetime = 0.1 if nitro else 0.12
+	var size: float
+	if core:
+		size = clampf(pipe_r * 4.5, 0.1, 0.28)
+		p.amount = 36 if nitro else 18
+		p.lifetime = 0.08 if nitro else 0.09
+	else:
+		size = clampf(pipe_r * 9.0, 0.22, 0.55) * (1.15 if nitro else 1.0)
+		p.amount = 70 if nitro else 34
+		p.lifetime = 0.26 if nitro else 0.3
 	p.one_shot = not nitro
-	p.explosiveness = 0.0 if nitro else 0.9
+	p.explosiveness = 0.0 if nitro else (0.85 if core else 0.6)
 	p.emitting = false
 	p.local_coords = true
-	p.visibility_aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 4))
+	p.visibility_aabb = AABB(Vector3(-1.5, -1.5, -1.0), Vector3(3, 3, 5))
 	var m := ParticleProcessMaterial.new()
 	# car space: +Z points out of the tail pipe
 	m.direction = Vector3(0, 0, 1)
-	m.spread = 7.0 if nitro else 12.0
-	m.initial_velocity_min = 5.0 if nitro else 4.0
-	m.initial_velocity_max = 9.0 if nitro else 8.0
-	m.gravity = Vector3.ZERO
+	m.gravity = Vector3(0, 0.6, 0)
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	m.emission_sphere_radius = pipe_r * 0.6
+	m.emission_sphere_radius = pipe_r * 0.5
+	if core:
+		m.spread = 5.0
+		m.initial_velocity_min = 6.0 if nitro else 4.0
+		m.initial_velocity_max = 9.0 if nitro else 7.0
+		m.damping_min = 8.0
+		m.damping_max = 14.0
+	else:
+		m.spread = 10.0 if nitro else 16.0
+		m.initial_velocity_min = 5.0 if nitro else 3.5
+		m.initial_velocity_max = 8.0 if nitro else 6.5
+		# the plume brakes hard and billows out
+		m.damping_min = 9.0
+		m.damping_max = 16.0
+		m.turbulence_enabled = true
+		m.turbulence_noise_strength = 1.4
+		m.turbulence_noise_scale = 2.5
+		m.turbulence_noise_speed = Vector3(0, 0, 2.0)
+		m.turbulence_influence_min = 0.05
+		m.turbulence_influence_max = 0.18
+		m.angle_min = -180.0
+		m.angle_max = 180.0
 	m.scale_min = 0.7
-	m.scale_max = 1.0
+	m.scale_max = 1.1
 	var sc := Curve.new()
-	sc.add_point(Vector2(0.0, 0.55))
-	sc.add_point(Vector2(0.3, 1.0))
-	sc.add_point(Vector2(1.0, 0.25))
+	if core:
+		sc.add_point(Vector2(0.0, 0.7))
+		sc.add_point(Vector2(0.4, 1.0))
+		sc.add_point(Vector2(1.0, 0.35))
+	else:
+		sc.add_point(Vector2(0.0, 0.35))
+		sc.add_point(Vector2(0.35, 1.0))
+		sc.add_point(Vector2(1.0, 1.6))
 	var sct := CurveTexture.new()
 	sct.curve = sc
 	m.scale_curve = sct
+	# HDR colours (> 1) so the glow picks the flames up
 	var grad := Gradient.new()
-	if nitro:
-		grad.set_color(0, Color(0.85, 0.95, 1.0, 1.0))
-		grad.set_color(1, Color(0.35, 0.2, 1.0, 0.0))
-		grad.add_point(0.35, Color(0.3, 0.55, 1.0, 0.9))
+	if core and nitro:
+		grad.set_color(0, Color(2.2, 2.6, 3.2, 1.0))
+		grad.set_color(1, Color(0.4, 0.6, 2.4, 0.0))
+	elif core:
+		grad.set_color(0, Color(2.4, 2.3, 3.0, 1.0))
+		grad.set_color(1, Color(1.4, 0.7, 2.6, 0.0))
+	elif nitro:
+		grad.set_color(0, Color(0.9, 1.3, 2.6, 0.95))
+		grad.set_color(1, Color(0.9, 0.3, 1.6, 0.0))
+		grad.add_point(0.3, Color(0.55, 0.7, 2.4, 0.8))
+		grad.add_point(0.65, Color(0.8, 0.4, 2.0, 0.45))
 	else:
-		grad.set_color(0, Color(1.0, 0.9, 0.5, 1.0))
-		grad.set_color(1, Color(1.0, 0.2, 0.0, 0.0))
+		grad.set_color(0, Color(1.6, 1.4, 2.6, 0.95))
+		grad.set_color(1, Color(1.8, 0.45, 1.1, 0.0))
+		grad.add_point(0.25, Color(1.1, 0.6, 2.4, 0.85))
+		grad.add_point(0.6, Color(1.9, 0.55, 1.7, 0.5))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
+	gt.use_hdr = true
 	m.color_ramp = gt
 	p.process_material = m
 	var quad := QuadMesh.new()
@@ -164,6 +213,8 @@ func _make_flame(nitro: bool, pipe_r: float) -> GPUParticles3D:
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.vertex_color_use_as_albedo = true
 	mat.albedo_texture = TexKit.smoke_texture()
+	mat.proximity_fade_enabled = true
+	mat.proximity_fade_distance = 0.15
 	quad.material = mat
 	p.draw_pass_1 = quad
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -178,7 +229,7 @@ func _on_backfire(strength := 1.0) -> void:
 		fl.amount_ratio = 1.0 if strength >= 0.9 else 0.4
 		fl.restart()
 		fl.emitting = true
-	_flash_t = 0.12
+	_flash_t = 0.18
 	_flash_k = strength
 
 
@@ -230,8 +281,8 @@ func _process(delta: float) -> void:
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		_flash.visible = true
-		_flash.light_color = Color(1.0, 0.5, 0.15)
-		_flash.light_energy = 3.0 * _flash_k * (_flash_t / 0.12)
+		_flash.light_color = Color(0.85, 0.45, 1.0)
+		_flash.light_energy = 3.5 * _flash_k * (_flash_t / 0.18)
 	elif nitro_on:
 		_flash.visible = true
 		_flash.light_color = Color(0.35, 0.5, 1.0)

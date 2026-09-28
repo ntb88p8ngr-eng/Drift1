@@ -99,12 +99,13 @@ void fragment() {
 	float n2 = texture(noise_tex, wpos.xz * 0.019).r;
 	float n3 = texture(noise_tex, wpos.xz * 0.004 + vec2(0.3, 0.7)).r;
 	vec3 col = asphalt * (0.72 + 0.56 * n) * (0.85 + 0.3 * n2);
+	// blur the fine grain a little (it sparkles in motion), more at night and further away
+	float road_b = 0.6 + night * 1.9 + smoothstep(10.0, 50.0, length(VERTEX)) * 1.2;
 	vec2 tp = wpos.xz / asphalt_tile;
 	float grain = 1.0;
 	if (asphalt_mean > 0.0) {
 		vec2 tp2 = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * wpos.xz / (asphalt_tile * 5.3);
-		// at night: blur the fine grain (it flickers like static under the headlights)
-		grain = dot(texture(asphalt_tex, tp, night * 2.5).rgb, vec3(0.3333)) / asphalt_mean;
+		grain = dot(texture(asphalt_tex, tp, road_b).rgb, vec3(0.3333)) / asphalt_mean;
 		float grain2 = dot(texture(asphalt_tex, tp2).rgb, vec3(0.3333)) / asphalt_mean;
 		col = asphalt * (0.9 + 0.2 * n) * (0.85 + 0.3 * n2) * mix(1.0, grain, 0.9 - 0.5 * night) * mix(1.0, grain2, 0.3);
 	}
@@ -136,7 +137,7 @@ void fragment() {
 	ROUGHNESS = mix(ROUGHNESS, max(ROUGHNESS, 0.93), night * (1.0 - max(wetness, puddle)));
 	vec3 nm = texture(noise_nrm, wpos.xz * 0.23).xyz;
 	if (asphalt_mean > 0.0) {
-		nm = mix(nm, texture(asphalt_nrm, tp, night * 2.5).xyz, 0.75);
+		nm = mix(nm, texture(asphalt_nrm, tp, road_b).xyz, 0.75);
 	}
 	vec3 ripple = texture(noise_nrm, wpos.xz * 1.7 + vec2(TIME * 0.9, -TIME * 0.6)).xyz;
 	NORMAL_MAP = mix(nm, mix(vec3(0.5, 0.5, 1.0), ripple, 0.25 * rain), puddle);
@@ -236,6 +237,11 @@ void fragment() {
 	float n3 = texture(noise_tex, p * 0.0071 + vec2(0.37, 0.11)).r;
 	float n4 = texture(noise_tex, p * 0.93 + vec2(0.5, 0.2)).r;
 	float n5 = texture(noise_tex, p * 0.017 + vec2(0.71, 0.43)).r;
+	// the photo grain of gravel/asphalt flickers (sparkling pixels) in motion: always sample it a bit
+	// blurrier, more so at night and further away, and flatten its relief with distance
+	float cam_d = length(VERTEX);
+	float fine_b = 1.0 + night * 1.5 + smoothstep(8.0, 40.0, cam_d) * 1.5;
+	float far_flat = smoothstep(5.0, 25.0, cam_d);
 	vec3 g = mix(grass_a, grass_b, smoothstep(0.3, 0.7, n1));
 	g = mix(g, grass_dry, clamp(smoothstep(0.6, 0.85, n3) * 0.5 + splat.a * smoothstep(0.5, 0.75, n5) * 0.35, 0.0, 1.0));
 	g *= 0.78 + 0.42 * n2;
@@ -258,15 +264,15 @@ void fragment() {
 	if (pv > 0.001) {
 		vec3 c = concrete * (0.78 + 0.35 * n2) * (0.88 + 0.24 * n3);
 		if (photo_tex > 0.5 && paved_mode == 1) {
-			vec3 gt = texture(gravel_tex, p / 1.7, night * 2.5).rgb;
+			vec3 gt = texture(gravel_tex, p / 1.7, fine_b).rgb;
 			float g2 = dot(texture(gravel_tex, rot_p / 8.3).rgb, vec3(0.3333)) / 0.49;
 			c = gt * 0.82 * mix(1.0, g2, 0.35) * (0.85 + 0.3 * n3);
-			pnrm = texture(gravel_nrm, p / 1.7, night * 2.5).xyz;
+			pnrm = texture(gravel_nrm, p / 1.7, fine_b).xyz;
 		} else if (photo_tex > 0.5 && paved_mode == 2) {
-			float a1 = dot(texture(asphalt_tex, p / 0.9, night * 2.5).rgb, vec3(0.3333)) / 0.35;
+			float a1 = dot(texture(asphalt_tex, p / 0.9, fine_b).rgb, vec3(0.3333)) / 0.35;
 			float a2 = dot(texture(asphalt_tex, rot_p / 4.8).rgb, vec3(0.3333)) / 0.35;
 			c = concrete * mix(1.0, a1, 0.9) * mix(1.0, a2, 0.3) * (0.88 + 0.24 * n3);
-			pnrm = texture(asphalt_nrm, p / 0.9, night * 2.5).xyz;
+			pnrm = texture(asphalt_nrm, p / 0.9, fine_b).xyz;
 		} else {
 			vec2 gg = abs(fract(p / 6.0) - 0.5);
 			float joint = smoothstep(0.486, 0.496, max(gg.x, gg.y));
@@ -285,13 +291,13 @@ void fragment() {
 		gv = max(gv, smoothstep(0.3, 0.6, e.g) * (1.0 - smoothstep(tb - 0.1, tb + 0.1, ed)));
 		if (gv > 0.001) {
 			float s1 = texture(noise_tex, p * 2.7).r;
-			float s2 = texture(noise_tex, p * 7.9 + vec2(0.3, 0.6)).r;
+			float s2 = mix(texture(noise_tex, p * 7.9 + vec2(0.3, 0.6)).r, 0.5, far_flat * 0.7);
 			vec3 gc = gravel * (0.72 + 0.45 * s1) * (0.85 + 0.3 * n1);
 			gc = mix(gc, vec3(0.62, 0.6, 0.56), smoothstep(0.62, 0.75, s2) * 0.6);   // light pebbles
 			gc = mix(gc, vec3(0.2, 0.19, 0.17), smoothstep(0.3, 0.2, s2) * 0.5);      // dark pebbles
 			if (photo_tex > 0.5) {
 				float g2 = dot(texture(gravel_tex, rot_p / 8.3).rgb, vec3(0.3333)) / 0.49;
-				gc = texture(gravel_tex, p / 1.7, night * 2.5).rgb * 0.9 * mix(1.0, g2, 0.35) * (0.85 + 0.3 * n1);
+				gc = texture(gravel_tex, p / 1.7, fine_b).rgb * 0.9 * mix(1.0, g2, 0.35) * (0.85 + 0.3 * n1);
 			}
 			// tyre-worn, darker gravel next to the asphalt
 			gc *= mix(0.8, 1.0, smoothstep(0.0, 0.9, ed));
@@ -305,11 +311,11 @@ void fragment() {
 	NORMAL_MAP = texture(noise_nrm, p * 0.37).xyz;
 	if (photo_tex > 0.5) {
 		NORMAL_MAP = mix(NORMAL_MAP, pnrm, pv * step(0.5, float(paved_mode)));
-		NORMAL_MAP = mix(NORMAL_MAP, texture(gravel_nrm, p / 1.7, night * 2.5).xyz, gv);
+		NORMAL_MAP = mix(NORMAL_MAP, texture(gravel_nrm, p / 1.7, fine_b).xyz, gv);
 	} else {
 		NORMAL_MAP = mix(NORMAL_MAP, texture(noise_nrm, p * 2.3).xyz, gv);
 	}
-	NORMAL_MAP_DEPTH = mix(mix(1.1, 0.6, max(pv, wet * 0.6)), 1.6, gv) * (1.0 - 0.7 * night);
+	NORMAL_MAP_DEPTH = mix(mix(1.1, 0.6, max(pv, wet * 0.6)), mix(0.75, 0.15, far_flat), max(gv, pv * step(0.5, float(paved_mode)))) * (1.0 - 0.7 * night);
 }
 """
 

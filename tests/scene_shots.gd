@@ -132,6 +132,29 @@ func _ready() -> void:
 			var ia := int(float(km_s) * 1000.0 / tr.SPACING) % n
 			views.append(["at" + km_s, tr.samples[ia] + Vector3(0, 2.6, 0) - tr.tangents[ia] * 9.0, tr.samples[(ia + 25) % n] + Vector3(0, 1.0, 0)])
 			wanted += ",at" + km_s
+	# --flames=1: backfire and nitro flames, seen from behind and beside the car
+	if args.has("flames"):
+		var car = world.local_car
+		var fx = car.fx
+		var cx: Transform3D = car.global_transform
+		var eye: Vector3 = cx.origin + cx.basis.z * 3.2 + cx.basis.x * 1.6 + Vector3(0, 0.9, 0)
+		cam.global_position = eye
+		cam.look_at(cx.origin + cx.basis.z * 2.0 + Vector3(0, 0.3, 0), Vector3.UP)
+		cam.fov = 60.0
+		for f in 6:
+			await get_tree().process_frame
+		fx._on_backfire(1.0)
+		for f in 5:
+			await get_tree().process_frame
+		await _shot(prefix + "_backfire.png")
+		car.set_physics_process(false)
+		car.nitro_active = true
+		for f in 20:
+			await get_tree().process_frame
+		await _shot(prefix + "_nitro.png")
+		car.nitro_active = false
+		car.set_physics_process(true)
+		wanted = "none"
 	for v in views:
 		if wanted != "all" and not wanted.contains(str(v[0])):
 			continue
