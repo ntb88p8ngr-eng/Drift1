@@ -20,8 +20,8 @@ static var _glow_tex := {}
 const TUBE_E := 3.5
 const DECAL_E := 1.5
 const LIGHT_E := 0.9
-## overall scale: the brightest setting (2x) now gives what 1/8 of the old maximum was
-const SCALE := 0.125
+## overall scale: the brightest setting (2x) gives what 1/16 of the original maximum was
+const SCALE := 0.0625
 
 
 ## dims: CarBody.physics_spec (track, axle_f, axle_r, base).
