@@ -126,6 +126,12 @@ func _ready() -> void:
 			mid += (cm as Node3D).global_position
 		mid /= cont.size()
 		views.append(["yard", mid + Vector3(90, 110, 140), mid])
+	# --at=3.2,11.8: views along the road at these distances (km from the first sample)
+	if args.has("at"):
+		for km_s in str(args["at"]).split(","):
+			var ia := int(float(km_s) * 1000.0 / tr.SPACING) % n
+			views.append(["at" + km_s, tr.samples[ia] + Vector3(0, 2.6, 0) - tr.tangents[ia] * 9.0, tr.samples[(ia + 25) % n] + Vector3(0, 1.0, 0)])
+			wanted += ",at" + km_s
 	for v in views:
 		if wanted != "all" and not wanted.contains(str(v[0])):
 			continue

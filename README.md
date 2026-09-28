@@ -26,7 +26,7 @@ Zusätzlich lädt der Workflow *test-output* hoch, mit Logs und Screenshots aus 
 | Tageszeit | Start zur gewählten Tageszeit (Morgennebel, Mittag, Sonnenuntergang, Nacht). Optional läuft die Zeit weiter (**Tagesverlauf** 8–60 Minuten pro Tag): Die Sonne wandert, der Himmel färbt sich über Sonnenuntergang und Dämmerung zur Nacht, der Mond übernimmt, Laternen, Fenster und das Autolicht gehen automatisch an |
 | Wetter | **Trocken, Regen oder wechselhaft** (Schauer kommen und gehen). Wolken ziehen vor dem Regen auf, dezente, halbtransparente Regenschlieren mit Spritzern und ein ruhiges, warmes Regenrauschen mit leisem Tropfenprasseln (eigene Lautstärke „Wetter / Regen“ im Audio-Menü). Die Straße wird nass (dunkler, spiegelnd) und **rutschiger**, **Pfützen** auf der Fahrbahn sind extra rutschig, die Reifen wirbeln Gischt auf. Online sehen alle Spieler dasselbe Wetter |
 | Skybox | eigener Sky-Shader mit ziehenden Wolken in zwei Schichten, Sonne, Mond und Sternen |
-| Strecken | **Kurohana Ridge** (fließende Waldstrecke mit ~1,9 km), **Harbor Drift Yard** (breiter Hafenkurs mit ~1,3 km und engen Kehren) und der **Playground**: eine Achter-Strecke auf einer riesigen Asphaltfläche zum Driften üben – Pylonen-Slaloms, Donut-Kreise, Wasserbarrieren und überall Physik-Objekte (Ölfässer und Reifenstapel zum Wegschubsen, Holzkisten und Kartons, die beim Aufprall zerbrechen), rundum eine Betonmauer mit Bannern und grüne Hügel. Beide haben Curbs, Leitplanken bzw. Betonwände, ein Startportal mit Startampel, Tribüne und Straßenlaternen |
+| Strecken | **Grüne Hölle**: Nachbau der Nürburgring-Nordschleife aus echten Daten – Streckenverlauf aus den OpenStreetMap-Leitplanken, Höhenprofil und Gelände aus echten Höhendaten (20,5 km, 287 m Höhenunterschied, bis ~20 % Steigung), Wald und Felder nach der echten Landbedeckung, Abschnittsnamen im HUD (Hatzenbach, Flugplatz, Fuchsröhre, Karussell, Döttinger Höhe …). Dazu **Kurohana Ridge** (fließende Waldstrecke mit ~1,9 km), **Harbor Drift Yard** (breiter Hafenkurs mit ~1,3 km und engen Kehren) und der **Playground**: eine Achter-Strecke auf einer riesigen Asphaltfläche zum Driften üben – Pylonen-Slaloms, Donut-Kreise, Wasserbarrieren und überall Physik-Objekte (Ölfässer und Reifenstapel zum Wegschubsen, Holzkisten und Kartons, die beim Aufprall zerbrechen), rundum eine Betonmauer mit Bannern und grüne Hügel. Beide haben Curbs, Leitplanken bzw. Betonwände, ein Startportal mit Startampel, Tribüne und Straßenlaternen |
 | Gelände | Höhenfeld mit Hügeln, Böschungen, Einschnitten und Bergen hinter den Leitplanken (die Fahrbahn selbst bleibt eben), Fels an steilen Hängen, Waldboden, Kies, Wiesen; im Hafen eine Beton-Vorfläche und bewaldete Hügel an Land |
 | Wald & Pflanzen | **dichter Wald** überall um die Strecken (bis zu ~16.000 Bäume) mit 3 Detailstufen ohne Flackern beim Wechsel, dahinter **2D-Bäume bis zum Horizont** (einstellbare 3D-Sichtweite). Nadel-, Laub- und **Eichenbäume** (auch als große Einzelbäume auf Wiesen und im Dorf), Herbstfärbung, Wind im Shader. Dazu Büsche, Sträucher, Farne, **Felsgruppen und Steine** am Wegesrand |
 | Gras | wird nur **in der Nähe der Kamera** gezeichnet: tausende Grasbüschel in zwei Dichten, hohe Gräser und Blumen auf Wiesen, trockene Stellen, Wind, das Gras biegt sich unter dem Auto |
@@ -98,7 +98,9 @@ scripts/util/      mesh_kit.gd (prozedurale Meshes), tex_kit.gd (Shader & Textur
 assets/cars/       r34.glb, mustang.glb, m3gt3.glb (+ Maße als JSON), CREDITS.md
 assets/audio/      R34-Motor- und Turbo-Samples (aus tools/make_r34_audio.py)
 assets/env/        garage.glb (Hauptmenü-Halle, aus tools/convert_garage.py) + garage.json (Mitte der Halle)
+assets/tracks/     gruene_hoelle/: Mittellinie, Höhenmodell, Landbedeckung (aus tools/make_gruene_hoelle.py)
 tools/             convert_cars.py (Blend → GLB), preview_car.py, make_r34_audio.py (Aufnahmen → Samples),
+                   make_gruene_hoelle.py (Nordschleife aus OSM-/Overture-, Höhen- und Landbedeckungsdaten),
                    convert_garage.py (3ds-Max-Szene → GLB)
 tests/             Skript-, Audio-, Fahr-, Kamera- und Screenshot-Tests (scene_shots, ui_shots, garage_shots)
 ```
@@ -123,3 +125,11 @@ Garage im Hauptmenü: Die 3ds-Max-Szene „Garage.max“ samt Texturen wurde vom
 `tools/convert_garage.py` umgewandelt (Parser: Blender-Add-on „Import Autodesk MAX“, GPL, wird nur zum Konvertieren
 benutzt und nicht mitgeliefert). Die Halle und die Poster darin stammen vermutlich aus einem anderen Spiel – kläre auch
 hier die Rechte, bevor du das Spiel weitergibst. Fehlt `assets/env/garage.glb`, zeigt das Menü das alte Studio.
+
+Grüne Hölle (`assets/tracks/gruene_hoelle/`, erzeugt mit `tools/make_gruene_hoelle.py`):
+
+- Streckenverlauf aus den Leitplanken der Nordschleife: © OpenStreetMap-Mitwirkende, Lizenz **ODbL**
+  (bezogen über die Overture Maps Foundation)
+- Landbedeckung (Wald, Felder, Orte): Overture Maps Foundation, abgeleitet aus ESA WorldCover (**CC BY 4.0**)
+- Höhendaten: AWS Terrain Tiles (Mapzen) – enthält SRTM, EU-DEM (produziert mit Copernicus-Daten, gefördert von der
+  Europäischen Union) und GMTED

@@ -7,6 +7,9 @@ var _mm: MultiMesh
 var _next := 0
 var _count := 0
 var _last := {}
+## height of the marks above the wheel contact: on flat tracks the car rolls on the terrain, 3 cm
+## under the road surface; on data tracks it rolls on the road itself
+var y_lift := 0.047
 
 
 func _ready() -> void:
@@ -47,7 +50,7 @@ func add_mark(key: int, pos: Vector3, width: float, alpha: float) -> void:
 		_last[key] = pos
 		return
 	var mid := (prev + pos) * 0.5
-	mid.y = 0.047
+	mid.y += y_lift
 	var b := Basis(x * width, Vector3.UP, z * (d + 0.06))
 	_mm.set_instance_transform(_next, Transform3D(b, mid))
 	_mm.set_instance_color(_next, Color(0.02, 0.02, 0.02, alpha))

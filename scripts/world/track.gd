@@ -37,6 +37,12 @@ const DEFS := {
 		"width": 18.0, "runoff": 3.0, "start_dist": 60.0,
 		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.085, 0.085, 0.095),
 	},
+	# Nordschleife replica: course and heights from real data (tools/make_gruene_hoelle.py)
+	"gruene_hoelle": {
+		"data": "res://assets/tracks/gruene_hoelle",
+		"width": 12.0, "runoff": 4.0, "start_dist": 60.0,
+		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.095, 0.095, 0.1),
+	},
 }
 
 var track_id := "ridge"
@@ -67,6 +73,14 @@ var puddles: Array = []     # {"c": centre, "t": tangent, "r": right, "la": half
 var road_material: ShaderMaterial
 var gantry_xf := Transform3D.IDENTITY   # start gantry frame (grandstand on its +X side)
 var stand_x := 0.0
+## tracks built from data (Grüne Hölle) have real heights: samples carry y, the road has its own
+## collision and the terrain follows the road instead of the other way round
+var elevated := false
+var meta: Dictionary = {}       # data tracks: meta.json (grid layout, sections, attribution)
+var sections: Array = []        # [name, distance from the start line] in driving order
+var min_y := 0.0
+var max_y := 0.0
+var kill_y := -20.0             # below this a car has left the world
 
 var _grid := {}
 var _edge: Dictionary = {}
@@ -84,11 +98,14 @@ func build(id: String) -> void:
 	half_w = width * 0.5
 	wall_base = half_w + float(def["runoff"])
 	trap_w = minf(4.6, float(def["runoff"]) - 0.4)
+	elevated = def.has("data")
 	_sample_centerline()
 	_compute_offsets()
 	_build_grid()
 	_build_ground()
 	_build_road()
+	if elevated:
+		_build_road_collision()
 	_build_puddles()
 	_build_curbs()
 	_build_walls()
@@ -105,6 +122,65 @@ static func _catmull(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t: floa
 
 
 func _sample_centerline() -> void:
+	if elevated:
+		_load_centerline()
+	else:
+		_spline_centerline()
+	var count := samples.size()
+	var step := length / float(count)
+	tangents.resize(count)
+	rights.resize(count)
+	curvature.resize(count)
+	var flat_t := PackedVector3Array()
+	flat_t.resize(count)
+	for i in count:
+		# tangents follow the slope; rights stay level (the road has no banking), corners are measured
+		# on the ground plan
+		var t: Vector3 = (samples[(i + 1) % count] - samples[(i - 1 + count) % count]).normalized()
+		tangents[i] = t
+		flat_t[i] = Vector3(t.x, 0.0, t.z).normalized()
+		rights[i] = flat_t[i].cross(Vector3.UP).normalized()
+	for i in count:
+		var tp: Vector3 = flat_t[(i - 2 + count) % count]
+		var tn: Vector3 = flat_t[(i + 2) % count]
+		curvature[i] = tp.signed_angle_to(tn, Vector3.UP) / (4.0 * step)
+	start_index = int(round(float(def["start_dist"]) / step)) % count
+	start_dist = dists[start_index]
+	var mn := Vector2(1e9, 1e9)
+	var mx := Vector2(-1e9, -1e9)
+	min_y = 1e9
+	max_y = -1e9
+	for p in samples:
+		mn.x = minf(mn.x, p.x)
+		mn.y = minf(mn.y, p.z)
+		mx.x = maxf(mx.x, p.x)
+		mx.y = maxf(mx.y, p.z)
+		min_y = minf(min_y, p.y)
+		max_y = maxf(max_y, p.y)
+	bounds = Rect2(mn, mx - mn)
+	kill_y = min_y - 20.0
+	# section names are measured from the first sample, progress from the start line
+	sections.clear()
+	for sec in meta.get("sections", []):
+		sections.append([str(sec[0]), fposmod(float(sec[1]) - start_dist, length)])
+	sections.sort_custom(func(a, b): return float(a[1]) < float(b[1]))
+
+
+## Data track: samples (x, y, z) every SPACING metres, already in driving order.
+func _load_centerline() -> void:
+	var dir: String = def["data"]
+	meta = JSON.parse_string(FileAccess.get_file_as_string(dir + "/meta.json"))
+	var raw := FileAccess.get_file_as_bytes(dir + "/centerline.bin").to_float32_array()
+	var count := raw.size() / 3
+	samples.resize(count)
+	dists.resize(count)
+	for i in count:
+		samples[i] = Vector3(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2])
+		dists[i] = float(i) * SPACING
+	length = SPACING * count
+
+
+func _spline_centerline() -> void:
 	var pts: Array = []
 	for p in def["points"]:
 		pts.append(Vector3(p.x, 0.0, p.y))
@@ -136,27 +212,18 @@ func _sample_centerline() -> void:
 		samples[i] = a.lerp(b, t)
 		dists[i] = d
 	length = step * count
-	tangents.resize(count)
-	rights.resize(count)
-	curvature.resize(count)
-	for i in count:
-		var t: Vector3 = (samples[(i + 1) % count] - samples[(i - 1 + count) % count]).normalized()
-		tangents[i] = t
-		rights[i] = t.cross(Vector3.UP).normalized()
-	for i in count:
-		var tp: Vector3 = tangents[(i - 2 + count) % count]
-		var tn: Vector3 = tangents[(i + 2) % count]
-		curvature[i] = tp.signed_angle_to(tn, Vector3.UP) / (4.0 * step)
-	start_index = int(round(float(def["start_dist"]) / step)) % count
-	start_dist = dists[start_index]
-	var mn := Vector2(1e9, 1e9)
-	var mx := Vector2(-1e9, -1e9)
-	for p in samples:
-		mn.x = minf(mn.x, p.x)
-		mn.y = minf(mn.y, p.z)
-		mx.x = maxf(mx.x, p.x)
-		mx.y = maxf(mx.y, p.z)
-	bounds = Rect2(mn, mx - mn)
+
+
+## Name of the track section at `progress` metres from the start line ("" on tracks without names).
+func section_at(progress: float) -> String:
+	if sections.is_empty():
+		return ""
+	var name: String = sections[sections.size() - 1][0]
+	for sec in sections:
+		if float(sec[1]) > progress:
+			break
+		name = sec[0]
+	return name
 
 
 func _compute_offsets() -> void:
@@ -244,7 +311,7 @@ func _build_ground() -> void:
 	body.collision_mask = 0
 	var shape := CollisionShape3D.new()
 	var wb := WorldBoundaryShape3D.new()
-	wb.plane = Plane(Vector3.UP, -45.0)
+	wb.plane = Plane(Vector3.UP, min_y - 45.0)
 	shape.shape = wb
 	body.add_child(shape)
 	add_child(body)
@@ -282,7 +349,8 @@ func _build_road() -> void:
 		var b := samples[i] + rights[i] * half_w + y0
 		var c := samples[i2] + rights[i2] * half_w + y1
 		var d := samples[i2] - rights[i2] * half_w + y1
-		MeshKit.quad(st, a, b, c, d, Vector3.UP, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
+		var nrm := rights[i].cross(tangents[i]).normalized() if elevated else Vector3.UP
+		MeshKit.quad(st, a, b, c, d, nrm, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
 	road_material = mat
 	var mesh := MeshKit.commit(st, mat, null, true)
@@ -291,7 +359,40 @@ func _build_road() -> void:
 	add_child(mi)
 
 
+## Data tracks: the car drives on the road ribbon itself (the terrain grid can't follow a 2 m road
+## exactly); the terrain in the corridor lies at the sample height, ROAD_Y below.
+func _build_road_collision() -> void:
+	var faces := PackedVector3Array()
+	var n := samples.size()
+	var y := Vector3(0, ROAD_Y, 0)
+	for i in n:
+		var i2 := (i + 1) % n
+		var a := samples[i] - rights[i] * half_w + y
+		var b := samples[i] + rights[i] * half_w + y
+		var c := samples[i2] + rights[i2] * half_w + y
+		var d := samples[i2] - rights[i2] * half_w + y
+		faces.append_array(PackedVector3Array([a, b, c, a, c, d]))
+	var body := StaticBody3D.new()
+	body.name = "RoadBody"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta("surface", "road")
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
+
+
 ## Puddles in dips of the road surface (fixed per track so every player has the same ones).
+## The mask lives in road space – lateral texels across the road, 0.5 m rows along it – folded into
+## columns of PUDDLE_ROWS rows, so it stays small on a 20 km track.
+const PUDDLE_LAT := 32
+const PUDDLE_PX := 0.5
+const PUDDLE_ROWS := 8192
+
+
 func _build_puddles() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(track_id) + 991
@@ -300,13 +401,14 @@ func _build_puddles() -> void:
 	var noise := FastNoiseLite.new()
 	noise.seed = rng.seed
 	noise.frequency = 0.35
-	var px := 0.5   # metres per texel
-	var rect := bounds.grow(width + 4.0)
-	var w := int(ceil(rect.size.x / px))
-	var h := int(ceil(rect.size.y / px))
+	var rows_total := int(ceil(length / PUDDLE_PX))
+	var rows := mini(rows_total, PUDDLE_ROWS)
+	var cols := int(ceil(float(rows_total) / rows))
+	var w := cols * PUDDLE_LAT
 	var data := PackedByteArray()
-	data.resize(w * h)
+	data.resize(w * rows)
 	data.fill(0)
+	var lat_px := width / PUDDLE_LAT
 	for k in count:
 		var i := rng.randi_range(0, n - 1)
 		var lateral := rng.randf_range(-half_w + 1.0, half_w - 1.0)
@@ -315,7 +417,7 @@ func _build_puddles() -> void:
 		var lc := rng.randf_range(0.7, 1.8)
 		var ang := rng.randf_range(-0.5, 0.5)
 		var t: Vector3 = tangents[i].rotated(Vector3.UP, ang)
-		var r: Vector3 = t.cross(Vector3.UP).normalized()
+		var r: Vector3 = Vector3(t.x, 0.0, t.z).normalized().cross(Vector3.UP).normalized()
 		puddles.append({"c": c, "t": t, "r": r, "la": la, "lc": lc})
 		var id := puddles.size() - 1
 		var span := int(ceil(la / SPACING)) + 1
@@ -324,25 +426,28 @@ func _build_puddles() -> void:
 			if not _puddle_index.has(si):
 				_puddle_index[si] = []
 			_puddle_index[si].append(id)
-		# stamp a soft, noisy ellipse into the mask
-		var reach := int(ceil((la + 0.5) / px))
-		var cx := int((c.x - rect.position.x) / px)
-		var cz := int((c.z - rect.position.y) / px)
-		for dz in range(-reach, reach + 1):
-			for dx in range(-reach, reach + 1):
-				var gx := cx + dx
-				var gz := cz + dz
-				if gx < 0 or gz < 0 or gx >= w or gz >= h:
-					continue
-				var wp := Vector3(rect.position.x + (gx + 0.5) * px, 0.0, rect.position.y + (gz + 0.5) * px)
-				var rel := wp - c
-				var e := Vector2(rel.dot(t) / la, rel.dot(r) / lc).length()
-				var v := clampf(1.0 - e + noise.get_noise_2d(wp.x, wp.z) * 0.3, 0.0, 1.0)
-				var idx := gz * w + gx
+		# stamp a soft, noisy ellipse into the road-space mask (along = a, across = l)
+		var ca := cos(ang)
+		var sa := sin(ang)
+		var reach := la + 0.5
+		var r0 := int(floor((dists[i] - reach) / PUDDLE_PX))
+		var r1 := int(ceil((dists[i] + reach) / PUDDLE_PX))
+		var x0 := maxi(int(floor((lateral - reach + half_w) / lat_px)), 0)
+		var x1 := mini(int(ceil((lateral + reach + half_w) / lat_px)), PUDDLE_LAT - 1)
+		for row in range(r0, r1 + 1):
+			var rw := posmod(row, rows_total)
+			var da := (float(row) + 0.5) * PUDDLE_PX - dists[i]
+			var col := rw / rows
+			var ry := rw % rows
+			for x in range(x0, x1 + 1):
+				var dl := (float(x) + 0.5) * lat_px - half_w - lateral
+				var e := Vector2((da * ca - dl * sa) / la, (da * sa + dl * ca) / lc).length()
+				var v := clampf(1.0 - e + noise.get_noise_2d(da + dists[i], dl + lateral) * 0.3, 0.0, 1.0)
+				var idx := ry * w + col * PUDDLE_LAT + x
 				data[idx] = maxi(data[idx], int(v * 255.0))
-	var tex := ImageTexture.create_from_image(Image.create_from_data(w, h, false, Image.FORMAT_L8, data))
+	var tex := ImageTexture.create_from_image(Image.create_from_data(w, rows, false, Image.FORMAT_L8, data))
 	road_material.set_shader_parameter("puddle_tex", tex)
-	road_material.set_shader_parameter("puddle_rect", Vector4(rect.position.x, rect.position.y, 1.0 / (w * px), 1.0 / (h * px)))
+	road_material.set_shader_parameter("puddle_map", Vector3(rows * PUDDLE_PX, cols, 0.5 / PUDDLE_LAT))
 
 
 ## Called by the weather: road wetness and puddle fill level (0..1).
@@ -538,7 +643,7 @@ func _build_start() -> void:
 	var g := Node3D.new()
 	g.name = "Gantry"
 	add_child(g)
-	g.global_transform = Transform3D(Basis.looking_at(t, Vector3.UP), p)
+	g.global_transform = Transform3D(Basis.looking_at(Vector3(t.x, 0.0, t.z).normalized(), Vector3.UP), p)
 	var steel := TexKit.std(Color(0.12, 0.12, 0.14), 0.4, 0.7)
 	var span := half_w + 2.0
 	gantry_xf = g.global_transform
@@ -654,10 +759,12 @@ func distance_to_center(pos: Vector3) -> float:
 func edge_data() -> Dictionary:
 	if not _edge.is_empty():
 		return _edge
+	# 1 m texels; 2 m on the long data tracks (a distance field interpolates well, 60 MB would not)
+	var px := 2.0 if elevated else 1.0
 	var b: Rect2 = bounds.grow(half_w + 12.0)
 	var origin := b.position
-	var w := int(ceil(b.size.x))
-	var h := int(ceil(b.size.y))
+	var w := int(ceil(b.size.x / px))
+	var h := int(ceil(b.size.y / px))
 	var best := PackedFloat32Array()
 	best.resize(w * h)
 	best.fill(1e9)
@@ -665,23 +772,23 @@ func edge_data() -> Dictionary:
 	data.resize(w * h * 2)
 	for k in w * h:
 		data[k * 2] = 255
-	var reach := int(ceil(half_w + 8.0))
+	var reach := int(ceil((half_w + 8.0) / px))
 	for i in samples.size():
 		var s: Vector3 = samples[i]
 		var r: Vector3 = rights[i]
 		var tw := trap[i]
-		var cx := int(s.x - origin.x)
-		var cz := int(s.z - origin.y)
+		var cx := int((s.x - origin.x) / px)
+		var cz := int((s.z - origin.y) / px)
 		for dz in range(-reach, reach + 1):
 			var gz := cz + dz
 			if gz < 0 or gz >= h:
 				continue
-			var wz := origin.y + gz + 0.5 - s.z
+			var wz := origin.y + (gz + 0.5) * px - s.z
 			for dx in range(-reach, reach + 1):
 				var gx := cx + dx
 				if gx < 0 or gx >= w:
 					continue
-				var wx := origin.x + gx + 0.5 - s.x
+				var wx := origin.x + (gx + 0.5) * px - s.x
 				var dd := wx * wx + wz * wz
 				var k := gz * w + gx
 				if dd >= best[k]:
@@ -693,7 +800,7 @@ func edge_data() -> Dictionary:
 				var g := absf(tw) if tw * side > 0.0 else 0.0
 				data[k * 2 + 1] = int(g * 255.0)
 	var img := Image.create_from_data(w, h, false, Image.FORMAT_RG8, data)
-	_edge = {"tex": ImageTexture.create_from_image(img), "origin": origin, "inv_size": Vector2(1.0 / w, 1.0 / h)}
+	_edge = {"tex": ImageTexture.create_from_image(img), "origin": origin, "inv_size": Vector2(1.0 / (w * px), 1.0 / (h * px))}
 	return _edge
 
 

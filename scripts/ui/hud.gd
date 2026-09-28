@@ -330,6 +330,9 @@ func _process(delta: float) -> void:
 	var pos_text: String = world.position_text()
 	if pos_text != "":
 		lines.append("Platz   %s" % pos_text)
+	var section: String = world.track.section_at(float(world.progress))
+	if section != "":
+		lines.append("» %s" % section)
 	_info_lines.text = "\n".join(lines)
 
 	# drift

@@ -184,9 +184,20 @@ func _build_textures() -> void:
 	var nz: int = terrain.nz
 	var bytes := PackedByteArray()
 	bytes.resize(nx * nz * 4)
+	bytes.fill(0)
+	var big: bool = terrain.big
+	# data tracks: grass only ever grows around the car, i.e. along the road (distance-field cells
+	# looked up directly – a call per node would cost a second on 2.4 M nodes)
+	var dist: PackedFloat32Array = terrain._dist
+	var dn: Vector2i = terrain._dn
+	var dk := float(Terrain.CELL) / float(Terrain.DIST_CELL)
+	var d_off: Vector2 = (terrain.origin - terrain._dorigin) / Terrain.DIST_CELL
 	for iz in nz:
+		var drow := mini(int(d_off.y + iz * dk), dn.y - 1) * dn.x
 		for ix in nx:
 			var k: int = iz * nx + ix
+			if big and dist[drow + mini(int(d_off.x + ix * dk), dn.x - 1)] > 90.0:
+				continue
 			var sp: Color = terrain.splat[k]
 			var n: Vector3 = terrain._vertex_normal(ix, iz)
 			var dens := (1.0 - sp.r) * (1.0 - sp.g * 0.85) * (1.0 - sp.b * 0.6) * smoothstep(0.78, 0.9, n.y)

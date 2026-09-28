@@ -100,6 +100,8 @@ func _tyre_walls(budget: int) -> void:
 func _marshal_posts(quality: int) -> void:
 	var n: int = track.sample_count()
 	var every := 36 if quality >= 1 else 55    # samples (2 m each)
+	if track.elevated:
+		every *= 3      # 20 km of track: a marshal post every ~200 m is plenty
 	var side := 1.0
 	var i: int = (track.start_index + 45) % n
 	var count := 0

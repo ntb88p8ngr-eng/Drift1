@@ -868,7 +868,7 @@ func _check_flip(delta: float) -> void:
 			reset_to_track()
 	else:
 		flip_timer = 0.0
-	if global_position.y < -20.0:
+	if global_position.y < (float(track.kill_y) if track else -20.0):
 		reset_to_track()
 
 

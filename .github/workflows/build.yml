@@ -75,6 +75,12 @@ jobs:
           if grep -E "SCRIPT ERROR" collision.log; then echo "::error::Collision test failed"; exit 1; fi
           grep -q "COLLISION TEST OK" collision.log
 
+      - name: Track test (Grüne Hölle: car rests on the road all around the lap)
+        run: |
+          timeout 600 ./godot --headless --path . res://tests/track_test.tscn -- --track=gruene_hoelle 2>&1 | tee track.log || true
+          if grep -E "SCRIPT ERROR" track.log; then echo "::error::Track test failed"; exit 1; fi
+          grep -q "TRACK: PASS" track.log
+
       - name: Playground test (props settle, grass islands)
         run: |
           timeout 240 ./godot --headless --path . res://tests/playground_test.tscn 2>&1 | tee playground.log || true

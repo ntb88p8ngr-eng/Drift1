@@ -42,6 +42,15 @@ var _glow_mats: Array = []       # [material, day energy, night energy]
 var _night_lights: Array = []    # lights that only exist at night: [light, energy]
 var _stats := {}
 var _ranged: Array = []          # [GeometryInstance3D, begin, end, impostor] – follow the view distance
+var big := false                 # data track (Grüne Hölle): 35 km² of map, scenery only along the road
+## chunk size of the vegetation sets: 96 m on data tracks (a 48 m grid along 20 km of road would make
+## ~100k MultiMesh nodes; the tree LOD distance is measured per chunk, so bigger chunks stay seamless)
+var csize := CHUNK
+const BLOCK := 32.0
+const NEAR_BAND := 230.0         # data tracks: full forest this close to the road, sparse far trees beyond
+var _blk_d := PackedFloat32Array()   # distance from each block centre to the centreline
+var _blk_o := Vector2.ZERO
+var _blk_n := Vector2i.ZERO
 
 
 func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -> void:
@@ -53,6 +62,10 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	LOD1_END = [150.0, 185.0, 225.0, 280.0][quality]
 	rng.seed = hash(track.track_id)
 	var id: String = track.track_id
+	big = bool(track.elevated)
+	if big:
+		csize = 96.0
+		_build_block_distance()
 	_flatten_start()
 	details = Details.new()
 	details.name = "Details"
@@ -67,6 +80,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		pg.name = "Playground"
 		add_child(pg)
 		pg.build(track, terrain, self, quality)
+	elif big:
+		# a few Eifel farmsteads where the track runs through Breidscheid
+		_build_houses(8, ["barn", "barn", "office", "barn", "shop", "barn", "barn", "office"], _section_index("Breidscheid"))
+		if _village >= 0:
+			details.add_bus_stop(_village + 12, -1.0)
 	else:
 		_build_houses(10, ["jp", "jp", "shop", "jp", "jp", "barn", "jp", "jp", "shop", "jp"])
 		if _village >= 0:
@@ -124,6 +142,58 @@ func free_at(pos: Vector3, radius: float, clearance: float) -> bool:
 	if terrain.distance_to_road(pos.x, pos.z) < float(track.wall_base) + clearance:
 		return false
 	return true
+
+
+## Data tracks: distance from every 32 m block of the map to the centreline (coarse, for skipping
+## the far parts of the map in the placement loops; the terrain's field stops at 140 m).
+func _build_block_distance() -> void:
+	var ext: Rect2 = terrain.extent()
+	_blk_o = ext.position
+	_blk_n = Vector2i(int(ceil(ext.size.x / BLOCK)) + 1, int(ceil(ext.size.y / BLOCK)) + 1)
+	_blk_d.resize(_blk_n.x * _blk_n.y)
+	_blk_d.fill(1e9)
+	var reach := int(ceil((NEAR_BAND + 60.0) / BLOCK))
+	var n: int = track.sample_count()
+	for i in range(0, n, 4):
+		var sp: Vector3 = track.samples[i]
+		var cx := int((sp.x - _blk_o.x) / BLOCK)
+		var cz := int((sp.z - _blk_o.y) / BLOCK)
+		for bz in range(maxi(cz - reach, 0), mini(cz + reach + 1, _blk_n.y)):
+			for bx in range(maxi(cx - reach, 0), mini(cx + reach + 1, _blk_n.x)):
+				var c := _blk_o + Vector2((bx + 0.5) * BLOCK, (bz + 0.5) * BLOCK)
+				var k := bz * _blk_n.x + bx
+				_blk_d[k] = minf(_blk_d[k], c.distance_to(Vector2(sp.x, sp.z)))
+
+
+## Grid loops on data tracks: the next x (from gx on) in the row gz that lies within `band` of the
+## road – gx itself when it does, 1e9 when nothing in the row does. On other tracks always gx.
+func _band_next(gx: float, gz: float, band: float, outside := false) -> float:
+	if not big:
+		return gx
+	var bz := int((gz - _blk_o.y) / BLOCK)
+	var bx := int((gx - _blk_o.x) / BLOCK)
+	if bz < 0 or bz >= _blk_n.y:
+		return 1e9
+	var lim := band + BLOCK * 0.75
+	while bx < _blk_n.x and ((_blk_d[bz * _blk_n.x + bx] > lim) != outside):
+		bx += 1
+	if bx >= _blk_n.x:
+		return 1e9
+	return maxf(gx, _blk_o.x + bx * BLOCK)
+
+
+func _block_dist(x: float, z: float) -> float:
+	var bx := clampi(int((x - _blk_o.x) / BLOCK), 0, _blk_n.x - 1)
+	var bz := clampi(int((z - _blk_o.y) / BLOCK), 0, _blk_n.y - 1)
+	return _blk_d[bz * _blk_n.x + bx]
+
+
+## Sample index of a named section (data tracks), random elsewhere.
+func _section_index(name: String) -> int:
+	for sec in track.meta.get("sections", []):
+		if str(sec[0]) == name:
+			return int(float(sec[1]) / track.SPACING) % track.sample_count()
+	return -1
 
 
 func occupy(pos: Vector3, radius: float) -> void:
@@ -187,12 +257,36 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
-		mm.mesh = mesh
+		mm.mesh = mesh if lod_fade == Vector4.ZERO else _lod_mesh(mesh, lod_fade)
 		mm.instance_count = items.size()
-		for k in items.size():
-			var xf: Transform3D = items[k][0]
-			mm.set_instance_transform(k, Transform3D(xf.basis, xf.origin - center))
-			mm.set_instance_custom_data(k, items[k][1])
+		# one buffer upload instead of two server calls per instance (hundreds of thousands of
+		# trees on the Grüne Hölle): 3x4 transform rows + custom data per instance
+		var buf := PackedFloat32Array()
+		buf.resize(items.size() * 16)
+		var j := 0
+		for it in items:
+			var xf: Transform3D = it[0]
+			var b := xf.basis
+			var o := xf.origin - center
+			var c: Color = it[1]
+			buf[j] = b.x.x
+			buf[j + 1] = b.y.x
+			buf[j + 2] = b.z.x
+			buf[j + 3] = o.x
+			buf[j + 4] = b.x.y
+			buf[j + 5] = b.y.y
+			buf[j + 6] = b.z.y
+			buf[j + 7] = o.y
+			buf[j + 8] = b.x.z
+			buf[j + 9] = b.y.z
+			buf[j + 10] = b.z.z
+			buf[j + 11] = o.z
+			buf[j + 12] = c.r
+			buf[j + 13] = c.g
+			buf[j + 14] = c.b
+			buf[j + 15] = c.a
+			j += 16
+		mm.buffer = buf
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.name = label
@@ -209,10 +303,47 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		if shadow_only:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		add_child(mmi)
-		if lod_fade != Vector4.ZERO:
-			mmi.set_instance_shader_parameter("lod_fade", lod_fade)
+
 		_ranged.append([mmi, range_begin, range_end, impostor])
 		_stats[label] = int(_stats.get(label, 0)) + items.size()
+
+
+## One copy of a tree mesh / material per LOD cross-fade band. (Instance uniforms would need a slot
+## block per chunk node in a global buffer of ~4000 – the Grüne Hölle has tens of thousands of chunks.)
+static var _lod_mats := {}
+static var _lod_meshes := {}
+
+
+func _lod_mesh(mesh: Mesh, fade: Vector4) -> Mesh:
+	var key := "%d_%s" % [mesh.get_instance_id(), fade]
+	if not _lod_meshes.has(key):
+		var m2 := mesh.duplicate() as Mesh
+		for si in m2.get_surface_count():
+			var sm := m2.surface_get_material(si)
+			if sm is ShaderMaterial:
+				(m2 as ArrayMesh).surface_set_material(si, _lod_material(sm, fade))
+		_lod_meshes[key] = m2
+	else:
+		# a new world: register the cached copies' materials for the weather again
+		var m3: Mesh = _lod_meshes[key]
+		for si in m3.get_surface_count():
+			var sm := m3.surface_get_material(si)
+			if sm is ShaderMaterial and not lod_materials.has(sm):
+				lod_materials.append(sm)
+	return _lod_meshes[key]
+var lod_materials: Array = []   # the copies, so the weather can wet them like the originals
+
+
+func _lod_material(m: ShaderMaterial, fade: Vector4) -> ShaderMaterial:
+	var key := "%d_%s" % [m.get_instance_id(), fade]
+	if not _lod_mats.has(key):
+		var c := m.duplicate() as ShaderMaterial
+		c.set_shader_parameter("lod_fade", fade)
+		_lod_mats[key] = c
+	var mat: ShaderMaterial = _lod_mats[key]
+	if not lod_materials.has(mat):
+		lod_materials.append(mat)
+	return mat
 
 
 func _process(_delta: float) -> void:
@@ -280,6 +411,10 @@ func _build_forest(id: String) -> void:
 	var kinds: Array = [["pine", 404], ["pine", 505], ["pine", 606], ["pine", 707], ["leaf", 101], ["leaf", 121], ["oak", 303], ["oak", 313]]
 	var pine_ratio := 0.62
 	var autumn_ratio := 0.1
+	if big:
+		# Eifel: spruce and beech woods, some oaks – fewer variants keep the node count down
+		kinds = [["pine", 404], ["pine", 505], ["pine", 606], ["leaf", 101], ["leaf", 121], ["oak", 303]]
+		pine_ratio = 0.55
 	if id == "harbor":
 		kinds = [["leaf", 101], ["leaf", 202], ["leaf", 212], ["pine", 404], ["pine", 505], ["oak", 303], ["oak", 313]]
 		pine_ratio = 0.3
@@ -311,6 +446,10 @@ func _build_forest(id: String) -> void:
 	while gz < ext.end.y:
 		var gx := ext.position.x
 		while gx < ext.end.x:
+			var nxt := _band_next(gx, gz, NEAR_BAND)
+			if nxt > gx:
+				gx = nxt
+				continue
 			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
 			gx += spacing
 			var d: float = terrain.distance_to_road(pos.x, pos.z)
@@ -318,7 +457,7 @@ func _build_forest(id: String) -> void:
 				continue
 			var f: float = terrain.forest_density(pos.x, pos.z, d)
 			# thinner away from the track: far trees only fill the view, as bigger trees further apart
-			var keep := far_keep(d, wb + 5.0, wb + 170.0, 0.3)
+			var keep := far_keep(d, wb + 5.0, wb + 100.0, 0.22) if big else far_keep(d, wb + 5.0, wb + 170.0, 0.3)
 			if rng.randf() > f * keep:
 				continue
 			if not free_at(pos, 1.6, 3.0):
@@ -342,7 +481,7 @@ func _build_forest(id: String) -> void:
 			var sx := s * rng.randf_range(0.82, 1.18)
 			var sz := s * rng.randf_range(0.82, 1.18)
 			# keep every crown off the asphalt: shrink its width near the road, drop it if that's not enough
-			var room: float = track.distance_to_center(pos) - float(track.half_w) - 1.0
+			var room: float = (track.distance_to_center(pos) if d < 45.0 else d) - float(track.half_w) - 1.0
 			var need: float = float(crowns[v]) * maxf(sx, sz) + (1.0 - nrm.y) * 8.0 + 1.0
 			if need > room:
 				var k := room / need
@@ -356,14 +495,16 @@ func _build_forest(id: String) -> void:
 			basis = Basis(Vector3(nrm.z, 0, -nrm.x).normalized(), (1.0 - nrm.y) * 0.4) * basis if nrm.y < 0.98 else basis
 			var tint := _foliage_tint(kinds[v][0] == "pine", autumn_ratio)
 			var xf := Transform3D(basis, pos)
-			_push(chunks[v], pos, [xf, tint])
-			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 0.75 if kinds[v][0] == "pine" else 1.0)])
+			_push(chunks[v], pos, [xf, tint], csize)
+			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 0.75 if kinds[v][0] == "pine" else 1.0)], csize)
 		gz += spacing
 	var oak_reach := 0.0
 	for i in kinds.size():
 		if kinds[i][0] == "oak":
 			oak_reach = maxf(oak_reach, float(crowns[i]))
 	_solitary_oaks(kinds, chunks, far_chunks, oak_reach)
+	if big:
+		_far_band_trees(kinds, far_chunks, pine_ratio, autumn_ratio)
 	var lod1_shadow := quality >= 3
 	# neighbouring levels overlap by the fade band (+ a little, the bounds centre sits higher than the
 	# node) and cross-fade with complementary dither patterns
@@ -372,12 +513,46 @@ func _build_forest(id: String) -> void:
 	var f_far := Vector4(LOD1_END - FADE1, LOD1_END + FADE1, 1e9, 2e9)
 	for v in kinds.size():
 		# close trees: full detail, but their shadows come from the lighter mid-detail mesh
-		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_hi", false, CHUNK, false, false, f_hi)
-		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_shadow", true, CHUNK, true, false, f_hi)
-		_emit_chunks(meshes[v][1], chunks[v], LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, CHUNK, false, false, f_mid)
-	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, FAR_END, "Trees_far", false, CHUNK, false, false, f_far)
-	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, FAR_END, FAR_END * 2.0, "Trees_2d", false, CHUNK, false, true)
+		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_hi", false, csize, false, false, f_hi)
+		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_shadow", true, csize, true, false, f_hi)
+		_emit_chunks(meshes[v][1], chunks[v], LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, csize, false, false, f_mid)
+	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, FAR_END, "Trees_far", false, csize, false, false, f_far)
+	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, FAR_END, FAR_END * 2.0, "Trees_2d", false, csize, false, true)
 	_build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
+
+
+## Data tracks: beyond NEAR_BAND the woods are only ever seen from afar – sparse, big trees that
+## exist only as far meshes / impostors.
+func _far_band_trees(kinds: Array, far_chunks: Dictionary, pine_ratio: float, autumn_ratio: float) -> void:
+	var ext: Rect2 = terrain.extent().grow(-6.0)
+	var spacing := 22.0
+	var count := 0
+	var gz := ext.position.y
+	while gz < ext.end.y:
+		var gx := ext.position.x
+		while gx < ext.end.x:
+			var nxt := _band_next(gx, gz, NEAR_BAND, true)
+			if nxt > gx:
+				gx = nxt
+				continue
+			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
+			gx += spacing
+			if _block_dist(pos.x, pos.z) < NEAR_BAND:
+				continue
+			if rng.randf() > terrain.forest_density(pos.x, pos.z, 999.0) * 0.9:
+				continue
+			var nrm: Vector3 = terrain.normal_at(pos.x, pos.z)
+			if nrm.y < 0.6:
+				continue
+			pos.y = terrain.height_at(pos.x, pos.z) - 0.3
+			var pine := rng.randf() < pine_ratio
+			var s := rng.randf_range(1.2, 1.7)
+			var tint := _foliage_tint(pine, autumn_ratio)
+			var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.1), s)), pos)
+			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 0.75 if pine else 1.0)], csize)
+			count += 1
+		gz += spacing
+	_stats["Trees_far_band"] = count
 
 
 static func _tree_mesh(kind: String, sd: int, hi: bool) -> Mesh:
@@ -405,6 +580,10 @@ func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary, kinds_r
 	while gz < ext.end.y:
 		var gx := ext.position.x
 		while gx < ext.end.x:
+			var nxt := _band_next(gx, gz, wb + 140.0)
+			if nxt > gx:
+				gx = nxt
+				continue
 			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
 			gx += spacing
 			var d: float = terrain.distance_to_road(pos.x, pos.z)
@@ -419,15 +598,15 @@ func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary, kinds_r
 			pos.y = terrain.height_at(pos.x, pos.z) - 0.3
 			var s := rng.randf_range(1.15, 1.6)
 			var reach := (kinds_reach if kinds_reach > 0.0 else 9.0) * s
-			var room2: float = track.distance_to_center(pos) - float(track.half_w) - 2.0
+			var room2: float = (track.distance_to_center(pos) if d < 45.0 else d) - float(track.half_w) - 2.0
 			if reach > room2:
 				s *= room2 / reach
 				if s < 0.8:
 					continue
 			var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.05), s)), pos)
 			var tint := _foliage_tint(false, 0.05)
-			_push(chunks[v], pos, [xf, tint])
-			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 1.0)])
+			_push(chunks[v], pos, [xf, tint], csize)
+			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 1.0)], csize)
 			occupy(pos, 5.0)
 			count += 1
 		gz += spacing
@@ -489,13 +668,17 @@ func _build_undergrowth(id: String) -> void:
 	var shrub: Mesh = _cached("shrub_31", func(): return TreeFactory.shrub(31))
 	var fern: Mesh = _cached("fern_5", func(): return TreeFactory.fern(5))
 	var sets := [{}, {}, {}]   # bush, shrub, fern
-	var spacing: float = [5.2, 4.3, 3.6, 3.2][quality]
+	var spacing: float = [5.2, 4.3, 3.6, 3.2][quality] * (1.25 if big else 1.0)
 	var ext: Rect2 = terrain.extent().grow(-4.0)
 	var wb: float = track.wall_base
 	var gz := ext.position.y
 	while gz < ext.end.y:
 		var gx := ext.position.x
 		while gx < ext.end.x:
+			var nxt := _band_next(gx, gz, 75.0)
+			if nxt > gx:
+				gx = nxt
+				continue
 			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
 			gx += spacing
 			var d: float = terrain.distance_to_road(pos.x, pos.z)
@@ -537,12 +720,12 @@ func _build_undergrowth(id: String) -> void:
 			var tint := _foliage_tint(false, 0.06)
 			if kind == 2:
 				tint = Color(rng.randf_range(0.85, 1.1), rng.randf_range(0.9, 1.15), rng.randf_range(0.8, 1.0), 1.0)
-			_push(sets[kind], pos, [Transform3D(basis, pos), tint])
+			_push(sets[kind], pos, [Transform3D(basis, pos), tint], csize)
 		gz += spacing
 	var far: float = [110.0, 140.0, 170.0, 200.0][quality]
-	_emit_chunks(bush, sets[0], 0.0, far, "Bushes", quality >= 3)
-	_emit_chunks(shrub, sets[1], 0.0, far * 0.6, "Shrubs", false)
-	_emit_chunks(fern, sets[2], 0.0, far * 0.5, "Ferns", false)
+	_emit_chunks(bush, sets[0], 0.0, far, "Bushes", quality >= 3, csize)
+	_emit_chunks(shrub, sets[1], 0.0, far * 0.6, "Shrubs", false, csize)
+	_emit_chunks(fern, sets[2], 0.0, far * 0.5, "Ferns", false, csize)
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +744,10 @@ func _build_rocks(id: String) -> void:
 	while gz < ext.end.y:
 		var gx := ext.position.x
 		while gx < ext.end.x:
+			var nxt := _band_next(gx, gz, wb + 120.0)
+			if nxt > gx:
+				gx = nxt
+				continue
 			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
 			gx += spacing
 			var d: float = terrain.distance_to_road(pos.x, pos.z)
@@ -571,7 +758,7 @@ func _build_rocks(id: String) -> void:
 				continue
 			var nrm: Vector3 = terrain.normal_at(pos.x, pos.z)
 			var p := 0.08 + (1.0 - nrm.y) * 1.8 + sp.b * 0.08
-			if id == "harbor":
+			if id == "harbor" or big:
 				p *= 0.5
 			p *= far_keep(d, wb + 5.0, wb + 170.0, 0.3)
 			if rng.randf() > p:
@@ -583,23 +770,27 @@ func _build_rocks(id: String) -> void:
 			if rng.randf() < 0.1:
 				s *= 2.2
 			var set: Dictionary = rocks if rng.randf() < 0.5 else rocks2
-			_push(set, pos, [_rock_xf(pos, s), _rock_tint()])
+			_push(set, pos, [_rock_xf(pos, s), _rock_tint()], csize)
 			# big boulders come with a few smaller ones around them
 			if s > 1.3:
 				for k in rng.randi_range(2, 5):
 					var a := rng.randf() * TAU
 					var q := pos + Vector3(cos(a), 0, sin(a)) * s * rng.randf_range(1.1, 1.9)
 					q.y = terrain.height_at(q.x, q.z) - 0.1
-					_push(rocks2 if k % 2 == 0 else rocks, q, [_rock_xf(q, s * rng.randf_range(0.2, 0.45)), _rock_tint()])
+					_push(rocks2 if k % 2 == 0 else rocks, q, [_rock_xf(q, s * rng.randf_range(0.2, 0.45)), _rock_tint()], csize)
 		gz += spacing
-	_emit_chunks(rock_mesh, rocks, 0.0, 420.0, "Rocks", true)
-	_emit_chunks(rock_mesh2, rocks2, 0.0, 420.0, "Rocks", true)
+	_emit_chunks(rock_mesh, rocks, 0.0, 420.0, "Rocks", true, csize)
+	_emit_chunks(rock_mesh2, rocks2, 0.0, 420.0, "Rocks", true, csize)
 	# small stones: along the verges behind the barriers and scattered over the forest floor
 	var sp2 := 3.2
 	gz = ext.position.y
 	while gz < ext.end.y:
 		var gx := ext.position.x
 		while gx < ext.end.x:
+			var nxt := _band_next(gx, gz, wb + 70.0)
+			if nxt > gx:
+				gx = nxt
+				continue
 			var pos := Vector3(gx + rng.randf() * sp2, 0.0, gz + rng.randf() * sp2)
 			gx += sp2
 			var d: float = terrain.distance_to_road(pos.x, pos.z)
@@ -615,9 +806,9 @@ func _build_rocks(id: String) -> void:
 				continue
 			pos.y = terrain.height_at(pos.x, pos.z) - 0.03
 			var s := rng.randf_range(0.07, 0.3)
-			_push(stones, pos, [_rock_xf(pos, s), _rock_tint()])
+			_push(stones, pos, [_rock_xf(pos, s), _rock_tint()], csize)
 		gz += sp2
-	_emit_chunks(rock_mesh2, stones, 0.0, 110.0, "Stones", false)
+	_emit_chunks(rock_mesh2, stones, 0.0, 110.0, "Stones", false, csize)
 
 
 func _rock_xf(pos: Vector3, s: float) -> Transform3D:
@@ -634,7 +825,7 @@ func _rock_tint() -> Color:
 # ---------------------------------------------------------------------------
 # Houses
 # ---------------------------------------------------------------------------
-func _build_houses(count: int, styles: Array) -> void:
+func _build_houses(count: int, styles: Array, at := -1) -> void:
 	var n: int = track.sample_count()
 	var placed := 0
 	var tries := 0
@@ -642,7 +833,7 @@ func _build_houses(count: int, styles: Array) -> void:
 	builder.rng = rng
 	builder.details = details
 	# cluster houses into a small village around a random stretch of road
-	var village := rng.randi_range(0, n - 1)
+	var village := rng.randi_range(0, n - 1) if at < 0 else at
 	_village = village
 	while placed < count and tries < 600:
 		tries += 1
@@ -1038,6 +1229,10 @@ func _build_lamps() -> void:
 		return
 	var k := 0
 	for i in range(0, n, every):
+		if big:
+			var ds := absi(i - int(track.start_index))
+			if mini(ds, n - ds) > 200:
+				continue
 		var side := 1.0 if track.curvature[i] > 0.0 else -1.0
 		if absf(track.curvature[i]) < 0.002:
 			side = -1.0 if k % 2 == 0 else 1.0

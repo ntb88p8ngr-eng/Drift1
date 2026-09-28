@@ -408,6 +408,8 @@ func _update_rain_fx() -> void:
 	var ground_y := 0.05
 	if track:
 		ground_y = 0.06
+		if track.elevated:
+			ground_y += float(track.samples[track.nearest_index(cp)].y)
 	_splash_fx.global_position = Vector3(cp.x, ground_y, cp.z) + ahead
 	_splash_fx.emitting = rain > 0.05
 	_splash_fx.amount_ratio = clampf(rain, 0.0, 1.0)

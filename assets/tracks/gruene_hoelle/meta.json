@@ -1,0 +1,174 @@
+{
+ "name": "Grüne Hölle",
+ "samples": 10235,
+ "spacing": 2.0,
+ "length": 20470.0,
+ "h0": 621.0,
+ "dem_min": 277.0,
+ "grid_origin": [
+  -5400.0,
+  -5000.0
+ ],
+ "grid_cell": 10.0,
+ "grid_size": [
+  1081,
+  1001
+ ],
+ "dem_bytes": 2164162,
+ "cover_bytes": 3246243,
+ "sections": [
+  [
+   "T13 Start/Ziel",
+   0.0
+  ],
+  [
+   "Sabine-Schmitz-Kurve",
+   228.2
+  ],
+  [
+   "Hatzenbach",
+   1027.1
+  ],
+  [
+   "Hocheichen",
+   2092.2
+  ],
+  [
+   "Quiddelbacher Höhe",
+   2434.6
+  ],
+  [
+   "Flugplatz",
+   2700.8
+  ],
+  [
+   "Kottenborn",
+   3043.2
+  ],
+  [
+   "Schwedenkreuz",
+   3423.6
+  ],
+  [
+   "Aremberg",
+   3804.0
+  ],
+  [
+   "Fuchsröhre",
+   4282.3
+  ],
+  [
+   "Adenauer Forst",
+   5119.4
+  ],
+  [
+   "Metzgesfeld",
+   5797.0
+  ],
+  [
+   "Kallenhard",
+   6275.3
+  ],
+  [
+   "Wehrseifen",
+   7192.1
+  ],
+  [
+   "Breidscheid",
+   7790.0
+  ],
+  [
+   "Ex-Mühle",
+   8072.9
+  ],
+  [
+   "Bergwerk",
+   8679.2
+  ],
+  [
+   "Kesselchen",
+   9406.8
+  ],
+  [
+   "Mutkurve",
+   10457.7
+  ],
+  [
+   "Klostertal",
+   10861.9
+  ],
+  [
+   "Steilstrecke",
+   11427.8
+  ],
+  [
+   "Karussell",
+   11832.0
+  ],
+  [
+   "Hohe Acht",
+   12864.0
+  ],
+  [
+   "Hedwigshöhe",
+   13356.4
+  ],
+  [
+   "Wippermann",
+   13811.0
+  ],
+  [
+   "Eschbach",
+   14303.4
+  ],
+  [
+   "Brünnchen",
+   14758.0
+  ],
+  [
+   "Eiskurve",
+   15212.6
+  ],
+  [
+   "Pflanzgarten",
+   15591.4
+  ],
+  [
+   "Sprunghügel",
+   16045.9
+  ],
+  [
+   "Schwalbenschwanz",
+   16652.0
+  ],
+  [
+   "Kleines Karussell",
+   16736.0
+  ],
+  [
+   "Galgenkopf",
+   16967.0
+  ],
+  [
+   "Döttinger Höhe",
+   17352.0
+  ],
+  [
+   "Antoniusbuche",
+   19846.4
+  ],
+  [
+   "Tiergarten",
+   20095.8
+  ],
+  [
+   "Hohenrain",
+   20314.1
+  ]
+ ],
+ "attribution": [
+  "Streckenverlauf: © OpenStreetMap contributors (ODbL), über Overture Maps Foundation",
+  "Landbedeckung: Overture Maps Foundation (aus ESA WorldCover, CC BY 4.0)",
+  "Höhendaten: AWS Terrain Tiles / Mapzen – SRTM, EU-DEM (Copernicus), GMTED"
+ ]
+}

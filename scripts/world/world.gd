@@ -98,6 +98,9 @@ func _ready() -> void:
 	atmosphere.materials_wet = [terrain.material]
 	for key in ["leaf", "needle", "fern", "rock"]:
 		atmosphere.materials_wet.append(TreeFactory._material(key))
+	for m in scenery.lod_materials:
+		if m.shader and "wetness" in m.shader.code:
+			atmosphere.materials_wet.append(m)
 	atmosphere.night_changed.connect(_on_night_changed)
 	grass = Grass.new()
 	grass.name = "Grass"
@@ -110,6 +113,8 @@ func _ready() -> void:
 	print("WORLD: terrain %d ms, scenery %d ms, meshes+grass %d ms (%s)" % [t1 - t0, t2 - t1, Time.get_ticks_msec() - t2, scenery.stats_text() + (", " + scenery.details.stats_text() if scenery.details else "")])
 	skidmarks = Skidmarks.new()
 	skidmarks.name = "Skidmarks"
+	if track.elevated:
+		skidmarks.y_lift = 0.017
 	add_child(skidmarks)
 	_spawn_cars()
 	camera = CameraRig.new()

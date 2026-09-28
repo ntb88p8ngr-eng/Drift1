@@ -72,7 +72,9 @@ uniform float edge_line = 0.022;
 uniform float wetness = 0.0;
 uniform float patch_amount = 0.5;
 uniform sampler2D puddle_tex : hint_default_black, filter_linear, repeat_disable;
-uniform vec4 puddle_rect = vec4(0.0, 0.0, 0.001, 0.001);   // origin xz, 1/size xz
+// road-space puddle mask (track.gd): x = metres of road per texture column, y = columns,
+// z = half a lateral texel (keeps the filter inside a column)
+uniform vec3 puddle_map = vec3(4096.0, 1.0, 0.016);
 uniform float puddle_level = 0.0;
 uniform float rain = 0.0;
 // photo asphalt (assets/textures/asphalt_*): fine grain + relief; a second, rotated and larger
@@ -119,7 +121,9 @@ void fragment() {
 		tag_glow = g.rgb * g.a * spray * 0.02;
 	}
 	// wet asphalt gets darker and glossy; puddles become mirror-like with rain ripples
-	float pm = texture(puddle_tex, (wpos.xz - puddle_rect.xy) * puddle_rect.zw).r;
+	float p_col = floor(UV.y / puddle_map.x);
+	vec2 p_uv = vec2((p_col + clamp(UV.x, puddle_map.z, 1.0 - puddle_map.z)) / puddle_map.y, (UV.y - p_col * puddle_map.x) / puddle_map.x);
+	float pm = texture(puddle_tex, p_uv).r;
 	float puddle = smoothstep(1.0 - puddle_level, 1.0 - puddle_level + 0.12, pm) * step(0.01, puddle_level);
 	col *= 1.0 - wetness * 0.35;
 	col = mix(col, col * 0.35, puddle);
@@ -311,7 +315,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 // dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
 // the neighbouring LOD keeps exactly the other ones (no popping, no holes)
 global uniform vec3 main_cam_pos;
-instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);   // per LOD level: its own material copy (scenery.gd)
 varying float lod_in;
 varying float lod_out;
 
@@ -363,7 +367,7 @@ render_mode diffuse_burley;
 // dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
 // the neighbouring LOD keeps exactly the other ones (no popping, no holes)
 global uniform vec3 main_cam_pos;
-instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);   // per LOD level: its own material copy (scenery.gd)
 varying float lod_in;
 varying float lod_out;
 
@@ -450,7 +454,7 @@ render_mode diffuse_burley;
 // dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
 // the neighbouring LOD keeps exactly the other ones (no popping, no holes)
 global uniform vec3 main_cam_pos;
-instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);   // per LOD level: its own material copy (scenery.gd)
 varying float lod_in;
 varying float lod_out;
 
@@ -1012,7 +1016,7 @@ render_mode skip_vertex_transform, cull_disabled, diffuse_burley, shadows_disabl
 // dithered LOD cross-fade: the camera distance to the chunk picks which pixels this LOD keeps;
 // the neighbouring LOD keeps exactly the other ones (no popping, no holes)
 global uniform vec3 main_cam_pos;
-instance uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);
+uniform vec4 lod_fade = vec4(-2.0, -1.0, 1e9, 2e9);   // per LOD level: its own material copy (scenery.gd)
 varying float lod_in;
 varying float lod_out;
 
