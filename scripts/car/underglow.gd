@@ -18,6 +18,8 @@ static var _glow_tex := {}
 const TUBE_E := 3.5
 const DECAL_E := 1.5
 const LIGHT_E := 0.9
+## overall scale: the brightest setting (2x) now gives what 1/8 of the old maximum was
+const SCALE := 0.125
 
 
 ## dims: CarBody.physics_spec (track, axle_f, axle_r, base).
@@ -48,7 +50,7 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		var col := Color.from_string(str(sd.get("color", "#8a3dff")), Color(0.55, 0.25, 1.0))
 		# brightness per side: quadratic, so the slider is clearly visible through tone mapping/glow
 		var br := clampf(float(sd.get("bright", 1.0)), 0.1, 2.0)
-		var bf := br * br
+		var bf := br * br * SCALE
 		# tube: centre, direction along it (x = across the car, z = along it) and length
 		var along_x := i < 2
 		var pos: Vector3
@@ -142,15 +144,15 @@ static func _glow_texture(variant := 0) -> Texture2D:
 	for x in w:
 		var t := (float(x) + 0.5) / w
 		# width and strength along the tube, plus ragged ends
-		var width := 0.55 + 0.45 * (0.5 + 0.5 * nz.get_noise_1d(x * 1.0))
-		var gain := 0.55 + 0.45 * (0.5 + 0.5 * nz.get_noise_1d(x * 1.0 + 500.0))
+		var width := 0.82 + 0.18 * (0.5 + 0.5 * nz.get_noise_1d(x * 0.5))
+		var gain := 0.85 + 0.15 * (0.5 + 0.5 * nz.get_noise_1d(x * 0.5 + 500.0))
 		var e0 := 0.1 + 0.08 * nz.get_noise_1d(900.0 + x * 0.2)
 		var ends := smoothstep(0.0, e0 + 0.12, t) * smoothstep(1.0, 0.88 - e0, t)
 		for y in h:
 			var across := absf((float(y) + 0.5) / h - 0.5) * 2.0 / width
-			var wisp := 0.75 + 0.25 * nz.get_noise_2d(x * 2.0, y * 6.0)
+			var wisp := 0.96 + 0.04 * nz.get_noise_2d(x * 2.0, y * 6.0)
 			var a := exp(-across * across * 3.2) * wisp
-			var v := clampf(a * ends * gain * 0.8, 0.0, 1.0)
+			var v := clampf(a * ends * gain * 0.45, 0.0, 1.0)
 			img.set_pixel(x, y, Color(v, v, v, v))
 	img.generate_mipmaps()
 	var tex := ImageTexture.create_from_image(img)
