@@ -69,7 +69,14 @@ func setup(cfg: Dictionary) -> void:
 	config = cfg
 
 
+## Emitted once the world is fully built (it builds in slices when config "async_load" is set).
+signal loaded
+var is_loaded := false
+
+
 func _ready() -> void:
+	Game.async_loading = bool(config.get("async_load", false))
+	Game.load_progress = 0.0
 	mode = config.get("mode", "free")
 	laps_total = int(config.get("laps", 3))
 	online = bool(config.get("online", false))
@@ -82,18 +89,23 @@ func _ready() -> void:
 	track = Track.new()
 	track.name = "Track"
 	add_child(track)
-	track.build(config.get("track", "ridge"))
+	Game.load_begin("Strecke", 0.0, 0.06)
+	await track.build(config.get("track", "ridge"))
+	await Game.load_tick(1.0)
 	terrain = Terrain.new()
 	terrain.name = "Terrain"
 	add_child(terrain)
-	terrain.generate(track)
+	Game.load_begin("Gelände", 0.06, 0.34)
+	await terrain.generate(track)
 	var t1 := Time.get_ticks_msec()
 	scenery = Scenery.new()
 	scenery.name = "Scenery"
 	add_child(scenery)
-	scenery.build(track, terrain, atmosphere.night, quality)
+	Game.load_begin("Streckenrand", 0.34, 0.36)
+	await scenery.build(track, terrain, atmosphere.night, quality)
 	var t2 := Time.get_ticks_msec()
-	terrain.build_meshes()
+	Game.load_begin("Gelände-Modell", 0.82, 0.94)
+	await terrain.build_meshes()
 	atmosphere.track = track
 	atmosphere.materials_wet = [terrain.material]
 	for key in ["leaf", "needle", "fern", "rock"]:
@@ -105,7 +117,8 @@ func _ready() -> void:
 	grass = Grass.new()
 	grass.name = "Grass"
 	add_child(grass)
-	grass.setup(terrain, track, self)
+	Game.load_begin("Gras", 0.94, 1.0)
+	await grass.setup(terrain, track, self)
 	flares = LensFlare.new()
 	flares.name = "LensFlares"
 	add_child(flares)
@@ -152,6 +165,10 @@ func _ready() -> void:
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
 	else:
 		_start_countdown()
+	Game.async_loading = false
+	Game.load_progress = 1.0
+	is_loaded = true
+	loaded.emit()
 
 
 func _spawn_cars() -> void:
@@ -238,6 +255,8 @@ func _start_countdown() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if not is_loaded:
+		return
 	match state:
 		"waiting":
 			_wait_timeout -= delta

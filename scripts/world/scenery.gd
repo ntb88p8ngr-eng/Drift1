@@ -70,6 +70,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		LOD0_END *= 0.6
 		LOD1_END *= 0.7
 		_build_block_distance()
+	await Game.load_tick()
 	_flatten_start()
 	details = Details.new()
 	details.name = "Details"
@@ -78,7 +79,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	if id == "harbor":
 		_build_water_and_quay()
 		_build_harbor_props()
-		_build_houses(6, ["office", "jp", "shop", "jp", "office", "jp"])
+		await _build_houses(6, ["office", "jp", "shop", "jp", "office", "jp"])
 	elif id == "playground":
 		var pg := Playground.new()
 		pg.name = "Playground"
@@ -86,27 +87,34 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		pg.build(track, terrain, self, quality)
 	elif big:
 		# a few Eifel farmsteads where the track runs through Breidscheid
-		_build_houses(8, ["barn", "barn", "office", "barn", "shop", "barn", "barn", "office"], _section_index("Breidscheid"))
+		await _build_houses(8, ["barn", "barn", "office", "barn", "shop", "barn", "barn", "office"], _section_index("Breidscheid"))
 		if _village >= 0:
 			details.add_bus_stop(_village + 12, -1.0)
 	else:
-		_build_houses(10, ["jp", "jp", "shop", "jp", "jp", "barn", "jp", "jp", "shop", "jp"])
+		await _build_houses(10, ["jp", "jp", "shop", "jp", "jp", "barn", "jp", "jp", "shop", "jp"])
 		if _village >= 0:
 			details.add_bus_stop(_village + 12, -1.0)
+	await Game.load_tick()
 	if id != "playground":
 		var tp := Playground.new()
 		tp.name = "TracksideProps"
 		add_child(tp)
-		tp.build_trackside(track, terrain, self, quality)
+		await tp.build_trackside(track, terrain, self, quality)
+	await Game.load_tick()
 	_build_lamps()
 	crowd = Crowd.new()
 	crowd.name = "Crowd"
 	add_child(crowd)
-	crowd.build(track, terrain, self, quality)
+	await crowd.build(track, terrain, self, quality)
+	await Game.load_tick()
 	details.build(quality)
-	_build_forest(id)
-	_build_undergrowth(id)
-	_build_rocks(id)
+	await Game.load_tick()
+	Game.load_begin("Wald", 0.36, 0.68)
+	await _build_forest(id)
+	Game.load_begin("Büsche & Farne", 0.68, 0.76)
+	await _build_undergrowth(id)
+	Game.load_begin("Felsen", 0.76, 0.82)
+	await _build_rocks(id)
 	details.finish()
 	if id == "harbor":
 		_build_skyline()
@@ -427,6 +435,7 @@ func _build_forest(id: String) -> void:
 		autumn_ratio = 0.22
 	var meshes: Array = []
 	for k in kinds:
+		await Game.load_tick()
 		var kind: String = k[0]
 		var sd: int = k[1]
 		meshes.append([
@@ -450,6 +459,7 @@ func _build_forest(id: String) -> void:
 	var wb: float = track.wall_base
 	var gz := ext.position.y
 	while gz < ext.end.y:
+		await Game.load_tick((gz - ext.position.y) / maxf(ext.size.y, 1.0))
 		var gx := ext.position.x
 		while gx < ext.end.x:
 			var nxt := _band_next(gx, gz, NEAR_BAND)
@@ -508,9 +518,9 @@ func _build_forest(id: String) -> void:
 	for i in kinds.size():
 		if kinds[i][0] == "oak":
 			oak_reach = maxf(oak_reach, float(crowns[i]))
-	_solitary_oaks(kinds, chunks, far_chunks, oak_reach)
+	await _solitary_oaks(kinds, chunks, far_chunks, oak_reach)
 	if big:
-		_far_band_trees(kinds, far_chunks, pine_ratio, autumn_ratio)
+		await _far_band_trees(kinds, far_chunks, pine_ratio, autumn_ratio)
 	var lod1_shadow := quality >= 3
 	# neighbouring levels overlap by the fade band (+ a little, the bounds centre sits higher than the
 	# node) and cross-fade with complementary dither patterns
@@ -518,15 +528,18 @@ func _build_forest(id: String) -> void:
 	var f_mid := Vector4(LOD0_END - FADE0, LOD0_END + FADE0, LOD1_END - FADE1, LOD1_END + FADE1)
 	var f_far := Vector4(LOD1_END - FADE1, LOD1_END + FADE1, 1e9, 2e9)
 	for v in kinds.size():
+		await Game.load_tick()
 		# close trees: full detail, but their shadows come from the lighter mid-detail mesh
 		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_hi", false, csize, false, false, f_hi)
 		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_shadow", true, csize, true, false, f_hi)
 		_emit_chunks(meshes[v][1], chunks[v], LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, csize, false, false, f_mid)
 	# the long data track: 3D far trees only in a shorter radius, 2D impostors from there on
 	var far_end := BIG_FAR_END if big else FAR_END
+	await Game.load_tick()
 	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, far_end, "Trees_far", false, csize, false, false, f_far)
 	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, far_end, FAR_END * 2.0, "Trees_2d", false, csize, false, true)
-	_build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
+	await Game.load_tick()
+	await _build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
 
 
 ## Data tracks: beyond NEAR_BAND the woods are only ever seen from afar – sparse, big trees that
@@ -537,6 +550,7 @@ func _far_band_trees(kinds: Array, far_chunks: Dictionary, pine_ratio: float, au
 	var count := 0
 	var gz := ext.position.y
 	while gz < ext.end.y:
+		await Game.load_tick((gz - ext.position.y) / maxf(ext.size.y, 1.0))
 		var gx := ext.position.x
 		while gx < ext.end.x:
 			var nxt := _band_next(gx, gz, NEAR_BAND, true)
@@ -586,6 +600,7 @@ func _solitary_oaks(kinds: Array, chunks: Array, far_chunks: Dictionary, kinds_r
 	var gz := ext.position.y
 	var count := 0
 	while gz < ext.end.y:
+		await Game.load_tick((gz - ext.position.y) / maxf(ext.size.y, 1.0))
 		var gx := ext.position.x
 		while gx < ext.end.x:
 			var nxt := _band_next(gx, gz, wb + 140.0)
@@ -646,6 +661,7 @@ func _build_outer_forest(far_mesh: Mesh, pine_ratio: float, autumn_ratio: float)
 	var chunks := {}
 	var gz := outer.position.y
 	while gz < outer.end.y:
+		await Game.load_tick((gz - outer.position.y) / maxf(outer.size.y, 1.0))
 		var gx := outer.position.x
 		while gx < outer.end.x:
 			var pos := Vector3(gx + rng.randf() * spacing, 0.0, gz + rng.randf() * spacing)
@@ -681,6 +697,7 @@ func _build_undergrowth(id: String) -> void:
 	var wb: float = track.wall_base
 	var gz := ext.position.y
 	while gz < ext.end.y:
+		await Game.load_tick((gz - ext.position.y) / maxf(ext.size.y, 1.0))
 		var gx := ext.position.x
 		while gx < ext.end.x:
 			var nxt := _band_next(gx, gz, 75.0)
@@ -750,6 +767,7 @@ func _build_rocks(id: String) -> void:
 	var wb: float = track.wall_base
 	var gz := ext.position.y
 	while gz < ext.end.y:
+		await Game.load_tick((gz - ext.position.y) / maxf(ext.size.y, 1.0))
 		var gx := ext.position.x
 		while gx < ext.end.x:
 			var nxt := _band_next(gx, gz, wb + 120.0)
@@ -793,6 +811,7 @@ func _build_rocks(id: String) -> void:
 	var sp2 := 3.2
 	gz = ext.position.y
 	while gz < ext.end.y:
+		await Game.load_tick((gz - ext.position.y) / maxf(ext.size.y, 1.0))
 		var gx := ext.position.x
 		while gx < ext.end.x:
 			var nxt := _band_next(gx, gz, wb + 70.0)
@@ -844,6 +863,8 @@ func _build_houses(count: int, styles: Array, at := -1) -> void:
 	var village := rng.randi_range(0, n - 1) if at < 0 else at
 	_village = village
 	while placed < count and tries < 600:
+		if tries % 20 == 0:
+			await Game.load_tick()
 		tries += 1
 		var i := village + rng.randi_range(-90, 90) if tries < 350 else rng.randi_range(0, n - 1)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0

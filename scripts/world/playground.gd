@@ -60,8 +60,9 @@ func build_trackside(p_track, p_terrain, p_scenery, quality: int) -> void:
 	scenery = p_scenery
 	rng.seed = hash(track.track_id) + 77
 	_make_assets()
-	_tyre_walls(260 if quality >= 1 else 140)
-	_marshal_posts(quality)
+	await _tyre_walls(260 if quality >= 1 else 140)
+	await Game.load_tick()
+	await _marshal_posts(quality)
 	print("TRACKSIDE PROPS: ", _stats)
 
 
@@ -77,6 +78,8 @@ func _tyre_walls(budget: int) -> void:
 	var placed := 0
 	var last := Vector3.INF
 	for i in n:
+		if i % 400 == 0:
+			await Game.load_tick()
 		var tw: float = track.trap[i]
 		if absf(tw) < 0.5 or placed >= budget:
 			continue
@@ -106,6 +109,8 @@ func _marshal_posts(quality: int) -> void:
 	var i: int = (track.start_index + 45) % n
 	var count := 0
 	while count < n / every:
+		if count % 8 == 0:
+			await Game.load_tick()
 		count += 1
 		i = (i + every + rng.randi_range(-8, 8)) % n
 		side = -side

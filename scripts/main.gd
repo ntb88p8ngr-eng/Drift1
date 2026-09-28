@@ -5,6 +5,7 @@ const World = preload("res://scripts/world/world.gd")
 const CarAudio = preload("res://scripts/car/car_audio.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const Showroom = preload("res://scripts/world/showroom.gd")
+const LoadingScreen = preload("res://scripts/ui/loading_screen.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 
@@ -76,41 +77,35 @@ func _start_world(cfg: Dictionary) -> void:
 		showroom.queue_free()
 		showroom = null
 	_show_loading(cfg)
-	# let the loading screen render before the (blocking) world generation
+	# let the loading screen render, then build the world in slices (Game.load_tick) so the
+	# screen keeps animating and the window stays responsive on the big maps
 	await get_tree().process_frame
 	await get_tree().process_frame
+	var run_cfg := cfg.duplicate()
+	run_cfg["async_load"] = true
 	world = World.new()
 	world.name = "World"
-	world.setup(cfg)
+	world.setup(run_cfg)
 	world.exit_requested.connect(_on_world_exit)
 	add_child(world)
+	if not world.is_loaded:
+		await world.loaded
 	_hide_loading()
 
 
 func _show_loading(cfg: Dictionary) -> void:
 	_hide_loading()
-	_loading = CanvasLayer.new()
-	_loading.layer = 50
-	var bg := ColorRect.new()
-	bg.color = Color(0.02, 0.01, 0.04)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_loading.add_child(bg)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	center.theme = UiKit.theme()
-	_loading.add_child(center)
-	var box := UiKit.col([
-		UiKit.title("MIDNIGHT DRIFT", 60),
-		UiKit.label("Lade %s …" % Game.track_name(str(cfg.get("track", ""))), 24, UiKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER),
-		UiKit.label("%s · %s" % [Game.mode_name(str(cfg.get("mode", ""))), Game.time_name(str(cfg.get("time_of_day", "")))], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER),
-	])
-	center.add_child(box)
+	Game.load_progress = 0.0
+	Game.load_stage = ""
+	_loading = LoadingScreen.new()
+	_loading.track_name = Game.track_name(str(cfg.get("track", "")))
+	_loading.sub_text = "%s · %s" % [Game.mode_name(str(cfg.get("mode", ""))), Game.time_name(str(cfg.get("time_of_day", "")))]
 	add_child(_loading)
 
 
 func _hide_loading() -> void:
 	if _loading:
-		_loading.queue_free()
+		_loading.finish()
 		_loading = null
 
 
@@ -195,7 +190,7 @@ func _smoke_test() -> void:
 		Game.settings["car"] = Game.CAR_ORDER[i % Game.CAR_ORDER.size()]
 		var weather: String = ["dry", "rain", "changing", "dry"][i % 4]
 		_start_world({"track": tr, "mode": md, "laps": 2, "time_of_day": tod, "weather": weather, "day_cycle": 8, "weather_seed": 5, "online": false})
-		while world == null:
+		while world == null or not world.is_loaded:
 			await get_tree().process_frame
 		for f in 120:
 			if f == 40:

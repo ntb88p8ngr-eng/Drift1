@@ -90,16 +90,17 @@ func generate(p_track: Node3D) -> void:
 	var end := Vector2(ceil((b.end.x + margin) / unit) * unit, ceil((b.end.y + margin) / unit) * unit)
 	nx = int(round((end.x - origin.x) / CELL)) + 1
 	nz = int(round((end.y - origin.y) / CELL)) + 1
-	_build_distance_field()
+	await _build_distance_field()
 	if track_id == "playground":
 		_setup_islands()
 	heights.resize(nx * nz)
 	splat.resize(nx * nz)
 	if big:
-		_stamp_near()
-		_generate_big()
+		await _stamp_near()
+		await _generate_big()
 		return
 	for iz in nz:
+		await Game.load_tick(0.3 + 0.7 * iz / nz)
 		var z := origin.y + iz * CELL
 		for ix in nx:
 			var x := origin.x + ix * CELL
@@ -139,6 +140,7 @@ func _generate_big() -> void:
 	var fine := _fine_chunks()
 	var cxn := int(ceil(float(nx - 1) / CHUNK))
 	for iz in nz:
+		await Game.load_tick(0.4 + 0.6 * iz / nz)
 		var z := origin.y + iz * CELL
 		var fz := (z - _dorigin.y) / DIST_CELL
 		var dz := mini(int(fz), _dn.y - 2)
@@ -255,6 +257,8 @@ func _stamp_near() -> void:
 	var n: int = track.sample_count()
 	var reach := int(ceil(NEAR_R / CELL)) + 1
 	for i in n:
+		if i % 64 == 0:
+			await Game.load_tick(0.25 + 0.15 * i / n)
 		var a: Vector3 = track.samples[i]
 		var b: Vector3 = track.samples[(i + 1) % n]
 		var ab := Vector2(b.x - a.x, b.z - a.z)
@@ -322,6 +326,8 @@ func _build_distance_field() -> void:
 	var n: int = track.sample_count()
 	# every 4 m (6 m on the long data tracks: within NEAR_R the exact field takes over anyway)
 	for i in range(0, n, 3 if big else 2):
+		if i % 60 == 0:
+			await Game.load_tick(0.25 * i / n)
 		var s: Vector3 = track.samples[i]
 		var tg: Vector3 = track.tangents[i]
 		var grade := tg.y / maxf(Vector2(tg.x, tg.z).length(), 0.1)
@@ -635,6 +641,7 @@ func build_meshes(wet_capable := true) -> void:
 	var cx_count := int(ceil(float(nx - 1) / CHUNK))
 	var cz_count := int(ceil(float(nz - 1) / CHUNK))
 	for cz in cz_count:
+		await Game.load_tick(float(cz) / cz_count)
 		for cx in cx_count:
 			var x0 := cx * CHUNK
 			var z0 := cz * CHUNK
@@ -649,8 +656,10 @@ func build_meshes(wet_capable := true) -> void:
 				_build_chunk(x0, z0, w, h, COARSE, FINE_RANGE, 0.0)
 			else:
 				_build_chunk(x0, z0, w, h, COARSE)
+	await Game.load_tick()
 	_build_outer()
-	_build_collision()
+	await Game.load_tick()
+	await _build_collision()
 
 
 func _vertex_normal(ix: int, iz: int, e := 1) -> Vector3:
@@ -829,6 +838,8 @@ func _build_collision() -> void:
 	var data := PackedFloat32Array()
 	data.resize(nx * nz)
 	for i in nx * nz:
+		if i % 262144 == 0:
+			await Game.load_tick()
 		data[i] = heights[i] / CELL
 	shape.map_data = data
 	var cs := CollisionShape3D.new()

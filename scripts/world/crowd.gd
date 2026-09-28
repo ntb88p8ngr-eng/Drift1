@@ -113,6 +113,7 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	# the open playground pad has no barriers to stand behind: only the grandstand there
 	if track.track_id != "playground":
 		for i in _corner_indices(zones):
+			await Game.load_tick()
 			_build_zone(i, quality)
 	_build_grandstand()
 

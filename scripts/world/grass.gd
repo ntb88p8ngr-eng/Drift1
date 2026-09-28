@@ -166,7 +166,7 @@ func setup(p_terrain, p_track, p_world) -> void:
 	terrain = p_terrain
 	track = p_track
 	world = p_world
-	_build_textures()
+	await _build_textures()
 	_rebuild(int(Game.settings.get("grass_quality", 2)))
 	Game.settings_changed.connect(_on_settings_changed)
 
@@ -193,6 +193,8 @@ func _build_textures() -> void:
 	var dk := float(Terrain.CELL) / float(Terrain.DIST_CELL)
 	var d_off: Vector2 = (terrain.origin - terrain._dorigin) / Terrain.DIST_CELL
 	for iz in nz:
+		if iz % 16 == 0:
+			await Game.load_tick(float(iz) / nz)
 		var drow := mini(int(d_off.y + iz * dk), dn.y - 1) * dn.x
 		for ix in nx:
 			var k: int = iz * nx + ix

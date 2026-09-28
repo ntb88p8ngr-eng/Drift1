@@ -184,6 +184,31 @@ var pending_config := {}
 ## False while automated tests run, so they never overwrite the player's settings file.
 var persist := true
 
+# --- loading a world in slices ------------------------------------------------------------------
+# World generation calls load_tick() in its long loops. While async_loading is on, a tick hands a
+# frame back to the engine every ~30 ms, so the loading screen keeps animating and the window stays
+# responsive; otherwise (tests) it returns at once and the world builds in one go.
+var async_loading := false
+var load_progress := 0.0        # 0..1 over the whole world
+var load_stage := ""
+var _load_range := Vector2(0.0, 1.0)
+var _load_last := 0
+
+
+func load_begin(stage: String, from: float, to: float) -> void:
+	load_stage = stage
+	_load_range = Vector2(from, to)
+	load_progress = maxf(load_progress, from)
+
+
+## `frac` = progress within the current stage (0..1), negative = unchanged.
+func load_tick(frac := -1.0) -> void:
+	if frac >= 0.0:
+		load_progress = maxf(load_progress, lerpf(_load_range.x, _load_range.y, clampf(frac, 0.0, 1.0)))
+	if async_loading and Time.get_ticks_msec() - _load_last > 30:
+		await get_tree().process_frame
+		_load_last = Time.get_ticks_msec()
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS

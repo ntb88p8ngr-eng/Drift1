@@ -99,17 +99,25 @@ func build(id: String) -> void:
 	wall_base = half_w + float(def["runoff"])
 	trap_w = minf(4.6, float(def["runoff"]) - 0.4)
 	elevated = def.has("data")
+	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
+	await Game.load_tick(0.2)
 	_compute_offsets()
 	_build_grid()
 	_build_ground()
+	await Game.load_tick(0.35)
 	_build_road()
 	if elevated:
 		_build_road_collision()
+	await Game.load_tick(0.55)
 	_build_puddles()
+	await Game.load_tick(0.7)
 	_build_curbs()
 	_build_walls()
+	await Game.load_tick(0.9)
 	_build_start()
+	if str(def.get("wall", "")) != "none" or track_id != "playground":
+		await _compute_edge(true)
 
 
 # ---------------------------------------------------------------------------
@@ -757,8 +765,13 @@ func distance_to_center(pos: Vector3) -> float:
 ## terrain (gravel shoulder and traps) and the grass (kept off both).
 ## Returns {"tex": ImageTexture, "origin": Vector2, "inv_size": Vector2}.
 func edge_data() -> Dictionary:
-	if not _edge.is_empty():
-		return _edge
+	if _edge.is_empty():
+		_compute_edge()
+	return _edge
+
+
+## `sliced`: hand frames back to the loading screen while stamping (world build).
+func _compute_edge(sliced := false) -> void:
 	# 1 m texels; 2 m on the long data tracks (a distance field interpolates well, 60 MB would not)
 	var px := 2.0 if elevated else 1.0
 	var b: Rect2 = bounds.grow(half_w + 12.0)
@@ -774,6 +787,8 @@ func edge_data() -> Dictionary:
 		data[k * 2] = 255
 	var reach := int(ceil((half_w + 8.0) / px))
 	for i in samples.size():
+		if sliced and i % 256 == 0:
+			await Game.load_tick()
 		var s: Vector3 = samples[i]
 		var r: Vector3 = rights[i]
 		var tw := trap[i]
@@ -801,7 +816,6 @@ func edge_data() -> Dictionary:
 				data[k * 2 + 1] = int(g * 255.0)
 	var img := Image.create_from_data(w, h, false, Image.FORMAT_RG8, data)
 	_edge = {"tex": ImageTexture.create_from_image(img), "origin": origin, "inv_size": Vector2(1.0 / (w * px), 1.0 / (h * px))}
-	return _edge
 
 
 ## Grip multiplier & surface name at a world position, given the track index nearby.
