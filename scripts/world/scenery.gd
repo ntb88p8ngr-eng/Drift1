@@ -47,7 +47,8 @@ var big := false                 # data track (Grüne Hölle): 35 km² of map, s
 ## ~100k MultiMesh nodes; the tree LOD distance is measured per chunk, so bigger chunks stay seamless)
 var csize := CHUNK
 const BLOCK := 32.0
-const NEAR_BAND := 230.0         # data tracks: full forest this close to the road, sparse far trees beyond
+const NEAR_BAND := 140.0         # data tracks: full forest this close to the road, sparse far trees beyond
+const BIG_FAR_END := 1100.0      # data tracks: 3D far trees end here, only 2D impostors beyond
 var _blk_d := PackedFloat32Array()   # distance from each block centre to the centreline
 var _blk_o := Vector2.ZERO
 var _blk_n := Vector2i.ZERO
@@ -65,6 +66,9 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	big = bool(track.elevated)
 	if big:
 		csize = 96.0
+		# 96 m chunks switch as a whole: hand over to the lighter tree meshes sooner
+		LOD0_END *= 0.6
+		LOD1_END *= 0.7
 		_build_block_distance()
 	_flatten_start()
 	details = Details.new()
@@ -357,6 +361,8 @@ func _process(_delta: float) -> void:
 ## forest continues as 2D impostors up to the horizon, so every tree in view is always drawn.
 func apply_view_distance() -> void:
 	var vd := float(Game.settings.get("view_distance", 1200))
+	if big:
+		vd = minf(vd, BIG_FAR_END)   # 2D trees take over earlier on the 20 km map
 	for r in _ranged:
 		var gi: GeometryInstance3D = r[0]
 		if not is_instance_valid(gi):
@@ -457,7 +463,7 @@ func _build_forest(id: String) -> void:
 				continue
 			var f: float = terrain.forest_density(pos.x, pos.z, d)
 			# thinner away from the track: far trees only fill the view, as bigger trees further apart
-			var keep := far_keep(d, wb + 5.0, wb + 100.0, 0.22) if big else far_keep(d, wb + 5.0, wb + 170.0, 0.3)
+			var keep := far_keep(d, wb + 5.0, wb + 60.0, 0.15) if big else far_keep(d, wb + 5.0, wb + 170.0, 0.3)
 			if rng.randf() > f * keep:
 				continue
 			if not free_at(pos, 1.6, 3.0):
@@ -516,8 +522,10 @@ func _build_forest(id: String) -> void:
 		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_hi", false, csize, false, false, f_hi)
 		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_shadow", true, csize, true, false, f_hi)
 		_emit_chunks(meshes[v][1], chunks[v], LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, csize, false, false, f_mid)
-	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, FAR_END, "Trees_far", false, csize, false, false, f_far)
-	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, FAR_END, FAR_END * 2.0, "Trees_2d", false, csize, false, true)
+	# the long data track: 3D far trees only in a shorter radius, 2D impostors from there on
+	var far_end := BIG_FAR_END if big else FAR_END
+	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, far_end, "Trees_far", false, csize, false, false, f_far)
+	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, far_end, FAR_END * 2.0, "Trees_2d", false, csize, false, true)
 	_build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
 
 
@@ -525,7 +533,7 @@ func _build_forest(id: String) -> void:
 ## exist only as far meshes / impostors.
 func _far_band_trees(kinds: Array, far_chunks: Dictionary, pine_ratio: float, autumn_ratio: float) -> void:
 	var ext: Rect2 = terrain.extent().grow(-6.0)
-	var spacing := 22.0
+	var spacing := 45.0
 	var count := 0
 	var gz := ext.position.y
 	while gz < ext.end.y:

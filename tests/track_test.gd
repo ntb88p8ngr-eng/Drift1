@@ -52,6 +52,7 @@ func _ready() -> void:
 			var lo := 1e9
 			var hi := -1e9
 			var worst_lat := 0.0
+			var cam_up := -1e9
 			var hint := i0
 			for f in 120 * 9:
 				var p: Vector3 = car.global_position
@@ -80,11 +81,14 @@ func _ready() -> void:
 				lo = minf(lo, rel)
 				hi = maxf(hi, rel)
 				worst_lat = maxf(worst_lat, absf(float(proj[2])))
+				if f > 120:
+					cam_up = maxf(cam_up, world.camera.global_position.y - car.global_position.y)
 			for act in ["accelerate", "brake", "steer_left", "steer_right"]:
 				Input.action_release(act)
-			var ok: bool = lo > -0.6 and worst_lat < tr.wall_base
+			# the chase camera stays a few metres above the car (not stuck at some absolute height)
+			var ok: bool = lo > -0.6 and worst_lat < tr.wall_base and cam_up < 6.0
 			if not ok:
 				fails += 1
-			print("  %s drive from %.1f km (%s): height over the road %.2f … %.2f m, max lateral %.1f m, %.0f km/h" % ["ok  " if ok else "FAIL", km, tr.section_at(fposmod(km * 1000.0 - tr.start_dist, tr.length)), lo, hi, worst_lat, car.speed_kmh()])
+			print("  %s drive from %.1f km (%s): height over the road %.2f … %.2f m, max lateral %.1f m, camera ≤ %.1f m above the car, %.0f km/h" % ["ok  " if ok else "FAIL", km, tr.section_at(fposmod(km * 1000.0 - tr.start_dist, tr.length)), lo, hi, worst_lat, cam_up, car.speed_kmh()])
 	print("TRACK: %s" % ("PASS" if fails == 0 else "FAIL (%d)" % fails))
 	get_tree().quit(1 if fails > 0 else 0)

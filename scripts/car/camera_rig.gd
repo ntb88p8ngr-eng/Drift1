@@ -201,7 +201,8 @@ func _process(delta: float) -> void:
 			var hp: Vector3 = hit["position"]
 			var hn: Vector3 = hit["normal"]
 			target_pos = hp + hn * 0.35
-		target_pos.y = maxf(target_pos.y, 0.35)
+		# never below the car's feet (relative: on the Grüne Hölle the road runs 280 m below y = 0)
+		target_pos.y = maxf(target_pos.y, car_pos.y + 0.05)
 
 	if not _initialized or not smooth_pos:
 		_pos = target_pos
