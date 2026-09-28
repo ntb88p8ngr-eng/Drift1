@@ -13,7 +13,11 @@ var manual := false          # flash key held (set by the car every frame)
 var _strips: Array = []      # {mat, decal, lights, color, flash, side, bright}
 var _t := 0.0
 var _mt := 0.0               # time since the flash key went down
-static var _glow_tex: Texture2D
+static var _glow_tex := {}
+## base strength (a subtle glow; the brightness slider scales it)
+const TUBE_E := 3.5
+const DECAL_E := 1.5
+const LIGHT_E := 0.9
 
 
 ## dims: CarBody.physics_spec (track, axle_f, axle_r, base).
@@ -42,6 +46,9 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		if not bool(sd.get("on", true)):
 			continue
 		var col := Color.from_string(str(sd.get("color", "#8a3dff")), Color(0.55, 0.25, 1.0))
+		# brightness per side: quadratic, so the slider is clearly visible through tone mapping/glow
+		var br := clampf(float(sd.get("bright", 1.0)), 0.1, 2.0)
+		var bf := br * br
 		# tube: centre, direction along it (x = across the car, z = along it) and length
 		var along_x := i < 2
 		var pos: Vector3
@@ -64,7 +71,7 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		mat.albedo_color = col
 		mat.emission_enabled = true
 		mat.emission = col
-		mat.emission_energy_multiplier = 6.0
+		mat.emission_energy_multiplier = TUBE_E * bf
 		var tube := MeshInstance3D.new()
 		var cm := CapsuleMesh.new()
 		cm.radius = 0.018
@@ -80,16 +87,17 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		add_child(tube)
 		# the neon wash on the ground: one decal the length of the tube, spilling outwards
 		var decal := Decal.new()
-		decal.texture_emission = _glow_texture()
-		decal.texture_albedo = _glow_texture()
+		decal.texture_emission = _glow_texture(i)
+		decal.texture_albedo = _glow_texture(i)
 		decal.albedo_mix = 0.0
-		decal.emission_energy = 3.0
+		decal.emission_energy = DECAL_E * bf
 		decal.modulate = col
 		decal.upper_fade = 0.2
 		decal.lower_fade = 0.4
 		decal.cull_mask = 1
 		var out := 0.45
-		var across := 1.9
+		# a brighter tube throws a wider glow
+		var across := 1.9 * (0.6 + 0.4 * br)
 		if along_x:
 			decal.size = Vector3(length + 0.8, 1.0, across)
 			decal.position = Vector3(0, y - 0.45, pos.z + signf(pos.z) * out)
@@ -106,9 +114,9 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 			for k in n:
 				var l := OmniLight3D.new()
 				l.light_color = col
-				l.omni_range = 1.9
+				l.omni_range = 1.9 * (0.7 + 0.3 * br)
 				l.omni_attenuation = 1.4
-				l.light_energy = 1.6
+				l.light_energy = LIGHT_E * bf
 				l.shadow_enabled = false
 				l.light_specular = 0.15
 				var f := 0.0 if n == 1 else (float(k) / (n - 1) - 0.5) * 0.6
@@ -116,27 +124,38 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 				add_child(l)
 				ls.append(l)
 		_strips.append({"mat": mat, "decal": decal, "lights": ls, "color": col, "flash": bool(sd.get("flash", false)), "side": i,
-			"bright": clampf(float(sd.get("bright", 1.0)), 0.1, 2.0)})
+			"bright": bf})
 
 
-## Soft neon stripe: bright line along the middle, falling off across it, fading out at both ends.
-static func _glow_texture() -> Texture2D:
-	if _glow_tex:
-		return _glow_tex
-	var w := 128
-	var h := 32
+## Soft, see-through neon wash: brightest along the middle, but its width and strength wander along
+## the side (noise) and the ends fade out unevenly – not a clean stripe. One variant per side.
+static func _glow_texture(variant := 0) -> Texture2D:
+	if _glow_tex.has(variant):
+		return _glow_tex[variant]
+	var w := 256
+	var h := 48
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	for y in h:
-		var across := absf((float(y) + 0.5) / h - 0.5) * 2.0
-		var a := exp(-across * across * 5.5)
-		for x in w:
-			var t := (float(x) + 0.5) / w
-			var ends := smoothstep(0.0, 0.18, t) * smoothstep(1.0, 0.82, t)
-			var v := a * ends
+	var nz := FastNoiseLite.new()
+	nz.seed = 71 + variant * 13
+	nz.frequency = 0.035
+	nz.fractal_octaves = 3
+	for x in w:
+		var t := (float(x) + 0.5) / w
+		# width and strength along the tube, plus ragged ends
+		var width := 0.55 + 0.45 * (0.5 + 0.5 * nz.get_noise_1d(x * 1.0))
+		var gain := 0.55 + 0.45 * (0.5 + 0.5 * nz.get_noise_1d(x * 1.0 + 500.0))
+		var e0 := 0.1 + 0.08 * nz.get_noise_1d(900.0 + x * 0.2)
+		var ends := smoothstep(0.0, e0 + 0.12, t) * smoothstep(1.0, 0.88 - e0, t)
+		for y in h:
+			var across := absf((float(y) + 0.5) / h - 0.5) * 2.0 / width
+			var wisp := 0.75 + 0.25 * nz.get_noise_2d(x * 2.0, y * 6.0)
+			var a := exp(-across * across * 3.2) * wisp
+			var v := clampf(a * ends * gain * 0.8, 0.0, 1.0)
 			img.set_pixel(x, y, Color(v, v, v, v))
 	img.generate_mipmaps()
-	_glow_tex = ImageTexture.create_from_image(img)
-	return _glow_tex
+	var tex := ImageTexture.create_from_image(img)
+	_glow_tex[variant] = tex
+	return tex
 
 
 ## Brightness 0..1 of a flashing side at time t (side index 0 front, 1 rear, 2 left, 3 right).
@@ -188,12 +207,12 @@ func _process(delta: float) -> void:
 		var mat: StandardMaterial3D = s["mat"]
 		mat.emission = col
 		mat.albedo_color = col * (0.25 + 0.75 * k)
-		mat.emission_energy_multiplier = (0.25 + 5.75 * k) * br
+		mat.emission_energy_multiplier = (0.04 + 0.96 * k) * TUBE_E * br
 		var decal: Decal = s["decal"]
 		decal.modulate = col
-		decal.emission_energy = 3.0 * k * br
+		decal.emission_energy = DECAL_E * k * br
 		decal.visible = k > 0.02
 		for l in s["lights"]:
 			(l as OmniLight3D).light_color = col
-			(l as OmniLight3D).light_energy = 1.6 * k * br
+			(l as OmniLight3D).light_energy = LIGHT_E * k * br
 			(l as OmniLight3D).visible = k > 0.02
