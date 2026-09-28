@@ -638,7 +638,8 @@ func get_underglow(car_id: String) -> Dictionary:
 	var sides: Dictionary = c.get("sides", {})
 	for s in UNDERGLOW_SIDES:
 		var sd: Dictionary = sides.get(s[0], {})
-		out["sides"][s[0]] = {"on": bool(sd.get("on", true)), "color": str(sd.get("color", "#8a3dff")), "flash": bool(sd.get("flash", false))}
+		out["sides"][s[0]] = {"on": bool(sd.get("on", true)), "color": str(sd.get("color", "#8a3dff")), "flash": bool(sd.get("flash", false)),
+			"bright": clampf(float(sd.get("bright", 1.0)), 0.1, 2.0)}
 	return out
 
 

@@ -897,7 +897,11 @@ func _underglow_ui(car_id: String) -> void:
 		fl.toggled.connect(func(v):
 			side["flash"] = v
 			apply.call())
-		details.add_child(UiKit.row([lbl, s_on, pick, fl], 8))
+		var br := UiKit.slider(0.1, 2.0, 0.05, float(side.get("bright", 1.0)), func(x):
+			side["bright"] = x
+			apply.call(), 110)
+		br.tooltip_text = "Helligkeit dieser Seite"
+		details.add_child(UiKit.row([lbl, s_on, pick, fl, UiKit.label("Hell", 14, UiKit.TEXT_DIM), br], 8))
 	details.add_child(UiKit.button("Alle Seiten wie vorne", func():
 		var front: Dictionary = cfg["sides"]["front"]
 		for pk in pickers:

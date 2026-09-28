@@ -49,5 +49,16 @@ func _ready() -> void:
 	e = _energies(ug)
 	if e.min() < 5.9:
 		print("FAIL: still strobing after releasing the flash key"); fails += 1
+	# brightness per side: front dimmed, right boosted
+	var c2 := _cfg(0, false)
+	c2["sides"]["front"]["bright"] = 0.3
+	c2["sides"]["right"]["bright"] = 1.8
+	ug.setup(c2, DIMS, true)
+	ug._process(1.0 / 60.0)
+	var by_side := {}
+	for st in ug._strips:
+		by_side[st["side"]] = [(st["mat"] as StandardMaterial3D).emission_energy_multiplier, (st["decal"] as Decal).emission_energy]
+	if absf(by_side[0][0] - 1.8) > 0.01 or absf(by_side[3][0] - 10.8) > 0.01 or absf(by_side[1][0] - 6.0) > 0.01 or by_side[0][1] >= by_side[1][1]:
+		print("FAIL: per-side brightness not applied: %s" % str(by_side)); fails += 1
 	print("UNDERGLOW TEST %s" % ("OK" if fails == 0 else "FAILED"))
 	get_tree().quit(1 if fails else 0)

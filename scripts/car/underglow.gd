@@ -3,14 +3,14 @@ extends Node3D
 ## continuous strip of ground (an emissive decal the length of that side) plus the underbody (two
 ## soft lights per side). Every side can join the flasher mode or stay lit steadily; holding the
 ## flash key (N) strobes all tubes, flashers installed or not.
-## Config (Game.get_underglow): {"on", "mode", "speed", "sides": {side: {"on", "color": "#rrggbb", "flash"}}}
+## Config (Game.get_underglow): {"on", "mode", "speed", "sides": {side: {"on", "color": "#rrggbb", "flash", "bright"}}}
 
 const SIDES := ["front", "rear", "left", "right"]
 
 var cfg: Dictionary = {}
 var manual := false          # flash key held (set by the car every frame)
 
-var _strips: Array = []      # {mat, decal, lights, color, flash, side}
+var _strips: Array = []      # {mat, decal, lights, color, flash, side, bright}
 var _t := 0.0
 var _mt := 0.0               # time since the flash key went down
 static var _glow_tex: Texture2D
@@ -115,7 +115,8 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 				l.position = pos + (Vector3(f * length, -0.06, 0) if along_x else Vector3(signf(pos.x) * 0.15, -0.06, f * length))
 				add_child(l)
 				ls.append(l)
-		_strips.append({"mat": mat, "decal": decal, "lights": ls, "color": col, "flash": bool(sd.get("flash", false)), "side": i})
+		_strips.append({"mat": mat, "decal": decal, "lights": ls, "color": col, "flash": bool(sd.get("flash", false)), "side": i,
+			"bright": clampf(float(sd.get("bright", 1.0)), 0.1, 2.0)})
 
 
 ## Soft neon stripe: bright line along the middle, falling off across it, fading out at both ends.
@@ -182,15 +183,17 @@ func _process(delta: float) -> void:
 			k = pattern(mode, _t, side)
 			if mode == 7:
 				col = Color.from_hsv(fposmod(_t * 0.25 + side * 0.25, 1.0), 0.9, 1.0)
+		# brightness per side: the tube, the glow on the ground and the lights scale with it
+		var br: float = s.get("bright", 1.0)
 		var mat: StandardMaterial3D = s["mat"]
 		mat.emission = col
 		mat.albedo_color = col * (0.25 + 0.75 * k)
-		mat.emission_energy_multiplier = 0.25 + 5.75 * k
+		mat.emission_energy_multiplier = (0.25 + 5.75 * k) * br
 		var decal: Decal = s["decal"]
 		decal.modulate = col
-		decal.emission_energy = 3.0 * k
+		decal.emission_energy = 3.0 * k * br
 		decal.visible = k > 0.02
 		for l in s["lights"]:
 			(l as OmniLight3D).light_color = col
-			(l as OmniLight3D).light_energy = 1.6 * k
+			(l as OmniLight3D).light_energy = 1.6 * k * br
 			(l as OmniLight3D).visible = k > 0.02
