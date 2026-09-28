@@ -30,7 +30,7 @@ func _ready() -> void:
 			(layer as GPUParticles3D).position = p
 			_nitro_flames.append(layer)
 	_flash = OmniLight3D.new()
-	_flash.light_color = Color(0.85, 0.45, 1.0)
+	_flash.light_color = Color(1.0, 0.3, 0.12)
 	_flash.omni_range = 5.0
 	_flash.light_energy = 0.0
 	_flash.visible = false
@@ -47,7 +47,7 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	# fine, long-lived smoke: many small, thin puffs that lose their speed quickly, hang in the air,
 	# slowly spread out and drift apart in wisps before they fade
 	var p := GPUParticles3D.new()
-	p.amount = 440 if rear else 220
+	p.amount = 900 if rear else 450
 	p.lifetime = 7.0
 	p.local_coords = false
 	p.emitting = false
@@ -63,45 +63,50 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	m.gravity = Vector3(0, 0.07, 0)
 	m.damping_min = 1.6
 	m.damping_max = 2.6
-	m.scale_min = 0.55
-	m.scale_max = 1.1
+	m.scale_min = 0.45
+	m.scale_max = 1.0
 	m.angle_min = 0.0
 	m.angle_max = 360.0
 	m.angular_velocity_min = -12.0
 	m.angular_velocity_max = 12.0
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	m.emission_sphere_radius = 0.28
+	m.emission_sphere_radius = 0.3
 	m.turbulence_enabled = true
 	m.turbulence_noise_strength = 0.6
-	m.turbulence_noise_scale = 5.0
+	m.turbulence_noise_scale = 3.2
 	m.turbulence_noise_speed_random = 0.25
 	m.turbulence_influence_min = 0.03
-	m.turbulence_influence_max = 0.09
+	m.turbulence_influence_max = 0.12
 	var sc := Curve.new()
 	sc.max_value = 5.0
-	sc.add_point(Vector2(0.0, 0.35))
-	sc.add_point(Vector2(0.15, 1.3))
-	sc.add_point(Vector2(0.5, 2.5))
-	sc.add_point(Vector2(1.0, 3.6))
+	sc.add_point(Vector2(0.0, 0.3))
+	sc.add_point(Vector2(0.15, 1.1))
+	sc.add_point(Vector2(0.5, 2.1))
+	sc.add_point(Vector2(1.0, 3.0))
 	var sct := CurveTexture.new()
 	sct.curve = sc
 	m.scale_curve = sct
 	var grad := Gradient.new()
-	grad.set_color(0, Color(0.93, 0.93, 0.95, 0.42))
-	grad.set_color(1, Color(0.86, 0.86, 0.9, 0.0))
-	grad.add_point(0.25, Color(0.92, 0.92, 0.94, 0.36))
-	grad.add_point(0.6, Color(0.9, 0.9, 0.92, 0.26))
-	grad.add_point(0.85, Color(0.88, 0.88, 0.91, 0.12))
+	grad.set_color(0, Color(1.0, 1.0, 1.0, 0.5))
+	grad.set_color(1, Color(0.97, 0.97, 0.99, 0.0))
+	grad.add_point(0.25, Color(1.0, 1.0, 1.0, 0.42))
+	grad.add_point(0.6, Color(0.99, 0.99, 1.0, 0.3))
+	grad.add_point(0.85, Color(0.98, 0.98, 1.0, 0.13))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	m.color_ramp = gt
 	p.process_material = m
 	var quad := QuadMesh.new()
-	quad.size = Vector2(1.15, 1.15)
+	# small puffs, twice as many: finer, more detailed wisps
+	quad.size = Vector2(0.62, 0.62)
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mat.billboard_keep_scale = true
+	# a little self-light so the smoke stays white in the car's shadow instead of turning grey
+	mat.emission_enabled = true
+	mat.emission = Color(1, 1, 1)
+	mat.emission_energy_multiplier = 0.18
 	mat.vertex_color_use_as_albedo = true
 	mat.albedo_texture = TexKit.smoke_texture(true)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
@@ -128,13 +133,13 @@ func _flame_layer(nitro: bool, pipe_r: float, core: bool) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	var size: float
 	if core:
-		size = clampf(pipe_r * 4.5, 0.1, 0.28)
+		size = clampf(pipe_r * 3.6, 0.08, 0.22)
 		p.amount = 36 if nitro else 18
 		p.lifetime = 0.08 if nitro else 0.09
 	else:
-		size = clampf(pipe_r * 9.0, 0.22, 0.55) * (1.15 if nitro else 1.0)
+		size = clampf(pipe_r * 6.8, 0.17, 0.42) * (1.1 if nitro else 1.0)
 		p.amount = 70 if nitro else 34
-		p.lifetime = 0.26 if nitro else 0.3
+		p.lifetime = 0.22 if nitro else 0.25
 	p.one_shot = not nitro
 	p.explosiveness = 0.0 if nitro else (0.85 if core else 0.6)
 	p.emitting = false
@@ -183,22 +188,23 @@ func _flame_layer(nitro: bool, pipe_r: float, core: bool) -> GPUParticles3D:
 	m.scale_curve = sct
 	# HDR colours (> 1) so the glow picks the flames up
 	var grad := Gradient.new()
+	# backfire: red flames (hot orange-white core); nitro: blue flames (blue-white core)
 	if core and nitro:
-		grad.set_color(0, Color(2.2, 2.6, 3.2, 1.0))
-		grad.set_color(1, Color(0.4, 0.6, 2.4, 0.0))
+		grad.set_color(0, Color(1.8, 2.4, 3.4, 1.0))
+		grad.set_color(1, Color(0.2, 0.5, 2.8, 0.0))
 	elif core:
-		grad.set_color(0, Color(2.4, 2.3, 3.0, 1.0))
-		grad.set_color(1, Color(1.4, 0.7, 2.6, 0.0))
+		grad.set_color(0, Color(3.2, 2.0, 1.2, 1.0))
+		grad.set_color(1, Color(2.8, 0.3, 0.1, 0.0))
 	elif nitro:
-		grad.set_color(0, Color(0.9, 1.3, 2.6, 0.95))
-		grad.set_color(1, Color(0.9, 0.3, 1.6, 0.0))
-		grad.add_point(0.3, Color(0.55, 0.7, 2.4, 0.8))
-		grad.add_point(0.65, Color(0.8, 0.4, 2.0, 0.45))
+		grad.set_color(0, Color(0.5, 1.1, 3.0, 0.95))
+		grad.set_color(1, Color(0.1, 0.2, 1.8, 0.0))
+		grad.add_point(0.35, Color(0.25, 0.55, 2.8, 0.8))
+		grad.add_point(0.7, Color(0.15, 0.3, 2.2, 0.4))
 	else:
-		grad.set_color(0, Color(1.6, 1.4, 2.6, 0.95))
-		grad.set_color(1, Color(1.8, 0.45, 1.1, 0.0))
-		grad.add_point(0.25, Color(1.1, 0.6, 2.4, 0.85))
-		grad.add_point(0.6, Color(1.9, 0.55, 1.7, 0.5))
+		grad.set_color(0, Color(3.0, 1.2, 0.4, 0.95))
+		grad.set_color(1, Color(1.6, 0.05, 0.02, 0.0))
+		grad.add_point(0.3, Color(2.8, 0.45, 0.12, 0.8))
+		grad.add_point(0.65, Color(2.2, 0.15, 0.05, 0.45))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	gt.use_hdr = true
@@ -281,7 +287,7 @@ func _process(delta: float) -> void:
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		_flash.visible = true
-		_flash.light_color = Color(0.85, 0.45, 1.0)
+		_flash.light_color = Color(1.0, 0.3, 0.12)
 		_flash.light_energy = 3.5 * _flash_k * (_flash_t / 0.18)
 	elif nitro_on:
 		_flash.visible = true
