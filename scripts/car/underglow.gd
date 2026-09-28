@@ -11,6 +11,8 @@ var cfg: Dictionary = {}
 var manual := false          # flash key held (set by the car every frame)
 
 var _strips: Array = []      # {mat, decal, lights, color, flash, side, bright}
+var _corners: Array = []     # {decal, a, b}: soft glow where two lit sides meet (strip indices)
+const CORNER_E := 0.55        # corner glow relative to the sides (dimmer)
 var _t := 0.0
 var _mt := 0.0               # time since the flash key went down
 static var _glow_tex := {}
@@ -30,6 +32,7 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		remove_child(c)
 		c.free()
 	_strips.clear()
+	_corners.clear()
 	visible = bool(cfg.get("on", false))
 	set_process(visible)
 	if not visible:
@@ -127,6 +130,45 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 				ls.append(l)
 		_strips.append({"mat": mat, "decal": decal, "lights": ls, "color": col, "flash": bool(sd.get("flash", false)), "side": i,
 			"bright": bf})
+	# corners: where two lit sides meet, a small round glow fills the gap between their washes
+	var idx := {}
+	for n in _strips.size():
+		idx[int(_strips[n]["side"])] = n
+	var hx := tr + 0.45
+	for cz in [[0, zf], [1, zr]]:
+		for cx in [[2, -1.0], [3, 1.0]]:
+			if not (idx.has(cz[0]) and idx.has(cx[0])):
+				continue
+			var d := Decal.new()
+			d.texture_emission = _corner_texture()
+			d.texture_albedo = _corner_texture()
+			d.albedo_mix = 0.0
+			d.upper_fade = 0.2
+			d.lower_fade = 0.4
+			d.cull_mask = 1
+			d.size = Vector3(1.8, 1.0, 1.8)
+			d.position = Vector3(float(cx[1]) * hx, y - 0.45, float(cz[1]) + signf(float(cz[1])) * 0.3)
+			add_child(d)
+			_corners.append({"decal": d, "a": idx[cz[0]], "b": idx[cx[0]]})
+
+
+## Soft round glow for the corners.
+static var _corner_tex: Texture2D
+
+
+static func _corner_texture() -> Texture2D:
+	if _corner_tex:
+		return _corner_tex
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var p := Vector2((x + 0.5) / n - 0.5, (y + 0.5) / n - 0.5) * 2.0
+			var v := clampf(exp(-p.length_squared() * 3.5) * 0.45 * (1.0 - smoothstep(0.8, 1.0, p.length())), 0.0, 1.0)
+			img.set_pixel(x, y, Color(v, v, v, v))
+	img.generate_mipmaps()
+	_corner_tex = ImageTexture.create_from_image(img)
+	return _corner_tex
 
 
 ## Soft, see-through neon wash: brightest along the middle, but its width and strength wander along
@@ -214,7 +256,21 @@ func _process(delta: float) -> void:
 		decal.modulate = col
 		decal.emission_energy = DECAL_E * k * br
 		decal.visible = k > 0.02
+		s["k_now"] = k * br
+		s["col_now"] = col
 		for l in s["lights"]:
 			(l as OmniLight3D).light_color = col
 			(l as OmniLight3D).light_energy = LIGHT_E * k * br
 			(l as OmniLight3D).visible = k > 0.02
+	# corners: a dimmer glow mixing the two sides (follows their flashing)
+	for c in _corners:
+		var sa: Dictionary = _strips[c["a"]]
+		var sb: Dictionary = _strips[c["b"]]
+		var ka: float = sa.get("k_now", 0.0)
+		var kb: float = sb.get("k_now", 0.0)
+		var d: Decal = c["decal"]
+		var ca: Color = sa.get("col_now", sa["color"])
+		var cb: Color = sb.get("col_now", sb["color"])
+		d.modulate = ca.lerp(cb, 0.5 if ka + kb <= 0.0 else kb / (ka + kb))
+		d.emission_energy = DECAL_E * CORNER_E * (ka + kb) * 0.5
+		d.visible = ka + kb > 0.02

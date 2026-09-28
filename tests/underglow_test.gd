@@ -38,7 +38,7 @@ func _ready() -> void:
 		e = _energies(ug)
 		if e.min() < FULL * 0.97:
 			print("FAIL: still flashing after switching the flasher off (%s)" % str(c["mode"])); fails += 1
-	if ug.get_child_count() != 4 * 2 + 6:   # 4 tubes, 4 ground decals, 1+1+2+2 lights
+	if ug.get_child_count() != 4 * 2 + 6 + 4:   # 4 tubes, 4 ground decals, 1+1+2+2 lights, 4 corner glows
 		print("FAIL: %d nodes left over after rebuilding" % ug.get_child_count()); fails += 1
 	# manual flash without flashers
 	ug.setup(_cfg(0, false), DIMS, true)
@@ -62,5 +62,15 @@ func _ready() -> void:
 	# quadratic: 0.3 -> 0.09x, 1.8 -> 3.24x of the base (steady, 1x)
 	if absf(by_side[0][0] - FULL * 0.09) > 0.005 or absf(by_side[3][0] - FULL * 3.24) > 0.005 or absf(by_side[1][0] - FULL) > 0.005 or by_side[0][1] >= by_side[1][1]:
 		print("FAIL: per-side brightness not applied: %s" % str(by_side)); fails += 1
+	# corners only where both neighbouring sides are lit
+	var c3 := _cfg(0, false)
+	c3["sides"]["left"]["on"] = false
+	ug.setup(c3, DIMS, true)
+	if ug._corners.size() != 2:
+		print("FAIL: %d corner glows with the left side off (expected 2)" % ug._corners.size()); fails += 1
+	ug._process(1.0 / 60.0)
+	for c in ug._corners:
+		if (c["decal"] as Decal).emission_energy >= Underglow.DECAL_E * Underglow.SCALE:
+			print("FAIL: corner glow not dimmer than the sides"); fails += 1
 	print("UNDERGLOW TEST %s" % ("OK" if fails == 0 else "FAILED"))
 	get_tree().quit(1 if fails else 0)
