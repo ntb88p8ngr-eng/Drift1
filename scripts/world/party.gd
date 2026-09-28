@@ -1,9 +1,10 @@
 extends Node3D
 ## Party mode: glowing minigame coins lie on the track. Whoever drives through one stops the race for
-## everybody and a minigame is drawn: all cars are taken to its venue on the map (party_sites.gd),
-## play it, get credits by rank and are put back where they were. Offline the local player plays
+## everybody and a minigame is drawn: all cars are taken to its stretch of the track, where its props
+## are put up for the time of the game (party_sites.gd), play it, get credits by rank and are put
+## back where they were. Offline the local player plays
 ## alone; online the host referees (who got the coin first, which game, the final ranking).
-## Flow per minigame: announce (roulette) -> travel (countdown at the venue) -> play -> results -> back.
+## Flow per minigame: announce (roulette) -> travel (countdown on the stretch) -> play -> results -> back.
 
 const PartySites = preload("res://scripts/world/party_sites.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
@@ -12,9 +13,9 @@ const GAMES := [
 	{"id": "rlgl", "name": "Rotes Licht, Grünes Licht", "time": 90.0, "unit": "m",
 		"desc": "Fahr ins Ziel – aber bei ROT musst du stillstehen! Wer sich bei Rot bewegt, muss zurück zum Start."},
 	{"id": "parkour", "name": "Offroad-Parkour", "time": 120.0, "unit": "m",
-		"desc": "Reifenslalom, Baumstämme, Sprungschanze, schmale Planken: zuerst im Ziel gewinnt. Runtergefallen = zurück zum Checkpoint."},
-	{"id": "koth", "name": "König des Hügels", "time": 60.0, "unit": "s",
-		"desc": "Bleib in der leuchtenden Zone – sie wandert alle 10 Sekunden. Schubs die anderen raus! Wer runterfällt, verliert Zeit."},
+		"desc": "Schlamm, Reifenslalom, Baumstämme, Sprungschanzen und Schikanen: zuerst im Ziel gewinnt. [R] = zurück zum letzten Checkpoint."},
+	{"id": "koth", "name": "König der Zone", "time": 60.0, "unit": "s",
+		"desc": "Bleib in der leuchtenden Zone – sie wandert alle 10 Sekunden über die Straße. Schubs die anderen raus!"},
 	{"id": "donut", "name": "Donut-Duell", "time": 30.0, "unit": "x",
 		"desc": "Dreh so viele Donuts wie möglich – jede volle Drehung zählt. 30 Sekunden!"},
 ]
@@ -50,6 +51,8 @@ var _red_since := -1.0
 var _penalty := 0.0
 var _yaw_acc := 0.0
 var _last_yaw := 0.0
+var _hint := -1              # track sample near the car (for projecting)
+var _zone := Vector2.ZERO     # king of the zone: current spot (along, lateral)
 var _coin_mat: StandardMaterial3D
 var _beam_mat: StandardMaterial3D
 
@@ -208,7 +211,7 @@ func _process_coins(delta: float) -> void:
 					_place_coin(i)
 			node.visible = false
 			continue
-		node.visible = games_played < games_total
+		node.visible = games_played < games_total and state == "idle"
 		var spin: Node3D = node.get_node("Spin")
 		spin.rotation.y = fmod(t * 2.2 + i, TAU)
 		spin.position.y = 0.25 * sin(t * 2.0 + i * 1.7)
@@ -237,9 +240,12 @@ func _host_start(coin: int, by: int) -> void:
 		return
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([seed_base, games_played, Time.get_ticks_usec()])
-	var g := r.randi() % GAMES.size()
-	if g == _game and GAMES.size() > 1:
-		g = (g + 1 + r.randi() % (GAMES.size() - 1)) % GAMES.size()
+	# only the minigames whose venue found room on this map
+	var avail: Array = []
+	for k in GAMES.size():
+		if sites.sites.has(GAMES[k]["id"]) and (k != _game or sites.sites.size() == 1):
+			avail.append(k)
+	var g: int = avail[r.randi() % avail.size()]
 	var ids: Array = []
 	for id in world.cars.keys():
 		if is_instance_valid(world.cars[id]):
@@ -394,27 +400,30 @@ func _begin_travel() -> void:
 	var g: Dictionary = GAMES[_game]
 	var id: String = g["id"]
 	var car = world.local_car
+	# the props of this minigame go up on its stretch of the track (and come down afterwards)
+	sites.build_course(id)
 	car.place(sites.start_xf(id, _slot, _ids.size()))
 	car.freeze = true
 	car.controls_locked = true
 	car.gear = 1
 	car.nitro = 1.0
-	var top: float = sites.xf(id).origin.y
-	car.arena_kill_y = top - (2.2 if id == "parkour" else 3.0)
+	car.arena_kill_y = float(world.track.kill_y)
 	car.respawn_fn = _respawn
 	var grip := 0.9 if id == "parkour" else 1.0
 	var sname := "dirt" if id == "parkour" else "asphalt"
 	car.surface_override = func(_p: Vector3) -> Array: return [grip, sname]
-	_checkpoint = PartySites.PK_CHECKPOINTS[0]
+	_checkpoint = 0.0
 	_penalty = 0.0
 	_yaw_acc = 0.0
 	_last_yaw = car.global_rotation.y
 	_red_since = -1.0
+	_hint = -1
 	if id == "rlgl":
 		_make_rl_phases()
 		sites.set_rlgl_light(0)
 	if id == "koth":
-		sites.koth_zone.position = PartySites.koth_spot(_seed, 0) + Vector3(0, 1.5, 0)
+		_zone = sites.koth_spot(_seed, 0)
+		sites.place_zone(_zone)
 	_b_desc.text = g["desc"]
 	state = "travel"
 	_t = 0.0
@@ -431,8 +440,7 @@ func _respawn() -> Transform3D:
 			var r := RandomNumberGenerator.new()
 			r.randomize()
 			return sites.start_xf("koth", r.randi() % 8, 8)
-		_:
-			return sites.start_xf(id, _slot, _ids.size())
+	return sites.start_xf(id, _slot, _ids.size())
 
 
 func _finish_local() -> void:
@@ -455,14 +463,18 @@ func _play(delta: float, g: Dictionary) -> void:
 	var car = world.local_car
 	var id: String = g["id"]
 	var left := maxf(float(g["time"]) - _t, 0.0)
-	var local: Vector3 = sites.to_local_pos(id, car.global_position)
+	var proj: Array = world.track.project(car.global_position, _hint)
+	_hint = proj[0]
+	# metres along this minigame's stretch of track
+	var along := wrapf(float(proj[1]) - float(sites.sites[id]["p0"]), -float(world.track.length) * 0.5, float(world.track.length) * 0.5)
+	var lateral := float(proj[2])
 	_penalty = maxf(_penalty - delta, 0.0)
 	match id:
 		"rlgl":
 			var green := _rl_green(_t)
 			sites.set_rlgl_light(1 if green else 0)
 			if not _done:
-				_value = local.z - PartySites.RLGL_START
+				_value = along - PartySites.RLGL_START
 				if green:
 					_red_since = -1.0
 					_show_status("GRÜN – FAHR!", UiKit.GOOD)
@@ -474,37 +486,36 @@ func _play(delta: float, g: Dictionary) -> void:
 					if _t - _red_since > 0.45 and car.speed > 0.9:
 						car.reset_to_track()
 						car.freeze = true
+						_hint = -1
 						_penalty = 1.5
 						_status_t = 1.5
 						world.hud.show_message("ERWISCHT!", "Zurück zum Start", UiKit.BAD, 1.8)
 				if _penalty <= 0.0 and car.freeze:
 					car.freeze = false
-				if local.z > PartySites.RLGL_FINISH:
+				if along > sites.rlgl_finish():
 					_value = 10000.0 - _t
 					_finish_t = _t
 					_finish_local()
 					world.hud.show_message("IM ZIEL!", Game.format_time(_t), UiKit.GOLD, 2.5)
-			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(PartySites.RLGL_FINISH - local.z, 0.0))]
+			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(sites.rlgl_finish() - along, 0.0))]
 		"parkour":
 			if not _done:
-				for cz in PartySites.PK_CHECKPOINTS:
-					if local.z > float(cz) + 2.0 and float(cz) > _checkpoint:
+				for cz in sites.pk_checkpoints():
+					if along > float(cz) + 2.0 and float(cz) > _checkpoint:
 						_checkpoint = cz
 						world.hud.show_message("CHECKPOINT", "", UiKit.GOOD, 1.0)
-				_value = local.z + float(sites.sites["parkour"]["hl"])
-				if local.z > PartySites.PK_FINISH:
+				_value = along - PartySites.PK_START
+				if along > sites.pk_finish():
 					_value = 10000.0 - _t
 					_finish_t = _t
 					_finish_local()
 					world.hud.show_message("IM ZIEL!", Game.format_time(_t), UiKit.GOLD, 2.5)
-			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(PartySites.PK_FINISH - local.z, 0.0))]
+			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(sites.pk_finish() - along, 0.0))]
 		"koth":
 			var step := int(_t / KOTH_STEP)
-			var spot := PartySites.koth_spot(_seed, step)
-			var zone := sites.koth_zone
-			zone.position = zone.position.lerp(spot + Vector3(0, 1.5, 0), 1.0 - exp(-delta * 2.5))
-			var zp := zone.position
-			var inside := Vector2(local.x - zp.x, local.z - zp.z).length() < 6.0 and absf(local.y) < 2.0
+			_zone = _zone.lerp(sites.koth_spot(_seed, step), 1.0 - exp(-delta * 2.5))
+			sites.place_zone(_zone)
+			var inside := Vector2(along - _zone.x, lateral - _zone.y).length() < PartySites.KOTH_ZONE_R
 			if inside and _penalty <= 0.0 and not _done:
 				_value += delta
 			_show_status("IN DER ZONE" if inside else "", UiKit.GOLD)
@@ -513,7 +524,8 @@ func _play(delta: float, g: Dictionary) -> void:
 			var yaw: float = car.global_rotation.y
 			var dy := wrapf(yaw - _last_yaw, -PI, PI)
 			_last_yaw = yaw
-			if car.speed > 1.5 and absf(local.x) < PartySites.DONUT_R and absf(local.z) < PartySites.DONUT_R and not _done:
+			var spot: Transform3D = sites.start_xf("donut", _slot, _ids.size())
+			if car.speed > 1.5 and car.global_position.distance_to(spot.origin) < PartySites.DONUT_R and not _done:
 				_yaw_acc += dy
 			_value = floorf(absf(_yaw_acc) / TAU)
 			_line.text = "%s   ·   %d Donuts" % [_clock(left), int(_value)]
@@ -608,6 +620,7 @@ func _begin_back() -> void:
 	car.surface_override = Callable()
 	car.respawn_fn = Callable()
 	car.arena_kill_y = -1e9
+	sites.clear_course()
 	car.place(_return_xf)
 	car.freeze = true
 	car.controls_locked = true

@@ -101,24 +101,21 @@ func _ready() -> void:
 	add_child(terrain)
 	Game.load_begin("Gelände", 0.06, 0.34)
 	await terrain.generate(track)
-	# party mode: the minigame venues get their spots (and level ground) before any scenery is placed.
-	# Not on the long data tracks (their loading time is long enough already).
-	if bool(config.get("party", false)) and not track.elevated:
-		party_sites = PartySites.new()
-		party_sites.name = "PartySites"
-		if await party_sites.plan(track, terrain):
-			add_child(party_sites)
-		else:
-			party_sites.free()
-			party_sites = null
 	var t1 := Time.get_ticks_msec()
 	scenery = Scenery.new()
 	scenery.name = "Scenery"
 	add_child(scenery)
-	if party_sites:
-		party_sites.reserve(scenery)
 	Game.load_begin("Streckenrand", 0.34, 0.36)
 	await scenery.build(track, terrain, atmosphere.night, quality)
+	# party mode: the minigames are played on stretches of the track (not on the long data tracks)
+	if bool(config.get("party", false)) and not track.elevated:
+		party_sites = PartySites.new()
+		party_sites.name = "PartySites"
+		if party_sites.plan(track):
+			add_child(party_sites)
+		else:
+			party_sites.free()
+			party_sites = null
 	var t2 := Time.get_ticks_msec()
 	Game.load_begin("Gelände-Modell", 0.82, 0.94)
 	await terrain.build_meshes()
@@ -165,7 +162,6 @@ func _ready() -> void:
 	if mode == "graffiti":
 		_setup_graffiti()
 	if party_sites:
-		party_sites.build()
 		party = Party.new()
 		party.name = "Party"
 		party.setup(self, party_sites, config)
