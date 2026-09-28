@@ -1200,23 +1200,27 @@ func _rtg_crane(c: Vector3, basis: Basis, sz: float) -> void:
 
 func _build_skyline() -> void:
 	var c: Vector2 = track.bounds.get_center()
-	# far away the window grid is averaged by the mipmaps into one flat glow, so only a few windows are
-	# lit and the facade itself stays dark (albedo without the yellow lights)
+	# the facades carry coarse structure (glass bands, columns, floor lines, a darker base) that still
+	# reads from a kilometre away in daylight; at night only a few windows glow (emission)
 	var win_tex := _skyline_texture(true)
 	var facade_tex := _skyline_texture(false)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.22, 0.23, 0.26)
-	mat.albedo_texture = facade_tex
-	mat.emission_enabled = true
-	mat.emission_texture = win_tex
-	mat.emission = Color(1.0, 0.82, 0.55)
-	mat.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY   # only the windows glow, not the whole facade
-	mat.uv1_triplanar = true
-	mat.uv1_world_triplanar = true
-	mat.uv1_scale = Vector3(0.04, 0.04, 0.04)
-	mat.roughness = 0.4
-	mat.metallic = 0.2
-	_glow_mats.append([mat, 0.0, 1.4])
+	var tints := [Color(0.55, 0.68, 0.82), Color(0.5, 0.72, 0.7), Color(0.86, 0.84, 0.8), Color(0.55, 0.56, 0.6), Color(0.84, 0.74, 0.6)]
+	var mats: Array = []
+	for t in tints:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = t
+		mat.albedo_texture = facade_tex
+		mat.emission_enabled = true
+		mat.emission_texture = win_tex
+		mat.emission = Color(1.0, 0.82, 0.55)
+		mat.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY   # only the windows glow, not the whole facade
+		mat.uv1_triplanar = true
+		mat.uv1_world_triplanar = true
+		mat.uv1_scale = Vector3(0.04, 0.04, 0.04)
+		mat.roughness = 0.35
+		mat.metallic = 0.25
+		_glow_mats.append([mat, 0.0, 1.4])
+		mats.append(mat)
 	for k in 70:
 		var a := rng.randf_range(-PI * 0.95, -PI * 0.05)  # north side (away from the water)
 		var r := rng.randf_range(750.0, 1050.0)
@@ -1225,7 +1229,7 @@ func _build_skyline() -> void:
 		var bx := c.x + cos(a) * r
 		var bz := c.y + sin(a) * r
 		var gy: float = terrain.outer_height(bx, bz) - 3.0
-		var b := MeshKit.box_node(Vector3(w, h + 3.0, w * rng.randf_range(0.6, 1.2)), mat, Vector3(bx, gy + (h + 3.0) * 0.5, bz))
+		var b := MeshKit.box_node(Vector3(w, h + 3.0, w * rng.randf_range(0.6, 1.2)), mats[k % mats.size()], Vector3(bx, gy + (h + 3.0) * 0.5, bz))
 		b.rotation.y = rng.randf() * TAU
 		b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(b)
@@ -1233,24 +1237,31 @@ func _build_skyline() -> void:
 			add_child(MeshKit.sphere_node(0.8, TexKit.emissive(Color(1, 0.1, 0.05), 5.0), b.position + Vector3(0, (h + 3.0) * 0.5 + 1.0, 0)))
 
 
-## lights = true: emission (a few lit windows on black); false: the facade colours (grey windows).
+## lights = true: emission (a few lit windows on black); false: the facade (one tile = 25 m): glass
+## bands between light columns, floor lines every ~3 m, coarse enough to survive the distance.
 func _skyline_texture(lights: bool) -> ImageTexture:
 	var img := Image.create(64, 64, false, Image.FORMAT_RGB8)
 	img.fill(Color(0.0, 0.0, 0.0) if lights else Color(0.3, 0.3, 0.32))
 	var lit_rng := RandomNumberGenerator.new()
 	lit_rng.seed = 7117
+	if not lights:
+		for y in 64:
+			for x in 64:
+				# columns every 16 px (6 m), 3 px wide; glass in between with a soft sky reflection
+				var col_x := (x % 16) < 3
+				var floor_y := (y % 8) == 0
+				var glass := 0.38 + 0.18 * (float(y) / 63.0) + 0.06 * sin(float(x) * 0.4)
+				var v := 0.92 if col_x else (0.62 if floor_y else glass)
+				img.set_pixel(x, y, Color(v, v, v * 1.04))
 	for y in range(2, 64, 4):
 		for x in range(2, 64, 4):
 			var lit := lit_rng.randf() < 0.12
 			var b := lit_rng.randf_range(0.4, 1.0)
-			var col: Color
 			if lights:
-				col = Color(1.0, 0.85, 0.6) * b if lit else Color(0, 0, 0)
-			else:
-				col = Color(0.16, 0.18, 0.22)
-			for yy in 2:
-				for xx in 2:
-					img.set_pixel(x + xx, y + yy, col)
+				var col := Color(1.0, 0.85, 0.6) * b if lit else Color(0, 0, 0)
+				for yy in 2:
+					for xx in 2:
+						img.set_pixel(x + xx, y + yy, col)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 

@@ -226,7 +226,8 @@ func _apply(_delta: float) -> void:
 	var lvl := _day_level(sp.x)
 	sky_mat.set_shader_parameter("cloud_color", (k["cloud"] as Color).lerp(Color(0.62, 0.63, 0.66) * lvl, dark * 0.85))
 	sky_mat.set_shader_parameter("cloud_shade", (k["shade"] as Color).lerp(Color(0.3, 0.31, 0.34) * lvl, dark * 0.85))
-	sky_mat.set_shader_parameter("cloud_offset", Vector2(elapsed * 0.004, elapsed * 0.0017))
+	# kept small (wraps after many hours): huge noise coordinates lose precision on the GPU
+	sky_mat.set_shader_parameter("cloud_offset", Vector2(fposmod(elapsed * 0.004, 512.0), fposmod(elapsed * 0.0017, 512.0)))
 	sky_mat.set_shader_parameter("star_amount", k["stars"])
 	sky_mat.set_shader_parameter("moon_amount", clampf(-sp.x / 8.0, 0.0, 1.0) * (1.0 - overcast))
 	sky_mat.set_shader_parameter("moon_dir", _moon_dir)
