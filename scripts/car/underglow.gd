@@ -129,12 +129,11 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 				add_child(l)
 				ls.append(l)
 		_strips.append({"mat": mat, "decal": decal, "lights": ls, "color": col, "flash": bool(sd.get("flash", false)), "side": i,
-			"bright": bf})
+			"bright": bf, "across": across, "out": out})
 	# corners: where two lit sides meet, a small round glow fills the gap between their washes
 	var idx := {}
 	for n in _strips.size():
 		idx[int(_strips[n]["side"])] = n
-	var hx := tr + 0.45
 	for cz in [[0, zf], [1, zr]]:
 		for cx in [[2, -1.0], [3, 1.0]]:
 			if not (idx.has(cz[0]) and idx.has(cx[0])):
@@ -146,9 +145,13 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 			d.upper_fade = 0.2
 			d.lower_fade = 0.4
 			d.cull_mask = 1
-			# a wide soft patch reaching out diagonally from the corner, over both washes' fading ends
-			d.size = Vector3(3.4, 1.0, 3.4)
-			d.position = Vector3(float(cx[1]) * (hx + 0.35), y - 0.45, float(cz[1]) + signf(float(cz[1])) * 0.75)
+			# centred where the two washes' middle lines cross and no larger than they are wide, so the
+			# corner never reaches further out than the side or front/rear glow
+			var sa: Dictionary = _strips[idx[cz[0]]]
+			var sb: Dictionary = _strips[idx[cx[0]]]
+			var sz := minf(float(sa["across"]), float(sb["across"]))
+			d.size = Vector3(sz, 1.0, sz)
+			d.position = Vector3(float(cx[1]) * (tr + 0.02 + float(sb["out"])), y - 0.45, float(cz[1]) + signf(float(cz[1])) * float(sa["out"]))
 			add_child(d)
 			_corners.append({"decal": d, "a": idx[cz[0]], "b": idx[cx[0]]})
 
@@ -165,7 +168,7 @@ static func _corner_texture() -> Texture2D:
 	for y in n:
 		for x in n:
 			var p := Vector2((x + 0.5) / n - 0.5, (y + 0.5) / n - 0.5) * 2.0
-			var v := clampf(exp(-p.length_squared() * 2.6) * 0.42 * (1.0 - smoothstep(0.6, 1.0, p.length())), 0.0, 1.0)
+			var v := clampf(exp(-p.length_squared() * 3.2) * 0.45 * (1.0 - smoothstep(0.75, 1.0, p.length())), 0.0, 1.0)
 			img.set_pixel(x, y, Color(v, v, v, v))
 	img.generate_mipmaps()
 	_corner_tex = ImageTexture.create_from_image(img)
