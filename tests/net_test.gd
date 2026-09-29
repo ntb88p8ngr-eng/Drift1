@@ -7,7 +7,7 @@ extends Node
 
 func _ready() -> void:
 	Game.persist = false
-	var args := {"role": "host", "pw": "", "port": "24590"}
+	var args := {"role": "host", "pw": "", "port": "24590", "ip": "127.0.0.1"}
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--") and a.contains("="):
 			var kv := a.substr(2).split("=", true, 1)
@@ -18,7 +18,7 @@ func _ready() -> void:
 	if args["role"] == "host":
 		var err := Net.host_lobby("Test", int(args["port"]), 4, false, args["pw"])
 		print("NET HOST ", "ok" if err == "" else err)
-		Net.public_ip = "127.0.0.1"
+		Net.public_ip = args["ip"]   # --ip=::1 checks IPv6
 		var code := Net.invite_code()
 		print("NET INVITE %d chars -> %s" % [code.length(), str(Net.parse_invite(code)).substr(0, 60)])
 		var f := FileAccess.open("user://net_test_invite_%s.txt" % args["port"], FileAccess.WRITE)

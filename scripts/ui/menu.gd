@@ -579,18 +579,29 @@ func _refresh_invite(host: bool) -> void:
 	if not host:
 		return
 	var code := Net.invite_code()
+	var port := int(Net.lobby.get("port", Net.DEFAULT_PORT))
 	if code == "":
 		var ip_edit := LineEdit.new()
-		ip_edit.placeholder_text = "öffentliche IP"
-		ip_edit.custom_minimum_size = Vector2(220, 40)
-		_invite_box.add_child(UiKit.label("Für Internet-Spieler wird deine öffentliche IP gebraucht (UPnP hat sie nicht geliefert):", 16, UiKit.TEXT_DIM))
+		ip_edit.placeholder_text = "öffentliche IPv4 oder IPv6"
+		ip_edit.custom_minimum_size = Vector2(300, 40)
+		_invite_box.add_child(UiKit.label("Für Internet-Spieler wird deine öffentliche Adresse gebraucht (UPnP hat keine geliefert):", 16, UiKit.TEXT_DIM))
 		_invite_box.add_child(UiKit.row([ip_edit, UiKit.button("Übernehmen", func():
-			if ip_edit.text.strip_edges().is_valid_ip_address():
-				Net.public_ip = ip_edit.text.strip_edges()
+			var a := str(Net.split_address(ip_edit.text, port)[0])
+			if a.is_valid_ip_address():
+				Net.public_ip = a
 				_refresh_lobby()
 			else:
 				show_status("Keine gültige IP-Adresse.", UiKit.BAD), 150),
-			UiKit.button("Automatisch ermitteln (ipify.org)", func(): Net.lookup_public_ip(), 330)]))
+			UiKit.button("Automatisch ermitteln (IPv6 zuerst)", func(): Net.lookup_public_ip(), 360)]))
+		# IPv6-only / DS-Lite connections: the PC's own global IPv6 addresses, one click each
+		var v6 := Net.global_ipv6_addresses()
+		if not v6.is_empty():
+			_invite_box.add_child(UiKit.label("IPv6-Adressen dieses PCs – nimm die, für die im Router die Freigabe gilt (nicht die „temporäre“):", 15, UiKit.TEXT_DIM))
+			for a in v6:
+				var addr: String = a
+				_invite_box.add_child(UiKit.button(addr, func():
+					Net.public_ip = addr
+					_refresh_lobby(), 460))
 		return
 	var code_edit := LineEdit.new()
 	code_edit.text = code
@@ -600,8 +611,15 @@ func _refresh_invite(host: bool) -> void:
 	_invite_box.add_child(UiKit.labeled("Einladungs-Code", UiKit.row([code_edit, UiKit.button("Kopieren", func():
 		DisplayServer.clipboard_set(code)
 		show_status("Einladungs-Code kopiert – nur an Mitspieler weitergeben (enthält IP & Passwort)."), 130)])))
-	if int(Net.lobby.get("port", Net.DEFAULT_PORT)) > 0 and Net.upnp_message.begins_with("Kein UPnP"):
-		_invite_box.add_child(UiKit.label("Ohne UPnP: Port %d/UDP im Router auf diesen PC weiterleiten." % int(Net.lobby.get("port", Net.DEFAULT_PORT)), 16, UiKit.TEXT_DIM))
+	var v6_host := Net.public_ip.contains(":")
+	_invite_box.add_child(UiKit.row([UiKit.label("Adresse im Code: %s (%s)" % [Net.public_ip, "IPv6" if v6_host else "IPv4"], 15, UiKit.TEXT_DIM),
+		UiKit.button("Andere Adresse", func():
+			Net.public_ip = ""
+			_refresh_lobby(), 180)], 10))
+	if v6_host:
+		_invite_box.add_child(UiKit.label("IPv6: Im Router die Freigabe für UDP-Port %d auf genau diese Adresse bzw. diesen PC setzen (FritzBox: Internet → Freigaben → Gerät → „IPv6 freigeben“ + Port), Windows-Firewall für das Spiel erlauben. Mitspieler brauchen selbst IPv6." % port, 15, UiKit.TEXT_DIM))
+	elif port > 0 and Net.upnp_message.begins_with("Kein UPnP"):
+		_invite_box.add_child(UiKit.label("Ohne UPnP: Port %d/UDP im Router auf diesen PC weiterleiten." % port, 16, UiKit.TEXT_DIM))
 
 
 func _refresh_lobby() -> void:

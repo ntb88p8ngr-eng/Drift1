@@ -50,6 +50,7 @@ var result_list: Array = []
 var lan_lobbies := {}      # "ip:port" -> info Dictionary
 var upnp_message := ""
 var public_ip := ""        # host: from UPnP or the manual lookup, for the invite code
+var _last_address := ""     # client: the address last joined (for a helpful error message)
 var password := ""         # host: lobby password / client: password used to join
 var cert_body := ""        # host: its certificate (base64 DER) for invite codes and LAN announcements
 
@@ -149,7 +150,10 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 
 func join_lobby(address: String, port: int, lobby_password: String, host_cert: String) -> String:
 	leave()
-	address = address.strip_edges()
+	var ap := split_address(address, port)
+	address = str(ap[0])
+	port = int(ap[1])
+	_last_address = address
 	if address == "":
 		return "Bitte eine IP-Adresse eingeben."
 	var cert := X509Certificate.new()
@@ -227,21 +231,131 @@ static func _pem(body: String) -> String:
 	return "\n".join(lines) + "\n"
 
 
-## Host: asks a public "what is my IP" service (only when the player presses the button).
+## Host: finds the address the other players can reach (only when the player presses the button):
+## IPv6 first (many connections have only IPv6, or IPv4 just behind the provider's shared NAT), then
+## a public IPv4. For IPv6 the PC's stable address is preferred over the temporary privacy address
+## the lookup sees – the router's port opening (e.g. FritzBox) applies to the stable one.
 func lookup_public_ip() -> void:
+	_lookup("https://api6.ipify.org", func(ip: String) -> bool:
+		if not ip.contains(":"):
+			return false
+		public_ip = preferred_ipv6(ip)
+		return true, func():
+			_lookup("https://api.ipify.org", func(ip4: String) -> bool:
+				if not is_public_ipv4(ip4):
+					return false
+				public_ip = ip4
+				return true, func():
+					# no service reachable: maybe still a global IPv6 on this PC
+					var own := global_ipv6_addresses()
+					if not own.is_empty():
+						public_ip = own[0]
+					else:
+						upnp_message = "Öffentliche IP konnte nicht ermittelt werden."
+					lobby_changed.emit()))
+
+
+func _lookup(url: String, accept: Callable, on_fail: Callable) -> void:
 	var req := HTTPRequest.new()
 	req.timeout = 6.0
 	add_child(req)
 	req.request_completed.connect(func(result: int, code: int, _h, body: PackedByteArray):
 		req.queue_free()
 		var ip := body.get_string_from_utf8().strip_edges()
-		if result == HTTPRequest.RESULT_SUCCESS and code == 200 and ip.is_valid_ip_address():
-			public_ip = ip
+		if result == HTTPRequest.RESULT_SUCCESS and code == 200 and ip.is_valid_ip_address() and bool(accept.call(ip)):
+			lobby_changed.emit()
 		else:
-			upnp_message = "Öffentliche IP konnte nicht ermittelt werden."
-		lobby_changed.emit())
-	if req.request("https://api.ipify.org") != OK:
+			on_fail.call())
+	if req.request(url) != OK:
 		req.queue_free()
+		on_fail.call()
+
+
+## Global IPv6 addresses of this PC (no link-local fe80::, no private fc00::/7).
+func global_ipv6_addresses() -> Array:
+	var out: Array = []
+	for a in IP.get_local_addresses():
+		var s := str(a).split("%")[0]
+		if not s.contains(":"):
+			continue
+		var first := s.split(":")[0].to_lower()
+		if first.length() == 4 and (first.begins_with("2") or first.begins_with("3")):
+			out.append(s)
+	return out
+
+
+## For the address the lookup saw (often Windows' temporary privacy address): another global address
+## of this PC in the same /64 network – the stable one the router's port opening is made for.
+func preferred_ipv6(seen: String) -> String:
+	var prefix := _prefix64(seen)
+	for a in global_ipv6_addresses():
+		if a != seen and _prefix64(a) == prefix:
+			return a
+	return seen
+
+
+## The first four groups (the /64 network) of an IPv6 address, "::" shorthand expanded.
+static func _prefix64(ip: String) -> String:
+	var groups := expand_ipv6(ip)
+	return ":".join(groups.slice(0, 4))
+
+
+static func expand_ipv6(ip: String) -> PackedStringArray:
+	var s := ip.split("%")[0].to_lower()
+	var head := s
+	var tail := ""
+	if s.contains("::"):
+		var ht := s.split("::", true, 1)
+		head = ht[0]
+		tail = ht[1]
+	var hg: PackedStringArray = head.split(":", false) if head != "" else PackedStringArray()
+	var tg: PackedStringArray = tail.split(":", false) if tail != "" else PackedStringArray()
+	var out := PackedStringArray()
+	for g in hg:
+		out.append(g.lpad(4, "0"))
+	for k in 8 - hg.size() - tg.size():
+		out.append("0000")
+	for g in tg:
+		out.append(g.lpad(4, "0"))
+	return out
+
+
+## True for an IPv4 others can reach (not private, not the provider's shared NAT range 100.64/10).
+static func is_public_ipv4(ip: String) -> bool:
+	if not ip.is_valid_ip_address() or ip.contains(":"):
+		return false
+	var o := ip.split(".")
+	var a := int(o[0])
+	var b := int(o[1])
+	if a == 10 or a == 127 or a == 0 or a >= 224:
+		return false
+	if a == 172 and b >= 16 and b <= 31:
+		return false
+	if a == 192 and b == 168:
+		return false
+	if a == 169 and b == 254:
+		return false
+	if a == 100 and b >= 64 and b <= 127:
+		return false
+	return true
+
+
+## Address and port from what a player typed: "1.2.3.4", "1.2.3.4:7777", "2001:db8::1",
+## "[2001:db8::1]:7777" (IPv6 in brackets when a port follows).
+static func split_address(text: String, port: int) -> Array:
+	var t := text.strip_edges()
+	if t.begins_with("["):
+		var close := t.find("]")
+		if close > 0:
+			var rest := t.substr(close + 1)
+			if rest.begins_with(":") and rest.substr(1).is_valid_int():
+				port = int(rest.substr(1))
+			return [t.substr(1, close - 1), port]
+	if t.count(":") == 1:
+		var hp := t.split(":")
+		if hp[1].is_valid_int():
+			return [hp[0], int(hp[1])]
+	return [t, port]
 
 
 func leave() -> void:
@@ -417,7 +531,10 @@ func _on_connected_to_server() -> void:
 
 func _on_connection_failed() -> void:
 	leave()
-	connection_failed.emit("Verbindung fehlgeschlagen – Host nicht erreichbar (IP/Port/Firewall prüfen).")
+	var msg := "Verbindung fehlgeschlagen – Host nicht erreichbar (IP/Port/Firewall prüfen)."
+	if _last_address.contains(":"):
+		msg = "Keine Verbindung zur IPv6-Adresse des Hosts. Hat dein Internet IPv6? Beim Host: IPv6-Portfreigabe (UDP) im Router für die feste IPv6 des PCs und Windows-Firewall prüfen."
+	connection_failed.emit(msg)
 
 
 func _on_server_disconnected() -> void:
@@ -861,7 +978,8 @@ func _upnp_done(ok: bool, msg: String, upnp: UPNP, port: int) -> void:
 		_upnp = upnp
 		_upnp_port = port
 		var ext := upnp.query_external_address()
-		if ext.is_valid_ip_address():
+		# behind DS-Lite / carrier NAT the router only has a shared, unreachable IPv4 – not for the code
+		if is_public_ipv4(ext) and not public_ip.contains(":"):
 			public_ip = ext
 	elif ok and upnp:
 		upnp.delete_port_mapping(port, "UDP")
