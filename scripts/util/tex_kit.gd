@@ -1521,3 +1521,223 @@ static func checker_texture() -> ImageTexture:
 	var result = ImageTexture.create_from_image(img)
 	_cache["tex_checker"] = result
 	return result
+
+
+# ---------------------------------------------------------------------------
+# Offroad: mud, logs, planks
+# ---------------------------------------------------------------------------
+## Mud on the road, in world space: dry cracked crust, darker churned mud and glossy wet puddles.
+## The patch mesh carries its edge fade in COLOR.a; the noise breaks the outline up (alpha scissor,
+## so it stays opaque and needs no sorting).
+const MUD_SHADER := """
+shader_type spatial;
+render_mode diffuse_burley;
+
+uniform sampler2D n_big : filter_linear_mipmap, repeat_enable;
+uniform sampler2D n_fine : filter_linear_mipmap, repeat_enable;
+uniform sampler2D n_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform vec3 dry : source_color = vec3(0.47, 0.37, 0.25);
+uniform vec3 dark : source_color = vec3(0.24, 0.17, 0.10);
+varying vec3 wp;
+
+void vertex() {
+	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment() {
+	vec2 p = wp.xz;
+	float a = texture(n_big, p * 0.045).r;
+	float b = texture(n_fine, p * 0.21).r;
+	float c = texture(n_fine, p * 0.93 + vec2(0.37, 0.71)).r;
+	// churned: darker where the fine noise is low, tyre-rut streaks along the stretch
+	float churn = smoothstep(0.35, 0.75, b * 0.7 + c * 0.3);
+	vec3 col = mix(dark, dry, churn);
+	col *= 0.85 + 0.3 * c;
+	// puddles: standing water in the dips of the big noise
+	float wet = smoothstep(0.56, 0.6, a * 0.8 + b * 0.2);
+	float damp = smoothstep(0.42, 0.58, a * 0.8 + b * 0.2);
+	col = mix(col, col * 0.7, damp);
+	col = mix(col, vec3(0.12, 0.095, 0.065), wet);
+	ALBEDO = col;
+	ROUGHNESS = mix(mix(0.97, 0.6, damp), 0.04, wet);
+	SPECULAR = mix(0.25, 0.7, wet);
+	NORMAL_MAP = mix(texture(n_nrm, p * 0.21).xyz, vec3(0.5, 0.5, 1.0), wet);
+	NORMAL_MAP_DEPTH = 1.6;
+	ALPHA = clamp(COLOR.a * 1.6 + (c - 0.5) * 0.9 + (b - 0.5) * 0.6, 0.0, 1.0);
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+}
+"""
+
+
+static func mud_material() -> ShaderMaterial:
+	if _cache.has("mat_mud"):
+		return _cache["mat_mud"]
+	var m := ShaderMaterial.new()
+	m.shader = _shader("shader_mud", MUD_SHADER)
+	m.set_shader_parameter("n_big", noise_texture(71, 0.012, false, 256))
+	m.set_shader_parameter("n_fine", noise_texture(72, 0.03, false, 256))
+	m.set_shader_parameter("n_nrm", noise_texture(72, 0.03, true, 256, 9.0))
+	_cache["mat_mud"] = m
+	return m
+
+
+## [bark albedo, bark normal, end grain albedo] for felled logs: deep lengthwise fissures (the
+## texture's v runs along the log), grey-brown plates with a little moss, and year rings on the cut.
+static func log_textures() -> Array:
+	if _cache.has("tex_log"):
+		return _cache["tex_log"]
+	var size := 256
+	var cell := FastNoiseLite.new()
+	cell.seed = 31
+	cell.noise_type = FastNoiseLite.TYPE_CELLULAR
+	cell.frequency = 0.035
+	cell.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
+	var fine := FastNoiseLite.new()
+	fine.seed = 32
+	fine.frequency = 0.08
+	var moss := FastNoiseLite.new()
+	moss.seed = 33
+	moss.frequency = 0.02
+	var h := PackedFloat32Array()
+	h.resize(size * size)
+	var mo := PackedFloat32Array()
+	mo.resize(size * size)
+	for y in size:
+		for x in size:
+			# tileable in both directions (torus mapping); fissures stretched along v
+			var ax := float(x) / size * TAU
+			var ay := float(y) / size * TAU
+			var px := cos(ax) * 26.0
+			var pz := sin(ax) * 26.0
+			var py := cos(ay) * 9.0
+			var pw := sin(ay) * 9.0
+			var fis := cell.get_noise_3d(px, py * 1.0 + pw * 0.3, pz)
+			var f2 := fine.get_noise_3d(px * 2.5, py * 5.0, pz * 2.5 + pw * 5.0)
+			h[y * size + x] = clampf(fis * 0.8 + f2 * 0.25 + 0.5, 0.0, 1.0)
+			mo[y * size + x] = moss.get_noise_3d(px * 0.6, py * 2.0 + pw, pz * 0.6)
+	var alb := Image.create(size, size, false, Image.FORMAT_RGB8)
+	var nrm := Image.create(size, size, false, Image.FORMAT_RGB8)
+	for y in size:
+		for x in size:
+			var v := h[y * size + x]
+			var crack := smoothstep(0.32, 0.12, v)
+			var c := Color(0.30, 0.25, 0.20).lerp(Color(0.46, 0.41, 0.35), v)
+			c = c.lerp(Color(0.07, 0.05, 0.035), crack)
+			var m := smoothstep(0.15, 0.45, mo[y * size + x]) * smoothstep(0.25, 0.6, v)
+			c = c.lerp(Color(0.24, 0.30, 0.10), m * 0.7)
+			alb.set_pixel(x, y, c)
+			var hl := h[y * size + ((x - 1 + size) % size)]
+			var hr := h[y * size + ((x + 1) % size)]
+			var hu := h[((y - 1 + size) % size) * size + x]
+			var hd := h[((y + 1) % size) * size + x]
+			var n := Vector3((hl - hr) * 5.0, (hu - hd) * 5.0, 1.0).normalized()
+			nrm.set_pixel(x, y, Color(n.x * 0.5 + 0.5, n.y * 0.5 + 0.5, n.z * 0.5 + 0.5))
+	alb.generate_mipmaps()
+	nrm.generate_mipmaps()
+	# the cut end: pale wood with year rings, a darker heart, cracks from the centre and a bark rim
+	var es := 128
+	var end := Image.create(es, es, false, Image.FORMAT_RGB8)
+	var wob := FastNoiseLite.new()
+	wob.seed = 34
+	wob.frequency = 0.06
+	for y in es:
+		for x in es:
+			var d := Vector2(x - es * 0.5 + 0.5, y - es * 0.5 + 0.5) / (es * 0.5)
+			var r := d.length()
+			var ang := atan2(d.y, d.x)
+			var rr := r + wob.get_noise_2d(x, y) * 0.035
+			var ring := 0.5 + 0.5 * cos(rr * 58.0)
+			var c2 := Color(0.72, 0.58, 0.40).lerp(Color(0.56, 0.41, 0.25), ring * 0.7)
+			c2 = c2.lerp(Color(0.45, 0.30, 0.17), smoothstep(0.35, 0.0, r) * 0.6)
+			var split := absf(wrapf(ang * 3.0 / TAU + wob.get_noise_2d(r * 40.0, 7.0) * 0.08, -0.5, 0.5))
+			c2 = c2.lerp(Color(0.12, 0.08, 0.05), smoothstep(0.03, 0.0, split) * smoothstep(0.1, 0.4, r) * smoothstep(0.9, 0.6, r))
+			c2 = c2.lerp(Color(0.22, 0.17, 0.12), smoothstep(0.86, 0.93, r))
+			end.set_pixel(x, y, c2)
+	end.generate_mipmaps()
+	var result = [ImageTexture.create_from_image(alb), ImageTexture.create_from_image(nrm), ImageTexture.create_from_image(end)]
+	_cache["tex_log"] = result
+	return result
+
+
+## [albedo, normal] of weathered planks (boards along v): grain, knots, dark gaps between boards.
+static func plank_textures() -> Array:
+	if _cache.has("tex_plank"):
+		return _cache["tex_plank"]
+	var size := 256
+	var grain := FastNoiseLite.new()
+	grain.seed = 41
+	grain.frequency = 0.05
+	var knot := FastNoiseLite.new()
+	knot.seed = 42
+	knot.noise_type = FastNoiseLite.TYPE_CELLULAR
+	knot.frequency = 0.03
+	var boards := 5
+	var h := PackedFloat32Array()
+	h.resize(size * size)
+	var alb := Image.create(size, size, false, Image.FORMAT_RGB8)
+	for y in size:
+		for x in size:
+			var bw := float(size) / boards
+			var bi := int(x / bw)
+			var bx := fmod(float(x), bw) / bw
+			var ay := float(y) / size * TAU
+			var g := grain.get_noise_3d(x * 3.0 + bi * 50.0, cos(ay) * 6.0, sin(ay) * 6.0)
+			var k := knot.get_noise_3d(float(x) + bi * 97.0, cos(ay) * 30.0, sin(ay) * 30.0)
+			var gap := smoothstep(0.035, 0.0, minf(bx, 1.0 - bx))
+			var tone := 0.85 + 0.3 * fmod(float(bi) * 0.618, 1.0)
+			var c := Color(0.50, 0.40, 0.28).lerp(Color(0.62, 0.52, 0.38), 0.5 + g * 0.8) * tone
+			c = c.lerp(Color(0.25, 0.17, 0.10), smoothstep(-0.55, -0.8, k) * 0.8)
+			c = c.lerp(Color(0.05, 0.04, 0.03), gap)
+			c = c.lerp(Color(0.40, 0.40, 0.38), 0.25)   # grey, sun-bleached
+			alb.set_pixel(x, y, c)
+			h[y * size + x] = (0.5 + g * 0.3) * (1.0 - gap)
+	var nrm := Image.create(size, size, false, Image.FORMAT_RGB8)
+	for y in size:
+		for x in size:
+			var hl := h[y * size + ((x - 1 + size) % size)]
+			var hr := h[y * size + ((x + 1) % size)]
+			var hu := h[((y - 1 + size) % size) * size + x]
+			var hd := h[((y + 1) % size) * size + x]
+			var n := Vector3((hl - hr) * 4.0, (hu - hd) * 2.0, 1.0).normalized()
+			nrm.set_pixel(x, y, Color(n.x * 0.5 + 0.5, n.y * 0.5 + 0.5, n.z * 0.5 + 0.5))
+	alb.generate_mipmaps()
+	nrm.generate_mipmaps()
+	var result = [ImageTexture.create_from_image(alb), ImageTexture.create_from_image(nrm)]
+	_cache["tex_plank"] = result
+	return result
+
+
+## [bark material, cut-end material] for logs.
+static func log_materials() -> Array:
+	if _cache.has("mat_log"):
+		return _cache["mat_log"]
+	var t: Array = log_textures()
+	var bark := StandardMaterial3D.new()
+	bark.albedo_texture = t[0]
+	bark.normal_enabled = true
+	bark.normal_texture = t[1]
+	bark.normal_scale = 1.5
+	bark.roughness = 0.93
+	bark.vertex_color_use_as_albedo = true
+	var cut := StandardMaterial3D.new()
+	cut.albedo_texture = t[2]
+	cut.roughness = 0.85
+	var result = [bark, cut]
+	_cache["mat_log"] = result
+	return result
+
+
+static func plank_material() -> StandardMaterial3D:
+	if _cache.has("mat_plank"):
+		return _cache["mat_plank"]
+	var t: Array = plank_textures()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = t[0]
+	m.normal_enabled = true
+	m.normal_texture = t[1]
+	m.roughness = 0.88
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = false
+	m.uv1_scale = Vector3(0.45, 0.45, 0.45)
+	_cache["mat_plank"] = m
+	return m

@@ -37,6 +37,8 @@ const KINETIC := 0.95           # spinning tyre: share of the peak grip it still
 const SPIN_HOLD := 0.78         # a spinning wheel keeps spinning while the drive exceeds this share of the grip
 const SPIN_MASS := 32.0         # kg – how hard the drivetrain resists spinning the wheels up (low = free-revving)
 const DRIFT_PUSH := 3.2         # m/s² – extra drive along the nose at full throttle in a drift
+const DRIFT_STEER := 2.8        # m/s² – in a slide the steering bends the path towards where you steer
+const INERTIA_SCALE := Vector3(1.25, 1.4, 1.25)   # heavier feel: more rotational inertia than a plain box
 
 # --- configuration (set before adding to the tree) ---
 var car_id := "r34"
@@ -44,6 +46,11 @@ var paint := {}
 var player_name := "Driver"
 var peer_id := 1
 var is_remote := false
+## Extra suspension travel and ride height (m), e.g. for the offroad minigame – see set_lift().
+var lift := 0.0
+## Minigame bots: when valid, returns [throttle, brake, steer, handbrake] instead of the keyboard.
+var ai_fn: Callable
+var is_bot := false            # a minigame bot: collides like a remote car, sounds positional
 var is_display := false
 var transmission := "auto"
 var remote_collisions := true
@@ -213,7 +220,7 @@ func _ready() -> void:
 		audio = CarAudio.new()
 		audio.name = "Audio"
 		audio.car = self
-		audio.positional = is_remote
+		audio.positional = is_remote or is_bot
 		add_child(audio)
 	_update_lights()
 
@@ -319,6 +326,12 @@ func _setup_physics() -> void:
 	physics_material_override = pm
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, 0.42, 0.05)
+	# a solid box of the car's size, then scaled up: the car turns in, rolls and pitches more
+	# deliberately and keeps its rotation longer – it feels heavier, less like a go-kart
+	var bw := hw * 2.0
+	var bh := 1.0
+	inertia = Vector3(mass / 12.0 * (bh * bh + length * length), mass / 12.0 * (bw * bw + length * length),
+		mass / 12.0 * (bw * bw + bh * bh)) * INERTIA_SCALE
 	can_sleep = false
 	continuous_cd = true
 	contact_monitor = true
@@ -336,6 +349,9 @@ func _setup_physics() -> void:
 		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 		collision_layer = LAYER_REMOTE if remote_collisions else 0
 		collision_mask = 0
+	elif is_bot:
+		collision_layer = LAYER_REMOTE
+		collision_mask = LAYER_WORLD | LAYER_PROPS | LAYER_LOCAL | LAYER_REMOTE
 	else:
 		collision_layer = LAYER_LOCAL
 		collision_mask = LAYER_WORLD | LAYER_PROPS | (LAYER_REMOTE if remote_collisions else 0)
@@ -343,7 +359,7 @@ func _setup_physics() -> void:
 
 func _setup_wheels() -> void:
 	var tr: float = body_spec["track"]
-	var mount_y := radius + SUSP_TRAVEL - SAG
+	var mount_y := radius + SUSP_TRAVEL + lift - SAG
 	var local := [
 		Vector3(-tr, mount_y, body_spec["axle_f"]), Vector3(tr, mount_y, body_spec["axle_f"]),
 		Vector3(-tr, mount_y, body_spec["axle_r"]), Vector3(tr, mount_y, body_spec["axle_r"]),
@@ -351,7 +367,7 @@ func _setup_wheels() -> void:
 	for i in 4:
 		var ray := RayCast3D.new()
 		ray.position = local[i]
-		ray.target_position = Vector3(0, -(SUSP_TRAVEL + radius), 0)
+		ray.target_position = Vector3(0, -(SUSP_TRAVEL + lift + radius), 0)
 		ray.collision_mask = LAYER_WORLD
 		ray.enabled = not is_remote and not is_display
 		ray.add_exception(self)
@@ -432,6 +448,12 @@ func _read_input(delta: float) -> void:
 		# hold N: strobe the underglow (works without flasher tuning)
 		if underglow:
 			underglow.manual = Input.is_action_pressed("neon_flash")
+	if ai_fn.is_valid():
+		var a: Array = ai_fn.call()
+		thr = float(a[0])
+		brk = float(a[1])
+		steer_target = float(a[2])
+		hb = bool(a[3])
 	# smoothed steering for digital input
 	var rate := 4.5 if absf(steer_target) > absf(steer_input) and signf(steer_target) == signf(steer_input) else 7.0
 	steer_input = move_toward(steer_input, steer_target, rate * delta)
@@ -711,7 +733,7 @@ func _simulate(delta: float) -> void:
 		if not ray.is_colliding():
 			w["grounded"] = false
 			w["compression"] = 0.0
-			w["spring_len"] = SUSP_TRAVEL
+			w["spring_len"] = SUSP_TRAVEL + lift
 			w["load"] = 0.0
 			w["slip"] = 0.0
 			w["spin"] = move_toward(float(w["spin"]), 0.0, 20.0 * delta)
@@ -721,8 +743,8 @@ func _simulate(delta: float) -> void:
 		var n := ray.get_collision_normal()
 		var mount_g := ray.global_position
 		var dist := mount_g.distance_to(hit)
-		var spring_len := clampf(dist - radius, 0.0, SUSP_TRAVEL)
-		var compression := SUSP_TRAVEL - spring_len
+		var spring_len := clampf(dist - radius, 0.0, SUSP_TRAVEL + lift)
+		var compression := SUSP_TRAVEL + lift - spring_len
 		var comp_vel := (compression - float(w["prev_compression"])) / delta
 		var f_susp := spring_k * compression + damper_c * comp_vel
 		if spring_len < 0.03:
@@ -904,6 +926,15 @@ func _simulate(delta: float) -> void:
 			var push := DRIFT_PUSH * mass * slide_k * (throttle - 0.6) / 0.4 * (0.5 + 0.5 * absf(steer_input))
 			apply_central_force(fwd * push)
 
+	# steering in a slide: the path bends towards the side you steer to (not only the nose), so the car
+	# goes where you point it while drifting – counter-steer opens the line, steering in tightens it
+	if grounded_wheels >= 3 and speed > 6.0 and not line_lock:
+		var slide_s := smoothstep(0.1, 0.35, absf(slip_angle))
+		if slide_s > 0.0:
+			var vdir := (vel - up * vel.dot(up)).normalized()
+			var side := vdir.cross(up)
+			apply_central_force(side * steer_input * DRIFT_STEER * mass * slide_s * smoothstep(6.0, 14.0, speed))
+
 	# calmer cars: damp the rotation while sliding (not in slow turns or donuts at low speed)
 	if yaw_damp > 0.0 and grounded_wheels >= 3 and speed > 8.0:
 		var slide_y := smoothstep(0.1, 0.4, absf(slip_angle))
@@ -991,6 +1022,23 @@ func reset_to_track() -> void:
 	for w in wheels:
 		w["spin"] = 0.0
 		w.erase("f_lat")
+
+
+## Lifts the car: `m` metres more ride height and the same again as extra spring travel, so it can
+## crawl over logs and land jumps. The static sag stays the same (same spring rate).
+func set_lift(m: float) -> void:
+	var d := m - lift
+	lift = m
+	for w in wheels:
+		var mount: Vector3 = w["mount"]
+		mount.y += d
+		w["mount"] = mount
+		var ray: RayCast3D = w["ray"]
+		ray.position = mount
+		ray.target_position = Vector3(0, -(SUSP_TRAVEL + lift + radius), 0)
+		w["spring_len"] = float(w["spring_len"]) + d
+	# the body sits higher, keep the mass where it was relative to the ground (no easy roll-overs)
+	center_of_mass = Vector3(0, 0.42 - lift, 0.05)
 
 
 func place(xf: Transform3D) -> void:

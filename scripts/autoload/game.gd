@@ -248,6 +248,11 @@ func _setup_input() -> void:
 	_add_action("neon_flash", [KEY_N], [JOY_BUTTON_DPAD_RIGHT], [])
 	_add_action("pause", [KEY_ESCAPE], [JOY_BUTTON_START], [])
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
+	_add_action("fire", [KEY_F], [JOY_BUTTON_DPAD_LEFT], [])
+	if InputMap.action_get_events("fire").filter(func(e): return e is InputEventMouseButton).is_empty():
+		var mb := InputEventMouseButton.new()
+		mb.button_index = MOUSE_BUTTON_LEFT
+		InputMap.action_add_event("fire", mb)
 	_add_action("look_left", [], [], [[JOY_AXIS_RIGHT_X, -1.0]])
 	_add_action("look_right", [], [], [[JOY_AXIS_RIGHT_X, 1.0]])
 	_add_action("look_up", [], [], [[JOY_AXIS_RIGHT_Y, -1.0]])
@@ -282,6 +287,7 @@ const CONTROLS_HELP := [
 	["E / RB", "Hochschalten (in Automatik als Schaltwippe)"],
 	["Q / Strg / LB", "Runterschalten (in Automatik als Schaltwippe)"],
 	["M", "Automatik ⇄ Manuell"],
+	["F / Linksklick", "Feuer (Party: Arena-Shootout)"],
 	["C / (Y)", "Kamera wechseln"],
 	["V / R-Stick-Klick", "Kamera-Lock lösen (freie Kamera, Maus)"],
 	["Rechte Maustaste halten", "Kurz umsehen"],

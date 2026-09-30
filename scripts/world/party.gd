@@ -7,17 +7,23 @@ extends Node3D
 ## Flow per minigame: announce (roulette) -> travel (countdown on the stretch) -> play -> results -> back.
 
 const PartySites = preload("res://scripts/world/party_sites.gd")
+const PartyArena = preload("res://scripts/world/party_arena.gd")
+const Car = preload("res://scripts/car/car.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 
 const GAMES := [
 	{"id": "rlgl", "name": "Rotes Licht, Grünes Licht", "time": 90.0, "unit": "m",
 		"desc": "Fahr ins Ziel – aber bei ROT musst du stillstehen! Wer sich bei Rot bewegt, muss zurück zum Start."},
 	{"id": "parkour", "name": "Offroad-Parkour", "time": 120.0, "unit": "m",
-		"desc": "Schlamm, Reifenslalom, Baumstämme, Sprungschanzen und Schikanen: zuerst im Ziel gewinnt. [R] = zurück zum letzten Checkpoint."},
+		"desc": "Hochgelegt durch Schlamm, Reifenstapel, kreuz und quer liegende Baumstämme, Planken-Schanzen und eine Stamm-Schikane: zuerst im Ziel gewinnt. [R] = zurück zum letzten Checkpoint."},
 	{"id": "koth", "name": "König der Zone", "time": 60.0, "unit": "s",
 		"desc": "Bleib in der leuchtenden Zone – sie wandert alle 10 Sekunden über die Straße. Schubs die anderen raus!"},
 	{"id": "donut", "name": "Donut-Duell", "time": 30.0, "unit": "x",
 		"desc": "Dreh so viele Donuts wie möglich – jede volle Drehung zählt. 30 Sekunden!"},
+	{"id": "bowling", "name": "Auto-Bowling", "time": 32.0, "unit": "x",
+		"desc": "Zwei Würfe auf zehn Riesen-Kegel: Nimm Anlauf und ziel gut – ab der roten Linie rollst du ohne Gas und Lenkung weiter!"},
+	{"id": "arena", "name": "Arena-Shootout", "time": 75.0, "unit": "x",
+		"desc": "Schieß die anderen ab! [F] / Linksklick = Feuer, 3 Treffer = raus. Münzen geben Dreifach-Schuss oder Schnellfeuer. Allein kämpfst du gegen Bots."},
 ]
 const ANNOUNCE_TIME := 4.5
 const COUNTDOWN_TIME := 3.5
@@ -26,6 +32,8 @@ const COIN_RESPAWN := 20.0
 const REWARDS := [2500, 1200, 600, 300]
 const KOTH_STEP := 10.0
 const CHOOSE_TIME := 12.0
+const PARKOUR_LIFT := 0.32
+const THROW_TIME := 10.0
 
 var world: Node3D
 var sites: PartySites
@@ -62,6 +70,12 @@ var _last_yaw := 0.0
 var _hint := -1              # track sample near the car (for projecting)
 var _zone := Vector2.ZERO     # king of the zone: current spot (along, lateral)
 var _coin_mat: StandardMaterial3D
+var _pins: Array = []        # bowling
+var _throw := 0
+var _throw_t := 0.0
+var _bowl_phase := ""        # roll, settle, reset
+var _arena: PartyArena
+var _mask_before := 0
 
 # UI
 var _layer: CanvasLayer
@@ -274,6 +288,13 @@ func _on_msg(from_id: int, msg: Dictionary) -> void:
 			_on_start(msg)
 		"final":
 			_on_final(msg.get("rows", []))
+		"ar":
+			# arena events: every machine sends them to the host, the host passes them on to all
+			if Net.is_host() and not msg.has("p"):
+				msg["p"] = from_id
+				Net.party_broadcast(msg)
+			elif msg.has("p") and _arena:
+				_arena.on_msg(int(msg["p"]), msg)
 
 
 func _host_check_final(force: bool) -> void:
@@ -285,6 +306,9 @@ func _host_check_final(force: bool) -> void:
 			all_in = false
 	if not all_in and not force:
 		return
+	if _arena:
+		for bid in _arena.bot_ids():
+			_results[bid] = _arena.score(bid)
 	var rows: Array = []
 	for id in _results:
 		rows.append([int(id), float(_results[id])])
@@ -415,6 +439,8 @@ func _release() -> void:
 
 
 func _name(id: int) -> String:
+	if id < 0 and _arena:
+		return _arena.bot_name(id)
 	if world.cars.has(id) and is_instance_valid(world.cars[id]):
 		return world.cars[id].player_name
 	return "Spieler"
@@ -505,9 +531,27 @@ func _begin_travel() -> void:
 	car.nitro = 1.0
 	car.arena_kill_y = float(world.track.kill_y)
 	car.respawn_fn = _respawn
-	var grip := 0.9 if id == "parkour" else 1.0
-	var sname := "dirt" if id == "parkour" else "asphalt"
-	car.surface_override = func(_p: Vector3) -> Array: return [grip, sname]
+	if id == "parkour":
+		# offroad: lifted, loose dirt, less grip still in the mud patches
+		car.set_lift(PARKOUR_LIFT)
+		car.surface_override = func(p: Vector3) -> Array: return [0.72, "dirt"] if sites.in_mud(p) else [0.9, "dirt"]
+	else:
+		car.surface_override = func(_p: Vector3) -> Array: return [1.0, "asphalt"]
+	_mask_before = car.collision_mask
+	if id == "bowling":
+		# everybody bowls from the same spot on their own pins: the others are ghosts here
+		car.collision_mask &= ~Car.LAYER_REMOTE
+		_pins = sites.make_pins()
+		_throw = 0
+		_throw_t = 0.0
+		_bowl_phase = "roll"
+	if id == "arena":
+		car.collision_mask |= Car.LAYER_REMOTE
+		_arena = PartyArena.new()
+		_arena.name = "Arena"
+		add_child(_arena)
+		var me: int = Net.local_id() if world.online else 1
+		_arena.setup(self, world, sites, _seed, _ids, me)
 	_checkpoint = 0.0
 	_penalty = 0.0
 	_yaw_acc = 0.0
@@ -536,6 +580,9 @@ func _respawn() -> Transform3D:
 			var r := RandomNumberGenerator.new()
 			r.randomize()
 			return sites.start_xf("koth", r.randi() % 8, 8)
+		"arena":
+			if _arena:
+				return _arena._spawn_xf()
 	return sites.start_xf(id, _slot, _ids.size())
 
 
@@ -545,7 +592,7 @@ func _finish_local() -> void:
 	_done = true
 	var car = world.local_car
 	var id: String = GAMES[_game]["id"]
-	if id == "rlgl" or id == "parkour":
+	if id == "rlgl" or id == "parkour" or id == "bowling":
 		# park at the finish until everybody is done
 		car.controls_locked = true
 	if world.online:
@@ -615,6 +662,22 @@ func _play(delta: float, g: Dictionary) -> void:
 				_value += delta
 			_show_status("IN DER ZONE" if inside else "", UiKit.GOLD)
 			_line.text = "%s   ·   %.1f s in der Zone" % [_clock(left), _value]
+		"bowling":
+			_play_bowling(delta, car, along, left)
+		"arena":
+			if _arena:
+				_arena.step(delta)
+				var f: Dictionary = _arena.fighters.get(_arena.me, {})
+				if not _done and not f.is_empty():
+					_value = _arena.score(_arena.me)
+				var hp := int(f.get("hp", 0))
+				var hearts := "♥".repeat(maxi(hp, 0)) + "♡".repeat(maxi(PartyArena.MAX_HP - hp, 0))
+				var pw := ""
+				if str(f.get("power", "")) != "":
+					pw = "   ·   %s %d s" % ["3× SCHUSS" if f["power"] == "triple" else "⚡ SCHNELLFEUER", int(ceil(float(f["power_t"])))]
+				_line.text = "%s   ·   %s   ·   %d Abschüsse%s" % [_clock(left), hearts, int(_value), pw]
+				_show_status(_arena.feed if _arena.feed_t > 0.0 else "", UiKit.TEXT)
+				_status.add_theme_font_size_override("font_size", 30)
 		"donut":
 			var yaw: float = car.global_rotation.y
 			var dy := wrapf(yaw - _last_yaw, -PI, PI)
@@ -624,6 +687,45 @@ func _play(delta: float, g: Dictionary) -> void:
 				_yaw_acc += dy
 			_value = floorf(absf(_yaw_acc) / TAU)
 			_line.text = "%s   ·   %d Donuts" % [_clock(left), int(_value)]
+
+
+## Bowling: two throws. Take a run-up; past the red foul line the car only rolls (no gas, no steering).
+func _play_bowling(delta: float, car, along: float, left: float) -> void:
+	_throw_t += delta
+	var down := PartySites.pins_down(_pins)
+	match _bowl_phase:
+		"roll":
+			if along > sites.bowl_foul() and car.input_enabled:
+				car.input_enabled = false
+			var past := along > sites.bowl_pins_along() + 20.0
+			var stopped: bool = along > sites.bowl_foul() and car.speed < 0.8 and _throw_t > 2.0
+			if (_throw_t > THROW_TIME or past or stopped or down == _pins.size()) and not _done:
+				_bowl_phase = "settle"
+				_throw_t = 0.0
+		"settle":
+			# let the pins finish falling, then count
+			if _throw_t > 1.8 and not _done:
+				_value += down
+				var strike := down == _pins.size()
+				world.hud.show_message("STRIKE!" if strike else "%d KEGEL" % down, "Wurf %d / 2" % (_throw + 1), UiKit.GOLD, 1.8)
+				car.input_enabled = true
+				_throw += 1
+				if _throw >= 2:
+					_finish_local()
+				else:
+					_bowl_phase = "reset"
+					_throw_t = 0.0
+					PartySites.reset_pins(_pins)
+					_hold(sites.start_xf("bowling", _slot, _ids.size()))
+					car.controls_locked = true
+		"reset":
+			if _throw_t > 1.5:
+				_release()
+				car.controls_locked = false
+				_bowl_phase = "roll"
+				_throw_t = 0.0
+	var now := down if _bowl_phase != "reset" else 0
+	_line.text = "%s   ·   Wurf %d / 2   ·   %d Kegel (gesamt %d)" % [_clock(left), mini(_throw + 1, 2), now, int(_value)]
 
 
 func _show_status(text: String, color: Color) -> void:
@@ -674,7 +776,7 @@ func _on_final(rows: Array) -> void:
 		list.append([0, world.local_car.player_name, _fmt(g, _value), true])
 		my_rank = 0
 	var credits: int = REWARDS[mini(maxi(my_rank, 0), REWARDS.size() - 1)]
-	if not world.online:
+	if not world.online and rows.size() <= 1:
 		credits = 1500 if _value > 0.0 else 300
 	Game.add_credits(credits)
 	for c in _table.get_children():
@@ -693,6 +795,9 @@ func _on_final(rows: Array) -> void:
 	_status.text = ""
 	_line.text = ""
 	sites.set_rlgl_light(-1)
+	if _arena:
+		_arena.frozen = true
+	world.local_car.input_enabled = true
 	world.local_car.controls_locked = true
 	_hold(world.local_car.global_transform)
 	state = "results"
@@ -707,6 +812,10 @@ func _fmt(g: Dictionary, v: float) -> String:
 			return "%d m weit" % int(v)
 		"koth":
 			return "%.1f s in der Zone" % v
+		"bowling":
+			return "%d Kegel" % int(v)
+		"arena":
+			return "%d Abschüsse (%d Treffer)" % [int(v), int(round(fmod(v, 1.0) * 100.0))]
 	return "%d Donuts" % int(v)
 
 
@@ -715,6 +824,16 @@ func _begin_back() -> void:
 	car.surface_override = Callable()
 	car.respawn_fn = Callable()
 	car.arena_kill_y = -1e9
+	car.set_lift(0.0)
+	car.input_enabled = true
+	car.collision_mask = _mask_before if _mask_before != 0 else car.collision_mask
+	_mask_before = 0
+	if _arena:
+		_arena.cleanup()
+		_arena.queue_free()
+		_arena = null
+	_pins = []
+	_status.remove_theme_font_size_override("font_size")
 	sites.clear_course()
 	_hold(_return_xf)
 	car.controls_locked = true
