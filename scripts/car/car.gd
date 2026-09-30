@@ -38,6 +38,7 @@ const SPIN_HOLD := 0.78         # a spinning wheel keeps spinning while the driv
 const SPIN_MASS := 32.0         # kg – how hard the drivetrain resists spinning the wheels up (low = free-revving)
 const DRIFT_PUSH := 3.2         # m/s² – extra drive along the nose at full throttle in a drift
 const DRIFT_STEER := 2.8        # m/s² – in a slide the steering bends the path towards where you steer
+const DRIFT_TRAIL_POINTS := 50000.0   # a drift chain above this lays a glowing trail in the car's colour
 const INERTIA_SCALE := Vector3(1.25, 1.4, 1.25)   # heavier feel: more rotational inertia than a plain box
 
 # --- configuration (set before adding to the tree) ---
@@ -50,6 +51,7 @@ var is_remote := false
 var lift := 0.0
 ## Minigame bots: when valid, returns [throttle, brake, steer, handbrake] instead of the keyboard.
 var ai_fn: Callable
+var trail_active := false     # drift trail on (local: set by the world from the drift chain)
 var is_bot := false            # a minigame bot: collides like a remote car, sounds positional
 var is_display := false
 var transmission := "auto"
@@ -1157,6 +1159,7 @@ func apply_net_state(s: Array) -> void:
 	if s.size() >= 15:
 		remote_best_chain = s[13]
 		remote_chain = s[14]
+		trail_active = remote_chain >= DRIFT_TRAIL_POINTS
 	braking_visual = (remote_flags & 1) != 0
 	headlights = (remote_flags & 2) != 0
 	gear = -1 if (remote_flags & 4) != 0 else 1

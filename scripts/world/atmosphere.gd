@@ -59,6 +59,8 @@ var _rain_fx: GPUParticles3D
 var _splash_fx: GPUParticles3D
 var _rain_mat: StandardMaterial3D
 var _rain_player: AudioStreamPlayer
+var indoor := false      # the camera is inside a building: no splashes, the rain sounds muffled
+var _shelters: Array = []
 var _rain_playback: AudioStreamGeneratorPlayback
 # rain sound state: soft noise wash per channel, low rumble, soft drop patter
 var _rs := PackedFloat32Array([0, 0, 0, 0, 0, 0, 0, 0.1, 0.5])   # wash L1 L2 R1 R2, rumble, drop low, drop band, drop f, pan
@@ -73,6 +75,8 @@ func setup(cfg: Dictionary, p_quality: int) -> void:
 	quality = p_quality
 	var tod := str(cfg.get("time_of_day", "dusk"))
 	hour = float(START_HOURS.get(tod, 19.4))
+	if cfg.has("hour"):
+		hour = float(cfg["hour"])      # the tutorial starts at midnight
 	day_minutes = int(cfg.get("day_cycle", 0))
 	weather = str(cfg.get("weather", "dry"))
 	weather_seed = int(cfg.get("weather_seed", 1))
@@ -386,7 +390,30 @@ func _apply_weather_volume() -> void:
 	if _rain_player == null:
 		return
 	var v := clampf(float(Game.settings.get("weather_volume", 0.6)), 0.0, 1.5)
-	_rain_player.volume_db = linear_to_db(maxf(v, 0.0001)) - 10.0
+	_rain_player.volume_db = linear_to_db(maxf(v, 0.0001)) - 10.0 - (9.0 if indoor else 0.0)
+
+
+## Inside a building (cutscenes): no splashes on the floor, the rain is heard through the roof.
+func set_indoor(on: bool) -> void:
+	if indoor == on:
+		return
+	indoor = on
+	_apply_weather_volume()
+
+
+## Raindrops that hit this box (world space) vanish: no rain falling through a roof.
+func add_rain_shelter(box: AABB) -> void:
+	if _rain_fx == null:
+		return
+	var c := GPUParticlesCollisionBox3D.new()
+	c.size = box.size
+	add_child(c)
+	c.global_position = box.get_center()
+	_shelters.append(c)
+	var pm := _rain_fx.process_material as ParticleProcessMaterial
+	pm.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
+	pm.collision_use_scale = false
+	_rain_fx.collision_base_size = 0.05
 
 
 func _update_rain_fx() -> void:
@@ -412,7 +439,7 @@ func _update_rain_fx() -> void:
 		if track.elevated:
 			ground_y += float(track.samples[track.nearest_index(cp)].y)
 	_splash_fx.global_position = Vector3(cp.x, ground_y, cp.z) + ahead
-	_splash_fx.emitting = rain > 0.05
+	_splash_fx.emitting = rain > 0.05 and not indoor
 	_splash_fx.amount_ratio = clampf(rain, 0.0, 1.0)
 	_fill_rain_audio()
 

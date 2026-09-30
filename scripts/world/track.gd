@@ -88,6 +88,9 @@ var _edge: Dictionary = {}
 var ground_fn: Callable
 var _puddle_index := {}     # sample index -> Array of puddle ids
 var _start_lights: Array = []
+## Openings in the barriers (set before build): [progress from, progress to, side (-1 left, 1 right)]
+## in metres from the start line – driveways and forest tracks leave the road there.
+var wall_gaps: Array = []
 var _lamp_lights: Array = []
 
 
@@ -528,6 +531,8 @@ func _build_walls() -> void:
 	for side: float in [-1.0, 1.0]:
 		var offs: PackedFloat32Array = off_left if side < 0.0 else off_right
 		for i in n:
+			if in_wall_gap(i, side):
+				continue
 			var i2 := (i + 1) % n
 			var r0: Vector3 = rights[i] * side
 			var r1: Vector3 = rights[i2] * side
@@ -604,6 +609,23 @@ func _build_walls() -> void:
 	add_child(body)
 
 
+## True when the barrier segment from sample i to i + 1 on this side is left open.
+func in_wall_gap(i: int, side: float) -> bool:
+	if wall_gaps.is_empty():
+		return false
+	var p := fposmod(dists[(i + samples.size()) % samples.size()] - start_dist, length)
+	for g in wall_gaps:
+		if signf(float(g[2])) == signf(side) and p >= float(g[0]) and p <= float(g[1]):
+			return true
+	return false
+
+
+## Sample index at `progress` metres from the start line.
+func index_at(progress: float) -> int:
+	var n := samples.size()
+	return (start_index + int(round(progress / SPACING)) + n * 4) % n
+
+
 func _build_posts() -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -615,6 +637,8 @@ func _build_posts() -> void:
 	for side: float in [-1.0, 1.0]:
 		var offs: PackedFloat32Array = off_left if side < 0.0 else off_right
 		for i in range(0, n, 2):
+			if in_wall_gap(i, side) or in_wall_gap(i - 1, side):
+				continue
 			var p: Vector3 = samples[i] + rights[i] * side * (offs[i] + 0.12) + Vector3(0, 0.42, 0)
 			xfs.append(Transform3D(Basis.IDENTITY, p))
 	mm.instance_count = xfs.size()

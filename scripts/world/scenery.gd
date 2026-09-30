@@ -32,6 +32,7 @@ var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
 var details: Node3D
+var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
 var lamp_lights: Array = []
 var _village := -1              # sample index the village clusters around
 
@@ -79,6 +80,10 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	details.name = "Details"
 	add_child(details)
 	details.setup(track, terrain, self)
+	if tutorial_site:
+		# the tutorial's house, driveway, gravel track and camp (before the forest, which keeps clear)
+		add_child(tutorial_site)
+		await tutorial_site.build(track, terrain, self)
 	if id == "harbor":
 		_build_water_and_quay()
 		_build_harbor_props()

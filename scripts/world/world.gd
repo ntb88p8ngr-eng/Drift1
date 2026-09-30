@@ -22,6 +22,8 @@ const ShaderWarmup = preload("res://scripts/world/shader_warmup.gd")
 const Graffiti = preload("res://scripts/world/graffiti.gd")
 const Party = preload("res://scripts/world/party.gd")
 const PartySites = preload("res://scripts/world/party_sites.gd")
+const TutorialSite = preload("res://scripts/world/tutorial_site.gd")
+const Tutorial = preload("res://scripts/world/tutorial.gd")
 
 const SECTORS := 8
 
@@ -46,6 +48,8 @@ var graffiti: Graffiti      # graffiti mode only
 var time_limit := 0.0       # graffiti mode: seconds
 var party: Party            # party mode (minigame coins) or null
 var party_sites: PartySites
+var tutorial_site: TutorialSite   # tutorial mode (Grüne Hölle)
+var tutorial: Tutorial
 
 var state := "loading"      # loading, waiting, countdown, running, finished
 var race_time := 0.0
@@ -92,6 +96,8 @@ func _ready() -> void:
 	atmosphere.setup(config, quality)
 	track = Track.new()
 	track.name = "Track"
+	if mode == "tutorial":
+		track.wall_gaps = TutorialSite.wall_gaps()
 	add_child(track)
 	Game.load_begin("Strecke", 0.0, 0.06)
 	await track.build(config.get("track", "ridge"))
@@ -104,6 +110,10 @@ func _ready() -> void:
 	var t1 := Time.get_ticks_msec()
 	scenery = Scenery.new()
 	scenery.name = "Scenery"
+	if mode == "tutorial":
+		tutorial_site = TutorialSite.new()
+		tutorial_site.name = "TutorialSite"
+		scenery.tutorial_site = tutorial_site
 	add_child(scenery)
 	Game.load_begin("Streckenrand", 0.34, 0.36)
 	await scenery.build(track, terrain, atmosphere.night, quality)
@@ -181,6 +191,12 @@ func _ready() -> void:
 	elif mode == "graffiti" and not online:
 		hud.show_message("GRAFFITI", "Drifte über die Strecke, um sie in deiner Farbe zu markieren", Color.WHITE, 4.0)
 		_start_countdown()
+	elif mode == "tutorial":
+		state = "running"
+		tutorial = Tutorial.new()
+		tutorial.name = "Tutorial"
+		tutorial.setup(self, tutorial_site)
+		add_child(tutorial)
 	elif mode == "free":
 		state = "running"
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
@@ -214,7 +230,11 @@ func _spawn_cars() -> void:
 			local_car.place(track.grid_transform(ids.size()))
 			cars[me] = local_car
 	else:
-		local_car = _make_car(Game.local_player_info(), false)
+		var info := Game.local_player_info()
+		if mode == "tutorial":
+			info["car"] = "r34"
+			info["paint"] = str(Game.settings.get("paint", "blue")) if str(Game.settings.get("car", "")) == "r34" else "blue"
+		local_car = _make_car(info, false)
 		cars[1] = local_car
 		local_car.place(track.grid_transform(0))
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
@@ -305,6 +325,7 @@ func _physics_process(delta: float) -> void:
 				_update_progress()
 	if state == "running" and not finished and (party == null or not party.active()):
 		scorer.update(local_car, delta, get_world_3d().direct_space_state)
+		local_car.trail_active = scorer.chain >= Car.DRIFT_TRAIL_POINTS
 		for ev in scorer.events:
 			hud.on_drift_event(ev)
 		if graffiti:

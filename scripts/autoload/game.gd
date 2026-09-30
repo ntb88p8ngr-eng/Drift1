@@ -701,6 +701,8 @@ func track_name(track_id: String) -> String:
 
 
 func mode_name(mode_id: String) -> String:
+	if mode_id == "tutorial":
+		return "Tutorial"
 	for m in MODES:
 		if m["id"] == mode_id:
 			return m["name"]

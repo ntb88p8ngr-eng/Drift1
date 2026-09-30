@@ -101,6 +101,12 @@ jobs:
             grep -q "PARTY TEST: PASS" party.log
           done
 
+      - name: Tutorial test (house and camp on Grüne Hölle, skip, drive out of the garage, ending)
+        run: |
+          timeout 600 ./godot --headless --path . res://tests/tutorial_test.tscn 2>&1 | tee tutorial.log || true
+          if grep -E "SCRIPT ERROR" tutorial.log; then echo "::error::Tutorial test failed"; exit 1; fi
+          grep -q "TUTORIAL TEST: PASS" tutorial.log
+
       - name: Stability test (quick lane change at 120/170 km/h, with and without ABS/ESP)
         run: |
           timeout 300 ./godot --headless --path . res://tests/stability_test.tscn 2>&1 | tee stab.log || true

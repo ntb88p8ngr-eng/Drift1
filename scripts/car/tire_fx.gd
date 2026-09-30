@@ -13,6 +13,12 @@ var _flash: OmniLight3D
 var _flash_t := 0.0
 var _flash_k := 1.0
 var _key_base := 0
+# drift trail: light ribbons from the tail lights ([world pos, age] per light) and the trail colour
+const RIBBON_LIFE := 0.8
+var _ribbon: MeshInstance3D
+var _ribbon_mesh: ImmediateMesh
+var _ribbon_pts: Array = [[], []]
+var _tails: Array = []
 
 
 func _ready() -> void:
@@ -41,13 +47,76 @@ func _ready() -> void:
 			avg += p
 		_flash.position = avg / float(car.body.exhaust_points.size()) + Vector3(0, 0.1, 0.4)
 	car.backfire.connect(_on_backfire)
+	# tail light spots in car space (model data, else the rear corners)
+	var spec: Dictionary = car.body_spec
+	if spec.has("tail") and (spec["tail"] as Array).size() >= 2:
+		for t in spec["tail"]:
+			_tails.append(Vector3(t[0], t[1], t[2]))
+	else:
+		var hl := float(spec.get("length", 4.4)) * 0.5
+		var tr := float(spec.get("track", 0.75))
+		_tails = [Vector3(-tr, 0.75, hl), Vector3(tr, 0.75, hl)]
+	_ribbon_mesh = ImmediateMesh.new()
+	_ribbon = MeshInstance3D.new()
+	_ribbon.mesh = _ribbon_mesh
+	_ribbon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	rm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	rm.vertex_color_use_as_albedo = true
+	_ribbon.material_override = rm
+	add_child(_ribbon)
+
+
+## The trail colour: the car's paint, lifted so that dark paints still glow.
+func trail_color() -> Color:
+	var c: Color = car.paint.get("color", Color(0.6, 0.3, 1.0))
+	return Color.from_hsv(c.h, minf(c.s * 1.1, 1.0), maxf(c.v, 0.9))
+
+
+func _update_ribbon(delta: float) -> void:
+	var on: bool = car.trail_active and car.speed > 4.0
+	var col := trail_color()
+	_ribbon_mesh.clear_surfaces()
+	var any := false
+	for k in 2:
+		var pts: Array = _ribbon_pts[k]
+		for p in pts:
+			p[1] = float(p[1]) + delta
+		while not pts.is_empty() and float(pts[0][1]) > RIBBON_LIFE:
+			pts.pop_front()
+		if on and k < _tails.size():
+			pts.append([car.body.global_transform * (_tails[k] as Vector3), 0.0])
+		if pts.size() < 2:
+			continue
+		if not any:
+			_ribbon_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+			any = true
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i][0]
+			var b: Vector3 = pts[i + 1][0]
+			var fa := 1.0 - float(pts[i][1]) / RIBBON_LIFE
+			var fb := 1.0 - float(pts[i + 1][1]) / RIBBON_LIFE
+			var ha := 0.09 * fa
+			var hb := 0.09 * fb
+			var ca := Color(col.r, col.g, col.b, 0.85 * fa * fa)
+			var cb := Color(col.r, col.g, col.b, 0.85 * fb * fb)
+			var up := Vector3.UP
+			for v in [[a + up * ha, ca], [a - up * ha, ca], [b + up * hb, cb], [a - up * ha, ca], [b - up * hb, cb], [b + up * hb, cb]]:
+				_ribbon_mesh.surface_set_color(v[1])
+				_ribbon_mesh.surface_add_vertex(v[0])
+	if any:
+		_ribbon_mesh.surface_end()
 
 
 func _make_smoke(rear: bool) -> GPUParticles3D:
-	# fine, long-lived smoke: many small, thin puffs that lose their speed quickly, hang in the air,
-	# slowly spread out and drift apart in wisps before they fade
+	# fine, long-lived smoke: many soft puffs that lose their speed quickly, hang in the air, swell
+	# and fade; the fine structure is a shared world-space noise field (TexKit.smoke_material), so the
+	# puffs blend into one volume instead of showing single sprites
 	var p := GPUParticles3D.new()
-	p.amount = 900 if rear else 450
+	p.amount = 1200 if rear else 500
 	p.lifetime = 7.0
 	p.local_coords = false
 	p.emitting = false
@@ -67,8 +136,8 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	m.scale_max = 1.0
 	m.angle_min = 0.0
 	m.angle_max = 360.0
-	m.angular_velocity_min = -12.0
-	m.angular_velocity_max = 12.0
+	m.angular_velocity_min = -6.0
+	m.angular_velocity_max = 6.0
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 	m.emission_sphere_radius = 0.3
 	m.turbulence_enabled = true
@@ -79,42 +148,27 @@ func _make_smoke(rear: bool) -> GPUParticles3D:
 	m.turbulence_influence_max = 0.12
 	var sc := Curve.new()
 	sc.max_value = 5.0
-	sc.add_point(Vector2(0.0, 0.3))
-	sc.add_point(Vector2(0.15, 1.1))
-	sc.add_point(Vector2(0.5, 2.1))
-	sc.add_point(Vector2(1.0, 3.0))
+	sc.add_point(Vector2(0.0, 0.35))
+	sc.add_point(Vector2(0.12, 1.2))
+	sc.add_point(Vector2(0.5, 2.6))
+	sc.add_point(Vector2(1.0, 3.8))
 	var sct := CurveTexture.new()
 	sct.curve = sc
 	m.scale_curve = sct
 	var grad := Gradient.new()
-	grad.set_color(0, Color(1.0, 1.0, 1.0, 0.5))
+	grad.set_color(0, Color(1.0, 1.0, 1.0, 0.0))
 	grad.set_color(1, Color(0.97, 0.97, 0.99, 0.0))
-	grad.add_point(0.25, Color(1.0, 1.0, 1.0, 0.42))
-	grad.add_point(0.6, Color(0.99, 0.99, 1.0, 0.3))
-	grad.add_point(0.85, Color(0.98, 0.98, 1.0, 0.13))
+	grad.add_point(0.04, Color(1.0, 1.0, 1.0, 0.42))
+	grad.add_point(0.3, Color(1.0, 1.0, 1.0, 0.3))
+	grad.add_point(0.65, Color(0.99, 0.99, 1.0, 0.17))
+	grad.add_point(0.88, Color(0.98, 0.98, 1.0, 0.06))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	m.color_ramp = gt
 	p.process_material = m
 	var quad := QuadMesh.new()
-	# small puffs, twice as many: finer, more detailed wisps
-	quad.size = Vector2(0.62, 0.62)
-	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mat.billboard_keep_scale = true
-	# a little self-light so the smoke stays white in the car's shadow instead of turning grey
-	mat.emission_enabled = true
-	mat.emission = Color(1, 1, 1)
-	mat.emission_energy_multiplier = 0.18
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_texture = TexKit.smoke_texture(true)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
-	mat.proximity_fade_enabled = true
-	mat.proximity_fade_distance = 0.8
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.roughness = 1.0
-	quad.material = mat
+	quad.size = Vector2(0.7, 0.7)
+	quad.material = TexKit.smoke_material()
 	p.draw_pass_1 = quad
 	add_child(p)
 	return p
@@ -280,6 +334,14 @@ func _process(delta: float) -> void:
 				car.skidmarks.add_mark(key, contact, 0.22, clampf(slip / 12.0, 0.25, 0.85))
 			else:
 				car.skidmarks.break_mark(key)
+			# a big drift chain: the rear tyres paint a glowing trail in the car's colour
+			if car.trail_active and i >= 2 and grounded and speed > 4.0:
+				var tc := trail_color()
+				tc.a = 0.9
+				car.skidmarks.add_glow_mark(key, contact, 0.3, tc)
+			else:
+				car.skidmarks.break_glow_mark(key)
+	_update_ribbon(delta)
 	# nitro flames (the emitters are parented to the car body)
 	var nitro_on: bool = car.nitro_active
 	for f in _nitro_flames:

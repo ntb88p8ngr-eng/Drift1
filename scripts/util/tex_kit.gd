@@ -1741,3 +1741,74 @@ static func plank_material() -> StandardMaterial3D:
 	m.uv1_scale = Vector3(0.45, 0.45, 0.45)
 	_cache["mat_plank"] = m
 	return m
+
+
+# ---------------------------------------------------------------------------
+# Tyre smoke
+# ---------------------------------------------------------------------------
+## Billboarded smoke puff for GPUParticles. The puff itself is only a soft round falloff; the
+## structure comes from a noise field in *world space* that drifts slowly – every puff samples the
+## same field, so neighbouring puffs merge into one continuous, fine volume instead of showing the
+## same sprite again and again. A rounded fake normal and back light give it body, soft particles
+## fade it where it meets the ground or the car.
+const SMOKE_SHADER := """
+shader_type spatial;
+render_mode blend_mix, depth_draw_never, cull_disabled, diffuse_lambert_wrap, specular_disabled;
+
+uniform sampler2D noise_a : filter_linear_mipmap, repeat_enable;
+uniform sampler2D noise_b : filter_linear_mipmap, repeat_enable;
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+uniform float density = 0.75;
+uniform float soft_dist = 0.7;
+varying vec3 wpos;
+
+void vertex() {
+	// billboard facing the camera, rotated by the particle angle, keeping the particle scale
+	mat4 m = mat4(normalize(INV_VIEW_MATRIX[0]), normalize(INV_VIEW_MATRIX[1]), normalize(INV_VIEW_MATRIX[2]), MODEL_MATRIX[3]);
+	float a = INSTANCE_CUSTOM.x;
+	m = m * mat4(vec4(cos(a), -sin(a), 0.0, 0.0), vec4(sin(a), cos(a), 0.0, 0.0), vec4(0.0, 0.0, 1.0, 0.0), vec4(0.0, 0.0, 0.0, 1.0));
+	float s = length(MODEL_MATRIX[0].xyz);
+	m = m * mat4(vec4(s, 0.0, 0.0, 0.0), vec4(0.0, s, 0.0, 0.0), vec4(0.0, 0.0, s, 0.0), vec4(0.0, 0.0, 0.0, 1.0));
+	MODELVIEW_MATRIX = VIEW_MATRIX * m;
+	MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
+	wpos = (m * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment() {
+	vec2 p = UV * 2.0 - 1.0;
+	float r2 = dot(p, p);
+	float puff = exp(-r2 * 2.6) * (1.0 - smoothstep(0.75, 1.0, r2));
+	// fine structure from the shared world-space field (two scales, drifting apart)
+	float t = TIME * 0.06;
+	float n1 = texture(noise_a, wpos.xz * 0.23 + vec2(wpos.y * 0.17, t)).r;
+	float n2 = texture(noise_b, vec2(wpos.x + wpos.z, wpos.y) * 0.61 + vec2(-t * 1.9, t * 0.7)).r;
+	float n3 = texture(noise_b, wpos.zy * 1.7 + vec2(t * 3.1, 0.0)).r;
+	float n = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
+	// wisps: the noise carves the puff (dense core, broken, fibrous edges)
+	float d = puff * smoothstep(0.34, 0.78, n + puff * 0.16);
+	d *= 0.55 + 0.45 * smoothstep(0.3, 0.7, n3);
+	// soft particles
+	float depth = texture(depth_tex, SCREEN_UV).r;
+	vec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
+	float scene_z = -v.z / v.w;
+	float soft = clamp((scene_z + VERTEX.z) / soft_dist, 0.0, 1.0);
+	ALPHA = clamp(d * COLOR.a * density * soft, 0.0, 1.0);
+	// a rounded puff: normal bends outwards towards the rim (view space)
+	NORMAL = normalize(vec3(p.x, -p.y, 1.1 - r2 * 0.4) * vec3(0.8, 0.8, 1.0));
+	ALBEDO = COLOR.rgb * (0.9 + 0.1 * n);
+	BACKLIGHT = vec3(0.55);
+	EMISSION = COLOR.rgb * 0.1;
+	ROUGHNESS = 1.0;
+}
+"""
+
+
+static func smoke_material() -> ShaderMaterial:
+	if _cache.has("mat_smoke"):
+		return _cache["mat_smoke"]
+	var m := ShaderMaterial.new()
+	m.shader = _shader("shader_smoke", SMOKE_SHADER)
+	m.set_shader_parameter("noise_a", noise_texture(91, 0.012, false, 256))
+	m.set_shader_parameter("noise_b", noise_texture(92, 0.02, false, 256))
+	_cache["mat_smoke"] = m
+	return m
