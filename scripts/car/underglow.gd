@@ -1,9 +1,10 @@
 extends Node3D
 ## Underglow: neon tubes along the whole front, rear and both sides of the car. Each tube lights a
 ## continuous strip of ground (an emissive decal the length of that side) plus the underbody (two
-## soft lights per side). Every side can join the flasher mode or stay lit steadily; holding the
-## flash key (N) strobes all tubes, flashers installed or not.
-## Config (Game.get_underglow): {"on", "mode", "speed", "sides": {side: {"on", "color": "#rrggbb", "flash", "bright"}}}
+## soft lights per side). The flasher mode makes every lit side flash together, in sync, at the set
+## tempo; holding the flash key (N) strobes all tubes, whatever the mode.
+## Config (Game.get_underglow): {"on", "mode", "speed", "sides": {side: {"on", "color": "#rrggbb", "bright"}}}
+## (an old per-side "flash" flag is ignored: all sides always flash together)
 
 const SIDES := ["front", "rear", "left", "right"]
 
@@ -206,29 +207,24 @@ static func _glow_texture(variant := 0) -> Texture2D:
 	return tex
 
 
-## Brightness 0..1 of a flashing side at time t (side index 0 front, 1 rear, 2 left, 3 right).
-static func pattern(mode: int, t: float, side: int) -> float:
+## Brightness 0..1 of the flasher at time t (t already runs at the set tempo). The same for every
+## side – all four flash together.
+static func pattern(mode: int, t: float) -> float:
 	match mode:
 		1:  # pulse
-			return 0.25 + 0.75 * (0.5 + 0.5 * sin(t * TAU * 0.7))
+			return 0.2 + 0.8 * (0.5 + 0.5 * sin(t * TAU * 0.8))
 		2:  # blink
-			return 1.0 if fmod(t * 2.0, 1.0) < 0.5 else 0.0
-		3:  # strobe: double flash
-			var p := fmod(t * 1.3, 1.0)
-			return 1.0 if (p < 0.06 or (p > 0.14 and p < 0.2)) else 0.0
-		4:  # alternate: front/left vs rear/right
-			var on := fmod(t * 2.0, 1.0) < 0.5
-			var group := side == 0 or side == 2
-			return 1.0 if on == group else 0.0
-		5:  # chase: front → right → rear → left
-			var order := [0, 3, 1, 2]
-			var k := int(fmod(t * 4.0, 4.0))
-			return 1.0 if order[k] == side else 0.12
-		6:  # police: two quick flashes left group, then right group
-			var p2 := fmod(t * 1.2, 1.0)
-			var first := side == 0 or side == 2
-			var ph := p2 if first else fmod(p2 + 0.5, 1.0)
-			return 1.0 if (ph < 0.08 or (ph > 0.14 and ph < 0.22)) else 0.0
+			return 1.0 if fmod(t * 1.5, 1.0) < 0.5 else 0.0
+		3:  # strobe: short flashes
+			return 1.0 if fmod(t * 3.0, 1.0) < 0.15 else 0.0
+		4:  # double flash
+			var p := fmod(t * 1.2, 1.0)
+			return 1.0 if (p < 0.08 or (p > 0.16 and p < 0.24)) else 0.0
+		5:  # fast blink
+			return 1.0 if fmod(t * 4.0, 1.0) < 0.5 else 0.0
+		6:  # breathing: slow fade in and out, dark in between
+			var b := 0.5 - 0.5 * cos(t * TAU * 0.4)
+			return b * b
 		7:  # rainbow: brightness stays, the colour cycles (see _process)
 			return 1.0
 	return 1.0
@@ -238,18 +234,20 @@ func _process(delta: float) -> void:
 	_t += delta * float(cfg.get("speed", 1.0))
 	_mt = _mt + delta if manual else 0.0
 	var mode := int(cfg.get("mode", 0))
+	# one brightness for all sides: they flash in sync
+	var k_all := 1.0
+	if manual:
+		# flash key: fast double strobe on every tube
+		var p := fmod(_mt * 3.0, 1.0)
+		k_all = 1.0 if (p < 0.12 or (p > 0.25 and p < 0.37)) else 0.0
+	elif mode > 0:
+		k_all = pattern(mode, _t)
+	var rainbow := Color.from_hsv(fposmod(_t * 0.25, 1.0), 0.9, 1.0)
 	for s in _strips:
-		var k := 1.0
+		var k := k_all
 		var col: Color = s["color"]
-		var side: int = s["side"]
-		if manual:
-			# flash key: fast double strobe on every tube
-			var p := fmod(_mt * 3.0, 1.0)
-			k = 1.0 if (p < 0.12 or (p > 0.25 and p < 0.37)) else 0.0
-		elif bool(s["flash"]) and mode > 0:
-			k = pattern(mode, _t, side)
-			if mode == 7:
-				col = Color.from_hsv(fposmod(_t * 0.25 + side * 0.25, 1.0), 0.9, 1.0)
+		if mode == 7 and not manual:
+			col = rainbow
 		# brightness per side: the tube, the glow on the ground and the lights scale with it
 		var br: float = s.get("bright", 1.0)
 		var mat: StandardMaterial3D = s["mat"]

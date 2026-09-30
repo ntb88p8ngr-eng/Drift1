@@ -540,7 +540,11 @@ func _shift(dir: int) -> void:
 	shift_timer = shift_time_auto if transmission == "auto" else shift_time_manual
 	if up and boost > 0.25:
 		blow_off.emit(boost, false)
-		boost *= 0.45
+		boost *= 0.75
+	if up and absf(slip_angle) < 0.15:
+		# the clutch opens: spinning wheels slow down to the road and grip again in the next gear
+		for w in wheels:
+			w["spin"] = float(w["spin"]) * 0.3
 	shifted.emit(dir > 0, boost)
 
 
@@ -638,11 +642,12 @@ func _simulate(delta: float) -> void:
 		if absi(gear) == 1:
 			# normal pull-away: the clutch slips just above idle (far below the launch-control revs)
 			floor_rpm = idle_rpm + throttle * (redline * 0.26 - idle_rpm)
-		if absi(gear) <= 2 and throttle > 0.85 and coupled_rpm < redline * 0.7:
-			# flat out from low speed: the clutch lets the engine rev up freely (burnout / clutch kick) –
-			# the torque then breaks the tyres loose and they keep the revs up by themselves
+		if (absi(gear) == 1 or handbrake) and throttle > 0.85 and coupled_rpm < redline * 0.6:
+			# flat out pulling away in 1st (or a clutch kick with the handbrake): the clutch lets the
+			# engine rev up (burnout) – the torque then breaks the tyres loose and they keep the revs up
+			# by themselves. Higher gears stay coupled: with grip the revs follow the road speed.
 			floor_rpm = redline * 0.96
-			climb = 5200.0 + 2600.0 * float(_engine_stage)
+			climb = 3600.0 + 1800.0 * float(_engine_stage)
 		if launch_active:
 			floor_rpm = maxf(floor_rpm, launch_rpm * (1.0 + wobble * 0.5))
 		var target_rpm := maxf(coupled_rpm, floor_rpm)
@@ -695,7 +700,7 @@ func _simulate(delta: float) -> void:
 		var spinning := rpm > ground_rpm * 1.25 + 300.0
 		# upshift when the road speed has reached the gear's limit – or after a while on the limiter
 		# with spinning wheels – but never right after the last automatic shift (no hunting)
-		var gear_done := ground_rpm > redline * 0.8 or _limit_time > 0.6
+		var gear_done := ground_rpm > redline * 0.8 or (_limit_time > 0.6 and ground_rpm > redline * 0.55)
 		var may_down := _auto_hold <= 0.0 or throttle < 0.3
 		# no upshift while the tyres just spin at low road speed (donuts, burnouts)
 		var spin_only := spinning and ground_rpm < redline * 0.35
@@ -856,8 +861,12 @@ func _simulate(delta: float) -> void:
 			var dsign := signf(f_drive)
 			var spin := maxf(float(w["spin"]) * dsign, 0.0)
 			var kin := max_f * KINETIC
-			if spin > 0.3 or req > long_cap * (0.35 if power_slide else 0.95):
-				spin += (req - max_f * spin_hold * (0.7 if power_slide else 1.0)) / SPIN_MASS * _response_factor(true) * delta
+			# going straight (no slide, no handbrake) the tyre only spins while the drive really exceeds
+			# its grip and grips again as soon as it doesn't – the spin only "sticks" in a slide
+			var straight := 0.0 if (handbrake or power_slide) else 1.0 - smoothstep(0.1, 0.3, absf(slip_angle))
+			var hold := lerpf(spin_hold * (0.7 if power_slide else 1.0), 1.02, straight)
+			if spin > 0.3 or req > long_cap * (0.35 if power_slide else lerpf(0.95, 1.05, straight)):
+				spin += (req - max_f * hold) / SPIN_MASS * _response_factor(true) * delta
 				var v_red := redline / 60.0 * TAU * radius / maxf(absf(ratio), 0.01)
 				spin = clampf(spin, 0.0, maxf(v_red - v_long * dsign, 0.0))
 			else:

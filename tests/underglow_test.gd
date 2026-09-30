@@ -1,6 +1,6 @@
 extends Node
-## Underglow: switching the flasher off again must leave every tube steadily lit; the flash key
-## strobes the tubes even without flashers installed.
+## Underglow: every flasher mode flashes all four sides in sync at the set tempo; switching the
+## flasher off again leaves every tube steadily lit; the flash key strobes the tubes in any mode.
 ## Run: godot --headless --path . res://tests/underglow_test.tscn
 
 const Underglow = preload("res://scripts/car/underglow.gd")
@@ -32,8 +32,40 @@ func _ready() -> void:
 	var e: Array = _energies(ug)
 	if e.min() > FULL * 0.3:
 		print("FAIL: blink mode does not blink"); fails += 1
-	# flasher off again: mode back to steady, and separately the side flag off
-	for c in [_cfg(0, true), _cfg(3, false)]:
+	# every mode flashes all four sides together (in sync), also without the old per-side flag
+	for m in range(1, 7):
+		ug.setup(_cfg(m, false), DIMS, true)
+		var mn := 1e9
+		for f in 120:
+			ug._process(1.0 / 60.0)
+			var ks: Array = []
+			for st in ug._strips:
+				ks.append((st["mat"] as StandardMaterial3D).emission_energy_multiplier)
+			mn = minf(mn, ks.min())
+			if ks.max() - ks.min() > 1e-5:
+				print("FAIL: mode %d: sides not in sync" % m); fails += 1
+				break
+		if mn > FULL * 0.5:
+			print("FAIL: mode %d does not flash" % m); fails += 1
+	# the tempo: twice the speed = twice as many blinks
+	var blinks := []
+	for sp in [1.0, 2.0]:
+		var c4 := _cfg(2, false)
+		c4["speed"] = sp
+		ug.setup(c4, DIMS, true)
+		var n := 0
+		var was_on := true
+		for f in 240:
+			ug._process(1.0 / 60.0)
+			var on: bool = (ug._strips[0]["mat"] as StandardMaterial3D).emission_energy_multiplier > FULL * 0.5
+			if on and not was_on:
+				n += 1
+			was_on = on
+		blinks.append(n)
+	if blinks[1] < blinks[0] * 2 - 1 or blinks[0] < 2:
+		print("FAIL: tempo not applied (%s blinks)" % str(blinks)); fails += 1
+	# flasher off again: mode back to steady
+	for c in [_cfg(0, true), _cfg(0, false)]:
 		ug.setup(c, DIMS, true)
 		e = _energies(ug)
 		if e.min() < FULL * 0.97:

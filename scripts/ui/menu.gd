@@ -935,11 +935,11 @@ func _underglow_ui(car_id: String) -> void:
 	var mode := UiKit.option(Game.UNDERGLOW_MODES, int(cfg["mode"]), func(i):
 		cfg["mode"] = i
 		apply.call(), 200)
-	mode.tooltip_text = "Muster für alle Seiten, bei denen „Flasher“ an ist – die anderen leuchten dauerhaft."
+	mode.tooltip_text = "Flasher: alle eingeschalteten Seiten blinken gemeinsam und synchron in diesem Muster.\n„Tempo“ stellt die Geschwindigkeit ein. [N] halten = Blitzen, egal welcher Modus."
 	var speed := UiKit.slider(0.25, 3.0, 0.05, float(cfg["speed"]), func(x):
 		cfg["speed"] = x
 		apply.call(), 150)
-	details.add_child(UiKit.row([UiKit.label("Modus", 15, UiKit.TEXT_DIM), mode, UiKit.label("Tempo", 15, UiKit.TEXT_DIM), speed], 8))
+	details.add_child(UiKit.row([UiKit.label("Flasher", 15, UiKit.TEXT_DIM), mode, UiKit.label("Tempo", 15, UiKit.TEXT_DIM), speed], 8))
 	var pickers: Array = []
 	for sd in Game.UNDERGLOW_SIDES:
 		var key: String = sd[0]
@@ -960,17 +960,11 @@ func _underglow_ui(car_id: String) -> void:
 			side["color"] = "#" + c.to_html(false)
 			apply.call())
 		pickers.append([pick, side])
-		var fl := CheckBox.new()
-		fl.text = "Flasher"
-		fl.button_pressed = bool(side["flash"])
-		fl.toggled.connect(func(v):
-			side["flash"] = v
-			apply.call())
 		var br := UiKit.slider(0.1, 2.0, 0.05, float(side.get("bright", 1.0)), func(x):
 			side["bright"] = x
 			apply.call(), 110)
 		br.tooltip_text = "Helligkeit dieser Seite"
-		details.add_child(UiKit.row([lbl, s_on, pick, fl, UiKit.label("Hell", 14, UiKit.TEXT_DIM), br], 8))
+		details.add_child(UiKit.row([lbl, s_on, pick, UiKit.label("Hell", 14, UiKit.TEXT_DIM), br], 8))
 	details.add_child(UiKit.button("Alle Seiten wie vorne", func():
 		var front: Dictionary = cfg["sides"]["front"]
 		for pk in pickers:

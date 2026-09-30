@@ -30,6 +30,8 @@ var sites := {}                   # id -> {"i0": start sample, "len": metres, "p
 var koth_zone: Node3D
 var rlgl_lamps: Array = []        # [red material, green material]
 var pin_mesh: ArrayMesh
+var _tyre_mesh: TorusMesh
+var _tyre_paints: Array = []
 var mud_spots: Array = []         # parkour: [centre, radius] of the mud patches (less grip)
 var _course: Node3D
 
@@ -266,6 +268,7 @@ func _build_rlgl() -> void:
 	_line("rlgl", rlgl_finish())
 	_gantry("rlgl", rlgl_finish() + 6.0, "ROTES LICHT · GRÜNES LICHT", Color(1.0, 0.35, 0.35), true)
 	set_rlgl_light(0)
+	_tyre_edges("rlgl", 2.0, rlgl_finish() + 4.0, 9.0, _venue_rng("rlgl"), 2, 3)
 
 
 ## -1 off, 0 red, 1 green
@@ -297,12 +300,19 @@ func _build_parkour() -> void:
 		_mud_patch(id, a + r * 0.6, rng.randf_range(-0.55, 0.55) * hw, r, rng, n_mud)
 		a += r * rng.randf_range(1.1, 1.9)
 		n_mud += 1
-	# 1) tyre stacks, scattered in the first mud field (1–3 tyres, never in a neat row)
+	# tyre walls along the edges of the whole course, loose tyres lying about
+	_tyre_edges(id, PK_START + 3.0, pk_finish() - 3.0, 7.0, rng, 2, 4)
+	for m in int(14.0 * k):
+		_tyre_lying(id, rng.randf_range(PK_START + 8.0, 70.0 * k), rng.randf_range(-0.7, 0.7) * hw, rng)
+	# 1) tyre stacks, scattered in the first mud field (1–4 tyres, never in a neat row)
 	var t_along := 22.0 * k
-	for m in 6:
-		t_along += rng.randf_range(6.0, 10.0) * k
+	for m in 9:
+		t_along += rng.randf_range(4.5, 6.5) * k
 		var lat := (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.15, 0.6) * hw
-		_tyre_stack(id, t_along, lat, rng.randi_range(1, 3), rng)
+		if m % 3 == 1:
+			_tyre_cluster(id, t_along, lat, rng)
+		else:
+			_tyre_stack(id, t_along, lat, rng.randi_range(1, 4), rng)
 		if rng.randf() < 0.4:
 			_tyre_stack(id, t_along + rng.randf_range(-1.5, 1.5), lat + rng.randf_range(1.2, 1.6) * signf(-lat), 1, rng)
 	# 2) log field: felled trunks lying every which way, thin enough to crawl over with the lift
@@ -451,19 +461,15 @@ func _log_mesh(r: float, length: float, rng: RandomNumberGenerator, mats: Array)
 	return mesh
 
 
-## 1–3 old tyres stacked, a little skewed, with one cylinder collider.
+## 1–n old tyres stacked, a little skewed, with one cylinder collider. Most stacks are plain black,
+## some are painted in alternating colours like at a race track.
 func _tyre_stack(id: String, along: float, lateral: float, count: int, rng: RandomNumberGenerator) -> void:
-	var rub := TexKit.rubber()
+	var mats := _stack_mats(rng)
 	var h := 0.36
 	for i in count:
-		var xf := _road_xf(id, along, lateral, 0.0, h * (i + 0.5))
+		var xf := _road_xf(id, along, lateral, rng.randf_range(0.0, TAU), h * (i + 0.5))
 		xf.origin += xf.basis.x * rng.randf_range(-0.12, 0.12) + xf.basis.z * rng.randf_range(-0.12, 0.12)
-		var tm := TorusMesh.new()
-		tm.inner_radius = 0.3
-		tm.outer_radius = 0.58
-		tm.rings = 20
-		tm.ring_segments = 10
-		var mi := MeshKit.mesh_instance(tm, rub)
+		var mi := MeshKit.mesh_instance(_tyre(), mats[i % mats.size()])
 		_course.add_child(mi)
 		mi.global_transform = xf * Transform3D(Basis.from_scale(Vector3(1, 1.3, 1)).rotated(Vector3.RIGHT, rng.randf_range(-0.06, 0.06)), Vector3.ZERO)
 	var body := StaticBody3D.new()
@@ -477,6 +483,92 @@ func _tyre_stack(id: String, along: float, lateral: float, count: int, rng: Rand
 	body.add_child(cs)
 	_course.add_child(body)
 	body.global_transform = _road_xf(id, along, lateral, 0.0, h * count * 0.5)
+
+
+func _tyre() -> TorusMesh:
+	if _tyre_mesh == null:
+		_tyre_mesh = TorusMesh.new()
+		_tyre_mesh.inner_radius = 0.3
+		_tyre_mesh.outer_radius = 0.58
+		_tyre_mesh.rings = 18
+		_tyre_mesh.ring_segments = 9
+	return _tyre_mesh
+
+
+func _stack_mats(rng: RandomNumberGenerator) -> Array:
+	if _tyre_paints.is_empty():
+		for c in [Color(0.85, 0.08, 0.06), Color(0.92, 0.92, 0.9), Color(1.0, 0.75, 0.05), Color(0.08, 0.3, 0.8)]:
+			_tyre_paints.append(TexKit.std(c, 0.75))
+	var black := TexKit.rubber()
+	var r := rng.randf()
+	if r < 0.6:
+		return [black]
+	if r < 0.8:
+		return [_tyre_paints[0], _tyre_paints[1]]
+	return [black, _tyre_paints[2 + rng.randi() % 2]]
+
+
+## A single tyre lying flat on the road: a low bump to crawl over.
+func _tyre_lying(id: String, along: float, lateral: float, rng: RandomNumberGenerator) -> void:
+	var xf := _road_xf(id, along, lateral, rng.randf_range(0.0, TAU), 0.17)
+	xf = xf * Transform3D(Basis.from_euler(Vector3(rng.randf_range(-0.12, 0.12), 0, rng.randf_range(-0.12, 0.12))), Vector3.ZERO)
+	var mi := MeshKit.mesh_instance(_tyre(), TexKit.rubber())
+	_course.add_child(mi)
+	mi.global_transform = xf * Transform3D(Basis.from_scale(Vector3(1, 1.25, 1)), Vector3.ZERO)
+	var body := StaticBody3D.new()
+	body.collision_layer = Colliders.LAYER_WORLD
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = 0.56
+	shape.height = 0.3
+	cs.shape = shape
+	body.add_child(cs)
+	_course.add_child(body)
+	body.global_transform = xf
+
+
+## Tyre stacks lining both edges of a stretch between a0 and a1 (irregular gaps and heights).
+func _tyre_edges(id: String, a0: float, a1: float, step: float, rng: RandomNumberGenerator, lo := 2, hi := 4) -> void:
+	var hw: float = track.half_w
+	for side: float in [-1.0, 1.0]:
+		var a := a0 + rng.randf_range(0.0, step * 0.5)
+		while a < a1:
+			var lat := side * (hw - 0.75 + rng.randf_range(-0.15, 0.15))
+			_tyre_stack(id, a, lat, rng.randi_range(lo, hi), rng)
+			if rng.randf() < 0.45:
+				_tyre_stack(id, a + rng.randf_range(1.15, 1.3), lat + rng.randf_range(-0.1, 0.1), rng.randi_range(lo, hi), rng)
+			a += step * rng.randf_range(0.7, 1.3)
+
+
+## Arena: moves a prop spot along the stretch until it is `r` m away from every spawn spot.
+func _clear_of_spawns(along: float, lateral: float, r: float) -> float:
+	for tries in 6:
+		var p := course_xf("arena", along, lateral, 0.0).origin
+		var ok := true
+		for sl in 8:
+			var sp := arena_spawn(sl).origin
+			if Vector2(p.x - sp.x, p.z - sp.z).length() < r:
+				ok = false
+		if ok:
+			break
+		along += r * 0.8 if along < arena_len() * 0.5 else -r * 0.8
+	return along
+
+
+func _venue_rng(id: String) -> RandomNumberGenerator:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([id, "tyres", int(sites[id]["i0"])])
+	return r
+
+
+## A heap of stacks around a point (cover, obstacle): 3–6 stacks of different heights.
+func _tyre_cluster(id: String, along: float, lateral: float, rng: RandomNumberGenerator) -> void:
+	var n := rng.randi_range(3, 6)
+	var ang := rng.randf_range(0.0, TAU)
+	for i in n:
+		var off := Vector2(cos(ang + i * 1.3), sin(ang + i * 1.3)) * (0.0 if i == 0 else rng.randf_range(1.15, 1.35))
+		_tyre_stack(id, along + off.y, lateral + off.x, rng.randi_range(2, 5) if i == 0 else rng.randi_range(1, 3), rng)
 
 
 ## A kicker of weathered planks on a log, skewed by `yaw`.
@@ -586,6 +678,7 @@ func _build_koth() -> void:
 	var len: float = sites["koth"]["len"]
 	_gantry("koth", -4.0, "KÖNIG DER ZONE", Color(1.0, 0.85, 0.2))
 	_gantry("koth", len + 4.0, "KÖNIG DER ZONE", Color(1.0, 0.85, 0.2))
+	_tyre_edges("koth", 0.0, len, 6.0, _venue_rng("koth"), 2, 4)
 	place_zone(koth_spot(0, 0))
 
 
@@ -607,6 +700,7 @@ func _build_donut() -> void:
 		_course.add_child(ring)
 		ring.global_transform = xf * Transform3D(Basis.from_scale(Vector3(1, 0.05, 1)), Vector3.ZERO)
 	_gantry("donut", -4.0, "DONUT-DUELL", Color(1.0, 0.4, 0.8))
+	_tyre_edges("donut", 2.0, float(sites["donut"]["len"]) - 2.0, 8.0, _venue_rng("donut"), 1, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -633,6 +727,11 @@ func _build_bowling() -> void:
 	# pin deck
 	_paint(id, bowl_pins_along() - 1.5, 0.0, Vector2(minf(hw * 2.0 - 0.4, 9.0), 10.0), _mat(Color(0.75, 0.6, 0.4), 0.4))
 	_gantry(id, float(sites[id]["len"]) + 2.0, "AUTO-BOWLING", Color(1.0, 0.6, 0.2))
+	# the gutters: a wall of tyre stacks on both sides of the lane, a tyre heap behind the pins
+	var rng := _venue_rng(id)
+	_tyre_edges(id, BOWL_START + 2.0, float(sites[id]["len"]) - 1.0, 2.6, rng, 2, 3)
+	for m in 3:
+		_tyre_cluster(id, bowl_pins_along() + 9.0 + rng.randf_range(0.0, 3.0), (m - 1) * hw * 0.55, rng)
 
 
 ## The ten pins, set up in their triangle (head pin nearest to the cars). Each machine has its own:
@@ -767,12 +866,19 @@ func _build_arena() -> void:
 		var lat := (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.0, 0.45) * hw
 		var yaw := rng.randf_range(-0.6, 0.6)
 		var size := Vector3(rng.randf_range(2.4, 3.2), rng.randf_range(1.6, 2.6), rng.randf_range(3.5, 6.0))
+		along = _clear_of_spawns(along, lat, 5.5)
 		var xf := _road_xf(id, along, lat, yaw, size.y * 0.5)
 		var mi := MeshKit.box_node(size, TexKit.container_material(cols[m % cols.size()]))
 		_course.add_child(mi)
 		mi.global_transform = xf
 		Colliders.add_box(_course, xf, size)
 	_gantry(id, ARENA_WALL - 3.0, "ARENA", Color(1.0, 0.3, 0.2))
+	# tyre heaps as more (softer looking) cover, and stacks in front of the walls
+	for m in int(clampf(l / 18.0, 3.0, 7.0)):
+		var ca := lerpf(ARENA_WALL + 12.0, l - ARENA_WALL - 12.0, (m + rng.randf_range(0.2, 0.8)) / clampf(l / 18.0, 3.0, 7.0))
+		var cl := (1.0 if m % 2 == 0 else -1.0) * rng.randf_range(0.3, 0.7) * hw
+		_tyre_cluster(id, _clear_of_spawns(ca, cl, 4.5), cl, rng)
+	_tyre_edges(id, ARENA_WALL + 2.0, l - ARENA_WALL - 2.0, 11.0, rng, 1, 3)
 	# floor markings: a big ring in the middle
 	var ring := TorusMesh.new()
 	ring.inner_radius = minf(hw - 1.5, 7.0)

@@ -63,6 +63,12 @@ jobs:
           if grep -E "SCRIPT ERROR" handling.log; then echo "::error::Handling test failed"; exit 1; fi
           grep -q "HANDLING TEST OK" handling.log
 
+      - name: Shift test (full throttle in auto - with grip the revs follow the road speed, no hole after the shift)
+        run: |
+          timeout 200 ./godot --headless --path . res://tests/shift_test.tscn 2>&1 | tee shift.log || true
+          if grep -E "SCRIPT ERROR" shift.log; then echo "::error::Shift test failed"; exit 1; fi
+          grep -q "SHIFT TEST OK" shift.log
+
       - name: Camera test (no jitter at 75 fps with 120 Hz physics)
         run: |
           timeout 240 ./godot --headless --fixed-fps 75 --path . res://tests/camera_test.tscn 2>&1 | tee camera.log || true

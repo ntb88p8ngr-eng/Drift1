@@ -75,7 +75,7 @@ const TUNING := [
 	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
 ]
 ## Underglow (free cosmetic): modes for the sides that are set to "Flasher".
-const UNDERGLOW_MODES := ["Dauerlicht", "Pulsieren", "Blinken", "Stroboskop", "Wechselblinker", "Lauflicht", "Polizei", "Regenbogen"]
+const UNDERGLOW_MODES := ["Dauerlicht", "Pulsieren", "Blinken", "Stroboskop", "Doppelblitz", "Schnellblinken", "Atmen", "Regenbogen"]
 const UNDERGLOW_SIDES := [["front", "Vorne"], ["rear", "Hinten"], ["left", "Links"], ["right", "Rechts"]]
 ## Graffiti mode: selectable match length in minutes.
 const GRAFFITI_MINUTES := [2, 5, 10, 15]
