@@ -44,6 +44,7 @@ var weather_seed := 0
 var quality := 2
 var elapsed := 0.0
 var rain := 0.0          # rain intensity 0..1
+var storm := false       # a downpour (tutorial): far more and brighter drops, also at night
 var clouds := 0.4        # cloud coverage 0..1
 var wetness := 0.0       # road wetness 0..1 (lags behind the rain)
 var night := 0.0         # 0 = day … 1 = night
@@ -80,6 +81,7 @@ func setup(cfg: Dictionary, p_quality: int) -> void:
 	day_minutes = int(cfg.get("day_cycle", 0))
 	weather = str(cfg.get("weather", "dry"))
 	weather_seed = int(cfg.get("weather_seed", 1))
+	storm = bool(cfg.get("storm", false))
 	_noise.seed = weather_seed
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_noise.frequency = 1.0
@@ -174,6 +176,8 @@ static func sun_position(h: float) -> Vector2:
 func _rain_at(t: float) -> float:
 	match weather:
 		"rain":
+			if storm:
+				return 1.0
 			return 0.72 + 0.28 * (_noise.get_noise_1d(t / 35.0) * 0.5 + 0.5)
 		"changing":
 			var w := _noise.get_noise_1d(t / 140.0 + 17.0)
@@ -314,7 +318,7 @@ func _build_rain() -> void:
 		return
 	_rain_fx = GPUParticles3D.new()
 	_rain_fx.name = "Rain"
-	_rain_fx.amount = [2500, 4500, 7000, 9000][clampi(quality, 0, 3)]
+	_rain_fx.amount = [2500, 4500, 7000, 9000][clampi(quality, 0, 3)] * (3 if storm else 1)
 	_rain_fx.lifetime = 1.3
 	_rain_fx.local_coords = false
 	_rain_fx.top_level = true
@@ -330,7 +334,7 @@ func _build_rain() -> void:
 	pm.gravity = Vector3.ZERO
 	_rain_fx.process_material = pm
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.012, 0.5)
+	quad.size = Vector2(0.014, 0.65) if storm else Vector2(0.012, 0.5)
 	_rain_mat = StandardMaterial3D.new()
 	_rain_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_rain_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -343,7 +347,7 @@ func _build_rain() -> void:
 	# splashes on the ground around the camera
 	_splash_fx = GPUParticles3D.new()
 	_splash_fx.name = "Splashes"
-	_splash_fx.amount = [400, 800, 1400, 1800][clampi(quality, 0, 3)]
+	_splash_fx.amount = [400, 800, 1400, 1800][clampi(quality, 0, 3)] * (2 if storm else 1)
 	_splash_fx.lifetime = 0.16
 	_splash_fx.local_coords = false
 	_splash_fx.top_level = true
@@ -433,6 +437,10 @@ func _update_rain_fx() -> void:
 	var lvl := lerpf(0.12, 0.8, _day_level(sun_elevation))
 	# faint streaks: you notice the rain without looking through a curtain
 	_rain_mat.albedo_color = Color(lvl, lvl * 1.04, lvl * 1.1, 0.045 + 0.06 * rain)
+	if storm:
+		# a downpour at night: the streaks catch the headlights and the lightning
+		var l2 := maxf(lvl, 0.42)
+		_rain_mat.albedo_color = Color(l2, l2 * 1.04, l2 * 1.1, 0.16)
 	var ground_y := 0.05
 	if track:
 		ground_y = 0.06

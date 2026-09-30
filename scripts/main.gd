@@ -81,7 +81,7 @@ func start_offline() -> void:
 ## The tutorial: Grüne Hölle at midnight in the rain, starting in the garage of a house by the track.
 func start_tutorial() -> void:
 	_start_world({"track": "gruene_hoelle", "mode": "tutorial", "laps": 1, "time_of_day": "night", "hour": 23.98,
-		"weather": "rain", "day_cycle": 0, "weather_seed": 77, "online": false, "collisions": true})
+		"weather": "rain", "storm": true, "day_cycle": 0, "weather_seed": 77, "online": false, "collisions": true})
 
 
 func _start_world(cfg: Dictionary) -> void:

@@ -173,15 +173,19 @@ void fragment() {
 	float t = fract(TIME * (0.04 + h * 0.12) + h);
 	float y = 1.0 - t;
 	vec2 d = vec2((f.x - 0.5 - (h - 0.5) * 0.5) * 2.4, f.y - y);
-	float drop = smoothstep(0.1, 0.04, length(d * vec2(1.0, 1.5))) * step(0.45, h);
-	float trail = smoothstep(0.035, 0.0, abs(d.x)) * step(y, f.y) * (1.0 - smoothstep(0.0, 0.35, f.y - y)) * 0.35 * step(0.45, h);
+	float life = smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.8, 1.0, t));
+	float drop = smoothstep(0.1, 0.04, length(d * vec2(1.0, 1.5))) * step(0.45, h) * life;
+	float trail = smoothstep(0.035, 0.0, abs(d.x)) * smoothstep(y - 0.02, y + 0.02, f.y) * (1.0 - smoothstep(0.0, 0.35, f.y - y)) * 0.35 * step(0.45, h) * life;
 	float beads = smoothstep(0.8, 0.86, texture(noise_tex, UV * 7.0).r) * 0.5;
 	float wet = clamp(drop + trail + beads, 0.0, 1.0);
 	ALBEDO = vec3(0.03, 0.035, 0.045);
+	// fade the fine detail with distance / grazing angles (it shimmers when a pixel covers many cells)
+	float fw = clamp(length(fwidth(uv * vec2(14.0, 8.0))) * 2.0, 0.0, 1.0);
+	wet *= 1.0 - fw;
 	ALPHA = 0.1 + wet * 0.22;
-	ROUGHNESS = 0.02;
-	SPECULAR = 0.35 + wet * 0.3;
-	NORMAL_MAP = normalize(vec3(0.5 + d.x * wet * 0.6, 0.5 - d.y * wet * 0.6, 1.0));
+	ROUGHNESS = 0.08;
+	SPECULAR = 0.3 + wet * 0.25;
+	NORMAL_MAP = normalize(vec3(0.5 + clamp(d.x, -0.5, 0.5) * wet * 0.4, 0.5 - clamp(d.y, -0.5, 0.5) * wet * 0.4, 1.0));
 	EMISSION = vec3(0.6, 0.65, 0.8) * flash * wet * 0.35;
 }
 """
@@ -312,6 +316,8 @@ func _strip_world(pts: Array, width: float, kind: String, parent: Node3D) -> voi
 	dense.append(pts[pts.size() - 1])
 	var st := MeshKit.new_st()
 	var u := 0.0
+	# every kind at its own height above the ground: where two strips cross they never share a plane
+	var lift: float = {"drive": 0.05, "path": 0.065, "gravel": 0.045}.get(kind, 0.05)
 	for k in dense.size() - 1:
 		var a: Vector3 = dense[k]
 		var b: Vector3 = dense[k + 1]
@@ -324,7 +330,7 @@ func _strip_world(pts: Array, width: float, kind: String, parent: Node3D) -> voi
 			var q := [a + side * f0, a + side * f1, b + side * f1, b + side * f0]
 			for m in 4:
 				var qv: Vector3 = q[m]
-				qv.y = terrain.height_at(qv.x, qv.z) + 0.035
+				qv.y = terrain.height_at(qv.x, qv.z) + lift
 				q[m] = qv
 			var l := Vector2(b.x - a.x, b.z - a.z).length()
 			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(f0 * width * 0.25, u), Vector2(f1 * width * 0.25, u),
@@ -437,10 +443,11 @@ func _wall_z(key: String, x: float, z0: float, z1: float, y0: float, y1: float, 
 func _frame_x(z: float, xa: float, xb: float, ya: float, yb: float, glass_key := "glass") -> void:
 	var w := xb - xa
 	var cx := (xa + xb) * 0.5
-	_b("white", Vector3(cx, ya - 0.03, z), Vector3(w + 0.12, 0.06, 0.34))          # sill
-	_b("white", Vector3(cx, yb + 0.03, z), Vector3(w + 0.12, 0.06, 0.3))
-	_b("white", Vector3(xa - 0.03, (ya + yb) * 0.5, z), Vector3(0.06, yb - ya, 0.3))
-	_b("white", Vector3(xb + 0.03, (ya + yb) * 0.5, z), Vector3(0.06, yb - ya, 0.3))
+	# frames reach 1 cm into the opening: no face lies on the wall's reveal (flicker)
+	_b("white", Vector3(cx, ya - 0.025, z), Vector3(w + 0.12, 0.07, 0.34))          # sill
+	_b("white", Vector3(cx, yb + 0.025, z), Vector3(w + 0.12, 0.07, 0.3))
+	_b("white", Vector3(xa - 0.025, (ya + yb) * 0.5, z), Vector3(0.07, yb - ya, 0.3))
+	_b("white", Vector3(xb + 0.025, (ya + yb) * 0.5, z), Vector3(0.07, yb - ya, 0.3))
 	_b("white", Vector3(cx, (ya + yb) * 0.5, z), Vector3(0.05, yb - ya, 0.12))
 	if glass_key == "glass":
 		_b("glass", Vector3(cx, (ya + yb) * 0.5, z), Vector3(w, yb - ya, 0.02))
@@ -449,10 +456,10 @@ func _frame_x(z: float, xa: float, xb: float, ya: float, yb: float, glass_key :=
 func _frame_z(x: float, za: float, zb: float, ya: float, yb: float) -> void:
 	var w := zb - za
 	var cz := (za + zb) * 0.5
-	_b("white", Vector3(x, ya - 0.03, cz), Vector3(0.34, 0.06, w + 0.12))
-	_b("white", Vector3(x, yb + 0.03, cz), Vector3(0.3, 0.06, w + 0.12))
-	_b("white", Vector3(x, (ya + yb) * 0.5, za - 0.03), Vector3(0.3, yb - ya, 0.06))
-	_b("white", Vector3(x, (ya + yb) * 0.5, zb + 0.03), Vector3(0.3, yb - ya, 0.06))
+	_b("white", Vector3(x, ya - 0.025, cz), Vector3(0.34, 0.07, w + 0.12))
+	_b("white", Vector3(x, yb + 0.025, cz), Vector3(0.3, 0.07, w + 0.12))
+	_b("white", Vector3(x, (ya + yb) * 0.5, za - 0.025), Vector3(0.3, yb - ya, 0.07))
+	_b("white", Vector3(x, (ya + yb) * 0.5, zb + 0.025), Vector3(0.3, yb - ya, 0.07))
 	_b("white", Vector3(x, (ya + yb) * 0.5, cz), Vector3(0.12, yb - ya, 0.05))
 	_b("glass", Vector3(x, (ya + yb) * 0.5, cz), Vector3(0.02, yb - ya, w))
 
@@ -489,7 +496,7 @@ func _build_structure() -> void:
 	# foundations and floor slabs
 	_b("concrete", Vector3(-3.5, FL * 0.5 - 0.6, 0), Vector3(11.3, FL + 1.2, 9.3), Color(0.7, 0.7, 0.68))
 	_b("concrete", Vector3(GARAGE_X, GF * 0.5 - 0.6, -0.35), Vector3(6.8, GF + 1.2, 8.6), Color(0.85, 0.85, 0.83), Vector3.ZERO, true)
-	_b("floor", Vector3(-3.5, FL + 0.005, 0), Vector3(10.8, 0.01, 8.8))
+	_b("floor", Vector3(-3.5, FL + 0.01, 0), Vector3(10.8, 0.02, 8.8))
 	# exterior walls (plaster outside, wallpaper inside = two thin layers)
 	var front_holes := [[-8.2, -4.4, FL + 0.8, FL + 2.35], [0.05, 1.05, FL, FL + 2.1], [-2.8, -1.8, FL + 1.1, FL + 2.2]]
 	_wall_x("plaster", -4.62, -9.12, 2.0, -0.6, CEIL, front_holes, 0.12, true, ext)
@@ -517,8 +524,8 @@ func _build_structure() -> void:
 	# the big living room window (rain on the glass)
 	var wx0 := -8.2
 	var wx1 := -4.4
-	_b("white", Vector3((wx0 + wx1) * 0.5, FL + 0.77, -4.56), Vector3(wx1 - wx0 + 0.2, 0.06, 0.42))
-	_b("white", Vector3((wx0 + wx1) * 0.5, FL + 2.38, -4.56), Vector3(wx1 - wx0 + 0.1, 0.06, 0.3))
+	_b("white", Vector3((wx0 + wx1) * 0.5, FL + 0.775, -4.56), Vector3(wx1 - wx0 + 0.2, 0.07, 0.42))
+	_b("white", Vector3((wx0 + wx1) * 0.5, FL + 2.375, -4.56), Vector3(wx1 - wx0 + 0.1, 0.07, 0.3))
 	for x: float in [wx0 - 0.03, (wx0 + wx1) * 0.5, wx1 + 0.03]:
 		_b("white", Vector3(x, FL + 1.575, -4.56), Vector3(0.07, 1.55, 0.3))
 	_b("white", Vector3((wx0 + wx1) * 0.5, FL + 1.9, -4.56), Vector3(wx1 - wx0, 0.05, 0.12))
@@ -555,7 +562,7 @@ func _build_structure() -> void:
 func _build_living() -> void:
 	var f := FL
 	# rug
-	_b("rug", Vector3(-6.9, f + 0.012, -1.8), Vector3(2.9, 0.012, 2.2))
+	_b("rug", Vector3(-6.9, f + 0.028, -1.8), Vector3(2.9, 0.012, 2.2))
 	# TV sideboard, TV, soundbar, console with a blue light
 	_b("walnut", Vector3(-8.72, f + 0.3, -1.8), Vector3(0.46, 0.6, 1.9))
 	for k in 3:
@@ -844,7 +851,7 @@ func _build_kitchen() -> void:
 # ---------------------------------------------------------------------------
 func _build_hall() -> void:
 	var f := FL
-	_b("rug", Vector3(0.5, f + 0.01, -0.5), Vector3(0.9, 0.01, 6.5), Color(0.55, 0.5, 0.5))
+	_b("rug", Vector3(0.5, f + 0.03, -0.5), Vector3(0.9, 0.012, 6.5), Color(0.55, 0.5, 0.5))
 	# shoe rack and shoes by the front door
 	_b("oak", Vector3(1.7, f + 0.25, -3.6), Vector3(0.35, 0.5, 0.9))
 	for k in 4:
@@ -882,10 +889,10 @@ func _build_hall() -> void:
 # ---------------------------------------------------------------------------
 func _build_garage() -> void:
 	var g := GF
-	_b("concrete", Vector3(GARAGE_X, g + 0.004, -0.3), Vector3(6.5, 0.008, 8.2), Color(0.85, 0.85, 0.85))
+	_b("concrete", Vector3(GARAGE_X, g + 0.01, -0.3), Vector3(6.5, 0.02, 8.2), Color(0.85, 0.85, 0.85))
 	# painted lines and an oil drip tray
 	for x: float in [3.7, 6.9]:
-		_b("matte", Vector3(x, g + 0.01, -0.3), Vector3(0.08, 0.004, 6.5), Color(0.85, 0.7, 0.1))
+		_b("matte", Vector3(x, g + 0.026, -0.3), Vector3(0.08, 0.006, 6.5), Color(0.85, 0.7, 0.1))
 	_b("metal", Vector3(GARAGE_X, g + 0.02, -1.4), Vector3(0.8, 0.03, 0.6), Color(0.15, 0.15, 0.15))
 	# workbench along the back wall with vice, toolbox, lamp
 	var wz := 3.45

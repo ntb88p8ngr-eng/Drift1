@@ -38,10 +38,23 @@ func _ready() -> void:
 	for f in 120 * 4:
 		await get_tree().process_frame
 	print("  after 4 s: shot %d, clock strikes %d" % [tut._shot, tut._clock_strikes])
-	tut._skip_intro()
-	await get_tree().process_frame
+	# jump to the last shot and let the intro end on its own (it fades to black and must fade back in)
+	while tut._shot < tut._shots.size() - 2:
+		tut._next_shot()
+	tut._next_shot()
+	var wait_n := 0
+	while tut.state != "drive" and wait_n < 120 * 10:
+		await get_tree().process_frame
+		wait_n += 1
 	if tut.state != "drive" or not tut._hint_open or not get_tree().paused:
-		print("FAIL: skipping the intro did not start the drive with a hint (state %s)" % tut.state); fails += 1
+		print("FAIL: the end of the intro did not start the drive with a hint (state %s)" % tut.state); fails += 1
+	for f in 120 * 2:
+		await get_tree().process_frame
+	print("  fade alpha 2 s into the drive: %.2f" % tut._fade.color.a)
+	if tut._fade.color.a > 0.05:
+		print("FAIL: the screen stays black after the intro"); fails += 1
+	if not tut.world.camera.current:
+		print("FAIL: the chase camera is not active"); fails += 1
 	tut._close_hint()
 	# drive out of the garage
 	Input.action_press("accelerate", 0.6)

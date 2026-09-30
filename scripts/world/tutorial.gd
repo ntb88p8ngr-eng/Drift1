@@ -317,7 +317,7 @@ func _make_intro() -> void:
 	var u6 := func(k: float, t: float) -> void:
 		_cam_move(site.cam_xf(Vector3(Site.GARAGE_X + 4.5, 1.1, -13.0), Vector3(Site.GARAGE_X, 1.0, -3.0)),
 			site.cam_xf(Vector3(Site.GARAGE_X + 2.5, 1.6, -11.0), Vector3(Site.GARAGE_X, 1.0, -2.0)), k)
-		if t > 4.6:
+		if t > 4.6 and not _shot_flag("fade"):
 			_fade_to(1.0, 0.8)
 	_shot_add(5.5, e6, u6)
 
@@ -537,7 +537,7 @@ func _start_ending() -> void:
 		var eye := camp_xf * Vector3(0.0, lerpf(3.0, 22.0, k), lerpf(-6.0, -14.0, k))
 		var tgt := camp_xf * Vector3(0, 0.5, 3.0)
 		cam.global_transform = Transform3D(Basis.looking_at((tgt - eye).normalized(), Vector3.UP), eye)
-		if t > 4.4:
+		if t > 4.4 and not _shot_flag("fade"):
 			_fade_to(1.0, 1.4)
 	_shot_add(6.0, e4, u4)
 	_next_shot()
@@ -759,9 +759,17 @@ func _letterbox(on: bool) -> void:
 	tw.parallel().tween_property(_bars[1], "offset_top", -h, 0.6)
 
 
+var _fade_tw: Tween
+
+
+## One fade at a time: a new fade replaces the running one (an old fade to black must never
+## win over the fade-in when the drive starts).
 func _fade_to(a: float, secs: float) -> void:
-	var tw := create_tween()
-	tw.tween_property(_fade, "color:a", a, secs)
+	if _fade_tw and _fade_tw.is_valid():
+		_fade_tw.kill()
+	_fade_tw = create_tween()
+	_fade_tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_fade_tw.tween_property(_fade, "color:a", a, secs)
 
 
 func _title_show(t: String, s: String) -> void:
