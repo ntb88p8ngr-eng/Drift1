@@ -18,9 +18,13 @@ const R34Data = preload("res://scripts/car/r34_sound_data.gd")
 const SAMPLED := {"r34": R34Data}
 const SAMPLE_DIR := "res://assets/audio/"
 const ENGINE_SAMPLE_GAIN := 0.7
-const SPOOL_GAIN := 0.16
+const SPOOL_GAIN := 0.1
+## Recorded voice smoothing: one-pole coefficient of a ~3.5 kHz low-pass (applied twice) and a
+## ~3.5 kHz one for the blow-off recordings.
+const SMOOTH_K := 0.63
+const LIFT_SMOOTH_K := 0.63
 const SHIFT_CHUFF := 0.22      # seconds of the blow-off sample played on a gear change
-const LIFT_GAIN := 0.85
+const LIFT_GAIN := 0.7
 ## Overall engine level against tyres/wind/rain: the engine voice ends up at 0.5 (-6 dB), turbo,
 ## blow-off, gear whine and exhaust pops at 0.7 (-3 dB).
 const ENGINE_MIX := 0.7
@@ -216,6 +220,10 @@ var _lp_bov := 0.0
 
 # sampled voice (R34, M3)
 var _sampled := false
+var _sm1 := 0.0              # smoothing low-pass state (recorded voice)
+var _sm2 := 0.0
+var _lp_lift := 0.0          # blow-off recordings low-pass
+var _lift_acc := 0.0
 var _sd: GDScript = R34Data
 var _on_order := 3.0
 var _off_order := 4.5
@@ -373,13 +381,14 @@ func setup_samples(data: GDScript = R34Data, prefix := "r34") -> bool:
 	_idle_rec = float(data.IDLE_RPM)
 	_sample_gain = float(data.get_script_constant_map().get("GAIN", 1.0))
 	var spool := _load_sample(prefix + "_turbo_spool") if data.LIFT_COUNT > 0 else PackedFloat32Array()
-	_g_on = Granular.new(on, MIX_RATE / _sd.F_REF_ON, 4.0, 6)
-	_g_off = Granular.new(off, MIX_RATE / _sd.F_REF_OFF, 4.0, 6)
+	# longer grains with less random offset: smoother joins (short, jumpy grains scratched and hissed)
+	_g_on = Granular.new(on, MIX_RATE / _sd.F_REF_ON, 6.0, 3)
+	_g_off = Granular.new(off, MIX_RATE / _sd.F_REF_OFF, 6.0, 3)
 	_idle_buf = idle
 	_on_f = PackedFloat32Array(_sd.ON_F)
 	_off_f = PackedFloat32Array(_sd.OFF_F)
 	if spool.size() > 4096:
-		_g_spool = Granular.new(spool, MIX_RATE / _sd.F_REF_TURBO, 60.0, 40)
+		_g_spool = Granular.new(spool, MIX_RATE / _sd.F_REF_TURBO, 60.0, 10)
 		_spool_f = PackedFloat32Array(_sd.SPOOL_F)
 	_lifts.clear()
 	for k in _sd.LIFT_COUNT:
@@ -479,14 +488,20 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 		for i in frames:
 			_lp_eng += (_eng_block[i] - _lp_eng) * k
 			_eng_block[i] = _lp_eng
-	# turbo whistle follows the boost
+	# turbo whistle follows the boost (kept below ~5 kHz: higher it screeched)
 	if _g_spool and maxf(boost0, boost1) > 0.02:
-		var fw0 := 3000.0 + 3900.0 * boost0
-		var fw1 := 3000.0 + 3900.0 * boost1
+		var fw0 := 2300.0 + 2600.0 * boost0
+		var fw1 := 2300.0 + 2600.0 * boost1
 		var ga := pow(boost0, 1.3) * (0.35 + 0.65 * load0) * SPOOL_GAIN
 		var gb := pow(boost1, 1.3) * (0.35 + 0.65 * load1) * SPOOL_GAIN
 		_g_spool.mix(_eng_block, frames, _pos_for(_spool_f, (fw0 + fw1) * 0.5), fw0 / _fref_turbo,
 			fw1 / _fref_turbo, ga, gb)
+	# gentle two-pole low-pass (~3.5 kHz) over the whole recorded voice: takes hiss, grain edges and
+	# the shrill top of the whistle off, the engine note itself sits far below
+	for i in frames:
+		_sm1 += (_eng_block[i] - _sm1) * SMOOTH_K
+		_sm2 += (_sm1 - _sm2) * SMOOTH_K
+		_eng_block[i] = _sm2
 	return _eng_block
 
 
@@ -783,8 +798,12 @@ func render(frames: int) -> PackedVector2Array:
 				if end > 0.0:
 					# short gear-change version: fades out over its last 40 %
 					fade = clampf((end - lp) / (end * 0.4), 0.0, 1.0)
-				out += (lb[k] + (lb[k + 1] - lb[k]) * (lp - float(k))) * float(slot[2]) * fade
+				_lift_acc += (lb[k] + (lb[k + 1] - lb[k]) * (lp - float(k))) * float(slot[2]) * fade
 				slot[1] = lp + float(slot[3])
+			# the recordings are bright: a gentle low-pass keeps the "pssst" soft
+			_lp_lift += (_lift_acc - _lp_lift) * LIFT_SMOOTH_K
+			out += _lp_lift
+			_lift_acc = 0.0
 
 		# --- nitro hiss ---
 		if nitro:

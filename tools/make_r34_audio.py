@@ -144,6 +144,18 @@ def fade(x, fin, fout):
     return y
 
 
+def harmonic_clean(x, f0, fs=22050, floor=0.1, rel=0.006, min_bw=0.8):
+    """Pitch-normalized engine buffer: everything the engine makes lies on multiples of f0 (half the
+    crank order). Keeps those lines and lowers what lies between them by 20 dB – the dyno's broadband
+    roller/fan rumble that was audible when lifting off."""
+    n = len(x)
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(n, 1 / fs)
+    d = np.abs(f - np.round(f / f0) * f0)
+    g = np.exp(-0.5 * (d / np.maximum(min_bw, rel * f)) ** 2)
+    return np.fft.irfft(X * (floor + (1 - floor) * g), n).astype(np.float32)
+
+
 def write_bin(path, x):
     np.asarray(x, dtype="<f4").tofile(path)
     print("  wrote %s (%.2f s)" % (path, len(x) / OUT_RATE))
@@ -199,6 +211,10 @@ def main():
     print("turbo: whistle %.0f-%.0f Hz, %d lift-off samples" % (spool_f.min(), spool_f.max(), len(lifts)))
 
     write_bin(os.path.join(out_dir, "r34_engine_on.bin"), on)
+    # off-load buffer: F_REF_OFF is the 4.5th order -> half order = F_REF_OFF / 9
+    level = rms(off)
+    off = harmonic_clean(off, F_REF_OFF / 9.0)
+    off *= level / rms(off)   # same loudness as before the cleaning
     write_bin(os.path.join(out_dir, "r34_engine_off.bin"), off)
     write_bin(os.path.join(out_dir, "r34_idle.bin"), idle)
     write_bin(os.path.join(out_dir, "r34_turbo_spool.bin"), spool)
