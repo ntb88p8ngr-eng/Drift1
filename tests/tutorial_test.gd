@@ -56,6 +56,9 @@ func _ready() -> void:
 	if not tut.world.camera.current:
 		print("FAIL: the chase camera is not active"); fails += 1
 	tut._close_hint()
+	await get_tree().process_frame
+	if site.turn_sign == null or site.turn_chevrons.size() != 3 or not tut._turn_arrow.visible:
+		print("FAIL: no turn-right sign / arrow at the start"); fails += 1
 	# drive out of the garage
 	Input.action_press("accelerate", 0.6)
 	var max_d := 0.0

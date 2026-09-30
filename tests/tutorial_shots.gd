@@ -50,6 +50,25 @@ func _ready() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(out.path_join("tut_%d_%s.png" % [i, sh[2]]))
 		print("SHOT ", sh[2])
+	# the turn-right sign as seen from the end of the driveway, with the on-screen arrow
+	if only == "" or only.split(",").has("sign"):
+		tut._skip_intro()
+		tut._close_hint()
+		tut.set_process(true)
+		var ts2 = world.tutorial_site
+		var sp: Vector3 = ts2.turn_sign.global_position
+		var toward: Vector3 = ts2.house_xf.origin - sp
+		toward.y = 0.0
+		var eye: Vector3 = sp + toward.normalized() * 16.0 + Vector3(0, 1.6, 0)
+		tut.cam.current = true
+		tut.cam.global_transform = Transform3D(Basis.looking_at((sp + Vector3(0, 1.4, 0) - eye).normalized(), Vector3.UP), eye)
+		tut._next_bolt = 99.0
+		for f in 90:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(out.path_join("tut_sign.png"))
+		print("SHOT sign")
+		tut.set_process(false)
 	# the camp: ending shots
 	if only == "" or only.split(",").has("camp"):
 		tut._skip_intro()

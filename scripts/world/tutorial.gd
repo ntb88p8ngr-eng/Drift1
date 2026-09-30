@@ -58,6 +58,8 @@ var _hint_title: Label
 var _hint_text: Label
 var _objective: Label
 var _banner: Label
+var _turn_arrow: Label          # big "➜ RECHTS" at the start until you are on the road heading right
+var _turned := false
 
 
 func setup(p_world, p_site: Site) -> void:
@@ -154,6 +156,7 @@ func _process(delta: float) -> void:
 	match state:
 		"drive":
 			_drive(dt)
+	_update_turn_arrow()
 	if _hint_open and not get_tree().paused and not world.pause_menu.visible:
 		get_tree().paused = true
 	if _hint_label_t > 0.0:
@@ -743,6 +746,35 @@ func _build_ui() -> void:
 	_objective.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	_objective.visible = false
 	root.add_child(_objective)
+	_turn_arrow = UiKit.label("RECHTS", 52, Color(1.0, 0.62, 0.12), HORIZONTAL_ALIGNMENT_CENTER)
+	_turn_arrow.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_turn_arrow.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_turn_arrow.offset_left = -300.0
+	_turn_arrow.offset_right = -40.0
+	_turn_arrow.offset_top = -150.0
+	_turn_arrow.offset_bottom = 50.0
+	_turn_arrow.add_theme_constant_override("outline_size", 14)
+	_turn_arrow.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_turn_arrow.pivot_offset = Vector2(130, 100)
+	# a big drawn arrow above the word (the font has no arrow glyph of that size)
+	var pts := PackedVector2Array([Vector2(20, 60), Vector2(140, 60), Vector2(140, 20), Vector2(240, 95),
+		Vector2(140, 170), Vector2(140, 130), Vector2(20, 130)])
+	var edge := Line2D.new()
+	edge.points = pts
+	edge.closed = true
+	edge.width = 12.0
+	edge.default_color = Color(0, 0, 0, 0.85)
+	edge.joint_mode = Line2D.LINE_JOINT_ROUND
+	_turn_arrow.add_child(edge)
+	var poly := Polygon2D.new()
+	poly.polygon = pts
+	poly.color = Color(1.0, 0.62, 0.12)
+	_turn_arrow.add_child(poly)
+	for n: Node2D in [edge, poly]:
+		n.position = Vector2(10, -40)
+		n.scale = Vector2(1.0, 0.9)
+	_turn_arrow.visible = false
+	root.add_child(_turn_arrow)
 	_banner = UiKit.label("", 30, Color(1, 1, 1), HORIZONTAL_ALIGNMENT_CENTER)
 	_banner.set_anchors_preset(Control.PRESET_CENTER)
 	_banner.position = Vector2(-600, -230)
@@ -806,3 +838,29 @@ func _phone_msg(who: String, text: String, mine: bool) -> void:
 	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
 	row.add_child(bubble)
 	_msgs.add_child(row)
+
+
+## The way onto the track at the start: the chevrons on the sign run towards the right, and a big
+## arrow on screen until the car is on the road going the right way.
+func _update_turn_arrow() -> void:
+	var t := Time.get_ticks_msec() * 0.001
+	var on := not _turned and (state == "drive" or state == "intro")
+	for k in site.turn_chevrons.size():
+		var m: StandardMaterial3D = site.turn_chevrons[k]
+		# a running light: each chevron flares up in turn, left to right
+		var ph := fposmod(t * 2.2 - k * 0.33, 1.0)
+		m.emission_energy_multiplier = (0.5 + 1.8 * (1.0 - smoothstep(0.0, 0.45, ph))) if on else 0.3
+	if state == "drive" and not _turned:
+		var tr = world.track
+		var p: Vector3 = car.global_position
+		var on_road: bool = tr.distance_to_center(p) < float(tr.half_w)
+		var fwd: Vector3 = -car.global_transform.basis.z
+		var right_way: bool = fwd.dot(tr.tangents[maxi(car.track_hint, 0)]) > 0.5
+		if on_road and right_way and car.speed > 4.0:
+			_turned = true
+	_turn_arrow.visible = state == "drive" and not _turned and not _hint_open
+	if _turn_arrow.visible:
+		var pulse := 0.5 + 0.5 * sin(t * 6.0)
+		_turn_arrow.offset_left = -300.0 + pulse * 22.0
+		_turn_arrow.offset_right = -40.0 + pulse * 22.0
+		_turn_arrow.modulate.a = 0.75 + 0.25 * pulse

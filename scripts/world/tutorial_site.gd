@@ -61,6 +61,8 @@ var eyes: Array = []
 var figure: Node3D
 var hazards: Array = []        # [OmniLight3D, material] × 4
 var beacon: Node3D
+var turn_sign: Node3D          # chevron board across the road from the driveway: turn right here
+var turn_chevrons: Array = []  # their emissive materials (running light, see tutorial.gd)
 
 var _sts := {}                 # material key -> SurfaceTool (merged geometry of the house)
 var _mats := {}
@@ -87,6 +89,7 @@ func build(p_track, p_terrain, p_scenery) -> void:
 	await Game.load_tick()
 	_build_garage()
 	_build_outside()
+	_build_turn_sign()
 	_commit()
 	_build_lights()
 	await Game.load_tick()
@@ -1608,3 +1611,49 @@ func on_track_path(p: Vector3) -> bool:
 		if Vector2(p.x - q.x, p.z - q.z).length_squared() < 9.0:
 			return true
 	return Vector2(p.x - camp.x, p.z - camp.z).length() < 13.0
+
+
+## Across the road from the end of the driveway: a board with three glowing chevrons pointing in
+## the race direction (= right when you come down the driveway), on two posts behind the far edge.
+func _build_turn_sign() -> void:
+	var i: int = track.index_at(HOUSE_P)
+	var t: Vector3 = track.tangents[i]
+	t.y = 0.0
+	t = t.normalized()
+	var away: Vector3 = track.rights[i] * HOUSE_SIDE
+	away.y = 0.0
+	away = away.normalized()
+	var far_off: float = track.off_left[i] if HOUSE_SIDE > 0.0 else track.off_right[i]
+	var base: Vector3 = track.samples[i] - away * (maxf(far_off, float(track.half_w)) + 1.6)
+	base.y = terrain.height_at(base.x, base.z)
+	turn_sign = Node3D.new()
+	turn_sign.name = "TurnSign"
+	add_child(turn_sign)
+	# local +X = the way to go, the board faces the driveway (+Z = towards the house)
+	var z_axis := t.cross(Vector3.UP).normalized()
+	var front := 1.0 if z_axis.dot(away) > 0.0 else -1.0     # the side that faces the house
+	turn_sign.global_transform = Transform3D(Basis(t, Vector3.UP, z_axis), base)
+	var post_m := TexKit.std(Color(0.35, 0.36, 0.38), 0.5, 0.6)
+	for x: float in [-1.2, 1.2]:
+		turn_sign.add_child(MeshKit.box_node(Vector3(0.1, 2.3, 0.1), post_m, Vector3(x, 1.15, -0.08 * front)))
+	turn_sign.add_child(MeshKit.box_node(Vector3(3.2, 1.0, 0.06), TexKit.std(Color(0.05, 0.05, 0.06), 0.6), Vector3(0, 1.75, 0)))
+	# reflective white rim
+	var rim := TexKit.std(Color(0.9, 0.9, 0.9), 0.3)
+	for y: float in [1.23, 2.27]:
+		turn_sign.add_child(MeshKit.box_node(Vector3(3.24, 0.04, 0.07), rim, Vector3(0, y, 0)))
+	for k in 3:
+		var m := TexKit.emissive(Color(1.0, 0.42, 0.02), 2.0)
+		turn_chevrons.append(m)
+		var cx := -0.85 + k * 0.85
+		for sy: float in [-1.0, 1.0]:
+			# one bar of the ">" – from the tip (right) up/down to the back
+			var bar := MeshKit.box_node(Vector3(0.5, 0.13, 0.05), m, Vector3(cx - 0.17, 1.75 + sy * 0.17, 0.045 * front))
+			bar.rotation.z = sy * -0.785
+			turn_sign.add_child(bar)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.6, 0.2)
+	glow.light_energy = 1.2
+	glow.omni_range = 7.0
+	glow.shadow_enabled = false
+	glow.position = Vector3(0, 1.75, 1.2 * front)
+	turn_sign.add_child(glow)
