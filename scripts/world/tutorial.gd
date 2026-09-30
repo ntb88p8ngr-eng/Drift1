@@ -140,7 +140,7 @@ func _process(delta: float) -> void:
 	site.set_hazards(fmod(Time.get_ticks_msec() * 0.001, 1.0) < 0.5)
 	if site.fire_light:
 		var ft := Time.get_ticks_msec() * 0.001
-		site.fire_light.light_energy = 2.2 + 0.5 * sin(ft * 17.0) * sin(ft * 5.3) + 0.3 * sin(ft * 31.0)
+		site.fire_light.light_energy = 1.6 + 0.4 * sin(ft * 17.0) * sin(ft * 5.3) + 0.2 * sin(ft * 31.0)
 		site.caravan_light.light_energy = 0.8 + (0.4 if fmod(ft * 1.3, 7.0) < 0.12 else 0.0) - (0.6 if fmod(ft, 11.0) < 0.08 else 0.0)
 	if site.tv_light:
 		site.tv_light.light_energy = 0.5 + 0.25 * sin(Time.get_ticks_msec() * 0.013) * sin(Time.get_ticks_msec() * 0.0071)
@@ -494,8 +494,10 @@ func _start_ending() -> void:
 	var e1 := func() -> void:
 		cam.fov = 50.0
 	var u1 := func(k: float, t: float) -> void:
-		var eye := camp_xf * Vector3(-4.5, 1.4, -2.5)
-		var tgt: Vector3 = car.global_position + Vector3(0, 0.8, 0)
+		# from behind the car, past it into the clearing: the headlights on Kenji and the fire
+		var cx: Transform3D = car.global_transform
+		var eye := cx.origin + cx.basis.z * lerpf(5.5, 4.5, k) + cx.basis.x * 2.2 + Vector3(0, 1.5, 0)
+		var tgt := kenji_p + Vector3(0, 1.1, 0)
 		cam.global_transform = Transform3D(Basis.looking_at((tgt - eye).normalized(), Vector3.UP), eye)
 		if t > 1.0:
 			_say("Kenji", "Da bist du ja! Endlich …")
@@ -505,7 +507,7 @@ func _start_ending() -> void:
 		cam.fov = 40.0
 		_drone_fade(-18.0)
 	var u2 := func(k: float, t: float) -> void:
-		var eye_a := kenji_p + (camp_xf.basis * Vector3(-1.6, 1.55, -2.2))
+		var eye_a := kenji_p + (camp_xf.basis * Vector3(-0.9, 1.35, -3.4))
 		var eye_b := eye_a + camp_xf.basis * Vector3(0.4, 0, 0.5)
 		var tgt := kenji_p + Vector3(0, 1.55, 0)
 		_cam_move(Transform3D(Basis.looking_at((tgt - eye_a).normalized(), Vector3.UP), eye_a), Transform3D(Basis.looking_at((tgt - eye_b).normalized(), Vector3.UP), eye_b), k)

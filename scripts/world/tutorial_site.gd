@@ -1252,7 +1252,7 @@ func _build_camp() -> void:
 	caravan.position = Vector3(5.5, 0, 4.0)
 	caravan.rotation = Vector3(0, -0.35, 0)
 	var st := MeshKit.new_st()
-	var cream := Color(0.9, 0.87, 0.78)
+	var cream := Color(0.78, 0.76, 0.7)
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.45, 0)), Vector3(2.2, 1.9, 5.2), cream)
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 2.45, 0)), Vector3(2.0, 0.2, 5.0), cream * 0.97)
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.0, 0)), Vector3(2.22, 0.12, 5.22), Color(0.2, 0.45, 0.55))
@@ -1285,7 +1285,7 @@ func _build_camp() -> void:
 	caravan_light.position = Vector3(-1.8, 1.8, 1.2)
 	caravan.add_child(caravan_light)
 	# awning
-	var aw := TexKit.std(Color(0.7, 0.35, 0.15), 0.9)
+	var aw := TexKit.std(Color(0.22, 0.32, 0.26), 0.9)
 	caravan.add_child(MeshKit.box_node(Vector3(2.4, 0.03, 3.2), aw, Vector3(-2.3, 2.35, 0.2), Vector3(0, 0, -0.18)))
 	for z: float in [-1.3, 1.7]:
 		caravan.add_child(MeshKit.cyl_node(0.025, 0.025, 2.2, TexKit.std(Color(0.6, 0.6, 0.6), 0.3, 0.8), Vector3(-3.45, 1.1, z)))
@@ -1307,7 +1307,7 @@ func _build_camp() -> void:
 	fire.add_child(_flames())
 	fire_light = OmniLight3D.new()
 	fire_light.light_color = Color(1.0, 0.55, 0.2)
-	fire_light.light_energy = 2.4
+	fire_light.light_energy = 1.6
 	fire_light.omni_range = 12.0
 	fire_light.shadow_enabled = true
 	fire_light.position = Vector3(0, 0.8, 0)
@@ -1337,8 +1337,8 @@ func _build_camp() -> void:
 	# Kenji, standing by the fire and looking down the track
 	kenji = _person(Color(0.1, 0.12, 0.2), Color(0.18, 0.18, 0.2), Color(0.85, 0.66, 0.5), true)
 	root.add_child(kenji)
-	kenji.position = Vector3(0.9, 0, 1.6)
-	kenji.rotation = Vector3(0, 0.2, 0)
+	kenji.position = Vector3(0.7, 0, 4.9)
+	kenji.rotation = Vector3(0, 0.15, 0)
 	# eyes between the trees behind the camp (only the last lightning shows them)
 	var eye_m := StandardMaterial3D.new()
 	eye_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1464,25 +1464,66 @@ func _flames() -> Node3D:
 	return root
 
 
-## A low-poly person (hoodie, trousers). Origin at the feet, facing -Z.
+## A low-poly person (hoodie, trousers, trainers): rounded head with a face, limbs with joints.
+## Origin at the feet, facing -Z.
 func _person(top: Color, legs: Color, skin: Color, hood: bool) -> Node3D:
 	var root := Node3D.new()
 	var st := MeshKit.new_st()
-	for s: float in [-1.0, 1.0]:
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(s * 0.11, 0.45, 0)), Vector3(0.17, 0.9, 0.2), legs)
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(s * 0.11, 0.05, -0.05)), Vector3(0.16, 0.1, 0.3), Color(0.9, 0.9, 0.9))
-		MeshKit.box(st, Transform3D(Basis.from_euler(Vector3(0.15, 0, s * 0.12)), Vector3(s * 0.3, 1.18, -0.03)), Vector3(0.14, 0.62, 0.15), top)
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(s * 0.33, 0.85, -0.08)), Vector3(0.09, 0.1, 0.1), skin)
-	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.2, 0)), Vector3(0.46, 0.66, 0.28), top)
-	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.62, -0.02)), Vector3(0.22, 0.26, 0.24), skin)
+	var limb := func(a: Vector3, b: Vector3, r0: float, r1: float, col: Color) -> void:
+		MeshKit.tube(st, [a, b], [r0, r1], 10, Vector2(1, 1), col, false)
+		_sphere_into(st, a, r0, col)
+		_sphere_into(st, b, r1, col)
+	# legs (slightly apart), trainers
+	for s in [-1.0, 1.0]:
+		limb.call(Vector3(s * 0.1, 0.92, 0.0), Vector3(s * 0.11, 0.5, -0.02), 0.085, 0.07, legs)
+		limb.call(Vector3(s * 0.11, 0.5, -0.02), Vector3(s * 0.11, 0.1, 0.02), 0.068, 0.055, legs)
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(s * 0.11, 0.05, -0.05)), Vector3(0.12, 0.1, 0.28), Color(0.92, 0.92, 0.9))
+	# torso: tapered, hoodie pocket
+	MeshKit.tube(st, [Vector3(0, 0.9, 0), Vector3(0, 1.2, 0), Vector3(0, 1.45, 0)], [0.16, 0.19, 0.2], 12, Vector2(1, 1), top, false)
+	_sphere_into(st, Vector3(0, 1.45, 0), 0.2, top, Vector3(1.15, 0.55, 0.8))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.05, -0.155)), Vector3(0.24, 0.12, 0.03), top * 0.85)
+	# arms: hands in the pockets / hanging, a bit bent
+	for s in [-1.0, 1.0]:
+		limb.call(Vector3(s * 0.23, 1.42, 0.0), Vector3(s * 0.28, 1.17, -0.04), 0.06, 0.055, top)
+		limb.call(Vector3(s * 0.28, 1.17, -0.04), Vector3(s * 0.2, 1.0, -0.14), 0.052, 0.045, top)
+		_sphere_into(st, Vector3(s * 0.18, 0.97, -0.16), 0.042, skin)
+	# neck, head with ears, eyes, brows, hair
+	limb.call(Vector3(0, 1.5, 0.0), Vector3(0, 1.58, -0.01), 0.05, 0.05, skin)
+	var hc := Vector3(0, 1.7, -0.01)
+	_sphere_into(st, hc, 0.115, skin, Vector3(0.92, 1.05, 1.0))
+	for s in [-1.0, 1.0]:
+		_sphere_into(st, hc + Vector3(s * 0.105, 0.0, 0.01), 0.025, skin * 0.95)
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, hc + Vector3(s * 0.04, 0.02, -0.105)), Vector3(0.028, 0.014, 0.01), Color(0.05, 0.04, 0.04))
+		MeshKit.box(st, Transform3D(Basis.from_euler(Vector3(0, 0, s * -0.15)), hc + Vector3(s * 0.042, 0.05, -0.103)), Vector3(0.04, 0.01, 0.01), Color(0.1, 0.07, 0.05))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, hc + Vector3(0, -0.05, -0.107)), Vector3(0.04, 0.008, 0.008), skin * 0.6)
+	_sphere_into(st, hc + Vector3(0, 0.05, 0.02), 0.11, Color(0.06, 0.05, 0.04), Vector3(0.95, 0.75, 0.95))
 	if hood:
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.68, 0.03)), Vector3(0.28, 0.3, 0.28), top * 0.9)
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.62, -0.1)), Vector3(0.2, 0.24, 0.02), skin)
+		# hood down over the shoulders, strings
+		_sphere_into(st, Vector3(0, 1.52, 0.1), 0.15, top * 0.9, Vector3(1.3, 0.7, 1.0))
+		for s in [-1.0, 1.0]:
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(s * 0.05, 1.33, -0.19)), Vector3(0.012, 0.14, 0.012), Color(0.9, 0.9, 0.88))
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.roughness = 0.85
 	root.add_child(MeshKit.mesh_instance(MeshKit.commit(st, m)))
 	return root
+
+
+func _sphere_into(st: SurfaceTool, c: Vector3, r: float, col: Color, sc := Vector3.ONE) -> void:
+	var rings := 6
+	var seg := 10
+	for i in rings:
+		var a0 := PI * i / rings - PI * 0.5
+		var a1 := PI * (i + 1) / rings - PI * 0.5
+		for j in seg:
+			var b0 := TAU * j / seg
+			var b1 := TAU * (j + 1) / seg
+			var n00 := Vector3(cos(a0) * cos(b0), sin(a0), cos(a0) * sin(b0))
+			var n01 := Vector3(cos(a0) * cos(b1), sin(a0), cos(a0) * sin(b1))
+			var n11 := Vector3(cos(a1) * cos(b1), sin(a1), cos(a1) * sin(b1))
+			var n10 := Vector3(cos(a1) * cos(b0), sin(a1), cos(a1) * sin(b0))
+			MeshKit.quad(st, c + n00 * r * sc, c + n01 * r * sc, c + n11 * r * sc, c + n10 * r * sc, (n00 + n11).normalized(),
+				Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, col)
 
 
 # ---------------------------------------------------------------------------
