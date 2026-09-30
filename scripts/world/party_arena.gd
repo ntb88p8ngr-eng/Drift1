@@ -496,7 +496,7 @@ func _spawn_pickups() -> void:
 	while clock >= _next_pu * PICKUP_EVERY + 3.0:
 		var k := _next_pu
 		_next_pu += 1
-		if pickups.size() >= PICKUP_MAX:
+		if pickups.size() >= clampi(int(sites.arena_len() / 70.0), PICKUP_MAX, 12):
 			continue
 		var kind := "triple" if k % 2 == 0 else "rapid"
 		var node := _pickup_node(kind)
@@ -631,6 +631,17 @@ func _bot_ai(id: int) -> Array:
 		var tc: Node3D = fighters[tid]["car"]
 		var tv: Vector3 = (tc as RigidBody3D).linear_velocity
 		goal = tc.global_position + tv * clampf(pos.distance_to(tc.global_position) / SHOT_SPEED, 0.0, 0.6)
+	# a big battlefield (balloon battle over the whole lap): far rivals are reached along the road
+	var tr = world.track
+	if tid != 0 and fighters.has(tid) and sites.arena_len() > 200.0 and pos.distance_to(goal) > 35.0:
+		var pa: Array = tr.project(pos, car.track_hint)
+		var pb: Array = tr.project(goal)
+		var dprog: float = float(pb[1]) - float(pa[1])
+		if sites.arena_loop():
+			dprog = wrapf(dprog, -float(tr.length) * 0.5, float(tr.length) * 0.5)
+		var dir := 1.0 if dprog > 0.0 else -1.0
+		var ahead_i := int(pa[0]) + int(dir * 16.0 / float(tr.SPACING))
+		goal = tr.transform_at(ahead_i, clampf(float(pa[2]), -float(tr.half_w) * 0.5, float(tr.half_w) * 0.5), 0.0).origin
 	if str(f["power"]) == "":
 		for k in pickups:
 			var pp: Vector3 = (pickups[k]["node"] as Node3D).global_position

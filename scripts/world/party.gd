@@ -24,7 +24,7 @@ const GAMES := [
 		"desc": "Zwei Würfe auf zehn Riesen-Kegel: Nimm Anlauf und ziel gut – ab der roten Linie rollst du ohne Gas und Lenkung weiter!"},
 	{"id": "arena", "name": "Arena-Shootout", "time": 75.0, "unit": "x",
 		"desc": "Schieß die anderen ab! [F] / Linksklick = Feuer, 3 Treffer = raus. Münzen geben Dreifach-Schuss oder Schnellfeuer. Allein kämpfst du gegen Bots."},
-	{"id": "balloon", "name": "Ballon-Schlacht", "time": 90.0, "unit": "x",
+	{"id": "balloon", "name": "Ballon-Schlacht", "time": 120.0, "unit": "x",
 		"desc": "Jedes Auto hat 3 Ballons – schieß sie den anderen ab! [F] / Linksklick = Feuer. Ohne Ballons bist du raus, wer am längsten durchhält, gewinnt. Münzen: Dreifach-Schuss / Schnellfeuer."},
 ]
 const ANNOUNCE_TIME := 4.5

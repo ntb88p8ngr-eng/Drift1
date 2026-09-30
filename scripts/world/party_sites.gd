@@ -24,6 +24,10 @@ const KOTH_ZONE_R := 5.0
 const DONUT_R := 16.0             # a donut counts within this distance of your spot
 const BOWL_START := 8.0
 const ARENA_WALL := 4.0           # the arena's end walls, m in from both ends of its stretch
+## Balloon battle: the whole lap on tracks up to this length (the playground), else a walled
+## stretch of BALLOON_LEN metres – far more room than the shoot-out arena.
+const BALLOON_LOOP_MAX := 1600.0
+const BALLOON_LEN := 520.0
 
 var track: Node3D
 var sites := {}                   # id -> {"i0": start sample, "len": metres, "p0": race progress at the start}
@@ -33,6 +37,7 @@ var pin_mesh: ArrayMesh
 var _tyre_mesh: TorusMesh
 var _tyre_paints: Array = []
 var mud_spots: Array = []         # parkour: [centre, radius] of the mud patches (less grip)
+var arena_id := "arena"           # the site the arena functions work on (arena or balloon)
 var _course: Node3D
 
 
@@ -81,10 +86,28 @@ func plan(p_track: Node3D) -> bool:
 		used.append([best, cnt])
 		var p0 := fposmod(float(track.dists[best]) - float(track.start_dist), float(track.length))
 		sites[id] = {"i0": best, "len": len, "p0": p0}
-	# the balloon battle is fought in the arena
-	if sites.has("arena"):
-		sites["balloon"] = sites["arena"]
+	# the balloon battle: the whole lap on short tracks, a long straight-ish stretch elsewhere
+	if float(track.length) <= BALLOON_LOOP_MAX:
+		var i0: int = track.start_index
+		sites["balloon"] = {"i0": i0, "len": float(track.length), "p0": 0.0, "loop": true}
+	else:
+		var cnt_b := int(ceil(BALLOON_LEN / sp)) + 10
+		var best_b := -1
+		var best_bt := 1e9
+		for i in range(0, n, 4):
+			var tb := turn[i + mini(cnt_b, n)] - turn[i]
+			if tb < best_bt:
+				best_bt = tb
+				best_b = i
+		if best_b >= 0:
+			var pb := fposmod(float(track.dists[best_b]) - float(track.start_dist), float(track.length))
+			sites["balloon"] = {"i0": best_b, "len": BALLOON_LEN, "p0": pb}
 	return not sites.is_empty()
+
+
+## True when the arena game runs over the whole closed lap (no end walls).
+func arena_loop() -> bool:
+	return bool(sites[arena_id].get("loop", false))
 
 
 func _overlaps(i: int, cnt: int, used: Array, n: int) -> bool:
@@ -128,6 +151,7 @@ func start_xf(id: String, slot: int, count: int) -> Transform3D:
 			# everybody bowls on their own pins from the same spot (the others are ghosts here)
 			return course_xf(id, BOWL_START - 4.0, 0.0, 0.6)
 		"arena", "balloon":
+			arena_id = id
 			return arena_spawn(slot)
 	return course_xf(id, donut_along(slot), 0.0, 0.6)
 
@@ -184,6 +208,7 @@ func build_course(id: String) -> void:
 		"bowling":
 			_build_bowling()
 		"arena", "balloon":
+			arena_id = id
 			_build_arena()
 
 
@@ -544,7 +569,7 @@ func _tyre_edges(id: String, a0: float, a1: float, step: float, rng: RandomNumbe
 ## Arena: moves a prop spot along the stretch until it is `r` m away from every spawn spot.
 func _clear_of_spawns(along: float, lateral: float, r: float) -> float:
 	for tries in 6:
-		var p := course_xf("arena", along, lateral, 0.0).origin
+		var p := course_xf(arena_id, along, lateral, 0.0).origin
 		var ok := true
 		for sl in 8:
 			var sp := arena_spawn(sl).origin
@@ -814,7 +839,7 @@ static func reset_pins(pins: Array) -> void:
 # Arena (shoot-out)
 # ---------------------------------------------------------------------------
 func arena_len() -> float:
-	return float(sites["arena"]["len"])
+	return float(sites[arena_id]["len"])
 
 
 ## Spawn spot `slot` (0..7) in the arena: spread over its length, alternating sides, facing inwards.
@@ -822,9 +847,19 @@ func arena_spawn(slot: int) -> Transform3D:
 	var l := arena_len()
 	var hw: float = track.half_w
 	var s := slot % 8
+	if arena_loop():
+		# spread round the whole lap, everybody facing the race direction
+		return course_xf(arena_id, l * float(s) / 8.0 + 6.0, (-1.0 if s % 2 == 0 else 1.0) * hw * 0.35, 0.6)
+	if l > 200.0:
+		# a long stretch: spread over its whole length, alternating sides
+		var al := lerpf(ARENA_WALL + 12.0, l - ARENA_WALL - 12.0, float(s) / 7.0)
+		var xf2 := course_xf(arena_id, al, (-1.0 if s % 2 == 0 else 1.0) * (hw - 2.6), 0.6)
+		if s % 2 == 1:
+			xf2.basis = xf2.basis.rotated(xf2.basis.y.normalized(), PI)
+		return xf2
 	var along := lerpf(ARENA_WALL + 8.0, l - ARENA_WALL - 8.0, float(s % 4) / 3.0)
 	var lat := (-1.0 if s % 2 == 0 else 1.0) * (hw - 2.6) * (1.0 if s < 4 else 0.3)
-	var xf := course_xf("arena", along, lat, 0.6)
+	var xf := course_xf(arena_id, along, lat, 0.6)
 	if along > l * 0.5:
 		xf.basis = xf.basis.rotated(xf.basis.y.normalized(), PI)
 	return xf
@@ -835,16 +870,22 @@ func arena_pickup(seed_v: int, k: int) -> Transform3D:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([seed_v, "pu", k])
 	var hw: float = track.half_w
-	return course_xf("arena", r.randf_range(ARENA_WALL + 6.0, arena_len() - ARENA_WALL - 6.0), r.randf_range(-1.0, 1.0) * (hw - 2.0), 1.2)
+	var lo := 0.0 if arena_loop() else ARENA_WALL + 6.0
+	var hi := arena_len() if arena_loop() else arena_len() - ARENA_WALL - 6.0
+	return course_xf(arena_id, r.randf_range(lo, hi), r.randf_range(-1.0, 1.0) * (hw - 2.0), 1.2)
 
 
 func _build_arena() -> void:
-	var id := "arena"
+	var id := arena_id
 	var hw: float = track.half_w
 	var l := arena_len()
+	var loop := arena_loop()
 	var concrete := TexKit.std(Color(0.62, 0.62, 0.6), 0.9)
 	var stripe := _mat(Color(1.0, 0.25, 0.1), 0.6, 0.6)
 	var dark := _mat(Color(0.12, 0.12, 0.14), 0.7)
+	if loop:
+		_build_arena_loop(id, hw, l)
+		return
 	# walls all round: across both ends and along both edges (following the road)
 	for end: float in [ARENA_WALL, l - ARENA_WALL]:
 		_block(id, end, 0.0, Vector3(hw * 2.0 + 1.6, 1.6, 0.8), concrete, 0.0, 0.8)
@@ -859,7 +900,7 @@ func _build_arena() -> void:
 	# cover: container-sized blocks and barrier rows scattered in the middle
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(["arena", int(sites[id]["i0"])])
-	var n := int(clampf(l / 22.0, 3.0, 6.0))
+	var n := int(clampf(l / 22.0, 3.0, 24.0))
 	var cols := [Color(0.55, 0.12, 0.08), Color(0.1, 0.3, 0.55), Color(0.2, 0.45, 0.2), Color(0.7, 0.5, 0.1)]
 	for m in n:
 		var along := lerpf(ARENA_WALL + 16.0, l - ARENA_WALL - 16.0, (m + rng.randf_range(0.3, 0.7)) / n)
@@ -872,10 +913,11 @@ func _build_arena() -> void:
 		_course.add_child(mi)
 		mi.global_transform = xf
 		Colliders.add_box(_course, xf, size)
-	_gantry(id, ARENA_WALL - 3.0, "ARENA", Color(1.0, 0.3, 0.2))
+	_gantry(id, ARENA_WALL - 3.0, "ARENA" if id == "arena" else "BALLON-SCHLACHT", Color(1.0, 0.3, 0.2))
 	# tyre heaps as more (softer looking) cover, and stacks in front of the walls
-	for m in int(clampf(l / 18.0, 3.0, 7.0)):
-		var ca := lerpf(ARENA_WALL + 12.0, l - ARENA_WALL - 12.0, (m + rng.randf_range(0.2, 0.8)) / clampf(l / 18.0, 3.0, 7.0))
+	var heaps := int(clampf(l / 18.0, 3.0, 28.0))
+	for m in heaps:
+		var ca := lerpf(ARENA_WALL + 12.0, l - ARENA_WALL - 12.0, (m + rng.randf_range(0.2, 0.8)) / float(heaps))
 		var cl := (1.0 if m % 2 == 0 else -1.0) * rng.randf_range(0.3, 0.7) * hw
 		_tyre_cluster(id, _clear_of_spawns(ca, cl, 4.5), cl, rng)
 	_tyre_edges(id, ARENA_WALL + 2.0, l - ARENA_WALL - 2.0, 11.0, rng, 1, 3)
@@ -887,3 +929,47 @@ func _build_arena() -> void:
 	var rmi := MeshKit.mesh_instance(ring, _mat(Color(1.0, 0.3, 0.15), 0.6, 0.8), false)
 	_course.add_child(rmi)
 	rmi.global_transform = course_xf(id, l * 0.5, 0.0, float(track.ROAD_Y) + 0.012) * Transform3D(Basis.from_scale(Vector3(1, 0.04, 1)), Vector3.ZERO)
+
+
+## Balloon battle over the whole lap: no walls (the track's own barriers and the infield are the
+## arena), cover blocks and tyre heaps spread all round, a gantry at the start.
+func _build_arena_loop(id: String, hw: float, l: float) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(["balloon", int(sites[id]["i0"])])
+	var cols := [Color(0.55, 0.12, 0.08), Color(0.1, 0.3, 0.55), Color(0.2, 0.45, 0.2), Color(0.7, 0.5, 0.1)]
+	var n := int(clampf(l / 45.0, 6.0, 30.0))
+	for m in n:
+		var along := l * (m + rng.randf_range(0.25, 0.75)) / n
+		var lat := (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.15, 0.5) * hw
+		along = _clear_of_spawns(along, lat, 6.0)
+		if _near_crossing(id, along):
+			continue
+		var size := Vector3(rng.randf_range(2.2, 3.0), rng.randf_range(1.6, 2.4), rng.randf_range(3.0, 5.0))
+		var xf := _road_xf(id, along, lat, rng.randf_range(-0.5, 0.5), size.y * 0.5)
+		var mi := MeshKit.box_node(size, TexKit.container_material(cols[m % cols.size()]))
+		_course.add_child(mi)
+		mi.global_transform = xf
+		Colliders.add_box(_course, xf, size)
+	var heaps := int(clampf(l / 35.0, 6.0, 36.0))
+	for m in heaps:
+		var ca := l * (m + rng.randf_range(0.2, 0.8)) / heaps
+		var cl := (1.0 if m % 2 == 0 else -1.0) * rng.randf_range(0.35, 0.7) * hw
+		ca = _clear_of_spawns(ca, cl, 5.0)
+		if not _near_crossing(id, ca):
+			_tyre_cluster(id, ca, cl, rng)
+	_gantry(id, 2.0, "BALLON-SCHLACHT", Color(1.0, 0.3, 0.2))
+
+
+## A point of the lap close to another part of the road (the figure-8 crossing): keep it free.
+func _near_crossing(id: String, along: float) -> bool:
+	var p := course_xf(id, along, 0.0, 0.0).origin
+	var proj: Array = track.project(p)
+	var own: float = proj[1]
+	var n: int = track.sample_count()
+	for i in range(0, n, 3):
+		var q: Vector3 = track.samples[i]
+		if Vector2(q.x - p.x, q.z - p.z).length() < float(track.half_w) * 2.0 + 6.0:
+			var d := absf(wrapf(fposmod(float(track.dists[i]) - float(track.start_dist), float(track.length)) - own, -float(track.length) * 0.5, float(track.length) * 0.5))
+			if d > 40.0:
+				return true
+	return false

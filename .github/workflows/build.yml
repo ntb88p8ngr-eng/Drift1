@@ -69,6 +69,12 @@ jobs:
           if grep -E "SCRIPT ERROR" shift.log; then echo "::error::Shift test failed"; exit 1; fi
           grep -q "SHIFT TEST OK" shift.log
 
+      - name: Lift test (offroad ride height really raises the body)
+        run: |
+          timeout 120 ./godot --headless --path . res://tests/lift_test.tscn 2>&1 | tee lift.log || true
+          if grep -E "SCRIPT ERROR" lift.log; then echo "::error::Lift test failed"; exit 1; fi
+          grep -q "LIFT TEST: PASS" lift.log
+
       - name: Camera test (no jitter at 75 fps with 120 Hz physics)
         run: |
           timeout 240 ./godot --headless --fixed-fps 75 --path . res://tests/camera_test.tscn 2>&1 | tee camera.log || true

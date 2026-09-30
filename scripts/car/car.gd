@@ -361,7 +361,7 @@ func _setup_physics() -> void:
 
 func _setup_wheels() -> void:
 	var tr: float = body_spec["track"]
-	var mount_y := radius + SUSP_TRAVEL + lift - SAG
+	var mount_y := radius + SUSP_TRAVEL - SAG
 	var local := [
 		Vector3(-tr, mount_y, body_spec["axle_f"]), Vector3(tr, mount_y, body_spec["axle_f"]),
 		Vector3(-tr, mount_y, body_spec["axle_r"]), Vector3(tr, mount_y, body_spec["axle_r"]),
@@ -1038,14 +1038,12 @@ func reset_to_track() -> void:
 ## Lifts the car: `m` metres more ride height and the same again as extra spring travel, so it can
 ## crawl over logs and land jumps. The static sag stays the same (same spring rate).
 func set_lift(m: float) -> void:
+	# longer springs from the same mounts: the rest length grows by `m`, so the same load leaves
+	# the body `m` higher (moving the mounts up as well would cancel that out)
 	var d := m - lift
 	lift = m
 	for w in wheels:
-		var mount: Vector3 = w["mount"]
-		mount.y += d
-		w["mount"] = mount
 		var ray: RayCast3D = w["ray"]
-		ray.position = mount
 		ray.target_position = Vector3(0, -(SUSP_TRAVEL + lift + radius), 0)
 		w["spring_len"] = float(w["spring_len"]) + d
 	# the body sits higher, keep the mass where it was relative to the ground (no easy roll-overs)
