@@ -81,6 +81,18 @@ static func get_mesh(name: String) -> Mesh:
 				_tyre_stack(st)
 			"banner_tower":
 				_banner_tower(st)
+			"car_sedan", "car_hatch", "car_kei", "car_van":
+				_parked_car(st, name)
+			"bicycle":
+				_bicycle(st)
+			"wheelie_bin":
+				_wheelie_bin(st)
+			"garden_lamp":
+				_garden_lamp(st)
+			"fence":
+				_fence(st)
+			"hydrant":
+				_hydrant(st)
 		_cache[name] = MeshKit.commit(st, material())
 	return _cache[name]
 
@@ -282,3 +294,111 @@ static func _banner_tower(st: SurfaceTool) -> void:
 		_b(st, Vector3(0.35, y, 0), Vector3(0.05, 0.05, 0.7), s)
 		_b(st, Vector3(-0.35, y, 0), Vector3(0.05, 0.05, 0.7), s)
 	_b(st, Vector3(0, 0.1, 0), Vector3(1.2, 0.2, 1.2), CONCRETE)
+
+
+## Parked cars (front = -Z, ground = y 0). The body is white: the instance tint paints it.
+## Sizes: sedan 4.6 m, hatchback 4.0 m, kei car 3.4 m (tall box), van 4.9 m (high roof).
+const CAR_SIZES := {"car_sedan": Vector3(1.78, 1.42, 4.6), "car_hatch": Vector3(1.74, 1.48, 4.0),
+	"car_kei": Vector3(1.48, 1.68, 3.4), "car_van": Vector3(1.9, 2.0, 4.9)}
+
+
+static func _parked_car(st: SurfaceTool, name: String) -> void:
+	var body := Color(0.92, 0.92, 0.92, 0.7)
+	var glass := Color(0.04, 0.05, 0.06, 0.25)
+	var dark := Color(0.05, 0.05, 0.05)
+	var sz: Vector3 = CAR_SIZES[name]
+	var w := sz.x
+	var l := sz.z
+	var wr := 0.31 if name != "car_kei" else 0.27
+	var sill := wr * 1.05
+	match name:
+		"car_sedan":
+			_b(st, Vector3(0, sill + 0.3, 0), Vector3(w, 0.6, l), body)
+			_b(st, Vector3(0, sill + 0.83, 0.15), Vector3(w - 0.2, 0.46, 2.3), body)
+			_b(st, Vector3(0, sill + 0.83, -1.05), Vector3(w - 0.24, 0.4, 0.22), glass, Vector3(0.55, 0, 0))
+			_b(st, Vector3(0, sill + 0.83, 1.35), Vector3(w - 0.24, 0.38, 0.22), glass, Vector3(-0.6, 0, 0))
+			_b(st, Vector3(0, sill + 0.86, 0.15), Vector3(w - 0.17, 0.32, 1.9), glass)
+		"car_hatch":
+			_b(st, Vector3(0, sill + 0.32, 0), Vector3(w, 0.64, l), body)
+			_b(st, Vector3(0, sill + 0.86, 0.35), Vector3(w - 0.18, 0.5, 2.3), body)
+			_b(st, Vector3(0, sill + 0.86, -0.85), Vector3(w - 0.22, 0.42, 0.22), glass, Vector3(0.55, 0, 0))
+			_b(st, Vector3(0, sill + 0.88, 0.35), Vector3(w - 0.15, 0.34, 2.0), glass)
+			_b(st, Vector3(0, sill + 0.86, 1.51), Vector3(w - 0.22, 0.4, 0.04), glass)
+		"car_kei":
+			_b(st, Vector3(0, sill + 0.35, 0), Vector3(w, 0.7, l), body)
+			_b(st, Vector3(0, sill + 1.0, 0.25), Vector3(w - 0.08, 0.62, 2.7), body)
+			_b(st, Vector3(0, sill + 1.02, 0.25), Vector3(w - 0.05, 0.42, 2.4), glass)
+			_b(st, Vector3(0, sill + 1.02, -1.12), Vector3(w - 0.14, 0.44, 0.06), glass, Vector3(0.3, 0, 0))
+		"car_van":
+			_b(st, Vector3(0, sill + 0.55, 0.25), Vector3(w, 1.1, l - 0.5), body)
+			_b(st, Vector3(0, sill + 1.42, 0.45), Vector3(w - 0.06, 0.64, l - 0.9), body)
+			_b(st, Vector3(0, sill + 0.4, -l * 0.5 + 0.3), Vector3(w, 0.8, 0.6), body)
+			_b(st, Vector3(0, sill + 1.2, -l * 0.5 + 0.72), Vector3(w - 0.1, 0.6, 0.3), glass, Vector3(0.45, 0, 0))
+			_b(st, Vector3(0, sill + 1.25, -1.2), Vector3(w + 0.01, 0.45, 1.2), glass)
+	# bumpers, lights, mirrors, number plates
+	_b(st, Vector3(0, sill + 0.08, -l * 0.5 + 0.02), Vector3(w + 0.02, 0.2, 0.1), dark)
+	_b(st, Vector3(0, sill + 0.08, l * 0.5 - 0.02), Vector3(w + 0.02, 0.2, 0.1), dark)
+	for s in [-1.0, 1.0]:
+		_b(st, Vector3(s * (w * 0.5 - 0.22), sill + 0.42, -l * 0.5 + 0.005), Vector3(0.3, 0.1, 0.02), Color(0.95, 0.95, 0.88, 0.3))
+		_b(st, Vector3(s * (w * 0.5 - 0.2), sill + 0.46, l * 0.5 - 0.005), Vector3(0.28, 0.1, 0.02), Color(0.75, 0.05, 0.05))
+		_b(st, Vector3(s * (w * 0.5 + 0.06), sill + 0.8, -0.95), Vector3(0.1, 0.08, 0.14), dark)
+	_b(st, Vector3(0, sill + 0.2, -l * 0.5 - 0.035), Vector3(0.36, 0.1, 0.01), Color(0.95, 0.95, 0.9))
+	_b(st, Vector3(0, sill + 0.3, l * 0.5 + 0.035), Vector3(0.36, 0.1, 0.01), Color(0.95, 0.95, 0.9))
+	# wheels with rims
+	var ax := l * 0.5 - (0.75 if name != "car_van" else 0.85)
+	for z: float in [-ax, ax]:
+		for x: float in [-w * 0.5 + 0.12, w * 0.5 - 0.12]:
+			var sx := signf(x)
+			_cyl(st, Vector3(x - sx * 0.1, wr, z), Vector3(x + sx * 0.1, wr, z), wr, wr, Color(0.05, 0.05, 0.055), 14)
+			_cyl(st, Vector3(x + sx * 0.1, wr, z), Vector3(x + sx * 0.105, wr, z), wr * 0.62, wr * 0.62, STEEL, 12)
+
+
+static func _bicycle(st: SurfaceTool) -> void:
+	var frame := Color(0.85, 0.85, 0.85, 0.6)
+	var tyre := Color(0.05, 0.05, 0.05)
+	for z: float in [-0.52, 0.52]:
+		_cyl(st, Vector3(-0.015, 0.34, z), Vector3(0.015, 0.34, z), 0.34, 0.34, tyre, 18)
+		_cyl(st, Vector3(-0.017, 0.34, z), Vector3(0.017, 0.34, z), 0.05, 0.05, STEEL, 8)
+	_cyl(st, Vector3(0, 0.34, 0.52), Vector3(0, 0.62, -0.02), 0.018, 0.018, frame, 6)
+	_cyl(st, Vector3(0, 0.34, -0.52), Vector3(0, 0.78, -0.4), 0.018, 0.018, frame, 6)
+	_cyl(st, Vector3(0, 0.62, -0.02), Vector3(0, 0.76, -0.38), 0.018, 0.018, frame, 6)
+	_cyl(st, Vector3(0, 0.62, -0.02), Vector3(0, 0.34, 0.52), 0.015, 0.015, frame, 6)
+	_cyl(st, Vector3(0, 0.62, -0.02), Vector3(0, 0.84, 0.1), 0.015, 0.015, frame, 6)
+	_b(st, Vector3(0, 0.87, 0.12), Vector3(0.12, 0.05, 0.24), Color(0.05, 0.05, 0.05))
+	_cyl(st, Vector3(0, 0.78, -0.4), Vector3(0, 0.95, -0.43), 0.015, 0.015, frame, 6)
+	_b(st, Vector3(0, 0.96, -0.43), Vector3(0.5, 0.025, 0.025), Color(0.1, 0.1, 0.1))
+	_b(st, Vector3(0, 0.62, 0.34), Vector3(0.14, 0.02, 0.4), frame)     # rack
+
+
+static func _wheelie_bin(st: SurfaceTool) -> void:
+	var c := Color(0.92, 0.92, 0.92, 0.9)
+	_b(st, Vector3(0, 0.5, 0), Vector3(0.58, 0.96, 0.7), c)
+	_b(st, Vector3(0, 1.0, -0.02), Vector3(0.62, 0.05, 0.76), c * 0.85, Vector3(-0.06, 0, 0))
+	_b(st, Vector3(0, 0.95, 0.38), Vector3(0.5, 0.05, 0.05), Color(0.1, 0.1, 0.1))
+	for x: float in [-0.24, 0.24]:
+		_cyl(st, Vector3(x - 0.03, 0.1, 0.33), Vector3(x + 0.03, 0.1, 0.33), 0.1, 0.1, Color(0.05, 0.05, 0.05), 10)
+
+
+static func _garden_lamp(st: SurfaceTool) -> void:
+	_cyl(st, Vector3(0, 0, 0), Vector3(0, 0.9, 0), 0.04, 0.035, IRON, 8)
+	_b(st, Vector3(0, 0.98, 0), Vector3(0.18, 0.16, 0.18), Color(0.95, 0.9, 0.75))
+	_b(st, Vector3(0, 1.08, 0), Vector3(0.24, 0.04, 0.24), IRON)
+
+
+static func _fence(st: SurfaceTool) -> void:
+	# 2 m of picket fence, white (tint for other colours)
+	var c := Color(0.95, 0.95, 0.93)
+	for x: float in [-1.0, 1.0]:
+		_b(st, Vector3(x * 0.98, 0.5, 0), Vector3(0.08, 1.0, 0.08), c)
+	for y: float in [0.3, 0.72]:
+		_b(st, Vector3(0, y, 0.04), Vector3(2.0, 0.07, 0.03), c)
+	for k in 12:
+		_b(st, Vector3(-0.9 + k * 0.164, 0.46, 0.07), Vector3(0.08, 0.86, 0.02), c)
+
+
+static func _hydrant(st: SurfaceTool) -> void:
+	var red := Color(0.8, 0.1, 0.08, 0.8)
+	_cyl(st, Vector3(0, 0, 0), Vector3(0, 0.08, 0), 0.14, 0.14, red, 10)
+	_cyl(st, Vector3(0, 0.08, 0), Vector3(0, 0.62, 0), 0.1, 0.1, red, 10)
+	_cyl(st, Vector3(0, 0.62, 0), Vector3(0, 0.72, 0), 0.11, 0.06, red, 10)
+	_cyl(st, Vector3(-0.17, 0.45, 0), Vector3(0.17, 0.45, 0), 0.045, 0.045, red, 8)

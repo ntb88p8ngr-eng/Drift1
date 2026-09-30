@@ -154,7 +154,7 @@ static func concrete() -> ImageTexture:
 	var img := Image.create(s, s, false, Image.FORMAT_RGB8)
 	var n := _noise(21, 0.03, 5)
 	var st := _noise(22, 0.012, 3)
-	var cr := _noise(23, 0.02, 1)
+	var cr := _noise(23, 0.007, 1)
 	cr.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
 	cr.noise_type = FastNoiseLite.TYPE_CELLULAR
 	for y in s:
@@ -163,8 +163,8 @@ static func concrete() -> ImageTexture:
 			var c := Color(g, g, g * 0.98)
 			var stain := smoothstep(0.35, 0.6, st.get_noise_2d(x, y))
 			c = c.lerp(Color(0.2, 0.19, 0.18), stain * 0.7)
-			var crack := smoothstep(0.03, 0.0, absf(cr.get_noise_2d(x, y) + 0.9))
-			c = c.darkened(crack * 0.4)
+			var crack := smoothstep(0.02, 0.0, absf(cr.get_noise_2d(x, y) + 0.93)) * smoothstep(-0.2, 0.3, st.get_noise_2d(x * 0.7 + 90.0, y * 0.7))
+			c = c.darkened(crack * 0.22)
 			img.set_pixel(x, y, c)
 	return _finish("concrete", img)
 
@@ -236,11 +236,14 @@ static func walnut() -> ImageTexture:
 		return _cache["walnut"]
 	var s := 128
 	var img := Image.create(s, s, false, Image.FORMAT_RGB8)
-	var g := _noise(51, 0.03, 3)
+	var g := _noise(51, 0.02, 3)
+	var fine := _noise(52, 0.3, 2)
 	for y in s:
 		for x in s:
-			var v := 0.5 + 0.5 * sin(x * 0.35 + g.get_noise_2d(x * 0.3, y * 2.0) * 6.0)
-			img.set_pixel(x, y, Color(0.26, 0.15, 0.08).lerp(Color(0.38, 0.23, 0.12), v))
+			# long, fine grain along v with a gentle wave, pores
+			var v := 0.5 + 0.5 * sin(x * 1.1 + g.get_noise_2d(x * 0.2, y * 0.6) * 2.2)
+			var pore := fine.get_noise_2d(x * 3.0, y * 0.5) * 0.08
+			img.set_pixel(x, y, Color(0.27, 0.16, 0.085).lerp(Color(0.36, 0.22, 0.115), v * 0.7).darkened(pore))
 	return _finish("walnut", img)
 
 

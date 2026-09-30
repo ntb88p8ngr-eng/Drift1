@@ -165,25 +165,24 @@ uniform float flash = 0.0;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 void fragment() {
-	vec2 uv = UV * vec2(3.0, 2.0);
-	// drops: a grid of cells, each with a drop that slides down now and then, leaving a trail
-	vec2 cell = floor(uv * vec2(9.0, 5.0));
-	vec2 f = fract(uv * vec2(9.0, 5.0));
+	// small beads of rain that slide down now and then, and a few streaks – dark, clear glass
+	vec2 uv = UV * vec2(6.0, 3.0);
+	vec2 cell = floor(uv * vec2(14.0, 8.0));
+	vec2 f = fract(uv * vec2(14.0, 8.0));
 	float h = hash(cell);
-	float t = fract(TIME * (0.08 + h * 0.15) + h);
+	float t = fract(TIME * (0.04 + h * 0.12) + h);
 	float y = 1.0 - t;
-	vec2 d = vec2((f.x - 0.5 - (h - 0.5) * 0.4) * 2.2, f.y - y);
-	float drop = smoothstep(0.09, 0.03, length(d * vec2(1.0, 1.6)));
-	float trail = smoothstep(0.04, 0.0, abs(d.x)) * step(y, f.y) * (1.0 - smoothstep(0.0, 0.5, f.y - y)) * 0.5;
-	float small = smoothstep(0.72, 0.8, texture(noise_tex, UV * 4.0).r) * 0.6;
-	float wet = clamp(drop + trail + small, 0.0, 1.0);
-	ALBEDO = vec3(0.05, 0.06, 0.08) + vec3(0.6, 0.65, 0.75) * flash * 0.3;
-	ALPHA = 0.18 + wet * 0.35;
-	ROUGHNESS = mix(0.05, 0.0, wet);
-	METALLIC = 0.0;
-	SPECULAR = 0.9;
-	NORMAL_MAP = normalize(vec3(0.5 + d.x * wet * 0.8, 0.5 - d.y * wet * 0.8, 1.0));
-	EMISSION = vec3(0.7, 0.75, 0.9) * flash * wet * 0.8;
+	vec2 d = vec2((f.x - 0.5 - (h - 0.5) * 0.5) * 2.4, f.y - y);
+	float drop = smoothstep(0.1, 0.04, length(d * vec2(1.0, 1.5))) * step(0.45, h);
+	float trail = smoothstep(0.035, 0.0, abs(d.x)) * step(y, f.y) * (1.0 - smoothstep(0.0, 0.35, f.y - y)) * 0.35 * step(0.45, h);
+	float beads = smoothstep(0.8, 0.86, texture(noise_tex, UV * 7.0).r) * 0.5;
+	float wet = clamp(drop + trail + beads, 0.0, 1.0);
+	ALBEDO = vec3(0.03, 0.035, 0.045);
+	ALPHA = 0.1 + wet * 0.22;
+	ROUGHNESS = 0.02;
+	SPECULAR = 0.35 + wet * 0.3;
+	NORMAL_MAP = normalize(vec3(0.5 + d.x * wet * 0.6, 0.5 - d.y * wet * 0.6, 1.0));
+	EMISSION = vec3(0.6, 0.65, 0.8) * flash * wet * 0.35;
 }
 """
 	return sh
@@ -276,6 +275,9 @@ func _place_house() -> void:
 	add_child(house)
 	house.global_transform = house_xf
 	scenery.occupy(centre, 15.0)
+	# no grass through the floors: concrete ground under the whole house and garage
+	for k in 5:
+		_paint(house_xf * Vector3(-7.0 + k * 3.8, 0, 0), 6.5, Color(1.0, 0.0, 0.0, 0.0))
 	# the car in the garage, nose towards the roller door
 	car_xf = house_xf * Transform3D(Basis.IDENTITY, Vector3(GARAGE_X, GF + 0.45, -0.3))
 	var a := house_xf * Vector3(-9.6, -1.0, -5.0)
@@ -502,6 +504,7 @@ func _build_structure() -> void:
 	_wall_z("wall_in", -9.0, -4.5, 4.5, FL, CEIL, left_holes, 0.1, false)
 	# shared wall house / garage with the door
 	_wall_z("blocks", 2.0, -4.5, 4.5, -0.6, CEIL, [[-0.45, 0.45, FL, FL + 2.1]], 0.2, true, Color(0.93, 0.93, 0.9))
+	_wall_z("wall_in", 1.88, -4.5, 4.5, FL, CEIL, [[-0.45, 0.45, FL, FL + 2.1]], 0.02, false, Color(0.95, 0.93, 0.9))
 	# partition living room | hallway, with a wide passage
 	_wall_z("wall_in", -1.0, -4.5, 4.5, FL, CEIL, [[-0.9, 0.3, FL, FL + 2.25]], 0.14, false)
 	# ceilings
@@ -687,6 +690,9 @@ void fragment() {
 	for s: float in [-1.0, 1.0]:
 		for k in 5:
 			_b("fabric", Vector3(-6.3 + s * (2.05 + k * 0.08), f + 1.25, -4.33 - (k % 2) * 0.04), Vector3(0.12, 2.5, 0.05), Color(0.72, 0.62, 0.48))
+	# a wall light between the clock and the poster
+	_b("metal", Vector3(-1.1, f + 2.3, -2.35), Vector3(0.06, 0.08, 0.1), Color(0.15, 0.12, 0.1))
+	_cyl("shade", Vector3(-1.22, f + 2.22, -2.35), Vector3(-1.22, f + 2.4, -2.35), 0.1, 0.07)
 	# wall clock on the partition (faces the living room, -X)
 	_build_clock(Vector3(-1.08, f + 1.95, -3.0))
 	# pictures: the Skyline poster and a photo of the Nordschleife gang
@@ -1045,7 +1051,9 @@ func _lamp(local: Vector3, col: Color, energy: float, rng: float, shadow := fals
 
 
 func _build_lights() -> void:
-	_lamp(Vector3(-8.55, FL + 1.6, -4.1), WARM, 1.6, 6.5, true)            # floor lamp
+	_lamp(Vector3(-8.55, FL + 1.6, -4.1), WARM, 1.8, 8.5, true)            # floor lamp
+	_lamp(Vector3(-4.2, CEIL - 0.5, -1.9), WARM, 0.55, 8.0)                 # soft fill from the ceiling
+	_lamp(Vector3(-1.35, FL + 2.3, -2.35), WARM, 0.7, 4.0)                  # wall light by the clock
 	_lamp(Vector3(-5.0, FL + 0.95, -3.35), WARM, 0.5, 3.0)                  # side table
 	_lamp(Vector3(-6.85, CEIL - 1.2, -1.8), WARM, 0.9, 5.5, true)           # pendant
 	_lamp(Vector3(-6.2, CEIL - 1.05, 2.4), WARM, 0.8, 5.0)                  # kitchen

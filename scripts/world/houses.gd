@@ -97,8 +97,13 @@ static func _material(surf: int) -> Material:
 
 ## Builds a building; returns a Node3D whose origin is on the ground in the middle of the lot.
 ## `xf` = the transform the node will get (needed for the props placed through `details`).
+## Paths of the last building: [local start, width, kind] – the scenery leads them to the road.
+var paths: Array = []
+
+
 func make(style: String, xf: Transform3D) -> Node3D:
 	_xf = xf
+	paths = []
 	_st.clear()
 	for k in COUNT:
 		_st.append(MeshKit.new_st())
@@ -271,9 +276,14 @@ func _gable_roof(c: Vector3, w: float, d: float, rise: float, over: float, col: 
 	_box(ROOF, (ridge_a + ridge_b) * 0.5 + Vector3(0, 0.05, 0), Vector3(hx * 2.0 + 0.1, 0.14, 0.26), col.darkened(0.25))
 
 
-func _prop(key: String, local: Vector3, yaw := 0.0) -> void:
+func _prop(key: String, local: Vector3, yaw := 0.0, tint := Color(1, 1, 1, 1)) -> void:
 	if details:
-		details.add(key, _xf * Transform3D(Basis(Vector3.UP, yaw), local))
+		details.add(key, _xf * Transform3D(Basis(Vector3.UP, yaw), local), tint)
+
+
+func _car(local: Vector3, yaw: float, kind := "") -> void:
+	if details:
+		details.add_parked_car(_xf * Transform3D(Basis(Vector3.UP, yaw), local), kind)
 
 
 func _pot(local: Vector3) -> void:
@@ -376,6 +386,24 @@ func _jp_house(root: Node3D) -> void:
 	for k in 3:
 		_box(CONCRETE, Vector3(gate_x + rng.randf_range(-0.1, 0.1), 0.03, gz + 0.8 + k * 0.7), Vector3(0.6, 0.08, 0.5), Color(0.6, 0.6, 0.58))
 	_prop("mailbox", Vector3(gate_x + 1.4, 0, gz - 0.25))
+	# lamps at the gate, bins and a bicycle outside the wall
+	_prop("garden_lamp", Vector3(gate_x - 1.25, 0, gz - 0.35))
+	_prop("garden_lamp", Vector3(gate_x + 1.25, 0, gz - 0.35))
+	_prop("wheelie_bin", Vector3(gate_x + 2.3, 0, gz - 0.5), rng.randf_range(-0.2, 0.2), Color(0.2, 0.4, 0.25))
+	_prop("wheelie_bin", Vector3(gate_x + 3.0, 0, gz - 0.5), rng.randf_range(-0.2, 0.2), Color(0.25, 0.3, 0.6))
+	if rng.randf() < 0.7:
+		_prop("bicycle", Vector3(gate_x - 2.1, 0, gz - 0.35), PI * 0.5 + rng.randf_range(-0.15, 0.15), Color.from_hsv(rng.randf(), 0.6, 0.8))
+	# parking space in front of the wall: concrete pad, a car on it most of the time
+	var px := w * 0.25 + 0.5
+	_box(CONCRETE, Vector3(px, 0.02, gz - 2.3), Vector3(5.2, 0.08, 2.8), Color(0.66, 0.66, 0.64))
+	if rng.randf() < 0.75:
+		_car(Vector3(px, 0.06, gz - 2.3), PI * 0.5 * (1.0 if rng.randf() < 0.5 else -1.0))
+	paths.append([Vector3(gate_x, 0, gz - 0.25), 1.3, "paving"])
+	paths.append([Vector3(px, 0, gz - 3.7), 3.0, "asphalt"])
+	# washing on the balcony pole
+	for k in rng.randi_range(2, 5):
+		var cx := bal_x - bal_w * 0.35 + k * 0.45
+		_box(TRIM, Vector3(cx, y2 + 1.45, fz - 0.8), Vector3(0.36, 0.55, 0.02), Color.from_hsv(rng.randf(), rng.randf_range(0.2, 0.7), rng.randf_range(0.6, 0.95)))
 	_pot(Vector3(door_x + 0.9, base, fz - 0.7))
 	_pot(Vector3(door_x - 0.9, base, fz - 0.7))
 	for k in rng.randi_range(1, 3):
@@ -423,6 +451,14 @@ func _shop(root: Node3D) -> void:
 		_box(TRIM, Vector3(x, 0.035, pz), Vector3(0.12, 0.01, 5.0), Color(0.92, 0.92, 0.9))
 		if k < 4:
 			_box(CONCRETE, Vector3(x + 1.3, 0.1, pz + 2.1), Vector3(1.4, 0.15, 0.22), Color(0.75, 0.75, 0.72))
+	# cars in the bays (nose in), bicycles by the door, a hydrant
+	for k in 4:
+		if rng.randf() < 0.6:
+			_car(Vector3(-w * 0.5 + 1.0 + k * 2.6 + 1.3, 0.04, pz - 0.3), PI + rng.randf_range(-0.04, 0.04))
+	for k in rng.randi_range(1, 3):
+		_prop("bicycle", Vector3(w * 0.5 - 0.6, 0, fz - 1.4 - k * 0.55), PI * 0.5, Color.from_hsv(rng.randf(), 0.7, 0.8))
+	_prop("hydrant", Vector3(w * 0.5 + 1.2, 0, pz - 3.5))
+	paths.append([Vector3(0, 0, pz - 3.6), 6.0, "asphalt"])
 	# furniture along the glass front
 	_prop("bin", Vector3(-w * 0.5 + 0.8, 0, fz - 0.8))
 	_prop("bin", Vector3(-w * 0.5 + 1.5, 0, fz - 0.8))
@@ -480,6 +516,17 @@ func _office(root: Node3D) -> void:
 		var company := "harbor" if rng.randf() < 0.5 else "kurohana_motors"
 		details.add("bill", _xf * Transform3D(Basis(Vector3(-9.0, 0, 0), Vector3(0, 1.125, 0), Vector3(0, 0, -1)), Vector3(0, h - 0.9, fz - 0.15)),
 			SignAtlas.cell("banner", company))
+	# car park row in front, bicycles by the entrance
+	_box(CONCRETE, Vector3(0, 0.0, fz - 6.2), Vector3(w + 2.0, 0.06, 5.2), Color(0.32, 0.32, 0.33))
+	for k in 4:
+		var cx: float = [-5.6, -2.9, 2.9, 5.6][k]
+		_box(TRIM, Vector3(cx - 1.35, 0.035, fz - 6.2), Vector3(0.1, 0.01, 4.6), Color(0.9, 0.9, 0.88))
+		if rng.randf() < 0.75:
+			_car(Vector3(cx, 0.04, fz - 6.2), PI + rng.randf_range(-0.04, 0.04))
+	for k in 3:
+		_prop("bicycle", Vector3(-w * 0.5 + 1.0, 0, fz - 1.2 - k * 0.6), PI * 0.5, Color.from_hsv(rng.randf(), 0.6, 0.8))
+	paths.append([Vector3(0, 0, fz - 2.9), 2.4, "paving"])
+	paths.append([Vector3(4.2, 0, fz - 8.8), 4.5, "asphalt"])
 	_prop("planter", Vector3(-3.6, 0, fz - 1.4), PI)
 	_prop("planter", Vector3(3.6, 0, fz - 1.4), PI)
 	_prop("bin", Vector3(2.9, 0, fz - 2.8))
@@ -518,6 +565,9 @@ func _barn(root: Node3D) -> void:
 	_box(WOOD, Vector3(0, h + 1.0, fz - 0.06), Vector3(1.4, 1.3, 0.08), door_col)
 	for s in [-1.0, 1.0]:
 		_window(Vector3(w * 0.5 * s, 2.2, 0.0), Vector3(s, 0, 0), 0.9, 0.8, Color(0.9, 0.88, 0.8), false)
+	# the farm van in front of the barn, a gravel drive
+	_car(Vector3(2.8, 0.0, fz - 4.6), rng.randf_range(-0.4, 0.4), "car_van")
+	paths.append([Vector3(0, 0, fz - 0.4), 4.0, "gravel"])
 	# hay bales and a fence
 	_prop("hay_bale", Vector3(w * 0.5 + 1.6, 0, fz + 1.5), 0.3)
 	_prop("hay_bale", Vector3(w * 0.5 + 1.8, 0, fz + 3.0), 1.4)

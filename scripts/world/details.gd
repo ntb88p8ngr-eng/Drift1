@@ -45,6 +45,11 @@ func setup(p_track, p_terrain, p_scenery) -> void:
 	_banner_st = MeshKit.new_st()
 	for k in ["bench", "pot_red", "pot_yellow", "pot_purple", "pot_white", "planter", "bin", "mailbox", "hay_bale", "cone", "tyre_stack"]:
 		_meshes[k] = [Props.get_mesh(k), 140.0, k == "bench" or k == "planter" or k == "hay_bale" or k == "tyre_stack"]
+	for k in ["car_sedan", "car_hatch", "car_kei", "car_van"]:
+		_meshes[k] = [Props.get_mesh(k), 360.0, true]
+	for k in ["bicycle", "wheelie_bin", "garden_lamp", "hydrant"]:
+		_meshes[k] = [Props.get_mesh(k), 120.0, false]
+	_meshes["fence"] = [Props.get_mesh("fence"), 160.0, true]
 	_meshes["post"] = [Props.get_mesh("post"), 320.0, true]
 	_meshes["billboard_frame"] = [Props.get_mesh("billboard_frame"), 1200.0, true]
 	_meshes["banner_tower"] = [Props.get_mesh("banner_tower"), 700.0, true]
@@ -59,6 +64,59 @@ func add(key: String, xf: Transform3D, tint := Color(1, 1, 1, 1)) -> void:
 		_sets[key] = {}
 	scenery._push(_sets[key], xf.origin, [xf, tint])
 	_stats[key] = int(_stats.get(key, 0)) + 1
+
+
+const CAR_KINDS := ["car_sedan", "car_sedan", "car_hatch", "car_hatch", "car_kei", "car_van"]
+const CAR_PAINTS := [Color(0.92, 0.92, 0.9), Color(0.1, 0.1, 0.11), Color(0.55, 0.56, 0.58), Color(0.62, 0.05, 0.05),
+	Color(0.08, 0.18, 0.5), Color(0.75, 0.72, 0.62), Color(0.15, 0.3, 0.2), Color(0.95, 0.75, 0.1), Color(0.35, 0.2, 0.12)]
+
+
+## A parked car (world transform on the ground, front = -Z) with a collider. kind "" = random.
+func add_parked_car(xf: Transform3D, kind := "") -> void:
+	if kind == "":
+		kind = CAR_KINDS[rng.randi() % CAR_KINDS.size()]
+	var tint: Color = CAR_PAINTS[rng.randi() % CAR_PAINTS.size()]
+	add(kind, xf, tint)
+	var sz: Vector3 = Props.CAR_SIZES[kind]
+	Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, sz.y * 0.5 + 0.1, 0)), Vector3(sz.x, sz.y - 0.2, sz.z))
+	_stats["parked_cars"] = int(_stats.get("parked_cars", 0)) + 1
+
+
+## A small car park beside the road (behind the barrier): asphalt, bay lines, two rows of cars with
+## gaps, a lamp and a bin; the entrance leads to the road.
+func add_car_park(i: int, side: float, rows := 2, bays := 5) -> bool:
+	var n: int = track.sample_count()
+	i = _idx(i)
+	var depth := 5.5 * rows + 6.0
+	var width := 2.7 * bays + 2.0
+	var pos: Vector3 = scenery._roadside(i, depth * 0.5 + 3.0, side)
+	if terrain.normal_at(pos.x, pos.z).y < 0.94 or not scenery.free_at(pos, maxf(depth, width) * 0.6, 2.0):
+		return false
+	pos.y = terrain.flatten(pos, maxf(depth, width) * 0.55, 6.0)
+	var z: Vector3 = -track.rights[i] * side          # towards the road
+	z.y = 0.0
+	z = z.normalized()
+	var x := Vector3.UP.cross(z).normalized()
+	var basis := Basis(x, Vector3.UP, z)
+	var lot := Transform3D(basis, pos)
+	scenery.add_ground_patch(lot, Vector2(width, depth), "asphalt")
+	for r in rows:
+		var rz := -depth * 0.5 + 3.0 + r * (depth - 6.0) / maxf(rows - 1, 1) if rows > 1 else 0.0
+		var facing := 0.0 if r == 0 else PI       # the rows face each other across the aisle
+		for b in bays:
+			var bx := -width * 0.5 + 1.0 + 1.35 + b * 2.7
+			scenery.add_ground_line(lot * Transform3D(Basis.IDENTITY, Vector3(bx - 1.35, 0, rz)), 5.0)
+			if rng.randf() < 0.72:
+				add_parked_car(lot * Transform3D(Basis(Vector3.UP, facing + rng.randf_range(-0.05, 0.05)), Vector3(bx + rng.randf_range(-0.15, 0.15), 0, rz)))
+		scenery.add_ground_line(lot * Transform3D(Basis.IDENTITY, Vector3(-width * 0.5 + 1.0 + bays * 2.7, 0, rz)), 5.0)
+	add("garden_lamp", lot * Transform3D(Basis.IDENTITY, Vector3(width * 0.5 - 0.5, 0, 0)).scaled_local(Vector3(1.0, 3.2, 1.0)))
+	add("wheelie_bin", lot * Transform3D(Basis.IDENTITY, Vector3(-width * 0.5 + 0.6, 0, depth * 0.5 - 0.8)), Color(0.2, 0.35, 0.2))
+	# the entrance: a short strip to the road edge
+	var edge: Vector3 = track.samples[i] + track.rights[i] * side * (float(track.half_w) + 0.8)
+	scenery.add_path([lot * Vector3(0, 0, -depth * 0.5), edge], 4.5, "asphalt")
+	scenery.occupy(pos, maxf(depth, width) * 0.6)
+	_stats["car_parks"] = int(_stats.get("car_parks", 0)) + 1
+	return true
 
 
 func add_pot(pos: Vector3) -> void:

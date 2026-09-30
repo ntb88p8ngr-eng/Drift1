@@ -579,6 +579,10 @@ func _houses() -> void:
 		add_child(house)
 		house.global_transform = xf
 		Colliders.add_trimesh(house)
+		# paths straight out towards the pad
+		for hp in builder.paths:
+			var start: Vector3 = xf * (hp[0] as Vector3)
+			scenery.add_path([start, start - xf.basis.z * 9.0], float(hp[1]), str(hp[2]))
 		scenery.occupy(pos, 11.0)
 		i += 1
 	_stats["houses"] = i

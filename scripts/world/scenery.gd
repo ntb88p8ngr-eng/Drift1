@@ -33,6 +33,8 @@ var rng := RandomNumberGenerator.new()
 var crowd: Node3D
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
+var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
+var _ground_paints: Array = []    # [pos, radius, splat colour]: no grass under them
 var lamp_lights: Array = []
 var _village := -1              # sample index the village clusters around
 
@@ -103,6 +105,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		if _village >= 0:
 			details.add_bus_stop(_village + 12, -1.0)
 	await Game.load_tick()
+	_car_parks(id)
 	if id != "playground":
 		var tp := Playground.new()
 		tp.name = "TracksideProps"
@@ -123,6 +126,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	await _build_undergrowth(id)
 	Game.load_begin("Felsen", 0.76, 0.82)
 	await _build_rocks(id)
+	_finish_ground()
 	details.finish()
 	if id == "harbor":
 		_build_skyline()
@@ -899,6 +903,7 @@ func _build_houses(count: int, styles: Array, at := -1) -> void:
 		add_child(house)
 		house.global_transform = xf
 		Colliders.add_trimesh(house)
+		_house_paths(builder, xf, style)
 		if style == "shop":
 			for k in 3:
 				_vending_machine(house, Vector3(6.1, 0, -3.3 + k * 1.05))
@@ -1425,3 +1430,181 @@ func stats_text() -> String:
 	for k in _stats.keys():
 		parts.append("%s=%d" % [k, _stats[k]])
 	return ", ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Ground: paths to the houses, driveways, car parks (thin meshes following the terrain)
+# ---------------------------------------------------------------------------
+const GROUND_PAINT := {"asphalt": Color(0.85, 0.2, 0.0, 0.0), "paving": Color(0.8, 0.3, 0.0, 0.0),
+	"gravel": Color(0.45, 0.9, 0.1, 0.0), "line": Color(0.85, 0.2, 0.0, 0.0)}
+
+
+func _ground_st(kind: String) -> SurfaceTool:
+	if not _ground_sts.has(kind):
+		_ground_sts[kind] = MeshKit.new_st()
+	return _ground_sts[kind]
+
+
+func _ground_y(p: Vector3, lift: float) -> float:
+	return terrain.height_at(p.x, p.z) + lift
+
+
+## A path through world points (resampled every metre, following the ground).
+func add_path(pts: Array, width: float, kind: String) -> void:
+	var dense: Array = []
+	for k in pts.size() - 1:
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[k + 1]
+		var n := maxi(int(Vector2(b.x - a.x, b.z - a.z).length()), 1)
+		for j in n:
+			dense.append(a.lerp(b, float(j) / n))
+	dense.append(pts[pts.size() - 1])
+	var st := _ground_st(kind)
+	var u := 0.0
+	var lift := 0.04 if kind != "paving" else 0.045
+	for k in dense.size() - 1:
+		var a: Vector3 = dense[k]
+		var b: Vector3 = dense[k + 1]
+		var dir := Vector3(b.x - a.x, 0, b.z - a.z)
+		var l := dir.length()
+		if l < 0.01:
+			continue
+		dir /= l
+		var side := Vector3(-dir.z, 0, dir.x) * width * 0.5
+		var q := [a - side, a + side, b + side, b - side]
+		for m in 4:
+			var qv: Vector3 = q[m]
+			qv.y = _ground_y(qv, lift)
+			q[m] = qv
+		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(0, u), Vector2(width * 0.5, u), Vector2(width * 0.5, u + l * 0.5), Vector2(0, u + l * 0.5))
+		u += l * 0.5
+		_ground_paints.append([a, width * 0.5 + 1.0, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
+		if k % 3 == 0:
+			occupy(a, width * 0.5 + 0.8)
+
+
+## A flat rectangle on the ground (car parks), size = (x, z) in the frame xf.
+func add_ground_patch(xf: Transform3D, size: Vector2, kind: String) -> void:
+	var st := _ground_st(kind)
+	var nx := maxi(int(size.x / 1.5), 1)
+	var nz := maxi(int(size.y / 1.5), 1)
+	for iz in nz:
+		for ix in nx:
+			var x0 := -size.x * 0.5 + size.x * ix / nx
+			var x1 := -size.x * 0.5 + size.x * (ix + 1) / nx
+			var z0 := -size.y * 0.5 + size.y * iz / nz
+			var z1 := -size.y * 0.5 + size.y * (iz + 1) / nz
+			var q := [xf * Vector3(x0, 0, z0), xf * Vector3(x1, 0, z0), xf * Vector3(x1, 0, z1), xf * Vector3(x0, 0, z1)]
+			for m in 4:
+				var qv: Vector3 = q[m]
+				qv.y = _ground_y(qv, 0.04)
+				q[m] = qv
+			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(x0, z0) * 0.5, Vector2(x1, z0) * 0.5, Vector2(x1, z1) * 0.5, Vector2(x0, z1) * 0.5)
+			_ground_paints.append([(q[0] + q[2]) * 0.5, 2.0, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
+
+
+## A painted line on the ground along the frame's z axis.
+func add_ground_line(xf: Transform3D, length: float) -> void:
+	var st := _ground_st("line")
+	var n := maxi(int(length), 1)
+	for k in n:
+		var z0 := -length * 0.5 + length * k / n
+		var z1 := -length * 0.5 + length * (k + 1) / n
+		var q := [xf * Vector3(-0.06, 0, z0), xf * Vector3(0.06, 0, z0), xf * Vector3(0.06, 0, z1), xf * Vector3(-0.06, 0, z1)]
+		for m in 4:
+			var qv: Vector3 = q[m]
+			qv.y = _ground_y(qv, 0.05)
+			q[m] = qv
+		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP)
+
+
+func _finish_ground() -> void:
+	for kind in _ground_sts:
+		var m := StandardMaterial3D.new()
+		match kind:
+			"asphalt":
+				m.albedo_texture = load("res://assets/textures/asphalt_albedo.jpg")
+				m.albedo_color = Color(0.55, 0.55, 0.57)
+				m.roughness = 0.85
+			"gravel":
+				m.albedo_texture = load("res://assets/textures/gravel_albedo.jpg")
+				m.normal_enabled = true
+				m.normal_texture = load("res://assets/textures/gravel_normal.png")
+				m.albedo_color = Color(0.7, 0.64, 0.55)
+				m.roughness = 0.9
+			"line":
+				m.albedo_color = Color(0.9, 0.9, 0.86)
+				m.roughness = 0.7
+			_:
+				m.albedo_texture = TexKit.noise_texture(81, 0.1, false, 256)
+				m.albedo_color = Color(0.72, 0.7, 0.66)
+				m.roughness = 0.8
+		m.uv1_scale = Vector3(1, 1, 1)
+		var mi := MeshKit.mesh_instance(MeshKit.commit(_ground_sts[kind], m, null, kind == "gravel"), null, false)
+		mi.name = "Ground_" + kind
+		add_child(mi)
+	_ground_sts.clear()
+	if _ground_paints.is_empty():
+		return
+	var sp: PackedColorArray = terrain.splat
+	var cell: float = terrain.CELL
+	var o: Vector2 = terrain.origin
+	for pt in _ground_paints:
+		var p: Vector3 = pt[0]
+		var radius: float = pt[1]
+		var col: Color = pt[2]
+		var cx := int(round((p.x - o.x) / cell))
+		var cz := int(round((p.z - o.y) / cell))
+		var r := int(ceil(radius / cell)) + 1
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var ix := cx + dx
+				var iz := cz + dz
+				if ix < 0 or iz < 0 or ix >= terrain.nx or iz >= terrain.nz:
+					continue
+				var d := Vector2(o.x + ix * cell - p.x, o.y + iz * cell - p.z).length()
+				var k := 1.0 - smoothstep(radius * 0.5, radius + cell * 0.5, d)
+				if k > 0.0:
+					var idx: int = iz * terrain.nx + ix
+					sp[idx] = sp[idx].lerp(col, k * 0.85)
+	terrain.splat = sp
+	_ground_paints.clear()
+
+
+## Paths from a house's gate / driveway to the road: [local start, width, kind] from the builder.
+func _house_paths(builder, xf: Transform3D, style: String) -> void:
+	var first := true
+	for p in builder.paths:
+		var start: Vector3 = xf * (p[0] as Vector3)
+		var idx: int = track.nearest_index(start)
+		var r: Vector3 = track.rights[idx]
+		var side := signf((start - track.samples[idx]).dot(r))
+		var off: float = track.off_left[idx] if side < 0.0 else track.off_right[idx]
+		var end: Vector3 = track.samples[idx] + r * side * (off + 0.7)
+		if start.distance_to(end) > 60.0:
+			continue
+		add_path([start, start.lerp(end, 0.5) + track.tangents[idx] * rng.randf_range(-0.6, 0.6), end], float(p[1]), str(p[2]))
+		# a mailbox where the path meets the road (the Japanese houses have theirs at the gate)
+		if first and style != "jp" and style != "shop" and details:
+			var mb: Vector3 = end + track.tangents[idx] * (float(p[1]) * 0.5 + 0.8) + r * side * 0.8
+			mb.y = terrain.height_at(mb.x, mb.z)
+			details.add("mailbox", Transform3D(Basis.looking_at(-r * side, Vector3.UP), mb))
+		first = false
+
+
+func _car_parks(id: String) -> void:
+	if details == null or id == "playground":
+		return
+	var n: int = track.sample_count()
+	var want: int = {"harbor": 3, "ridge": 2}.get(id, 4)
+	var placed := 0
+	var tries := 0
+	while placed < want and tries < 60:
+		tries += 1
+		var i := rng.randi_range(0, n - 1)
+		if _village >= 0 and tries < 20:
+			i = _village + rng.randi_range(-120, 120)
+		if absf(track.curvature[(i % n + n) % n]) > 1.0 / 120.0:
+			continue
+		if details.add_car_park(i, -1.0 if rng.randf() < 0.5 else 1.0, 2, rng.randi_range(4, 6)):
+			placed += 1
