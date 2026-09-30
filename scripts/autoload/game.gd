@@ -98,6 +98,7 @@ const UPSCALERS := ["Bilinear", "AMD FSR 1.0", "AMD FSR 2.2"]
 const VSYNC_MODES := ["Aus", "An", "Adaptiv", "Mailbox"]
 ## Motion blur (camera post effect, see camera_rig.gd): off / strength levels
 const MOTION_BLUR_NAMES := ["Aus", "Leicht", "Mittel", "Stark"]
+const ART_STYLE_NAMES := ["Aus", "Retro 90er", "Comic"]
 const FPS_LIMITS := [0, 30, 60, 90, 120, 144, 165, 240]
 const QUALITY_NAMES := ["Niedrig", "Mittel", "Hoch", "Ultra"]
 const GRASS_NAMES := ["Aus", "Niedrig", "Mittel", "Hoch", "Ultra"]
@@ -130,6 +131,7 @@ var settings := {
 	"laps": 3,
 	"graffiti_minutes": 5,
 	"motion_blur": 0,
+	"art_style": 0,
 	"party": false,
 	"party_games": 3,
 	"party_coins": 5,

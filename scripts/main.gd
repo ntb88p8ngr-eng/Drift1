@@ -2,6 +2,7 @@ extends Node
 ## Scene manager: menu + showroom <-> race world. Also runs the headless smoke test (--smoke-test).
 
 const World = preload("res://scripts/world/world.gd")
+const ArtFilter = preload("res://scripts/ui/art_filter.gd")
 const CarAudio = preload("res://scripts/car/car_audio.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const Showroom = preload("res://scripts/world/showroom.gd")
@@ -17,6 +18,9 @@ var _loading: CanvasLayer
 
 
 func _ready() -> void:
+	var art := ArtFilter.new()
+	art.name = "ArtFilter"
+	add_child(art)
 	Net.race_start_requested.connect(_on_race_start)
 	Net.return_to_lobby_requested.connect(_on_return_lobby)
 	Net.disconnected.connect(_on_disconnected)

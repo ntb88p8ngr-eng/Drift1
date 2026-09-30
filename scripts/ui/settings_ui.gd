@@ -80,6 +80,10 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		Game.set_setting("motion_blur", i))
 	mb.tooltip_text = "Wie das Auge bei Tempo: die Mitte bleibt scharf, zum Rand hin verschwimmt das Bild –\nje schneller, desto stärker. Schnelle Kameraschwenks verwischen seitlich."
 	v.add_child(UiKit.labeled("Motion Blur", mb))
+	var art := UiKit.option(Game.ART_STYLE_NAMES, clampi(int(Game.settings.get("art_style", 0)), 0, Game.ART_STYLE_NAMES.size() - 1), func(i):
+		Game.set_setting("art_style", i))
+	art.tooltip_text = "Bildstil-Filter über dem ganzen Spiel:\nRetro 90er – niedrige Auflösung, wenige Farben mit Dithering, Scanlines, VHS-Farbsaum.\nComic – flache Farbflächen, Tuschelinien, Rasterpunkte in den Schatten."
+	v.add_child(UiKit.labeled("Art-Style", art))
 	v.add_child(UiKit.sep())
 	var q := UiKit.option(Game.QUALITY_NAMES, int(Game.settings["quality"]), func(i):
 		Game.set_setting("quality", i)
