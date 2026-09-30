@@ -1,4 +1,6 @@
 extends Node
+
+const RaceAI = preload("res://scripts/world/race_ai.gd")
 ## Online mode: lobbies hosted by the lobby creator (ENet server + player in one process),
 ## LAN lobby discovery via UDP broadcast and optional UPnP port forwarding.
 ##
@@ -159,6 +161,8 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 		"weather": Game.settings["weather"],
 		"day_cycle": int(Game.settings["day_cycle"]),
 		"collisions": true,
+		"bots": int(Game.settings.get("bots", 0)),
+		"bot_level": int(Game.settings.get("bot_level", 1)),
 		"host_id": 1,
 		"locked": password != "",
 	}
@@ -912,6 +916,10 @@ func host_start_race() -> String:
 		"online": true,
 		"players": players.duplicate(true),
 	}
+	# AI opponents (races only): the same roster for everybody, the host drives them
+	if str(config["mode"]) == "race" and int(lobby.get("bots", 0)) > 0 and not bool(config["party"]):
+		config["bots"] = RaceAI.make_roster(clampi(int(lobby.get("bots", 0)), 0, 7), int(config["weather_seed"]))
+		config["bot_level"] = clampi(int(lobby.get("bot_level", 1)), 0, 3)
 	_start_race.rpc(config)
 	return ""
 
@@ -966,6 +974,24 @@ func force_countdown() -> void:
 @rpc("authority", "call_local", "reliable")
 func _begin_countdown() -> void:
 	countdown_requested.emit()
+
+
+## Host: the state of an AI opponent, to everybody (they see it like a remote player).
+func send_bot_state(id: int, state: Array) -> void:
+	if is_online and is_host() and multiplayer.multiplayer_peer != null:
+		_bot_state.rpc(id, state)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 1)
+func _bot_state(id: int, state: Array) -> void:
+	if id >= 1000:
+		remote_state.emit(id, state)
+
+
+## Host: an AI opponent crossed the finish line.
+func report_bot_result(id: int, result: Dictionary) -> void:
+	if is_online and is_host():
+		_store_result(id, result)
 
 
 func send_state(state: Array) -> void:
@@ -1057,6 +1083,8 @@ func _store_result(id: int, result: Dictionary) -> void:
 	if players.has(id):
 		result["name"] = players[id].get("name", "?")
 		result["car"] = players[id].get("car", "r34")
+	elif id < 1000:
+		return
 	results[id] = result
 	var arr: Array = results.values()
 	_sync_results.rpc(arr)

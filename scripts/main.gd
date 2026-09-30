@@ -3,6 +3,7 @@ extends Node
 
 const World = preload("res://scripts/world/world.gd")
 const ArtFilter = preload("res://scripts/ui/art_filter.gd")
+const RaceAI = preload("res://scripts/world/race_ai.gd")
 const CarAudio = preload("res://scripts/car/car_audio.gd")
 const Menu = preload("res://scripts/ui/menu.gd")
 const Showroom = preload("res://scripts/world/showroom.gd")
@@ -71,6 +72,9 @@ func start_offline() -> void:
 		"online": false,
 		"collisions": true,
 	}
+	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0 and not bool(cfg["party"]):
+		cfg["bots"] = RaceAI.make_roster(int(Game.settings["bots"]), int(cfg["weather_seed"]))
+		cfg["bot_level"] = int(Game.settings.get("bot_level", 1))
 	_start_world(cfg)
 
 

@@ -331,7 +331,7 @@ func _strip_world(pts: Array, width: float, kind: String, parent: Node3D) -> voi
 				Vector2(f1 * width * 0.25, u + l * 0.25), Vector2(f0 * width * 0.25, u + l * 0.25))
 		u += Vector2(b.x - a.x, b.z - a.z).length() * 0.25
 		# the terrain under it: no grass, the ground colour of a track
-		_paint(a, width * 0.5 + 1.5, Color(0.7, 0.3, 0.0, 0.0) if kind != "gravel" else Color(0.2, 0.9, 0.1, 0.0))
+		_paint(a, width * 0.5 + 1.5, Color(1.0, 0.0, 0.0, 0.0) if kind != "gravel" else Color(0.5, 1.0, 0.0, 0.0))
 	var m := StandardMaterial3D.new()
 	if kind == "gravel":
 		m.albedo_texture = load("res://assets/textures/gravel_albedo.jpg")

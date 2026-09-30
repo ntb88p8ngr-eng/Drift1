@@ -3,6 +3,7 @@ extends CanvasLayer
 ## The 3D showroom behind the menu shows the selected car.
 
 const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
+const RaceAI = preload("res://scripts/world/race_ai.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
@@ -237,7 +238,10 @@ func _build_single() -> void:
 		laps_label.text = "%d" % int(v), 220)
 	var laps_row := UiKit.labeled("Runden", UiKit.row([laps_slider, laps_label]))
 	var party_rows := _party_rows(Game.settings, func(key, v): Game.set_setting(key, v))
+	var bot_rows := _bot_rows(int(Game.settings.get("bots", 0)), int(Game.settings.get("bot_level", 1)),
+		func(n): Game.set_setting("bots", n), func(l): Game.set_setting("bot_level", l))
 	var update_desc := func():
+		bot_rows.visible = Game.settings["mode"] == "race"
 		graffiti_row.visible = Game.settings["mode"] == "graffiti"
 		laps_row.visible = Game.settings["mode"] != "graffiti"
 		party_rows.visible = Game.settings["track"] != "gruene_hoelle"
@@ -254,6 +258,7 @@ func _build_single() -> void:
 		Game.set_setting("mode", Game.MODES[i]["id"])
 		update_desc.call())))
 	_add(laps_row)
+	_add(bot_rows)
 	_add(graffiti_row)
 	_add(party_rows)
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
@@ -726,6 +731,13 @@ func _refresh_lobby() -> void:
 				Net.host_set_option("laps", int(v)), 200), laps_label]))
 		laps_row.visible = str(lobby.get("mode", "")) != "graffiti"
 		_lobby_settings.add_child(laps_row)
+		var brow := _bot_rows(int(lobby.get("bots", 0)), int(lobby.get("bot_level", 1)),
+			func(n):
+				if int(Net.lobby.get("bots", 0)) != n:
+					Net.host_set_option("bots", n),
+			func(l): Net.host_set_option("bot_level", l))
+		brow.visible = str(lobby.get("mode", "")) == "race"
+		_lobby_settings.add_child(brow)
 		var tods: Array = []
 		var tdi := 0
 		for i in Game.TIMES_OF_DAY.size():
@@ -750,6 +762,8 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  %s" % [Game.mode_name(str(lobby.get("mode", "race"))), len_text], 18))
 		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))
 		_lobby_settings.add_child(UiKit.label("Wetter: %s  ·  Tagesverlauf: %s" % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
+		if str(lobby.get("mode", "")) == "race" and int(lobby.get("bots", 0)) > 0:
+			_lobby_settings.add_child(UiKit.label("KI-Gegner: %d  ·  %s" % [int(lobby.get("bots", 0)), RaceAI.LEVELS[clampi(int(lobby.get("bot_level", 1)), 0, 3)]["name"]], 18))
 		if bool(lobby.get("party", false)) and str(lobby.get("track", "")) != "gruene_hoelle":
 			_lobby_settings.add_child(UiKit.label("★ Party-Modus: %d Minispiele, %d Münzen" % [int(lobby.get("party_games", 3)), int(lobby.get("party_coins", 5))], 18, UiKit.GOLD))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
@@ -975,6 +989,26 @@ func _underglow_ui(car_id: String) -> void:
 			(pk[0] as ColorPickerButton).color = Color.from_string(str(front["color"]), Color.WHITE)
 		apply.call(), 240))
 	_tuning_box.add_child(details)
+
+
+## AI opponents for races: how many and how good.
+func _bot_rows(count: int, lvl: int, set_count: Callable, set_level: Callable) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	var n_label := UiKit.label(("%d" % count) if count > 0 else "keine", 19)
+	n_label.custom_minimum_size = Vector2(60, 0)
+	var sl := UiKit.slider(0, 7, 1, float(count), func(v):
+		n_label.text = ("%d" % int(v)) if int(v) > 0 else "keine"
+		set_count.call(int(v)), 220)
+	sl.tooltip_text = "KI-Fahrer im Rennen (offline und online – online steuert der Host sie)."
+	box.add_child(UiKit.labeled("KI-Gegner", UiKit.row([sl, n_label])))
+	var names: Array = []
+	for l in RaceAI.LEVELS:
+		names.append(l["name"])
+	var opt := UiKit.option(names, clampi(lvl, 0, names.size() - 1), func(i): set_level.call(i))
+	opt.tooltip_text = "Leicht: vorsichtig, früh auf der Bremse.  Mittel: solide.\nSchwer: schnell, fährt die Ideallinie.  Profi: am Limit."
+	box.add_child(UiKit.labeled("KI-Stärke", opt))
+	return box
 
 
 ## Party mode options (minigame coins on the track): on/off, number of minigames, number of coins.

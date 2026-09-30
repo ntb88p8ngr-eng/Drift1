@@ -101,6 +101,14 @@ jobs:
             grep -q "PARTY TEST: PASS" party.log
           done
 
+      - name: AI test (three bots race a lap on Ridge and Harbor)
+        run: |
+          for t in ridge harbor; do
+            timeout 600 ./godot --headless --path . res://tests/ai_test.tscn -- --track=$t 2>&1 | tee ai.log || true
+            if grep -E "SCRIPT ERROR" ai.log; then echo "::error::AI test failed on $t"; exit 1; fi
+            grep -q "AI TEST.*PASS" ai.log
+          done
+
       - name: Tutorial test (house and camp on Grüne Hölle, skip, drive out of the garage, ending)
         run: |
           timeout 600 ./godot --headless --path . res://tests/tutorial_test.tscn 2>&1 | tee tutorial.log || true

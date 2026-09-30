@@ -24,6 +24,7 @@ const Party = preload("res://scripts/world/party.gd")
 const PartySites = preload("res://scripts/world/party_sites.gd")
 const TutorialSite = preload("res://scripts/world/tutorial_site.gd")
 const Tutorial = preload("res://scripts/world/tutorial.gd")
+const RaceAI = preload("res://scripts/world/race_ai.gd")
 
 const SECTORS := 8
 
@@ -50,6 +51,7 @@ var party: Party            # party mode (minigame coins) or null
 var party_sites: PartySites
 var tutorial_site: TutorialSite   # tutorial mode (Grüne Hölle)
 var tutorial: Tutorial
+var race_ai: RaceAI           # AI opponents (race mode), or null
 
 var state := "loading"      # loading, waiting, countdown, running, finished
 var race_time := 0.0
@@ -237,17 +239,51 @@ func _spawn_cars() -> void:
 		local_car = _make_car(info, false)
 		cars[1] = local_car
 		local_car.place(track.grid_transform(0))
+	_spawn_bots(night)
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
 	local_car.headlights = night >= 0.4
 	_auto_lights = local_car.headlights
 
 
-func _make_car(info: Dictionary, remote: bool) -> Car:
+## AI opponents: on the grid in front of the player (offline) / behind the players (online). Offline
+## and on the host they are driven here, the others get them as remote cars.
+func _spawn_bots(night: float) -> void:
+	var roster: Array = config.get("bots", [])
+	if roster.is_empty() or mode != "race":
+		return
+	var driving: bool = not online or Net.is_host()
+	if driving:
+		race_ai = RaceAI.new()
+		race_ai.name = "RaceAI"
+		race_ai.world = self
+		race_ai.level = clampi(int(config.get("bot_level", 1)), 0, 3)
+		add_child(race_ai)
+	var first: int = cars.size() if online else 0
+	for k in roster.size():
+		var e: Dictionary = roster[k]
+		var id := int(e.get("id", RaceAI.BOT_ID0 + k))
+		var info := {"car": str(e.get("car", "r34")), "paint": str(e.get("paint", "red")), "name": str(e.get("name", "KI")), "transmission": "auto"}
+		var car := _make_car(info, not driving, driving)
+		car.peer_id = id
+		car.headlights = night >= 0.4
+		cars[id] = car
+		car.place(track.grid_transform(first + k))
+		if driving:
+			race_ai.add_bot(id, car)
+	if not online:
+		# the player starts behind the field
+		local_car.place(track.grid_transform(roster.size()))
+
+
+func _make_car(info: Dictionary, remote: bool, bot := false) -> Car:
 	var car := Car.new()
 	car.car_id = str(info.get("car", "r34"))
 	car.paint = Game.get_paint(str(info.get("paint", "red")), str(info.get("custom_color", "")))
 	car.player_name = str(info.get("name", "Driver"))
 	car.is_remote = remote
+	car.is_bot = bot
+	if bot:
+		car.input_enabled = false
 	car.remote_collisions = bool(config.get("collisions", true))
 	car.track = track
 	car.skidmarks = skidmarks
@@ -258,7 +294,7 @@ func _make_car(info: Dictionary, remote: bool) -> Car:
 		car.underglow_cfg = ug if ug is Dictionary else {}
 	car.name = "Car_%s" % car.player_name.validate_node_name()
 	add_child(car)
-	if remote:
+	if remote or bot:
 		var tag := Label3D.new()
 		tag.text = car.player_name
 		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -464,11 +500,36 @@ func _finish() -> void:
 	else:
 		var header := ["", "Fahrer", "Auto", "Gesamtzeit", "Beste Runde", "Driftpunkte"]
 		var rows := [["1.", local_car.player_name, Game.get_car(local_car.car_id)["name"], Game.format_time(finish_time), Game.format_time(best_lap), Game.format_points(scorer.total), true]]
+		if race_ai:
+			rows = _results_with_bots()
 		var lap_rows: Array = []
 		for i in lap_times.size():
 			lap_rows.append("Runde %d: %s" % [i + 1, Game.format_time(lap_times[i])])
 		hud.show_results("ZIEL!" if mode == "race" else "DRIFT-BATTLE BEENDET", header, rows, notes + lap_rows, [
 			["Nochmal", request_restart], ["Hauptmenü", request_main_menu]])
+
+
+## Offline race against the AI: everybody who finished by time, then the others by distance.
+func _results_with_bots() -> Array:
+	var entries: Array = [[finish_time, 1e9, local_car.player_name, local_car.car_id, best_lap, scorer.total, true, true]]
+	for b in race_ai.bots:
+		var c = b["car"]
+		if not is_instance_valid(c):
+			continue
+		entries.append([float(b["time"]), race_ai.total_progress(b), c.player_name, c.car_id, float(b["best"]), 0.0, bool(b["finished"]), false])
+	entries.sort_custom(func(a, b):
+		if bool(a[6]) != bool(b[6]):
+			return bool(a[6])
+		if bool(a[6]):
+			return float(a[0]) < float(b[0])
+		return float(a[1]) > float(b[1]))
+	var rows: Array = []
+	for i in entries.size():
+		var e: Array = entries[i]
+		var t := Game.format_time(float(e[0])) if bool(e[6]) else "fährt noch"
+		rows.append(["%d." % (i + 1), e[2], Game.get_car(str(e[3]))["name"], t, Game.format_time(float(e[4])) if float(e[4]) > 0.0 else "–",
+			Game.format_points(float(e[5])) if bool(e[7]) else "–", bool(e[7])])
+	return rows
 
 
 func _submit_leaderboard() -> Array:
@@ -596,7 +657,7 @@ func _show_online_results() -> void:
 
 
 func position_text() -> String:
-	if not online or mode == "free":
+	if (not online and race_ai == null) or mode == "free":
 		return ""
 	var entries: Array = []
 	for id in cars.keys():
@@ -619,7 +680,7 @@ func position_text() -> String:
 
 
 func scoreboard_data() -> Dictionary:
-	if online:
+	if online or race_ai:
 		var rows: Array = []
 		for id in cars.keys():
 			var c = cars[id]

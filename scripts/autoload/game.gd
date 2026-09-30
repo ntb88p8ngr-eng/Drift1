@@ -132,6 +132,8 @@ var settings := {
 	"graffiti_minutes": 5,
 	"motion_blur": 0,
 	"art_style": 0,
+	"bots": 0,
+	"bot_level": 1,
 	"party": false,
 	"party_games": 3,
 	"party_coins": 5,
