@@ -12,7 +12,7 @@ func _ready() -> void:
 		if a.begins_with("--") and a.contains("="):
 			var kv := a.substr(2).split("=", true, 1)
 			args[kv[0]] = kv[1]
-	get_tree().create_timer(14.0).timeout.connect(func():
+	get_tree().create_timer(30.0).timeout.connect(func():
 		print("NET TIMEOUT players=%d" % Net.players.size())
 		get_tree().quit(2))
 	if args["role"] == "host":
@@ -24,6 +24,11 @@ func _ready() -> void:
 		var f := FileAccess.open("user://net_test_invite_%s.txt" % args["port"], FileAccess.WRITE)
 		f.store_string(code)
 		f.close()
+		# short code (MD_SIGNAL=file: the relay is a folder, see rendezvous.gd)
+		var fc := FileAccess.open("user://net_test_code_%s.txt" % args["port"], FileAccess.WRITE)
+		fc.store_string(Net.host_code)
+		fc.close()
+		print("NET SHORT CODE ", Net.host_code)
 		Net.lobby_changed.connect(func():
 			if Net.players.size() >= 2:
 				print("NET HOST SEES PLAYER ", Net.players[Net.players.keys().filter(func(k): return k != 1)[0]].get("name", "?"))
@@ -44,6 +49,12 @@ func _ready() -> void:
 				get_tree().quit(0))
 		Net.graffiti_claimed.connect(func(owner_id: int, cells: PackedInt32Array):
 			print("NET CLIENT GRAFFITI ECHO owner=%d %s" % [owner_id, cells]))
+		if args.get("mode", "") == "code":
+			var sc := FileAccess.get_file_as_string("user://net_test_code_%s.txt" % args["port"])
+			Net.join_status.connect(func(t): print("NET STATUS ", t))
+			var e2 := Net.join_code(sc, args["pw"])
+			print("NET JOIN CODE ", sc, " ", "ok" if e2 == "" else e2)
+			return
 		var cf := FileAccess.open("user://net_test_invite_%s.txt" % args["port"], FileAccess.READ)
 		var code := cf.get_as_text() if cf else ""
 		var inv := Net.parse_invite(code)

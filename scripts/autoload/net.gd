@@ -28,6 +28,7 @@ signal lan_lobbies_changed
 signal upnp_finished(ok: bool, message: String)
 signal graffiti_claimed(owner_id: int, cells: PackedInt32Array)
 signal party_msg(from_id: int, msg: Dictionary)
+signal join_status(text: String)   # short-code join: progress for the menu
 
 const DEFAULT_PORT := 24570
 const DISCOVERY_PORT := 24571
@@ -65,6 +66,22 @@ var _broadcast_timer := 0.0
 var _upnp: UPNP
 var _upnp_thread: Thread
 var _upnp_port := 0
+
+const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
+var host_code := ""        # host: short code for internet play (no port forwarding needed)
+var _rv: Node              # Rendezvous while hosting or joining by code
+var _host_cands: Array = []
+var _rv_udp: PacketPeerUDP  # joiner: socket the STUN request and the hole punching use
+var _rv_local_port := 0
+var _rv_join_id := ""
+var _rv_state := ""         # joiner: "wait", "punch", "connect"
+var _rv_deadline := 0
+var _rv_resend := 0.0
+var _rv_my_cands: Array = []
+var _rv_queue: Array = []   # joiner: host addresses still to try
+var _rv_cert := ""
+var _rv_pw := ""
+var _rv_seen_welcome := false
 
 
 func _ready() -> void:
@@ -105,6 +122,12 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 	var tls := _server_tls()
 	if tls == null:
 		return "Verschlüsselung konnte nicht eingerichtet werden (Zertifikat)."
+	# what the internet sees of this port (for the short code), asked before ENet takes it over
+	var seen: Array = []
+	var probe := PacketPeerUDP.new()
+	if probe.bind(port, "*") == OK:
+		seen = Rendezvous.stun(probe)
+		probe.close()
 	peer = ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, maxi(max_players - 1, 1))
 	if err != OK:
@@ -141,6 +164,8 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 	}
 	players = {1: Game.local_player_info()}
 	_start_broadcast()
+	_host_cands = Rendezvous.candidates(seen, port, global_ipv6_addresses(), get_local_addresses())
+	_start_rendezvous(Rendezvous.make_code())
 	upnp_message = ""
 	if use_upnp:
 		_start_upnp(port)
@@ -148,7 +173,7 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 	return ""
 
 
-func join_lobby(address: String, port: int, lobby_password: String, host_cert: String) -> String:
+func join_lobby(address: String, port: int, lobby_password: String, host_cert: String, local_port := 0) -> String:
 	leave()
 	var ap := split_address(address, port)
 	address = str(ap[0])
@@ -160,7 +185,7 @@ func join_lobby(address: String, port: int, lobby_password: String, host_cert: S
 	if host_cert == "" or cert.load_from_string(_pem(host_cert)) != OK:
 		return "Ungültiger Einladungs-Code (Zertifikat fehlt)."
 	peer = ENetMultiplayerPeer.new()
-	var err := peer.create_client(address, port)
+	var err := peer.create_client(address, port, 0, 0, 0, local_port)
 	if err != OK:
 		peer = null
 		return "Verbindung zu %s:%d konnte nicht aufgebaut werden." % [address, port]
@@ -359,6 +384,7 @@ static func split_address(text: String, port: int) -> Array:
 
 
 func leave() -> void:
+	_stop_rendezvous()
 	_stop_broadcast()
 	_remove_upnp()
 	if multiplayer.multiplayer_peer != null and not (multiplayer.multiplayer_peer is OfflineMultiplayerPeer):
@@ -373,6 +399,186 @@ func leave() -> void:
 	_auth.clear()
 	is_online = false
 	in_race = false
+
+
+# ---------------------------------------------------------------------------
+# Short code (rendezvous + hole punching, see rendezvous.gd)
+# ---------------------------------------------------------------------------
+func _start_rendezvous(c: String) -> void:
+	_rv = Rendezvous.new()
+	_rv.name = "Rendezvous"
+	add_child(_rv)
+	_rv.received.connect(_on_rv_message)
+	_rv.opened.connect(_on_rv_opened)
+	_rv.start(c)
+	if is_host():
+		host_code = c
+
+
+func _stop_rendezvous() -> void:
+	if _rv:
+		_rv.stop()
+		_rv.queue_free()
+	_rv = null
+	host_code = ""
+	_rv_state = ""
+	_rv_queue.clear()
+	if _rv_udp:
+		_rv_udp.close()
+	_rv_udp = null
+
+
+## Joins the lobby with this short code: asks STUN, meets the host on the relay, punches, connects.
+func join_code(text: String, lobby_password := "") -> String:
+	var c := Rendezvous.normalize(text)
+	if c == "":
+		return "Ungültiger Code."
+	leave()
+	_rv_udp = PacketPeerUDP.new()
+	_rv_local_port = 0
+	for k in 8:
+		var lp := randi_range(30000, 60000)
+		if _rv_udp.bind(lp, "*") == OK:
+			_rv_local_port = lp
+			break
+	if _rv_local_port == 0:
+		return "Kein freier Netzwerk-Port gefunden."
+	join_status.emit("Suche Host …")
+	var seen := Rendezvous.stun(_rv_udp)
+	_rv_my_cands = Rendezvous.candidates(seen, _rv_local_port, global_ipv6_addresses(), get_local_addresses())
+	_rv_join_id = _crypto.generate_random_bytes(8).hex_encode()
+	_rv_pw = lobby_password.strip_edges()
+	_rv_state = "wait"
+	_rv_seen_welcome = false
+	_rv_deadline = Time.get_ticks_msec() + 25000
+	_rv_resend = 0.0
+	_start_rendezvous(c)
+	return ""
+
+
+func _on_rv_opened() -> void:
+	_rv_resend = 0.0
+
+
+func _send_join() -> void:
+	if _rv and _rv.is_open:
+		_rv.send({"t": "join", "id": _rv_join_id, "c": _rv_my_cands})
+
+
+func _on_rv_message(msg: Dictionary) -> void:
+	match str(msg.get("t", "")):
+		"join":
+			if not is_host() or peer == null:
+				return
+			var cands := _clean_cands(msg.get("c", []))
+			_rv.send({"t": "welcome", "to": str(msg.get("id", "")), "c": _host_cands, "cert": cert_body,
+				"locked": password != "", "name": str(lobby.get("name", "Lobby"))})
+			_host_punch(cands)
+		"welcome":
+			if _rv_state != "wait" or str(msg.get("to", "")) != _rv_join_id or _rv_seen_welcome:
+				return
+			_rv_seen_welcome = true
+			if bool(msg.get("locked", false)) and _rv_pw == "":
+				_fail_join("Die Lobby hat ein Passwort – bitte im Feld „Passwort“ eintragen.")
+				return
+			_rv_cert = str(msg.get("cert", ""))
+			join_status.emit("Host gefunden – verbinde …")
+			_client_punch(_clean_cands(msg.get("c", [])))
+
+
+static func _clean_cands(raw) -> Array:
+	var out: Array = []
+	if not (raw is Array):
+		return out
+	for c in raw:
+		if c is Array and c.size() == 2 and str(c[0]).is_valid_ip_address() and int(c[1]) > 0 and int(c[1]) < 65536:
+			out.append([str(c[0]), int(c[1])])
+		if out.size() >= 12:
+			break
+	return out
+
+
+## Host: packets from the game port to every address of the joiner – opens the NAT / firewall for it.
+func _host_punch(cands: Array) -> void:
+	for k in 12:
+		if peer == null or not is_host():
+			return
+		for c in cands:
+			peer.host.socket_send(str(c[0]), int(c[1]), "mdpunch".to_utf8_buffer())
+		await get_tree().create_timer(0.15).timeout
+
+
+## Joiner: packets to every address of the host (same port the game will use); the address a host
+## packet arrives from is tried first.
+func _client_punch(cands: Array) -> void:
+	_rv_state = "punch"
+	var answered: Array = []
+	var t_end := Time.get_ticks_msec() + 1800
+	while Time.get_ticks_msec() < t_end and _rv_udp:
+		for c in cands:
+			_rv_udp.set_dest_address(str(c[0]), int(c[1]))
+			_rv_udp.put_packet("mdpunch".to_utf8_buffer())
+		await get_tree().create_timer(0.1).timeout
+		while _rv_udp and _rv_udp.get_available_packet_count() > 0:
+			_rv_udp.get_packet()
+			var from := [_rv_udp.get_packet_ip(), _rv_udp.get_packet_port()]
+			if not answered.has(from):
+				answered.append(from)
+	if _rv_udp == null:
+		return
+	_rv_udp.close()
+	_rv_udp = null
+	var order: Array = []
+	for a in answered:
+		for c in cands:
+			if str(c[0]) == str(a[0]) and not order.has(c):
+				order.append(c)
+	for c in cands:
+		if not order.has(c):
+			order.append(c)
+	_rv_queue = order
+	_rv_state = "connect"
+	_try_next_candidate()
+
+
+func _try_next_candidate() -> void:
+	if _rv_queue.is_empty():
+		_fail_join("Keine Verbindung zum Host möglich. Beide Router blockieren direkte Verbindungen – der Host kann es mit einer Portfreigabe versuchen.")
+		return
+	var c: Array = _rv_queue.pop_front()
+	var rest := _rv_queue.duplicate()
+	var cert := _rv_cert
+	var pw := _rv_pw
+	var lp := _rv_local_port
+	# join_lobby() resets the session state: keep what the next attempt needs
+	var err := join_lobby(str(c[0]), int(c[1]), pw, cert, lp)
+	_rv_queue = rest
+	_rv_cert = cert
+	_rv_pw = pw
+	_rv_local_port = lp
+	if err != "":
+		_try_next_candidate()
+		return
+	# fail over quickly to the next address
+	var sp := peer.get_peer(1) if peer else null
+	if sp:
+		sp.set_timeout(8, 2500, 4500)
+
+
+func _fail_join(text: String) -> void:
+	_stop_rendezvous()
+	connection_failed.emit(text)
+
+
+func _process_rendezvous(delta: float) -> void:
+	if _rv_state == "wait":
+		if Time.get_ticks_msec() > _rv_deadline:
+			_fail_join("Kein Host mit diesem Code gefunden (oder keine Internetverbindung).")
+			return
+		_rv_resend -= delta
+		if _rv_resend <= 0.0 and _rv and _rv.is_open:
+			_rv_resend = 3.0
+			_send_join()
 
 
 func get_local_addresses() -> Array:
@@ -525,11 +731,15 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _on_connected_to_server() -> void:
+	_rv_queue.clear()
 	_register.rpc_id(1, Game.local_player_info())
 	connected_ok.emit()
 
 
 func _on_connection_failed() -> void:
+	if not _rv_queue.is_empty():
+		_try_next_candidate()
+		return
 	leave()
 	var msg := "Verbindung fehlgeschlagen – Host nicht erreichbar (IP/Port/Firewall prüfen)."
 	if _last_address.contains(":"):
@@ -912,6 +1122,7 @@ func stop_lan_scan() -> void:
 
 
 func _process(delta: float) -> void:
+	_process_rendezvous(delta)
 	if _broadcaster and is_host():
 		_broadcast_timer -= delta
 		if _broadcast_timer <= 0.0:

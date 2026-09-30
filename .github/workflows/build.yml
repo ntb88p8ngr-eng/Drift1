@@ -143,6 +143,18 @@ jobs:
           grep -q "NET CLIENT GRAFFITI ECHO" net.log
           grep -q "Falsches Lobby-Passwort" net2.log
 
+      - name: Short-code join test (rendezvous + hole punching, relay as a local folder)
+        run: |
+          MD_SIGNAL=file ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim --port=24592 > host3.log 2>&1 &
+          H3=$!
+          sleep 6
+          MD_SIGNAL=file timeout 45 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=geheim --port=24592 --mode=code 2>&1 | tee net3.log || true
+          wait $H3 || true
+          cat host3.log
+          if grep -E "SCRIPT ERROR" net3.log host3.log; then echo "::error::Short-code test failed"; exit 1; fi
+          grep -q "NET CLIENT IN LOBBY" net3.log
+          grep -q "NET HOST SEES PLAYER" host3.log
+
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
           timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true

@@ -2,6 +2,7 @@ extends CanvasLayer
 ## Main menu: single player setup, garage, online (host / join / LAN browser), lobby, leaderboard, options.
 ## The 3D showroom behind the menu shows the selected car.
 
+const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
@@ -23,6 +24,7 @@ var _chat_log: RichTextLabel
 var _chat_input: LineEdit
 var _float_bar: HBoxContainer
 var _lan_pw: LineEdit
+var _show_adv_invite := false
 var _invite_box: VBoxContainer
 var _ready_btn: Button
 var _start_btn: Button
@@ -99,6 +101,7 @@ func _ready() -> void:
 	Net.chat_received.connect(_on_chat)
 	Net.connected_ok.connect(_on_connected)
 	Net.connection_failed.connect(func(reason): show_status(reason, UiKit.BAD))
+	Net.join_status.connect(func(text): show_status(text))
 	Net.lan_lobbies_changed.connect(_refresh_lan)
 	Net.upnp_finished.connect(func(_ok, _msg): _on_lobby_changed())
 
@@ -453,15 +456,25 @@ func _build_online() -> void:
 
 	_add(UiKit.spacer(10))
 	_add(UiKit.label("Lobby beitreten (Internet)", 22, UiKit.ACCENT.lightened(0.3)))
-	_add(UiKit.label("Füge den Einladungs-Code des Hosts ein – verschlüsselt, mit Passwort.", 16, UiKit.TEXT_DIM))
+	_add(UiKit.label("Gib den Code des Hosts ein (z. B. K7Q-M2X) – keine Portfreigabe nötig, verschlüsselt.", 16, UiKit.TEXT_DIM))
 	var code_edit := LineEdit.new()
-	code_edit.placeholder_text = "MD1-…"
-	code_edit.secret = true
-	code_edit.custom_minimum_size = Vector2(420, 42)
-	_add(UiKit.labeled("Einladungs-Code", UiKit.row([code_edit, UiKit.button("Einfügen", func():
+	code_edit.placeholder_text = "K7Q-M2X"
+	code_edit.custom_minimum_size = Vector2(260, 42)
+	code_edit.add_theme_font_size_override("font_size", 22)
+	_add(UiKit.labeled("Code", UiKit.row([code_edit, UiKit.button("Einfügen", func():
 		code_edit.text = DisplayServer.clipboard_get().strip_edges(), 120)])))
+	var join_pw := LineEdit.new()
+	join_pw.placeholder_text = "nur falls die Lobby ein Passwort hat"
+	join_pw.secret = true
+	join_pw.custom_minimum_size = Vector2(300, 42)
+	_add(UiKit.labeled("Passwort", join_pw))
 	_add(UiKit.button("Mit Code beitreten", func():
-		var err := Net.join_invite(code_edit.text)
+		var err := ""
+		if Rendezvous.normalize(code_edit.text) != "":
+			err = Net.join_code(code_edit.text, join_pw.text)
+		else:
+			# the long invite code from older versions / "Erweitert" still works
+			err = Net.join_invite(code_edit.text)
 		if err != "":
 			show_status(err, UiKit.BAD)
 		else:
@@ -578,8 +591,26 @@ func _refresh_invite(host: bool) -> void:
 		c.queue_free()
 	if not host:
 		return
-	var code := Net.invite_code()
 	var port := int(Net.lobby.get("port", Net.DEFAULT_PORT))
+	# the short code: all that friends need (no port forwarding)
+	if Net.host_code != "":
+		var sc := Rendezvous.pretty(Net.host_code)
+		var big := UiKit.label(sc, 40, UiKit.GOLD)
+		big.add_theme_font_override("font", UiKit.title_font())
+		_invite_box.add_child(UiKit.row([UiKit.label("Code für Freunde:", 18), big, UiKit.button("Kopieren", func():
+			DisplayServer.clipboard_set(sc)
+			show_status("Code %s kopiert – Freunde geben ihn unter Online → „Mit Code beitreten“ ein." % sc), 130)], 14))
+		_invite_box.add_child(UiKit.label("Keine Portfreigabe nötig. Nur an Mitspieler weitergeben.", 15, UiKit.TEXT_DIM))
+	var adv := CheckButton.new()
+	adv.text = "Erweitert: langer Einladungs-Code / Adresse (falls der Code nicht klappt)"
+	adv.button_pressed = _show_adv_invite
+	adv.toggled.connect(func(on):
+		_show_adv_invite = on
+		_refresh_invite(host))
+	_invite_box.add_child(adv)
+	if not _show_adv_invite:
+		return
+	var code := Net.invite_code()
 	if code == "":
 		var ip_edit := LineEdit.new()
 		ip_edit.placeholder_text = "öffentliche IPv4 oder IPv6"
