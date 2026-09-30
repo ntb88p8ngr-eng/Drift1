@@ -19,7 +19,7 @@ func _ready() -> void:
 	ground.add_child(cs)
 	add_child(ground)
 	var ok := true
-	for cid in ["r34", "mustang", "m3gt3"]:
+	for cid in Game.CAR_ORDER:
 		Game.settings["tuning"] = {}
 		Game.settings["response"] = {}
 		var car := Car.new()

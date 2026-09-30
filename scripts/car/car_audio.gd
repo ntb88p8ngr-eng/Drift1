@@ -131,6 +131,50 @@ const VOICES := {
 		"sub": [0.45, 0.5], "lp": [240.0, 0.07], "lope": 0.09,
 		"whine": 0.0, "pop_pitch": 0.75, "turbo": 0.0, "bov": 0.0, "gain": 1.25, "upshift_bang": 0.3,
 	},
+	# S54 (M3 E46): naturally aspirated straight six, bright and hard at the top, no turbo
+	"i6na": {
+		"cyl": 6, "pattern": [1.0, 0.93, 0.98, 0.94, 1.0, 0.92], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+		"body": 190.0, "body_q": 1.3, "high": 1600.0, "high_q": 2.2, "decay": 0.24, "grit": 0.45,
+		"tone": 0.4, "bass": 0.85, "rasp": 1.3, "click": 0.3, "drive": 1.5, "hard": 0.1,
+		"lp": [2200.0, 0.3], "whine": 0.0, "pop_pitch": 1.15, "turbo": 0.0, "bov": 0.0, "gain": 0.95, "upshift_bang": 0.4,
+	},
+	# S55 (M4 F82): twin-turbo straight six, darker and muffled, crackles on upshifts, quiet turbos
+	"i6tt": {
+		"cyl": 6, "pattern": [1.0, 0.9, 0.97, 0.92, 1.0, 0.9], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+		"body": 150.0, "body_q": 1.5, "high": 900.0, "high_q": 1.8, "decay": 0.34, "grit": 0.4,
+		"tone": 0.36, "bass": 1.35, "rasp": 0.8, "click": 0.15, "drive": 1.4, "hard": 0.05,
+		"sub": [0.1, 0.15], "lp": [900.0, 0.2], "whine": 0.0, "pop_pitch": 0.95, "turbo": 0.35, "bov": 0.25,
+		"gain": 1.0, "upshift_bang": 0.8,
+	},
+	# GT3 RSR: racing flat six, the two banks alternate, raspy and screaming, straight-cut gear whine
+	"flat6": {
+		"cyl": 6, "pattern": [1.0, 0.9, 0.97, 0.92, 1.0, 0.9], "timing": [1.01, 0.99, 1.01, 0.99, 1.01, 0.99],
+		"banks": [0, 1, 0, 1, 0, 1], "bank_gain": 0.85, "body2": 160.0,
+		"body": 200.0, "body_q": 1.3, "high": 1500.0, "high_q": 1.8, "decay": 0.22, "grit": 0.6,
+		"tone": 0.35, "bass": 1.0, "rasp": 1.5, "click": 0.35, "drive": 2.0, "hard": 0.3,
+		"lp": [2600.0, 0.3], "whine_ratio": 11.0, "whine": 0.4, "pop_pitch": 1.2, "turbo": 0.0, "bov": 0.0,
+		"gain": 0.85, "upshift_bang": 1.0,
+	},
+	# Gallardo: V10, two banks, bright and hoarse
+	"v10": {
+		"cyl": 10, "pattern": [1.0, 0.92, 0.97, 0.9, 1.0, 0.93, 0.96, 0.91, 0.99, 0.92],
+		"timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+		"banks": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1], "bank_gain": 0.85, "body2": 150.0,
+		"body": 180.0, "body_q": 1.4, "high": 1900.0, "high_q": 2.0, "decay": 0.22, "grit": 0.4,
+		"tone": 0.38, "bass": 1.0, "rasp": 1.2, "click": 0.2, "drive": 1.6, "hard": 0.15,
+		"sub": [0.08, 0.12], "lp": [2400.0, 0.35], "whine": 0.1, "pop_pitch": 1.05, "turbo": 0.0, "bov": 0.0,
+		"gain": 0.9, "upshift_bang": 0.7,
+	},
+	# Aventador: V12, smooth and high, a wail more than a bark
+	"v12": {
+		"cyl": 12, "pattern": [1.0, 0.95, 0.98, 0.96, 1.0, 0.95, 0.97, 0.96, 0.99, 0.95, 0.98, 0.96],
+		"timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+		"banks": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1], "bank_gain": 0.9, "body2": 190.0,
+		"body": 210.0, "body_q": 1.3, "high": 2300.0, "high_q": 1.9, "decay": 0.2, "grit": 0.3,
+		"tone": 0.45, "bass": 0.95, "rasp": 1.0, "click": 0.15, "drive": 1.7, "hard": 0.2,
+		"sub": [0.06, 0.1], "lp": [3000.0, 0.4], "whine": 0.15, "pop_pitch": 1.0, "turbo": 0.0, "bov": 0.0,
+		"gain": 0.85, "upshift_bang": 0.9,
+	},
 	"v8race": {
 		"cyl": 8, "pattern": [1.0, 0.86, 0.97, 0.9, 1.0, 0.84, 0.95, 0.9], "timing": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
 		"body": 140.0, "body_q": 1.3, "high": 900.0, "high_q": 1.6, "decay": 0.26, "grit": 0.55,

@@ -61,8 +61,39 @@ const CARS := {
 		"spin_hold": 0.88, "yaw_damp": 1.6,
 		"burble": 2, "transmission": "auto", "desc": "Hochdrehender Renn-V8, Leichtbau und Rennfahrwerk – präzise und schnell.",
 	},
+	"m3e46": {
+		"name": "BMW M3 E46", "mass": 1570.0, "torque": 365.0, "tach": 9000.0,
+		"redline": 8000.0, "idle": 850.0, "gears": [4.23, 2.53, 1.67, 1.23, 1.0, 0.83], "reverse": 3.75,
+		"final": 3.62, "rear_split": 1.0, "turbo": 0.0, "grip": 1.04, "steer_lock": 45.0, "engine": "i6na",
+		"burble": 1, "transmission": "auto", "desc": "S54-Reihensechser-Sauger bis 8000 U/min, Hinterradantrieb – der Klassiker unter den Drift-BMWs.",
+	},
+	"m4f82": {
+		"name": "BMW M4 F82", "mass": 1570.0, "torque": 550.0, "tach": 8000.0,
+		"redline": 7300.0, "idle": 750.0, "gears": [4.11, 2.32, 1.54, 1.18, 1.0, 0.85], "reverse": 3.68,
+		"final": 3.46, "rear_split": 1.0, "turbo": 0.4, "grip": 1.06, "steer_lock": 45.0, "engine": "i6tt",
+		"burble": 2, "transmission": "auto", "desc": "S55-Biturbo-Reihensechser mit brachialem Drehmoment – das Heck will immer quer.",
+	},
+	"gt3rsr": {
+		"name": "Porsche 911 GT3 RSR", "mass": 1225.0, "torque": 440.0, "tach": 10000.0,
+		"redline": 9400.0, "idle": 1100.0, "gears": [3.15, 2.18, 1.71, 1.39, 1.16, 1.0], "reverse": 3.0,
+		"final": 3.44, "rear_split": 1.0, "turbo": 0.0, "grip": 1.18, "steer_lock": 42.0, "engine": "flat6",
+		"spin_hold": 0.98, "yaw_damp": 1.5,
+		"burble": 2, "transmission": "auto", "desc": "Boxer-Rennmotor im Heck, Leichtbau und Slicks – kreischt bis 9400 U/min.",
+	},
+	"gallardo": {
+		"name": "Lamborghini Gallardo", "mass": 1430.0, "torque": 510.0, "tach": 9000.0,
+		"redline": 8000.0, "idle": 950.0, "gears": [3.91, 2.44, 1.81, 1.46, 1.19, 0.97], "reverse": 2.69,
+		"final": 3.54, "rear_split": 0.75, "turbo": 0.0, "grip": 1.12, "steer_lock": 42.0, "engine": "v10",
+		"burble": 2, "transmission": "auto", "desc": "5.0-Liter-V10-Sauger, Allrad mit Hecklastigkeit – heller, heiserer Sound.",
+	},
+	"aventador": {
+		"name": "Lamborghini Aventador", "mass": 1575.0, "torque": 690.0, "tach": 9500.0,
+		"redline": 8500.0, "idle": 1000.0, "gears": [3.91, 2.44, 1.81, 1.46, 1.19, 0.97], "reverse": 2.9,
+		"final": 2.87, "rear_split": 0.72, "turbo": 0.0, "grip": 1.14, "steer_lock": 40.0, "engine": "v12",
+		"burble": 3, "transmission": "auto", "desc": "6.5-Liter-V12 mit 700 PS und Allrad – brutal schnell, Flammen beim Gaswegnehmen.",
+	},
 }
-const CAR_ORDER := ["r34", "mustang", "m3gt3"]
+const CAR_ORDER := ["r34", "mustang", "m3gt3", "m3e46", "m4f82", "gt3rsr", "gallardo", "aventador"]
 
 ## Tuning shop: every category has 4 levels (0 = stock). Costs in credits per level.
 const TUNING := [
