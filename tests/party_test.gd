@@ -16,7 +16,7 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	var world := World.new()
 	world.setup({"track": track_id, "mode": "free", "laps": 1, "time_of_day": "day", "weather": "dry",
-		"day_cycle": 0, "weather_seed": 3, "online": false, "party": true, "party_games": 6, "party_coins": 3})
+		"day_cycle": 0, "weather_seed": 3, "online": false, "party": true, "party_games": 7, "party_coins": 3})
 	add_child(world)
 	if not world.is_loaded:
 		await world.loaded
@@ -71,28 +71,18 @@ func _ready() -> void:
 			print("FAIL: %s: no props put up" % gid); fails += 1
 		while party.state == "travel":
 			await get_tree().physics_frame
-			if OS.has_environment("PT_DBG") and party._arena and Engine.get_physics_frames() % 60 == 0:
-				for bid in party._arena.bot_ids():
-					print("DBG bot %d at %s" % [bid, party._arena.fighters[bid]["car"].global_position])
 		# released at the start: the car must stay put (not be flung away)
 		var fling := 0.0
 		for f in 90:
 			await get_tree().physics_frame
 			fling = maxf(fling, Vector2(car.linear_velocity.x, car.linear_velocity.z).length())
-			if OS.has_environment("PT_DBG") and f % 10 == 0:
-				print("DBG %s f=%d v=%s pos=%s up=%s" % [gid, f, car.linear_velocity, car.global_position, car.global_transform.basis.y])
-			if OS.has_environment("PT_DBG") and gid == "arena" and f > 8 and f < 25:
-				var names := []
-				for b in car.get_colliding_bodies():
-					names.append("%s@%s" % [b.name, b.global_position])
-				print("DBG contacts f=%d %s" % [f, names])
 		if fling > 2.5:
 			print("FAIL: %s: car flung at the start (%.1f m/s)" % [gid, fling]); fails += 1
 		if gid == "parkour" and car.lift < 0.2:
 			print("FAIL: parkour: the car is not lifted"); fails += 1
 		if gid == "bowling" and party._pins.size() != 10:
 			print("FAIL: bowling: %d pins" % party._pins.size()); fails += 1
-		if gid == "arena":
+		if gid == "arena" or gid == "balloon":
 			if party._arena == null or party._arena.bot_ids().size() != 3:
 				print("FAIL: arena: no bots"); fails += 1
 			Input.action_press("fire")
@@ -107,7 +97,7 @@ func _ready() -> void:
 			if absf(float(proj[2])) > float(tr.half_w) + 3.0:
 				on_road = false
 		Input.action_release("accelerate")
-		if gid == "arena":
+		if gid == "arena" or gid == "balloon":
 			Input.action_release("fire")
 			var a = party._arena
 			var hits := 0
@@ -117,7 +107,7 @@ func _ready() -> void:
 			for bid in a.bot_ids():
 				var bc = a.fighters[bid]["car"]
 				moved = maxf(moved, bc.global_position.distance_to(party.sites.arena_spawn(0).origin))
-			print("  arena: %d hits, %d shots in the air, bots alive: %d" % [hits, a.shots.size(), a.bot_ids().size()])
+			print("  %s: %d hits, %d shots in the air, bots alive: %d" % [gid, hits, a.shots.size(), a.bot_ids().size()])
 		if gid == "bowling":
 			print("  bowling: %d pins down after 4 s" % party.sites.pins_down(party._pins))
 		party._t = float(party.GAMES[g]["time"])

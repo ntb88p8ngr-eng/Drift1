@@ -79,6 +79,9 @@ func plan(p_track: Node3D) -> bool:
 		used.append([best, cnt])
 		var p0 := fposmod(float(track.dists[best]) - float(track.start_dist), float(track.length))
 		sites[id] = {"i0": best, "len": len, "p0": p0}
+	# the balloon battle is fought in the arena
+	if sites.has("arena"):
+		sites["balloon"] = sites["arena"]
 	return not sites.is_empty()
 
 
@@ -122,7 +125,7 @@ func start_xf(id: String, slot: int, count: int) -> Transform3D:
 		"bowling":
 			# everybody bowls on their own pins from the same spot (the others are ghosts here)
 			return course_xf(id, BOWL_START - 4.0, 0.0, 0.6)
-		"arena":
+		"arena", "balloon":
 			return arena_spawn(slot)
 	return course_xf(id, donut_along(slot), 0.0, 0.6)
 
@@ -178,7 +181,7 @@ func build_course(id: String) -> void:
 			_build_donut()
 		"bowling":
 			_build_bowling()
-		"arena":
+		"arena", "balloon":
 			_build_arena()
 
 

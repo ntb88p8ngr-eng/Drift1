@@ -24,6 +24,8 @@ const GAMES := [
 		"desc": "Zwei Würfe auf zehn Riesen-Kegel: Nimm Anlauf und ziel gut – ab der roten Linie rollst du ohne Gas und Lenkung weiter!"},
 	{"id": "arena", "name": "Arena-Shootout", "time": 75.0, "unit": "x",
 		"desc": "Schieß die anderen ab! [F] / Linksklick = Feuer, 3 Treffer = raus. Münzen geben Dreifach-Schuss oder Schnellfeuer. Allein kämpfst du gegen Bots."},
+	{"id": "balloon", "name": "Ballon-Schlacht", "time": 90.0, "unit": "x",
+		"desc": "Jedes Auto hat 3 Ballons – schieß sie den anderen ab! [F] / Linksklick = Feuer. Ohne Ballons bist du raus, wer am längsten durchhält, gewinnt. Münzen: Dreifach-Schuss / Schnellfeuer."},
 ]
 const ANNOUNCE_TIME := 4.5
 const COUNTDOWN_TIME := 3.5
@@ -545,10 +547,11 @@ func _begin_travel() -> void:
 		_throw = 0
 		_throw_t = 0.0
 		_bowl_phase = "roll"
-	if id == "arena":
+	if id == "arena" or id == "balloon":
 		car.collision_mask |= Car.LAYER_REMOTE
 		_arena = PartyArena.new()
 		_arena.name = "Arena"
+		_arena.mode = "balloon" if id == "balloon" else "shoot"
 		add_child(_arena)
 		var me: int = Net.local_id() if world.online else 1
 		_arena.setup(self, world, sites, _seed, _ids, me)
@@ -580,7 +583,7 @@ func _respawn() -> Transform3D:
 			var r := RandomNumberGenerator.new()
 			r.randomize()
 			return sites.start_xf("koth", r.randi() % 8, 8)
-		"arena":
+		"arena", "balloon":
 			if _arena:
 				return _arena._spawn_xf()
 	return sites.start_xf(id, _slot, _ids.size())
@@ -664,6 +667,26 @@ func _play(delta: float, g: Dictionary) -> void:
 			_line.text = "%s   ·   %.1f s in der Zone" % [_clock(left), _value]
 		"bowling":
 			_play_bowling(delta, car, along, left)
+		"balloon":
+			if _arena:
+				_arena.step(delta)
+				var fb: Dictionary = _arena.fighters.get(_arena.me, {})
+				if not _done and not fb.is_empty():
+					_value = _arena.score(_arena.me)
+					if _arena.balloon_over():
+						_finish_local()
+				var alive := 0
+				for fid in _arena.fighters:
+					if not bool(_arena.fighters[fid]["out"]):
+						alive += 1
+				var n := int(fb.get("hp", 0))
+				var bal := ("● ".repeat(n).strip_edges() if n > 0 else "RAUS")
+				var pw2 := ""
+				if str(fb.get("power", "")) != "":
+					pw2 = "   ·   %s %d s" % ["3× SCHUSS" if fb["power"] == "triple" else "⚡ SCHNELLFEUER", int(ceil(float(fb["power_t"])))]
+				_line.text = "%s   ·   %s   ·   %d geplatzt   ·   noch %d im Spiel%s" % [_clock(left), bal, int(fb.get("kills", 0)), alive, pw2]
+				_show_status(_arena.feed if _arena.feed_t > 0.0 else "", UiKit.TEXT)
+				_status.add_theme_font_size_override("font_size", 30)
 		"arena":
 			if _arena:
 				_arena.step(delta)
@@ -816,6 +839,12 @@ func _fmt(g: Dictionary, v: float) -> String:
 			return "%d Kegel" % int(v)
 		"arena":
 			return "%d Abschüsse (%d Treffer)" % [int(v), int(round(fmod(v, 1.0) * 100.0))]
+		"balloon":
+			var pops := int(round(fmod(v, 1.0) * 10.0))
+			if v >= 1000.0:
+				var left_b := int((v - 1000.0) / 100.0)
+				return "überlebt mit %d Ballon%s · %d geplatzt" % [left_b, "" if left_b == 1 else "s", pops]
+			return "raus nach %d s · %d geplatzt" % [int(v), pops]
 	return "%d Donuts" % int(v)
 
 

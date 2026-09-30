@@ -6,6 +6,8 @@ extends Node3D
 ## Online every machine simulates its own shots; the shooter decides hits on the others and tells
 ## the victim ("hit"), the victim reports its knock-out ("down") so the shooter can count it.
 ## Messages go through the host (party.gd relays everything with t = "ar").
+## mode "balloon" (Ballon-Schlacht, like the battle mode of kart games): three balloons on every car,
+## each hit pops one, without balloons you are out for good – whoever keeps balloons longest wins.
 
 const MAX_HP := 3
 const SHOT_SPEED := 90.0
@@ -20,6 +22,9 @@ const PICKUP_MAX := 3
 const RESPAWN_TIME := 1.8
 const SHIELD_TIME := 2.2
 const START_SHIELD := 6.0
+const POP_SHIELD := 0.8        # balloon mode: short grace after a pop (a triple shot takes one, not three)
+const BALLOON_COLS := [Color(1.0, 0.15, 0.2), Color(0.2, 0.55, 1.0), Color(1.0, 0.85, 0.1), Color(0.2, 0.85, 0.35),
+	Color(0.9, 0.3, 1.0), Color(1.0, 0.5, 0.1), Color(0.1, 0.9, 0.9), Color(1.0, 1.0, 1.0)]
 const BOT_NAMES := ["Bot Blitz", "Bot Kurbel", "Bot Turbo"]
 const LAYER_WORLD := 1
 const Car = preload("res://scripts/car/car.gd")
@@ -28,6 +33,7 @@ var party: Node
 var world: Node3D
 var sites: Node3D
 var seed_v := 0
+var mode := "shoot"      # shoot, balloon
 var me := 1
 var fighters := {}       # id -> state (see _add_fighter); negative ids are bots
 var shots: Array = []
@@ -78,7 +84,8 @@ func setup(p_party: Node, p_world: Node3D, p_sites: Node3D, p_seed: int, ids: Ar
 func _add_fighter(id: int, car: Node, bot: bool) -> void:
 	fighters[id] = {"car": car, "hp": MAX_HP, "kills": 0, "hits": 0, "cool": 0.0, "power": "", "power_t": 0.0,
 		"dead_t": 0.0, "shield": SHIELD_TIME, "bot": bot, "stuck_t": 0.0, "slow_t": 0.0, "think": 0.0,
-		"target": 0, "aim_err": 0.0, "shield_node": _shield_node(car)}
+		"target": 0, "aim_err": 0.0, "shield_node": _shield_node(car), "out": false, "out_t": 0.0,
+		"balloons": _balloons_node(car, BALLOON_COLS[posmod(id, BALLOON_COLS.size())]) if mode == "balloon" else null}
 
 
 func _spawn_bot(id: int, b: int) -> void:
@@ -122,6 +129,13 @@ func bot_name(id: int) -> String:
 func score(id: int) -> float:
 	if not fighters.has(id):
 		return 0.0
+	if mode == "balloon":
+		# still in: 1000 + 100 per balloon left; out: the seconds survived – plus the pops as tie-break
+		var f: Dictionary = fighters[id]
+		var pops := minf(float(f["kills"]), 9.0) * 0.1
+		if bool(f["out"]):
+			return minf(float(f["out_t"]), 999.0) + pops
+		return 1000.0 + float(f["hp"]) * 100.0 + pops
 	return float(fighters[id]["kills"]) + minf(float(fighters[id]["hits"]), 99.0) * 0.01
 
 
@@ -151,13 +165,29 @@ func _spawn_xf() -> Transform3D:
 	return best
 
 
+## Balloon mode: the round is decided (offline: you are out or all the bots are; online: you are out).
+func balloon_over() -> bool:
+	if mode != "balloon" or not fighters.has(me):
+		return false
+	if bool(fighters[me]["out"]):
+		return true
+	if world.online:
+		return false
+	for id in fighters:
+		if int(id) != me and not bool(fighters[id]["out"]):
+			return false
+	return true
+
+
 func cleanup() -> void:
 	for id in fighters:
 		var f: Dictionary = fighters[id]
 		if bool(f["bot"]) and is_instance_valid(f["car"]):
 			(f["car"] as Node).queue_free()
-		elif is_instance_valid(f["shield_node"]):
-			(f["shield_node"] as Node).queue_free()
+		else:
+			for key in ["shield_node", "balloons"]:
+				if f[key] != null and is_instance_valid(f[key]):
+					(f[key] as Node).queue_free()
 	fighters.clear()
 
 
@@ -179,6 +209,11 @@ func step(delta: float) -> void:
 			f["power_t"] = float(f["power_t"]) - delta
 			if float(f["power_t"]) <= 0.0:
 				f["power"] = ""
+		if f["balloons"] != null and is_instance_valid(f["balloons"]):
+			var bn: Node3D = f["balloons"]
+			for i in bn.get_child_count():
+				var bc := bn.get_child(i) as Node3D
+				bc.rotation = Vector3(sin(clock * 2.1 + i * 1.9) * 0.12, 0, sin(clock * 1.7 + i) * 0.15)
 		var sh: Node3D = f["shield_node"]
 		if is_instance_valid(sh):
 			sh.visible = float(f["shield"]) > 0.0 and float(f["dead_t"]) <= 0.0
@@ -303,6 +338,19 @@ func _damage(victim: int, by: int, dir: Vector3) -> void:
 	var car: Car = f["car"]
 	car.apply_central_impulse((dir * 0.9 + Vector3.UP * 0.25) * car.mass * 2.2)
 	f["hp"] = int(f["hp"]) - 1
+	if mode == "balloon":
+		_pop(victim, by, int(f["hp"]))
+		if victim == me:
+			world.hud.show_message("PENG!" if int(f["hp"]) > 0 else "RAUS!", ("noch %d Ballon%s" % [f["hp"], "" if int(f["hp"]) == 1 else "s"]) if int(f["hp"]) > 0 else "alle Ballons geplatzt", _bad(), 1.2)
+		if fighters.has(by) and (by == me or is_bot(by)):
+			_credit_pop(by, victim)
+		elif world.online:
+			Net.party_to_host({"t": "ar", "k": "pop", "v": victim, "by": by, "n": int(f["hp"])})
+		if int(f["hp"]) <= 0:
+			if victim == me:
+				car.controls_locked = true
+			_feed("%s  ✖  %s ist raus" % [_name(by), _name(victim)])
+		return
 	if victim == me:
 		world.hud.show_message("TREFFER!", "%d / %d" % [maxi(int(f["hp"]), 0), MAX_HP], _bad(), 0.8)
 	if int(f["hp"]) > 0:
@@ -318,6 +366,71 @@ func _damage(victim: int, by: int, dir: Vector3) -> void:
 	elif world.online:
 		Net.party_to_host({"t": "ar", "k": "down", "v": victim, "by": by})
 	_feed("%s  ✖  %s" % [_name(by), _name(victim)])
+
+
+## Balloon mode: a balloon of `victim` popped, `n` are left (visuals, out for good at 0).
+func _pop(victim: int, by: int, n: int) -> void:
+	var f: Dictionary = fighters[victim]
+	f["hp"] = n
+	f["shield"] = POP_SHIELD
+	var car: Node3D = f["car"]
+	var bn = f["balloons"]
+	if bn != null and is_instance_valid(bn):
+		for i in (bn as Node3D).get_child_count():
+			var b := (bn as Node3D).get_child(i) as Node3D
+			if b.visible and i >= n:
+				_flash(b.global_position + Vector3.UP * 1.1, (b.get_child(0) as MeshInstance3D).material_override, 1.6, 0.15)
+			b.visible = i < n
+	if n <= 0 and not bool(f["out"]):
+		f["out"] = true
+		f["out_t"] = clock
+		f["dead_t"] = 1e9
+		_boom(car.global_position)
+
+
+func _credit_pop(by: int, victim: int) -> void:
+	fighters[by]["kills"] = int(fighters[by]["kills"]) + 1
+	if by == me:
+		world.hud.show_message("GEPLATZT!", _name(victim), Color(1.0, 0.8, 0.2), 1.0)
+
+
+func _balloons_node(car: Node, col: Color) -> Node3D:
+	var root := Node3D.new()
+	root.position = Vector3(0, 1.1, 1.1)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.roughness = 0.15
+	m.metallic_specular = 0.8
+	m.rim_enabled = true
+	m.rim = 0.6
+	var string_m := StandardMaterial3D.new()
+	string_m.albedo_color = Color(0.9, 0.9, 0.9)
+	for i in 3:
+		var holder := Node3D.new()
+		holder.position = Vector3((i - 1) * 0.45, 0, (i % 2) * 0.25)
+		var ball := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.42
+		sm.height = 1.0
+		ball.mesh = sm
+		ball.material_override = m
+		ball.position = Vector3((i - 1) * 0.35, 1.5, 0)
+		holder.add_child(ball)
+		var cord := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.012
+		cm.bottom_radius = 0.012
+		cm.height = 1.1
+		cm.radial_segments = 4
+		cord.mesh = cm
+		cord.material_override = string_m
+		cord.position = Vector3((i - 1) * 0.17, 0.55, 0)
+		cord.rotation = Vector3(0, 0, -(i - 1) * 0.3)
+		cord.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(cord)
+		root.add_child(holder)
+	car.add_child(root)
+	return root
 
 
 func _credit(by: int, victim: int) -> void:
@@ -349,6 +462,15 @@ func on_msg(from: int, msg: Dictionary) -> void:
 				_boom((fighters[from]["car"] as Node3D).global_position)
 		"pu":
 			_remove_pickup(int(msg.get("i", -1)))
+		"pop":
+			# a balloon of `from` popped (sent by its owner)
+			var by2 := int(msg.get("by", 0))
+			if fighters.has(from):
+				_pop(from, by2, int(msg.get("n", 0)))
+			if by2 == me and fighters.has(me):
+				_credit_pop(me, from)
+			if int(msg.get("n", 0)) <= 0:
+				_feed("%s  ✖  %s ist raus" % [_name(by2), _name(from)])
 
 
 func _name(id: int) -> String:
