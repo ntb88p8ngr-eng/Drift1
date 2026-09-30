@@ -494,10 +494,9 @@ func _start_ending() -> void:
 	var e1 := func() -> void:
 		cam.fov = 50.0
 	var u1 := func(k: float, t: float) -> void:
-		# from behind the car, past it into the clearing: the headlights on Kenji and the fire
-		var cx: Transform3D = car.global_transform
-		var eye := cx.origin + cx.basis.z * lerpf(5.5, 4.5, k) + cx.basis.x * 2.2 + Vector3(0, 1.5, 0)
-		var tgt := kenji_p + Vector3(0, 1.1, 0)
+		# from beside the fire towards the track: the car rolls up with its headlights on
+		var eye := camp_xf * Vector3(2.6, lerpf(1.3, 1.5, k), 2.2)
+		var tgt: Vector3 = car.global_position + Vector3(0, 0.7, 0)
 		cam.global_transform = Transform3D(Basis.looking_at((tgt - eye).normalized(), Vector3.UP), eye)
 		if t > 1.0:
 			_say("Kenji", "Da bist du ja! Endlich …")

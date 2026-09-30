@@ -1360,7 +1360,7 @@ func _flames() -> Node3D:
 	var root := Node3D.new()
 	# flames: short-lived, rising, orange to red, additive
 	var p := GPUParticles3D.new()
-	p.amount = 90
+	p.amount = 140
 	p.lifetime = 0.7
 	p.local_coords = true
 	var m := ParticleProcessMaterial.new()
@@ -1381,15 +1381,15 @@ func _flames() -> Node3D:
 	sct.curve = sc
 	m.scale_curve = sct
 	var g := Gradient.new()
-	g.set_color(0, Color(1.0, 0.85, 0.4, 0.9))
-	g.add_point(0.4, Color(1.0, 0.45, 0.1, 0.8))
-	g.set_color(1, Color(0.6, 0.1, 0.02, 0.0))
+	g.set_color(0, Color(1.0, 0.62, 0.22, 0.75))
+	g.add_point(0.4, Color(0.95, 0.32, 0.06, 0.55))
+	g.set_color(1, Color(0.5, 0.08, 0.02, 0.0))
 	var gt := GradientTexture1D.new()
 	gt.gradient = g
 	m.color_ramp = gt
 	p.process_material = m
 	var q := QuadMesh.new()
-	q.size = Vector2(0.45, 0.6)
+	q.size = Vector2(0.26, 0.38)
 	var fm := StandardMaterial3D.new()
 	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

@@ -54,7 +54,12 @@ func _ready() -> void:
 	if only == "" or only.split(",").has("camp"):
 		tut._skip_intro()
 		tut._close_hint()
-		world.local_car.place(Transform3D(Basis.IDENTITY, world.tutorial_site.path_pts[world.tutorial_site.path_pts.size() - 10] + Vector3(0, 0.8, 0)))
+		var ts = world.tutorial_site
+		var p0: Vector3 = ts.path_pts[ts.path_pts.size() - 10] + Vector3(0, 0.8, 0)
+		var dir := ts.camp - p0
+		dir.y = 0.0
+		world.local_car.place(Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), p0))
+		world.local_car.headlights = true
 		for f in 30:
 			await get_tree().physics_frame
 		tut._start_ending()
