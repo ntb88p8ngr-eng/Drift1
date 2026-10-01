@@ -246,7 +246,7 @@ static func gameplay_page() -> VBoxContainer:
 		hb_val.text = "%d %%" % int(x * 100.0)
 		Game.settings["handbrake_strength"] = x
 		Game.save_settings(), 200)
-	hb.tooltip_text = "Wie stark die Handbremse (Leertaste) greift: schwach = sanftes Einleiten, stark = Räder blockieren."
+	hb.tooltip_text = "Die Handbremse (Leertaste) blockiert die Hinterräder immer – auch mit Gas (die Kupplung ist dabei getreten).\nDie Stärke bestimmt, wie viel Seitenhalt die blockierten Reifen behalten: schwach = mehr Halt, stark = das Heck kommt sofort."
 	v.add_child(UiKit.labeled("Handbremse", UiKit.row([hb, hb_val], 8)))
 	var sl_val := UiKit.label("%d %%" % int(float(Game.settings["slide"]) * 100.0), 16, UiKit.TEXT_DIM)
 	var sl := UiKit.slider(0.0, 1.0, 0.05, float(Game.settings["slide"]), func(x):

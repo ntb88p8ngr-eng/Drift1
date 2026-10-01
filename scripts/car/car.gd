@@ -629,7 +629,10 @@ func _simulate(delta: float) -> void:
 	var launch_rpm := redline * LAUNCH_RPM
 	_launch_osc += delta
 	var wobble := sin(_launch_osc * TAU * 6.5) * 0.045 + sin(_launch_osc * TAU * 2.3) * 0.02 + randf_range(-0.012, 0.012)
-	var engaged := ratio != 0.0 and shift_timer <= 0.0 and not controls_locked
+	# handbrake pulled = clutch in (as drifters do): the engine revs freely, no drive reaches the
+	# wheels and the locked rear wheels stay locked even with the throttle down
+	var clutch_in := handbrake and not line_lock and not controls_locked
+	var engaged := ratio != 0.0 and shift_timer <= 0.0 and not controls_locked and not clutch_in
 	if line_lock or (controls_locked and throttle > 0.4):
 		# two-step limiter holds the revs around the launch rpm
 		rpm = lerpf(rpm, launch_rpm * (1.0 + wobble) * clampf(throttle * 1.2, 0.3, 1.0), 1.0 - exp(-delta * 16.0))
@@ -644,8 +647,8 @@ func _simulate(delta: float) -> void:
 		if absi(gear) == 1:
 			# normal pull-away: the clutch slips just above idle (far below the launch-control revs)
 			floor_rpm = idle_rpm + throttle * (redline * 0.26 - idle_rpm)
-		if (absi(gear) == 1 or handbrake) and throttle > 0.85 and coupled_rpm < redline * 0.6:
-			# flat out pulling away in 1st (or a clutch kick with the handbrake): the clutch lets the
+		if absi(gear) == 1 and throttle > 0.85 and coupled_rpm < redline * 0.6:
+			# flat out pulling away in 1st: the clutch lets the
 			# engine rev up (burnout) – the torque then breaks the tyres loose and they keep the revs up
 			# by themselves. Higher gears stay coupled: with grip the revs follow the road speed.
 			floor_rpm = redline * 0.96
@@ -744,6 +747,8 @@ func _simulate(delta: float) -> void:
 			w["load"] = 0.0
 			w["slip"] = 0.0
 			w["spin"] = move_toward(float(w["spin"]), 0.0, 20.0 * delta)
+			if handbrake and not w["front"] and not line_lock:
+				w["spin"] = -float(w["v_long"])     # locked in the air as well
 			continue
 		grounded_wheels += 1
 		var hit := ray.get_collision_point()
@@ -808,13 +813,10 @@ func _simulate(delta: float) -> void:
 			var bias := front_brake if is_front else 1.0 - front_brake
 			f_long -= clampf(v_long / 0.6, -1.0, 1.0) * brake_force_max * bias * 0.5 * brake_input
 		if handbrake and not is_front and not line_lock:
-			if throttle > 0.25 and engaged and f_drive != 0.0:
-				# handbrake + throttle: the rear keeps spinning instead of locking
-				power_slide = true
-			else:
-				f_long = -clampf(v_long / 0.4, -1.0, 1.0) * max_f * 0.95 * hb_strength
-				# a strong handbrake locks the rear wheels, a soft one only drags them
-				locked = absf(v_long) > 0.5 and hb_strength > 0.45
+			# the rear wheels lock – also with the throttle down (the clutch is in, see `clutch_in`);
+			# the strength setting only decides how much side grip the locked tyres keep
+			f_long = -clampf(v_long / 0.4, -1.0, 1.0) * max_f * 0.95
+			locked = absf(v_long) > 0.5
 		f_long -= v_long * ROLLING
 		# parking hold when nearly stopped and no input: static friction keeps the car where it is –
 		# it also cancels the downhill pull, so it doesn't creep away on a slope (or roll backwards)

@@ -3,6 +3,8 @@ extends Node
 ##  BURNOUT – standstill, full throttle for 1.5 s: peak revs, speed
 ##  DRIFT   – 60 km/h in 2nd, handbrake flick, then full throttle + full lock for 2.5 s:
 ##            revs (share of the redline), speed change, drift angle, rear wheel spin
+##  LOCK    – 60 km/h straight, handbrake + full throttle for 1 s: the rear wheels must stand still
+##            (locked, the clutch is in) and the car must slow down
 ## Run: godot --headless --path . res://tests/handling_test.tscn  (ENGINE=1 for engine stage 1)
 
 const World = preload("res://scripts/world/world.gd")
@@ -124,6 +126,29 @@ func _ready() -> void:
 		if car.speed_kmh() < v_start - 10.0:
 			ok = false   # flat out in a held drift the car must keep its speed
 		print("HELD %s stage%d: v %.0f -> %.0f km/h over 3 s, angle avg %.0f deg, rpm avg %.2f, gear %d" % [cid, stage, v_start, car.speed_kmh(), ang2 / n2, rpm2 / n2, car.gear])
+		# --- handbrake with the throttle down: the rear wheels lock ---
+		car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), start + Vector3(-110, 0, -60))
+		car.angular_velocity = Vector3.ZERO
+		car.gear = 2
+		for f in 12:
+			car.linear_velocity = fwd * (60.0 / 3.6)
+			await get_tree().physics_frame
+		var v_l0: float = car.speed_kmh()
+		Input.action_press("accelerate")
+		Input.action_press("handbrake")
+		var roll := 0.0
+		for f in 120:
+			await get_tree().physics_frame
+			if f >= 20:
+				for wi in [2, 3]:
+					if not bool(car.wheels[wi]["grounded"]):
+						continue
+					roll = maxf(roll, absf(float(car.wheels[wi]["v_long"]) + float(car.wheels[wi]["spin"])))
+		Input.action_release("handbrake")
+		Input.action_release("accelerate")
+		print("LOCK %s: v %.0f -> %.0f km/h, rear wheel surface speed max %.2f m/s, rpm %.2f" % [cid, v_l0, car.speed_kmh(), roll, car.rpm / car.redline])
+		if roll > 0.3 or car.speed_kmh() > v_l0 - 8.0:
+			ok = false   # handbrake + throttle: the rears must stay locked and the car slow down
 		remove_child(world)
 		world.queue_free()
 		await get_tree().process_frame
