@@ -171,6 +171,9 @@ func _ready() -> void:
 	pause_menu.world = self
 	add_child(pause_menu)
 	local_car.wall_hit.connect(_on_wall_hit)
+	local_car.assist_toggled.connect(func(n: String, on: bool) -> void:
+		if hud:
+			hud.show_message("%s %s" % [n, "AN" if on else "AUS"], "", Color(0.5, 1.0, 0.6) if on else Color(1.0, 0.6, 0.4), 1.4))
 	if mode == "graffiti":
 		_setup_graffiti()
 	if party_sites:

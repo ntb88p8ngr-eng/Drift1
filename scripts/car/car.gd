@@ -8,7 +8,8 @@ extends RigidBody3D
 ## Remote (network) cars use the same node as a kinematic, interpolated puppet.
 
 signal shifted(up: bool, boost: float)
-signal blow_off(amount: float, full: bool)   # full = lifting off the throttle, else a gear change
+signal blow_off(amount: float, full: bool)
+signal assist_toggled(name: String, on: bool)   # ABS / ESP switched by its key   # full = lifting off the throttle, else a gear change
 signal wall_hit(strength: float)
 ## strength 1 = loud bang with a big flame, below 1 = small overrun pop (Burble-Tune)
 signal backfire(strength: float)
@@ -447,6 +448,13 @@ func _read_input(delta: float) -> void:
 				_paddle_hold = PADDLE_HOLD
 		if Input.is_action_just_pressed("lights"):
 			headlights = not headlights
+		# driver aids: K / right stick click = ABS, J / left stick click = ESP (saved in the settings)
+		if Input.is_action_just_pressed("toggle_abs"):
+			Game.set_setting("abs", not bool(Game.settings.get("abs", true)))
+			assist_toggled.emit("ABS", bool(Game.settings["abs"]))
+		if Input.is_action_just_pressed("toggle_esp"):
+			Game.set_setting("esp", not bool(Game.settings.get("esp", false)))
+			assist_toggled.emit("ESP", bool(Game.settings["esp"]))
 		# hold N: strobe the underglow (works without flasher tuning)
 		if underglow:
 			underglow.manual = Input.is_action_pressed("neon_flash")

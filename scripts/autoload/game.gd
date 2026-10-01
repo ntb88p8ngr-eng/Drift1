@@ -276,7 +276,10 @@ func _setup_input() -> void:
 	_add_action("shift_down", [KEY_Q, KEY_CTRL], [JOY_BUTTON_LEFT_SHOULDER], [])
 	_add_action("toggle_transmission", [KEY_M], [], [])
 	_add_action("camera_next", [KEY_C], [JOY_BUTTON_Y], [])
-	_add_action("camera_free", [KEY_V], [JOY_BUTTON_RIGHT_STICK], [])
+	# (Y) held = free camera, see camera_rig.gd – the right stick click switches the ABS
+	_add_action("camera_free", [KEY_V], [], [])
+	_add_action("toggle_abs", [KEY_K], [JOY_BUTTON_RIGHT_STICK], [])
+	_add_action("toggle_esp", [KEY_J], [JOY_BUTTON_LEFT_STICK], [])
 	_add_action("look_back", [KEY_B], [JOY_BUTTON_X], [])
 	_add_action("reset_car", [KEY_R], [JOY_BUTTON_BACK], [])
 	_add_action("lights", [KEY_L], [JOY_BUTTON_DPAD_UP], [])
@@ -327,13 +330,15 @@ const CONTROLS_HELP := [
 	["M", "Automatik ⇄ Manuell"],
 	["F / Linksklick", "Feuer (Party: Arena-Shootout)"],
 	["C / (Y)", "Kamera wechseln"],
-	["V / R-Stick-Klick", "Kamera-Lock lösen (freie Kamera, Maus)"],
+	["V / (Y) halten", "Kamera-Lock lösen (freie Kamera, Maus / rechter Stick)"],
 	["Rechte Maustaste halten", "Kurz umsehen"],
 	["B / (X)", "Nach hinten schauen"],
 	["R / Back", "Auto auf Strecke zurücksetzen"],
 	["L", "Licht an/aus"],
 	["N / Steuerkreuz →", "Neon blitzen (halten, bei eingebautem Underglow)"],
 	["Tab", "Leaderboard / Spielerliste"],
+	["K / rechter Stick drücken", "ABS an/aus"],
+	["J / linker Stick drücken", "ESP an/aus"],
 	["Esc / Start", "Pause"],
 	["Enter / (A)", "Menü: bestätigen"],
 	["Esc / (B)", "Menü: zurück"],

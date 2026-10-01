@@ -239,12 +239,12 @@ static func gameplay_page() -> VBoxContainer:
 		Game.set_setting("steer_assist", x))))
 	var abs_opt := UiKit.option(["An", "Aus"], 0 if bool(Game.settings.get("abs", true)) else 1, func(i):
 		Game.set_setting("abs", i == 0))
-	abs_opt.tooltip_text = "Antiblockiersystem: beim Vollbremsen blockieren die Räder nicht, das Auto bleibt lenkbar.\nIm Drehzahlmesser: ABS-Symbol grün = an, blinkt gelb beim Regeln."
-	v.add_child(UiKit.labeled("ABS", abs_opt))
+	abs_opt.tooltip_text = "Antiblockiersystem: beim Vollbremsen blockieren die Räder nicht, das Auto bleibt lenkbar.\nIm Drehzahlmesser: ABS-Symbol grün = an, blinkt gelb beim Regeln.\nWährend der Fahrt umschalten: [K] / rechten Stick drücken."
+	v.add_child(UiKit.labeled("ABS  [K]", abs_opt))
 	var esp_opt := UiKit.option(["An", "Aus"], 0 if bool(Game.settings.get("esp", false)) else 1, func(i):
 		Game.set_setting("esp", i == 0))
-	esp_opt.tooltip_text = "Stabilitätsprogramm: nimmt Gas weg und fängt das Auto ab, sobald das Heck ausbricht –\nsicher beim Rennen, verhindert aber Drifts (Handbremse umgeht es). Symbol grün = an, blinkt gelb beim Regeln."
-	v.add_child(UiKit.labeled("ESP", esp_opt))
+	esp_opt.tooltip_text = "Stabilitätsprogramm: nimmt Gas weg und fängt das Auto ab, sobald das Heck ausbricht –\nsicher beim Rennen, verhindert aber Drifts (Handbremse umgeht es). Symbol grün = an, blinkt gelb beim Regeln.\nWährend der Fahrt umschalten: [J] / linken Stick drücken."
+	v.add_child(UiKit.labeled("ESP  [J]", esp_opt))
 	var hb_val := UiKit.label("%d %%" % int(float(Game.settings["handbrake_strength"]) * 100.0), 16, UiKit.TEXT_DIM)
 	var hb := UiKit.slider(0.1, 1.0, 0.05, float(Game.settings["handbrake_strength"]), func(x):
 		hb_val.text = "%d %%" % int(x * 100.0)

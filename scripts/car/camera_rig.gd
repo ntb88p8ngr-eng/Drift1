@@ -32,6 +32,8 @@ var _blur_mat: ShaderMaterial
 var _prev_fwd := Vector3.ZERO
 var _swipe := 0.0
 var _stick_s := Vector2.ZERO   # smoothed right stick
+var _y_hold := -1.0            # how long (Y) has been held (-1 = not held / already used)
+const Y_HOLD := 0.45
 
 ## Motion blur like the eye at speed: the centre (where you look) stays sharp, towards the sides the
 ## picture smears outwards, more the faster you go; quick camera swings smear sideways.
@@ -164,16 +166,32 @@ func _unhandled_input(event: InputEvent) -> void:
 				_zoom = clampf(_zoom + step * 0.1, 0.6, 2.4)
 				Game.settings["camera_zoom"] = _zoom
 				Game.save_settings()
-	if event.is_action_pressed("camera_next"):
-		if free_look:
-			set_free_look(false)
-		mode = (mode + 1) % MODES.size()
-		Game.settings["camera_mode"] = mode
+	if event is InputEventJoypadButton and event.is_action("camera_next"):
+		# gamepad (Y): a short press switches the view, held it unlocks the free camera (_process)
+		if event.is_pressed():
+			_y_hold = 0.0
+		elif _y_hold >= 0.0:
+			if _y_hold < Y_HOLD:
+				_next_mode()
+			_y_hold = -1.0
+	elif event.is_action_pressed("camera_next"):
+		_next_mode()
 	elif event.is_action_pressed("camera_free"):
 		set_free_look(not free_look)
 
 
+func _next_mode() -> void:
+	if free_look:
+		set_free_look(false)
+	mode = (mode + 1) % MODES.size()
+	Game.settings["camera_mode"] = mode
+
+
 func _process(delta: float) -> void:
+	if _y_hold >= 0.0 and _y_hold < Y_HOLD:
+		_y_hold += delta
+		if _y_hold >= Y_HOLD:
+			set_free_look(not free_look)
 	if car == null or not is_instance_valid(car):
 		return
 	# interpolated transform: the physics runs at 120 Hz, the camera at the display rate
