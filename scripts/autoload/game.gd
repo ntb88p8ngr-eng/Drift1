@@ -218,6 +218,7 @@ var settings := {
 	"burble": {},
 	"response": {},
 	"underglow": {},
+	"bindings": {},     # action -> {"key": physical keycode, "pad": [kind 0 button / 1 axis, index, axis sign]}
 }
 
 ## leaderboard[track_id][category] = Array of entries (sorted best first)
@@ -323,6 +324,108 @@ func _add_action(action: String, keys: Array, buttons: Array, axes: Array) -> vo
 		InputMap.action_add_event(action, jm)
 
 
+## Actions the player can rebind in Optionen → Steuerung: [action, label].
+const REBINDABLE := [
+	["accelerate", "Gas"], ["brake", "Bremse / Rückwärts"], ["steer_left", "Lenken links"],
+	["steer_right", "Lenken rechts"], ["handbrake", "Handbremse"], ["nitro", "Nitro"],
+	["shift_up", "Hochschalten"], ["shift_down", "Runterschalten"], ["toggle_transmission", "Automatik ⇄ Manuell"],
+	["fire", "Feuer (Party)"], ["camera_next", "Kamera wechseln"], ["camera_free", "Freie Kamera"],
+	["look_back", "Nach hinten schauen"], ["reset_car", "Auto zurücksetzen"], ["lights", "Licht"],
+	["neon_flash", "Neon blitzen"], ["toggle_abs", "ABS an/aus"], ["toggle_esp", "ESP an/aus"],
+	["scoreboard", "Leaderboard"], ["pause", "Pause"],
+]
+
+
+## Puts the player's own keys / gamepad inputs over the defaults: a rebound device replaces all of
+## that action's events of the same kind (keyboard or gamepad); the mouse button for "fire" stays.
+func apply_bindings() -> void:
+	var b: Dictionary = settings.get("bindings", {})
+	for action in b:
+		if not InputMap.has_action(action):
+			continue
+		var e: Dictionary = b[action] if b[action] is Dictionary else {}
+		if e.has("key"):
+			for ev in InputMap.action_get_events(action):
+				if ev is InputEventKey:
+					InputMap.action_erase_event(action, ev)
+			var k := InputEventKey.new()
+			k.physical_keycode = int(e["key"])
+			InputMap.action_add_event(action, k)
+		if e.has("pad") and e["pad"] is Array and (e["pad"] as Array).size() == 3:
+			for ev in InputMap.action_get_events(action):
+				if ev is InputEventJoypadButton or ev is InputEventJoypadMotion:
+					InputMap.action_erase_event(action, ev)
+			InputMap.action_add_event(action, pad_event(e["pad"]))
+
+
+static func pad_event(p: Array) -> InputEvent:
+	if int(p[0]) == 0:
+		var jb := InputEventJoypadButton.new()
+		jb.button_index = int(p[1]) as JoyButton
+		return jb
+	var jm := InputEventJoypadMotion.new()
+	jm.axis = int(p[1]) as JoyAxis
+	jm.axis_value = 1.0 if float(p[2]) > 0.0 else -1.0
+	return jm
+
+
+## Stores one new binding (`key` >= 0 for the keyboard, else `pad`) and applies it right away.
+func rebind(action: String, key: int, pad: Array = []) -> void:
+	var b: Dictionary = settings["bindings"]
+	var e: Dictionary = b.get(action, {}) if b.get(action) is Dictionary else {}
+	if key >= 0:
+		e["key"] = key
+	if not pad.is_empty():
+		e["pad"] = pad
+	b[action] = e
+	apply_bindings()
+	save_settings()
+
+
+## Back to the default layout.
+func reset_bindings() -> void:
+	settings["bindings"] = {}
+	for pair in REBINDABLE:
+		InputMap.action_erase_events(pair[0])
+	_setup_input()
+	save_settings()
+
+
+const PAD_BUTTONS := {JOY_BUTTON_A: "(A)", JOY_BUTTON_B: "(B)", JOY_BUTTON_X: "(X)", JOY_BUTTON_Y: "(Y)",
+	JOY_BUTTON_LEFT_SHOULDER: "LB", JOY_BUTTON_RIGHT_SHOULDER: "RB", JOY_BUTTON_BACK: "Back",
+	JOY_BUTTON_START: "Start", JOY_BUTTON_LEFT_STICK: "L3", JOY_BUTTON_RIGHT_STICK: "R3",
+	JOY_BUTTON_DPAD_UP: "Steuerkreuz ↑", JOY_BUTTON_DPAD_DOWN: "Steuerkreuz ↓",
+	JOY_BUTTON_DPAD_LEFT: "Steuerkreuz ←", JOY_BUTTON_DPAD_RIGHT: "Steuerkreuz →", JOY_BUTTON_GUIDE: "Home"}
+
+
+## Readable name of the action's current keyboard (pad = false) or gamepad binding.
+func binding_text(action: String, pad: bool) -> String:
+	var names: Array = []
+	for ev in InputMap.action_get_events(action):
+		if not pad and ev is InputEventKey:
+			var kc: Key = (ev as InputEventKey).physical_keycode
+			if DisplayServer.get_name() != "headless":
+				kc = DisplayServer.keyboard_get_keycode_from_physical(kc)   # the label on the player's layout
+			names.append(OS.get_keycode_string(kc))
+		elif pad and ev is InputEventJoypadButton:
+			var bi: int = (ev as InputEventJoypadButton).button_index
+			names.append(PAD_BUTTONS.get(bi, "Taste %d" % bi))
+		elif pad and ev is InputEventJoypadMotion:
+			names.append(axis_name((ev as InputEventJoypadMotion).axis, (ev as InputEventJoypadMotion).axis_value))
+	return " / ".join(names) if not names.is_empty() else "–"
+
+
+static func axis_name(axis: int, value: float) -> String:
+	match axis:
+		JOY_AXIS_TRIGGER_LEFT: return "LT"
+		JOY_AXIS_TRIGGER_RIGHT: return "RT"
+		JOY_AXIS_LEFT_X: return "Linker Stick ←" if value < 0.0 else "Linker Stick →"
+		JOY_AXIS_LEFT_Y: return "Linker Stick ↑" if value < 0.0 else "Linker Stick ↓"
+		JOY_AXIS_RIGHT_X: return "Rechter Stick ←" if value < 0.0 else "Rechter Stick →"
+		JOY_AXIS_RIGHT_Y: return "Rechter Stick ↑" if value < 0.0 else "Rechter Stick ↓"
+	return "Achse %d" % axis
+
+
 const CONTROLS_HELP := [
 	["W / ↑ / RT", "Gas"],
 	["S / ↓ / LT", "Bremse / Rückwärts"],
@@ -389,6 +492,9 @@ func load_settings() -> void:
 		settings["burble"] = {}
 	if not (settings.get("response") is Dictionary):
 		settings["response"] = {}
+	if not (settings.get("bindings") is Dictionary):
+		settings["bindings"] = {}
+	apply_bindings()
 
 
 func save_settings() -> void:

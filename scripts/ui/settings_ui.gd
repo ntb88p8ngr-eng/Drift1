@@ -25,6 +25,9 @@ static func tabs(on_quality: Callable = Callable(), in_race := false) -> TabCont
 	var game := _scroll(gameplay_page())
 	game.name = "Spiel"
 	tc.add_child(game)
+	var ctl := _scroll(controls_page())
+	ctl.name = "Steuerung"
+	tc.add_child(ctl)
 	return tc
 
 
@@ -267,3 +270,55 @@ static func gameplay_page() -> VBoxContainer:
 	v.add_child(UiKit.labeled("Einheit", UiKit.option(["km/h", "mph"], 0 if Game.settings["units_kmh"] else 1, func(i):
 		Game.set_setting("units_kmh", i == 0))))
 	return v
+
+
+## Tastatur- und Gamepad-Belegung: click a field, then press the new key / button / stick.
+static func controls_page() -> VBoxContainer:
+	var v := _page()
+	v.add_child(UiKit.label("Feld anwählen und neue Taste drücken (Esc / Start bricht ab).", 16, UiKit.TEXT_DIM))
+	var head := HBoxContainer.new()
+	head.add_child(_cell(UiKit.label("Aktion", 16, UiKit.TEXT_DIM), 200))
+	head.add_child(_cell(UiKit.label("Tastatur", 16, UiKit.TEXT_DIM), 190))
+	head.add_child(_cell(UiKit.label("Gamepad", 16, UiKit.TEXT_DIM), 190))
+	v.add_child(head)
+	var fields: Array = []
+	for pair in Game.REBINDABLE:
+		var action: String = pair[0]
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 8)
+		h.add_child(_cell(UiKit.label(pair[1], 17), 200))
+		for pad in [false, true]:
+			var b := Button.new()
+			b.custom_minimum_size = Vector2(190, 34)
+			b.clip_text = true
+			b.text = Game.binding_text(action, pad)
+			b.pressed.connect(func(): _capture(b, action, pad))
+			h.add_child(b)
+			fields.append([b, action, pad])
+		v.add_child(h)
+	v.add_child(UiKit.button("Standardbelegung", func():
+		Game.reset_bindings()
+		for f in fields:
+			(f[0] as Button).text = Game.binding_text(f[1], f[2]), 260))
+	return v
+
+
+static func _cell(c: Control, w: float) -> Control:
+	c.custom_minimum_size.x = w
+	return c
+
+
+static func _capture(b: Button, action: String, pad: bool) -> void:
+	var cap := Node.new()
+	cap.set_script(load("res://scripts/ui/bind_capture.gd"))
+	cap.pad = pad
+	b.text = "Gamepad drücken …" if pad else "Taste drücken …"
+	cap.captured.connect(func(key: int, p: Array):
+		Game.rebind(action, key, p)
+		if is_instance_valid(b):
+			b.text = Game.binding_text(action, pad)
+			b.grab_focus())
+	cap.cancelled.connect(func():
+		if is_instance_valid(b):
+			b.text = Game.binding_text(action, pad))
+	b.add_child(cap)
