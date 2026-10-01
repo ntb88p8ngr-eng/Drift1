@@ -7,6 +7,7 @@ const MODES := ["Verfolger", "Verfolger weit", "Motorhaube", "Stoßstange", "Coc
 
 const TILT_MIN := -0.2    # rad added to the chase camera's elevation angle
 const TILT_MAX := 0.75
+const ZOOM_MIN := 0.3     # closest chase distance factor (mouse wheel)
 const STICK_DEAD := 0.18  # right stick: radial dead zone
 var car          # car.gd
 var mode := 0
@@ -69,7 +70,7 @@ func _ready() -> void:
 	_base_fov = float(Game.settings.get("fov", 75.0))
 	fov = _base_fov
 	mode = clampi(int(Game.settings.get("camera_mode", 0)), 0, MODES.size() - 1)
-	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), 0.6, 2.4)
+	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), ZOOM_MIN, 2.4)
 	_tilt = clampf(float(Game.settings.get("camera_tilt", 0.0)), TILT_MIN, TILT_MAX)
 	_space_query = PhysicsRayQueryParameters3D.new()
 	_space_query.collision_mask = 1
@@ -163,7 +164,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_free_dist = clampf(_free_dist + step * 0.6, 3.0, 25.0)
 			else:
 				# chase view: the wheel moves the camera closer / further back
-				_zoom = clampf(_zoom + step * 0.1, 0.6, 2.4)
+				_zoom = clampf(_zoom + step * 0.1, ZOOM_MIN, 2.4)
 				Game.settings["camera_zoom"] = _zoom
 				Game.save_settings()
 	if event is InputEventJoypadButton and event.is_action("camera_next"):
@@ -208,7 +209,7 @@ func _process(delta: float) -> void:
 	var spd := vflat.length()
 	# "Kamera-Glättung" 0 … 1: how strongly bumps, suspension pitch/heave and surges are filtered
 	var smooth := clampf(float(Game.settings.get("camera_smoothing", 0.6)), 0.0, 1.0)
-	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), 0.6, 2.4)
+	_zoom = clampf(float(Game.settings.get("camera_zoom", 1.2)), ZOOM_MIN, 2.4)
 	if not _tilt_drag:
 		_tilt = clampf(float(Game.settings.get("camera_tilt", 0.0)), TILT_MIN, TILT_MAX)
 	if not _initialized:
@@ -264,7 +265,7 @@ func _process(delta: float) -> void:
 			d = heading
 		_dir = _dir.lerp(d, 1.0 - exp(-delta * lerpf(6.0, 3.2, smooth))).normalized() if _initialized else d
 		var dir := _dir.rotated(Vector3.UP, _look_yaw)
-		if Input.is_action_pressed("look_back"):
+		if Input.is_action_pressed("look_back") and not Game.fire_mode:
 			dir = -dir
 		var dist := (5.8 if mode == 0 else 8.5) * _zoom
 		var height := (1.75 if mode == 0 else 2.7) * lerpf(1.0, _zoom, 0.6)
@@ -275,6 +276,8 @@ func _process(delta: float) -> void:
 		dist = rad * cos(ang)
 		height = rad * sin(ang)
 		dist += spd * 0.02
+		# close zoom: never inside the car – at least a little behind its rear bumper
+		dist = maxf(dist, float(car.body_spec.get("length", 4.5)) * 0.5 + 1.3)
 		# follow the smoothed car position only (not its pitch or bounce)
 		target_pos = _anchor - dir * dist + up * (height + _look_pitch * 3.0)
 		look_target = _anchor + up * 0.95 + dir * 2.5
@@ -287,7 +290,7 @@ func _process(delta: float) -> void:
 			local_pos = Vector3(0, 1.62, 0.2)
 		target_pos = xf * local_pos
 		var look_dir: Vector3 = (-xf.basis.z).rotated(xf.basis.y, _look_yaw)
-		if Input.is_action_pressed("look_back"):
+		if Input.is_action_pressed("look_back") and not Game.fire_mode:
 			look_dir = -look_dir
 		look_target = target_pos + look_dir * 10.0 + xf.basis.y * (-0.4 - _look_pitch * 4.0)
 

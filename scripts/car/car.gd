@@ -119,7 +119,7 @@ var slip_angle := 0.0       # rad, body slip (velocity vs heading)
 var hb_straighten := false
 var _hb_prev := false
 const HB_STRAIGHTEN_SLIP := 0.22   # rad (~13 deg) of body slip at the pull = "already drifting"
-const HB_ALIGN := 2.8              # how fast the nose is turned towards the direction of travel (1/s)
+const HB_ALIGN := 1.7              # how fast the nose is turned towards the direction of travel (1/s)
 var grounded_wheels := 0
 var headlights := false
 var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.get_underglow)
@@ -987,9 +987,9 @@ func _simulate(delta: float) -> void:
 	if hb_straighten and grounded_wheels >= 3 and speed > 3.0:
 		var yaw := angular_velocity.dot(up)
 		var want := -slip_angle * HB_ALIGN
-		apply_torque(up * (want - yaw) * mass * 3.0)
+		apply_torque(up * (want - yaw) * mass * 1.8)
 		var v_side := vel.dot(right)
-		apply_central_force(-right * v_side * mass * 1.6 * smoothstep(0.02, 0.15, absf(slip_angle)))
+		apply_central_force(-right * v_side * mass * 0.8 * smoothstep(0.02, 0.15, absf(slip_angle)))
 
 	# at speed: damp any rotation beyond what the steering asks for (the car doesn't pendulum after a
 	# quick lane change) – not with the handbrake pulled or flat out in a drift, so drifting still works

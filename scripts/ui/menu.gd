@@ -1082,6 +1082,7 @@ func _build_controls() -> void:
 # ---------------------------------------------------------------------------
 func _build_options() -> void:
 	_header("OPTIONEN")
+	_add(UiKit.label("Kategorie wechseln: RB / LB  ·  E / Q", 15, UiKit.TEXT_DIM))
 	_add(SettingsUi.tabs(func(): main.refresh_showroom(true)))
 	_add(UiKit.spacer(8))
 	_float_button("◀  Zurück", func(): show_screen("main"))

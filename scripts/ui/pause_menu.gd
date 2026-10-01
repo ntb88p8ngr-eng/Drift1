@@ -54,6 +54,7 @@ func _ready() -> void:
 	_options_box = VBoxContainer.new()
 	_options_box.add_theme_constant_override("separation", 10)
 	_options_box.add_child(UiKit.title("OPTIONEN", 36))
+	_options_box.add_child(UiKit.label("Kategorie wechseln: RB / LB  ·  E / Q", 15, UiKit.TEXT_DIM))
 	_options_box.add_child(SettingsUi.tabs(Callable(), true))
 	var trans := UiKit.option(["Automatik", "Manuell"], 0 if world.local_car.transmission == "auto" else 1, func(i):
 		world.local_car.transmission = "auto" if i == 0 else "manual"

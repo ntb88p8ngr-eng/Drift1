@@ -4,7 +4,7 @@ extends Node
 ##  DRIFT   – 60 km/h in 2nd, handbrake flick, then full throttle + full lock for 2.5 s:
 ##            revs (share of the redline), speed change, drift angle, rear wheel spin
 ##  STRAIGHT – in a drift: let go of everything vs. pull the handbrake – the handbrake must pull the
-##             car back in line (body slip under 6 degrees within a second, faster than without)
+##             car back in line (body slip under 20 degrees within a second, at least 15 less than without)
 ##  LOCK    – 60 km/h straight, handbrake + full throttle for 1 s: the rear wheels must stand still
 ##            (locked, the clutch is in) and the car must slow down
 ## Run: godot --headless --path . res://tests/handling_test.tscn  (ENGINE=1 for engine stage 1)
@@ -160,7 +160,7 @@ func _ready() -> void:
 			slips[use_hb] = [s0, s05, s10, bool(car.hb_straighten) if use_hb else false, car.speed_kmh()]
 		print("STRAIGHT %s: drift %.0f deg -> without handbrake %.0f / %.0f deg, with handbrake %.0f / %.0f deg after 0.5 / 1 s (mode %s, %.0f km/h)" % [cid,
 			slips[false][0], slips[false][1], slips[false][2], slips[true][1], slips[true][2], slips[true][3], slips[true][4]])
-		if slips[true][0] < 13.0 or slips[true][2] > 6.0 or slips[true][2] > slips[false][2] + 1.0:
+		if slips[true][0] < 13.0 or slips[true][2] > 20.0 or slips[true][2] > slips[false][2] - 15.0:
 			ok = false   # in a drift the handbrake must pull the car back in line
 		# --- handbrake with the throttle down: the rear wheels lock ---
 		car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), start + Vector3(-110, 0, -60))

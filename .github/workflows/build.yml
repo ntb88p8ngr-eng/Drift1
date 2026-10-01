@@ -93,6 +93,12 @@ jobs:
           if grep -E "SCRIPT ERROR" botsparty.log; then echo "::error::Bots party test failed"; exit 1; fi
           grep -q "BOTS PARTY TEST: PASS" botsparty.log
 
+      - name: Bot audio test (7 bots: nearest 4 synthesized, no buffer skips, audible)
+        run: |
+          timeout 240 ./godot --headless --path . res://tests/bot_audio_test.tscn 2>&1 | tee botaudio.log || true
+          if grep -E "SCRIPT ERROR" botaudio.log; then echo "::error::Bot audio test failed"; exit 1; fi
+          grep -q "BOT AUDIO TEST: PASS" botaudio.log
+
       - name: Lift test (offroad ride height really raises the body)
         run: |
           timeout 120 ./godot --headless --path . res://tests/lift_test.tscn 2>&1 | tee lift.log || true

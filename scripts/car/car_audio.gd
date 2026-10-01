@@ -356,9 +356,10 @@ func _ready() -> void:
 	if positional:
 		var p3 := AudioStreamPlayer3D.new()
 		p3.stream = gen
-		p3.unit_size = 10.0
-		p3.max_distance = 160.0
-		p3.volume_db = linear_to_db(maxf(vol, 0.001)) - 2.0
+		# other cars: loud enough to hear next to your own engine (−6 dB at 50 m)
+		p3.unit_size = OTHER_UNIT
+		p3.max_distance = OTHER_MAX
+		p3.volume_db = linear_to_db(maxf(vol, 0.001)) + OTHER_GAIN
 		player = p3
 		add_child(p3)
 		p3.play()
@@ -631,6 +632,14 @@ func _on_hit(strength: float) -> void:
 func _process(_delta: float) -> void:
 	if playback == null or car == null:
 		return
+	if positional and not _audible():
+		# far away or not among the nearest cars: no synthesis (the GDScript synth costs ~1.5 ms
+		# per car and frame – with 7 bots the buffers ran dry and the opponents went silent)
+		if not (player as AudioStreamPlayer3D).stream_paused:
+			(player as AudioStreamPlayer3D).stream_paused = true
+		return
+	if positional and (player as AudioStreamPlayer3D).stream_paused:
+		(player as AudioStreamPlayer3D).stream_paused = false
 	var frames := playback.get_frames_available()
 	if frames <= 0:
 		return
@@ -932,6 +941,39 @@ func render(frames: int) -> PackedVector2Array:
 	return buf
 
 
+const OTHER_UNIT := 25.0        # other cars' engine: full volume within this distance (m)
+const OTHER_MAX := 260.0
+const OTHER_GAIN := 1.0
+const MAX_VOICES := 4           # other cars synthesized at the same time (the nearest ones)
+static var _voices: Array = []  # positional CarAudio instances
+static var _rank_frame := -1
+
+
+func _enter_tree() -> void:
+	if positional:
+		_voices.append(self)
+
+
+func _exit_tree() -> void:
+	_voices.erase(self)
+
+
+## This (positional) car is close enough and among the MAX_VOICES nearest other cars.
+func _audible() -> bool:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return true
+	var f := Engine.get_process_frames()
+	if f != _rank_frame:
+		_rank_frame = f
+		var cp := cam.global_position
+		for v in _voices:
+			v.set_meta("d2", (v.car as Node3D).global_position.distance_squared_to(cp) if is_instance_valid(v.car) else 1e12)
+		_voices.sort_custom(func(a, b): return float(a.get_meta("d2")) < float(b.get_meta("d2")))
+	var rank := _voices.find(self)
+	return rank >= 0 and rank < MAX_VOICES and float(get_meta("d2", 0.0)) < OTHER_MAX * OTHER_MAX
+
+
 func _on_settings_changed() -> void:
 	set_volume(float(Game.settings.get("engine_volume", 1.0)))
 
@@ -940,4 +982,4 @@ func set_volume(v: float) -> void:
 	if player is AudioStreamPlayer:
 		(player as AudioStreamPlayer).volume_db = linear_to_db(maxf(v, 0.001)) - 5.0
 	elif player is AudioStreamPlayer3D:
-		(player as AudioStreamPlayer3D).volume_db = linear_to_db(maxf(v, 0.001)) - 2.0
+		(player as AudioStreamPlayer3D).volume_db = linear_to_db(maxf(v, 0.001)) + OTHER_GAIN

@@ -54,6 +54,11 @@ func _ready() -> void:
 	var b0: Dictionary = world.race_ai.bots[0]
 	var bc = b0["car"]
 	var p_before: Vector3 = bc.global_position
+	# an online player's car (big random peer id) must not be taken for a bot
+	var other = world._make_car({"car": "r34", "paint": "blue", "name": "Mitspieler"}, true)
+	other.peer_id = 1068007697
+	world.cars[1068007697] = other
+	other.place(world.track.grid_transform(9))
 	# a minigame starts (as if the player had collected a coin)
 	party._stop_race({"by": 1})
 	party.state = "choose"
@@ -64,6 +69,9 @@ func _ready() -> void:
 		var c = b["car"]
 		if c.visible or c.collision_layer != 0 or not c.freeze:
 			hidden = false
+	print("online player during the minigame: visible %s, collision layer %d" % [other.visible, other.collision_layer])
+	if not other.visible or other.collision_layer == 0:
+		_fail("an online player was hidden / lost its collision")
 	var drift: float = bc.global_position.distance_to(p_before)
 	print("minigame: bots hidden/frozen %s, bot moved %.1f m since the stop" % [hidden, drift])
 	if not hidden:
@@ -86,5 +94,30 @@ func _ready() -> void:
 	print("after the minigame: bots back %s, bot drove %.0f m in 3 s" % [back, moved])
 	if not back or moved < 10.0:
 		_fail("the bots do not race on after the minigame")
+	# choosing a minigame with the gamepad: the first game is focused, d-pad down + (A) picks the 2nd
+	party.state = "idle"
+	party._picked = false
+	party._on_choose({"by": 1, "i": 0})
+	for f in 4:
+		await get_tree().process_frame
+	var foc = get_viewport().gui_get_focus_owner()
+	for jb: JoyButton in [JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_A]:
+		for pressed in [true, false]:
+			var ev := InputEventJoypadButton.new()
+			ev.button_index = jb
+			ev.pressed = pressed
+			Input.parse_input_event(ev)
+			await get_tree().process_frame
+			await get_tree().process_frame
+	var avail: Array = party._available_games()
+	print("gamepad pick: first focus %s, picked %s, shown %s" % [foc.text if foc else "nothing", party._picked, party._b_game.text])
+	if foc == null or not party._picked or party._b_game.text != str(party.GAMES[avail[1]]["name"]):
+		_fail("the minigame cannot be chosen with the gamepad")
+	var has_x := false
+	for e in InputMap.action_get_events("fire"):
+		if e is InputEventJoypadButton and (e as InputEventJoypadButton).button_index == JOY_BUTTON_X:
+			has_x = true
+	if not has_x:
+		_fail("no gamepad fire button")
 	print("BOTS PARTY TEST: %s" % ("PASS" if fails == 0 else "FAIL"))
 	get_tree().quit(1 if fails else 0)

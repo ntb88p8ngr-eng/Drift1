@@ -23,9 +23,9 @@ const GAMES := [
 	{"id": "bowling", "name": "Auto-Bowling", "time": 32.0, "unit": "x",
 		"desc": "Zwei Würfe auf zehn Riesen-Kegel: Nimm Anlauf und ziel gut – ab der roten Linie rollst du ohne Gas und Lenkung weiter!"},
 	{"id": "arena", "name": "Arena-Shootout", "time": 75.0, "unit": "x",
-		"desc": "Schieß die anderen ab! [F] / Linksklick = Feuer, 3 Treffer = raus. Münzen geben Dreifach-Schuss oder Schnellfeuer. Allein kämpfst du gegen Bots."},
+		"desc": "Schieß die anderen ab! [F] / Linksklick / (X) = Feuer, 3 Treffer = raus. Münzen geben Dreifach-Schuss oder Schnellfeuer. Allein kämpfst du gegen Bots."},
 	{"id": "balloon", "name": "Ballon-Schlacht", "time": 120.0, "unit": "x",
-		"desc": "Jedes Auto hat 3 Ballons – schieß sie den anderen ab! [F] / Linksklick = Feuer. Ohne Ballons bist du raus, wer am längsten durchhält, gewinnt. Münzen: Dreifach-Schuss / Schnellfeuer."},
+		"desc": "Jedes Auto hat 3 Ballons – schieß sie den anderen ab! [F] / Linksklick / (X) = Feuer. Ohne Ballons bist du raus, wer am längsten durchhält, gewinnt. Münzen: Dreifach-Schuss / Schnellfeuer."},
 ]
 const ANNOUNCE_TIME := 4.5
 const COUNTDOWN_TIME := 3.5
@@ -372,7 +372,7 @@ func _on_choose(msg: Dictionary) -> void:
 		c.queue_free()
 	if _chooser == me:
 		_b_game.text = "Wähle ein Minispiel!"
-		_b_desc.text = "Klicken oder Taste 1–%d" % _available_games().size()
+		_b_desc.text = "Klicken, Taste 1–%d oder Steuerkreuz + (A)" % _available_games().size()
 		var n := 1
 		for k in _available_games():
 			var gk: int = k
@@ -382,6 +382,10 @@ func _on_choose(msg: Dictionary) -> void:
 			n += 1
 		_choices.visible = true
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		# gamepad / keyboard: the first game is selected, d-pad / stick moves, (A) / Enter picks
+		var first: Button = _choices.get_child(0) if _choices.get_child_count() > 0 else null
+		if first:
+			first.grab_focus.call_deferred()
 	else:
 		_b_game.text = "%s wählt ein Minispiel …" % _name(_chooser)
 		_b_desc.text = ""

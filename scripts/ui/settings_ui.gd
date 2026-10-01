@@ -11,6 +11,11 @@ static func tabs(on_quality: Callable = Callable(), in_race := false) -> TabCont
 	tc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# gamepad: the tab row takes the focus too (up from the first option), ◀ ▶ then switch tabs
 	tc.get_tab_bar().focus_mode = Control.FOCUS_ALL
+	# RB / LB (E / Q) switch the category
+	var pager := Node.new()
+	pager.set_script(load("res://scripts/ui/tab_pager.gd"))
+	tc.add_child(pager)
+	tc.tooltip_text = "Kategorie wechseln: RB / LB  (E / Q)"
 	var video := _scroll(video_page(on_quality, in_race))
 	video.name = "Grafik"
 	tc.add_child(video)
@@ -220,7 +225,7 @@ static func gameplay_page() -> VBoxContainer:
 	cs.tooltip_text = "Wie stark die Verfolgerkamera Bodenwellen, Federbewegungen und Ruckler beim Gasgeben und Bremsen ausfiltert."
 	v.add_child(UiKit.labeled("Kamera-Glättung", UiKit.row([cs, cs_val], 8)))
 	var cz_val := UiKit.label("%.1fx" % float(Game.settings["camera_zoom"]), 16, UiKit.TEXT_DIM)
-	var cz := UiKit.slider(0.6, 2.4, 0.1, float(Game.settings["camera_zoom"]), func(x):
+	var cz := UiKit.slider(0.3, 2.4, 0.05, float(Game.settings["camera_zoom"]), func(x):
 		cz_val.text = "%.1fx" % x
 		Game.settings["camera_zoom"] = x
 		Game.save_settings(), 200)

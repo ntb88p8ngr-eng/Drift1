@@ -49,6 +49,7 @@ var graffiti: Graffiti      # graffiti mode only
 var time_limit := 0.0       # graffiti mode: seconds
 var party: Party            # party mode (minigame coins) or null
 var _bots_parked := false
+var _bot_ids := {}           # ids of the race bots (from the roster)
 var party_sites: PartySites
 var tutorial_site: TutorialSite   # tutorial mode (Grüne Hölle)
 var tutorial: Tutorial
@@ -253,7 +254,8 @@ func _spawn_cars() -> void:
 ## afterwards they carry on from the same spot. Only the machine that drives them freezes the physics.
 func _park_bots(on: bool) -> void:
 	for id in cars:
-		if int(id) < RaceAI.BOT_ID0 or not is_instance_valid(cars[id]):
+		# only the race bots (online the players have big random peer ids – they must stay visible)
+		if not _bot_ids.has(int(id)) or not is_instance_valid(cars[id]):
 			continue
 		var c: Car = cars[id]
 		c.visible = not on
@@ -290,6 +292,7 @@ func _spawn_bots(night: float) -> void:
 	for k in roster.size():
 		var e: Dictionary = roster[k]
 		var id := int(e.get("id", RaceAI.BOT_ID0 + k))
+		_bot_ids[id] = true
 		var info := {"car": str(e.get("car", "r34")), "paint": str(e.get("paint", "red")), "name": str(e.get("name", "KI")), "transmission": "auto"}
 		var tun = e.get("tuning", {})
 		info["tuning"] = tun if tun is Dictionary else {}

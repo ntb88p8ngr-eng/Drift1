@@ -233,6 +233,8 @@ var persist := true
 # frame back to the engine every ~30 ms, so the loading screen keeps animating and the window stays
 # responsive; otherwise (tests) it returns at once and the world builds in one go.
 var async_loading := false
+## A shooting minigame is on: the fire button (X on the gamepad) does not look back
+var fire_mode := false
 var load_progress := 0.0        # 0..1 over the whole world
 var load_stage := ""
 var _load_range := Vector2(0.0, 1.0)
@@ -287,7 +289,8 @@ func _setup_input() -> void:
 	_add_action("neon_flash", [KEY_N], [JOY_BUTTON_DPAD_RIGHT], [])
 	_add_action("pause", [KEY_ESCAPE], [JOY_BUTTON_START], [])
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
-	_add_action("fire", [KEY_F], [JOY_BUTTON_DPAD_LEFT], [])
+	# (X) fires in the shooting minigames (there it does not look back, see camera_rig.gd)
+	_add_action("fire", [KEY_F], [JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_X], [])
 	if InputMap.action_get_events("fire").filter(func(e): return e is InputEventMouseButton).is_empty():
 		var mb := InputEventMouseButton.new()
 		mb.button_index = MOUSE_BUTTON_LEFT
@@ -329,7 +332,7 @@ const CONTROLS_HELP := [
 	["E / RB", "Hochschalten (in Automatik als Schaltwippe)"],
 	["Q / Strg / LB", "Runterschalten (in Automatik als Schaltwippe)"],
 	["M", "Automatik ⇄ Manuell"],
-	["F / Linksklick", "Feuer (Party: Arena-Shootout)"],
+	["F / Linksklick / (X)", "Feuer (Party: Arena-Shootout, Ballon-Schlacht)"],
 	["C / (Y)", "Kamera wechseln"],
 	["V / (Y) halten", "Kamera-Lock lösen (freie Kamera, Maus / rechter Stick)"],
 	["Rechte Maustaste halten", "Kurz umsehen"],

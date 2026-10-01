@@ -79,6 +79,24 @@ func _ready() -> void:
 		if hidden > 0 or (must_scroll and scrolled == 0):
 			print("FAIL: %s: the list does not follow the selection" % screen); fails += 1
 		await _pad(JOY_BUTTON_B)
+	# RB / LB switch the option categories
+	menu.show_screen("options")
+	for f in 4:
+		await get_tree().process_frame
+	var tc: TabContainer = null
+	for c in menu._content.get_children():
+		if c is TabContainer:
+			tc = c
+	var t0: int = tc.current_tab
+	await _pad(JOY_BUTTON_RIGHT_SHOULDER)
+	var t1: int = tc.current_tab
+	await _pad(JOY_BUTTON_LEFT_SHOULDER)
+	await _pad(JOY_BUTTON_LEFT_SHOULDER)
+	var t2: int = tc.current_tab
+	print("  options RB/LB: tab %d -> RB %d -> LB LB %d (of %d)" % [t0, t1, t2, tc.get_tab_count()])
+	if t1 != (t0 + 1) % tc.get_tab_count() or t2 != posmod(t0 - 1, tc.get_tab_count()):
+		print("FAIL: RB / LB do not switch the categories"); fails += 1
+	await _pad(JOY_BUTTON_B)
 	# (A) on the focused main-screen entry: "Einzelspieler" is the second button
 	for f in 4:
 		await get_tree().process_frame

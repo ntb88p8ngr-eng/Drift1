@@ -49,6 +49,7 @@ var _rng := RandomNumberGenerator.new()
 
 
 func setup(p_party: Node, p_world: Node3D, p_sites: Node3D, p_seed: int, ids: Array, my_id: int) -> void:
+	Game.fire_mode = true
 	party = p_party
 	world = p_world
 	sites = p_sites
@@ -180,6 +181,7 @@ func balloon_over() -> bool:
 
 
 func cleanup() -> void:
+	Game.fire_mode = false
 	for id in fighters:
 		var f: Dictionary = fighters[id]
 		if bool(f["bot"]) and is_instance_valid(f["car"]):
@@ -721,3 +723,7 @@ func _flash(p: Vector3, mat: Material, size: float, time: float) -> void:
 	var tw := create_tween()
 	tw.tween_property(mi, "scale", Vector3.ONE * size, time).set_ease(Tween.EASE_OUT)
 	tw.tween_callback(mi.queue_free)
+
+
+func _exit_tree() -> void:
+	Game.fire_mode = false
