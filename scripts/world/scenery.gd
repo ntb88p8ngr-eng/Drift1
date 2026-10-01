@@ -7,6 +7,7 @@ const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
+const Festival = preload("res://scripts/world/festival.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const Playground = preload("res://scripts/world/playground.gd")
@@ -31,6 +32,7 @@ var night := 0.0            # 0 = day … 1 = night (lamps / window glow)
 var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
+var festival: Node3D
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
 var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
@@ -117,6 +119,10 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	crowd.name = "Crowd"
 	add_child(crowd)
 	await crowd.build(track, terrain, self, quality)
+	festival = Festival.new()
+	festival.name = "Festival"
+	add_child(festival)
+	await festival.build(track, terrain, self, quality)
 	await Game.load_tick()
 	details.build(quality)
 	await Game.load_tick()
@@ -974,6 +980,8 @@ func set_night(n: float) -> void:
 		(l as Light3D).visible = lights_on
 	if details:
 		details.set_night(n)
+	if festival:
+		festival.set_night(n)
 
 
 # ---------------------------------------------------------------------------
