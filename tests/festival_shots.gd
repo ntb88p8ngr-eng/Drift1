@@ -23,9 +23,17 @@ func _ready() -> void:
 	var tr = world.track
 	var i: int = camp[2]
 	var road: Vector3 = tr.samples[i]
+	var views_pd: Array = []
 	var cam: Camera3D = world.camera
 	cam.set_process(false)
-	var views := [["fence", road.lerp(c, 0.35) + Vector3(0, 2.2, 0) - tr.tangents[i] * 10.0, c + Vector3(0, 1.0, 0)],
+	if args.has("paddock"):
+		var pd = fest.paddock
+		var s0: int = tr.start_index
+		var pc: Vector3 = pd._at(-50.0, pd._lat + 8.0)
+		var gs: Vector3 = pd._at(70.0, pd._lat, -pd.pit_side)
+		views_pd = [["aerial", pd._at(-50.0, 70.0, -pd.pit_side) + Vector3(0, 70, 0) - tr.tangents[s0] * 120.0, pc],
+			["stand", gs + Vector3(0, 9, 0) + tr.tangents[s0] * 10.0, pd._at(40.0, pd._lat + 8.0) + Vector3(0, 3, 0)]]
+	var views := views_pd if not views_pd.is_empty() else [["fence", road.lerp(c, 0.35) + Vector3(0, 2.2, 0) - tr.tangents[i] * 10.0, c + Vector3(0, 1.0, 0)],
 		["above", c + (road - c).normalized() * 18.0 + Vector3(0, 16, 0) + tr.tangents[i] * 10.0, c]]
 	for v in views:
 		cam.global_position = v[1]

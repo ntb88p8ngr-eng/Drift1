@@ -9,6 +9,7 @@ const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const Props = preload("res://scripts/world/prop_meshes.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
 const Colliders = preload("res://scripts/util/colliders.gd")
+const GhPaddock = preload("res://scripts/world/gh_paddock.gd")
 
 const FIRE_SHADER := """
 shader_type spatial;
@@ -63,6 +64,7 @@ var _bulb_mat: ShaderMaterial
 var _lights: Array = []
 var _camps: Array = []       # [centre, side, sample index]
 var _stats := {}
+var paddock: Node3D
 
 
 func build(p_track, p_terrain, p_scenery, quality: int) -> void:
@@ -70,9 +72,15 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	terrain = p_terrain
 	scenery = p_scenery
 	rng.seed = hash(track.track_id) + 2424
-	if track.track_id == "playground":
-		return
+	if track.track_id == "playground" or scenery.tutorial_site != null:
+		return        # no room on the pad; the tutorial is a lonely night drive
 	_make_meshes()
+	if track.track_id == "gruene_hoelle":
+		# pit lane, garages, grandstands and the Ferris wheel first: the camps keep clear of them
+		paddock = GhPaddock.new()
+		paddock.name = "Paddock"
+		add_child(paddock)
+		await paddock.build(track, terrain, scenery, self)
 	var big := bool(track.elevated)
 	var n: int = track.sample_count()
 	var sp: float = track.SPACING
@@ -106,6 +114,8 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 
 
 func set_night(nv: float) -> void:
+	if paddock:
+		paddock.set_night(nv)
 	if _bulb_mat:
 		_bulb_mat.set_shader_parameter("glow", clampf(nv * 1.4, 0.0, 1.0))
 	for l in _lights:
@@ -131,6 +141,11 @@ func _ok(p: Vector3, road_gap := 4.0) -> bool:
 
 
 func _person(p: Vector3, look_at: Vector3) -> void:
+	_person_raw(_ground(p), look_at)
+
+
+## A person standing exactly at p (stands, roofs), facing look_at.
+func _person_raw(p: Vector3, look_at: Vector3) -> void:
 	var d := look_at - p
 	d.y = 0.0
 	if d.length() < 0.01:
@@ -138,7 +153,7 @@ func _person(p: Vector3, look_at: Vector3) -> void:
 	var b := Basis.looking_at(d.normalized(), Vector3.UP)
 	var sc := rng.randf_range(0.9, 1.08)
 	var shirt: Color = Crowd.SHIRTS[rng.randi() % Crowd.SHIRTS.size()]
-	_add("person", Transform3D(b.scaled(Vector3(sc, sc * rng.randf_range(0.95, 1.06), sc)), _ground(p)), Color(shirt.r, shirt.g, shirt.b, rng.randf()))
+	_add("person", Transform3D(b.scaled(Vector3(sc, sc * rng.randf_range(0.95, 1.06), sc)), p), Color(shirt.r, shirt.g, shirt.b, rng.randf()))
 
 
 # ---------------------------------------------------------------------------
