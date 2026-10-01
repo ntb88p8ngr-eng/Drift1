@@ -7,6 +7,7 @@ const MODES := ["Verfolger", "Verfolger weit", "Motorhaube", "Stoßstange", "Coc
 
 const TILT_MIN := -0.2    # rad added to the chase camera's elevation angle
 const TILT_MAX := 0.75
+const STICK_DEAD := 0.18  # right stick: radial dead zone
 var car          # car.gd
 var mode := 0
 var free_look := false
@@ -30,6 +31,7 @@ var _blur_rect: ColorRect
 var _blur_mat: ShaderMaterial
 var _prev_fwd := Vector3.ZERO
 var _swipe := 0.0
+var _stick_s := Vector2.ZERO   # smoothed right stick
 
 ## Motion blur like the eye at speed: the centre (where you look) stays sharp, towards the sides the
 ## picture smears outwards, more the faster you go; quick camera swings smear sideways.
@@ -205,18 +207,27 @@ func _process(delta: float) -> void:
 	if _anchor.distance_to(car_pos) > 12.0:
 		_anchor = car_pos   # reset / teleport
 
-	# gamepad right stick look
-	var stick := Vector2(Input.get_action_strength("look_right") - Input.get_action_strength("look_left"),
-		Input.get_action_strength("look_down") - Input.get_action_strength("look_up"))
+	# gamepad right stick look: a radial dead zone, rescaled so the view starts from zero right
+	# after it (no jump), a soft curve for fine aiming – and the stick only sets where the view
+	# goes, the camera glides there (raw stick values jitter from frame to frame)
+	var raw := Vector2(Input.get_action_raw_strength("look_right") - Input.get_action_raw_strength("look_left"),
+		Input.get_action_raw_strength("look_down") - Input.get_action_raw_strength("look_up"))
+	var stick := Vector2.ZERO
+	var rl := raw.length()
+	if rl > STICK_DEAD:
+		var k := clampf((rl - STICK_DEAD) / (1.0 - STICK_DEAD), 0.0, 1.0)
+		stick = raw / rl * k * k * (3.0 - 2.0 * k) if k < 1.0 else raw / rl
+	_stick_s = _stick_s.lerp(stick, 1.0 - exp(-delta * 14.0))
 	if free_look:
-		_free_yaw -= stick.x * delta * 2.5
-		_free_pitch = clampf(_free_pitch + stick.y * delta * 1.5, -0.35, 1.35)
-	elif stick.length() > 0.2:
-		_look_yaw = -stick.x * PI * 0.9
-		_look_pitch = stick.y * 0.5
+		_free_yaw -= _stick_s.x * delta * 2.5
+		_free_pitch = clampf(_free_pitch + _stick_s.y * delta * 1.5, -0.35, 1.35)
 	elif not _look_hold:
-		_look_yaw = lerpf(_look_yaw, 0.0, 1.0 - exp(-delta * 5.0))
-		_look_pitch = lerpf(_look_pitch, 0.0, 1.0 - exp(-delta * 5.0))
+		var ty := -_stick_s.x * PI * 0.9
+		var tp := _stick_s.y * 0.5
+		# turning away follows the stick briskly, coming back to the front a bit softer
+		var rate := 7.0 if stick != Vector2.ZERO else 5.0
+		_look_yaw = lerpf(_look_yaw, ty, 1.0 - exp(-delta * rate))
+		_look_pitch = lerpf(_look_pitch, tp, 1.0 - exp(-delta * rate))
 
 	var target_pos: Vector3
 	var look_target: Vector3

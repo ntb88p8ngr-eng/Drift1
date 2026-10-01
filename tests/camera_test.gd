@@ -57,7 +57,37 @@ func _ready() -> void:
 	print("CAMERA smoothing=%.2f  view jitter %.4f deg/frame  height jitter %.2f cm  (frames %d)" % [
 		float(Game.settings.get("camera_smoothing", 0.6)), view_j, _hf_rms(_diff(ys)) * 100.0, fwd.size()])
 	# before the interpolation fix: ~9 cm and ~0.01 deg at 75 fps
-	print("CAMERA TEST OK" if dist_j < 1.0 and view_j < 0.004 else "CAMERA JITTER TOO HIGH")
+	# --- gamepad right stick: a shaky thumb around the dead zone, then a held, slightly noisy
+	# deflection – the view must glide, not jump (the car stands still now) ---
+	for f in 120:
+		await get_tree().process_frame
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var prev := -cam.global_transform.basis.z
+	var max_step := 0.0
+	var stick_steps: Array = []
+	t = 0.0
+	while t < 3.0:
+		var v := 0.0
+		if t < 1.2:
+			v = 0.18 + rng.randf_range(-0.06, 0.06)      # hovering at the dead zone edge
+		else:
+			v = minf((t - 1.2) * 2.0, 0.7) + rng.randf_range(-0.03, 0.03)
+		Input.action_release("look_right")
+		if v > 0.0:
+			Input.action_press("look_right", v)
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		var now := -cam.global_transform.basis.z
+		var step := rad_to_deg(prev.angle_to(now))
+		stick_steps.append(step)
+		max_step = maxf(max_step, step)
+		prev = now
+	Input.action_release("look_right")
+	var stick_j := _hf_rms(stick_steps)
+	print("STICK look: max view step %.2f deg/frame, jitter %.3f deg/frame" % [max_step, stick_j])
+	var ok := dist_j < 1.0 and view_j < 0.004 and max_step < 5.0 and stick_j < 0.25
+	print("CAMERA TEST OK" if ok else "CAMERA JITTER TOO HIGH")
 	get_tree().quit()
 
 
