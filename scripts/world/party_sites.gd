@@ -35,6 +35,7 @@ var koth_zone: Node3D
 var rlgl_lamps: Array = []        # [red material, green material]
 var pin_mesh: ArrayMesh
 var _tyre_mesh: TorusMesh
+var _tyre_shape: CylinderShape3D
 var _tyre_paints: Array = []
 var mud_spots: Array = []         # parkour: [centre, radius] of the mud patches (less grip)
 var arena_id := "arena"           # the site the arena functions work on (arena or balloon)
@@ -445,12 +446,17 @@ func _log(id: String, along: float, lateral: float, yaw: float, r: float, length
 	var xf := _road_xf(id, along, lateral, yaw, (y if y > 0.0 else r) - 0.02)
 	xf = xf * Transform3D(Basis(Vector3.RIGHT, rng.randf_range(0.0, TAU)), Vector3.ZERO)   # roll: the knots end up anywhere
 	var mesh := _log_mesh(r, length, rng, mats)
+	# a heavy loose log (wood ~650 kg/m³): it rolls a bit when driven over hard, it is not a kerb
+	var body := RigidBody3D.new()
+	body.mass = clampf(PI * r * r * length * 650.0, 40.0, 900.0)
+	body.collision_layer = 8     # props
+	body.collision_mask = 1 | 2 | 8
+	var pm := PhysicsMaterial.new()
+	pm.friction = 0.9
+	body.physics_material_override = pm
+	body.angular_damp = 1.5
 	var mi := MeshKit.mesh_instance(mesh, null)
-	_course.add_child(mi)
-	mi.global_transform = xf
-	var body := StaticBody3D.new()
-	body.collision_layer = Colliders.LAYER_WORLD
-	body.collision_mask = 0
+	body.add_child(mi)
 	var cs := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = r * 0.97
@@ -460,6 +466,7 @@ func _log(id: String, along: float, lateral: float, yaw: float, r: float, length
 	body.add_child(cs)
 	_course.add_child(body)
 	body.global_transform = xf
+	body.sleeping = true
 
 
 func _log_mesh(r: float, length: float, rng: RandomNumberGenerator, mats: Array) -> ArrayMesh:
@@ -517,28 +524,42 @@ func _log_mesh(r: float, length: float, rng: RandomNumberGenerator, mats: Array)
 	return mesh
 
 
-## 1–n old tyres stacked, a little skewed, with one cylinder collider. Most stacks are plain black,
-## some are painted in alternating colours like at a race track.
+## 1–n old tyres stacked, a little skewed – every tyre is its own rigid body, so a hit scatters the
+## stack. Most stacks are plain black, some are painted in alternating colours like at a race track.
 func _tyre_stack(id: String, along: float, lateral: float, count: int, rng: RandomNumberGenerator) -> void:
 	var mats := _stack_mats(rng)
 	var h := 0.36
+	var c := _road_xf(id, along, lateral)
 	for i in count:
-		var xf := _road_xf(id, along, lateral, rng.randf_range(0.0, TAU), h * (i + 0.5))
-		xf.origin += xf.basis.x * rng.randf_range(-0.12, 0.12) + xf.basis.z * rng.randf_range(-0.12, 0.12)
-		var mi := MeshKit.mesh_instance(_tyre(), mats[i % mats.size()])
-		_course.add_child(mi)
-		mi.global_transform = xf * Transform3D(Basis.from_scale(Vector3(1, 1.3, 1)).rotated(Vector3.RIGHT, rng.randf_range(-0.06, 0.06)), Vector3.ZERO)
-	var body := StaticBody3D.new()
-	body.collision_layer = Colliders.LAYER_WORLD
-	body.collision_mask = 0
+		var xf := _road_xf(id, along, lateral, rng.randf_range(0.0, TAU), h * (i + 0.5) + 0.01)
+		xf.origin += c.basis.x * rng.randf_range(-0.05, 0.05) + c.basis.z * rng.randf_range(-0.05, 0.05)
+		_loose_tyre(xf, mats[i % mats.size()])
+
+
+## One loose tyre (torus look, cylinder collider). Touches the world, the local car and other props.
+func _loose_tyre(xf: Transform3D, mat: Material) -> RigidBody3D:
+	if _tyre_shape == null:
+		_tyre_shape = CylinderShape3D.new()
+		_tyre_shape.radius = 0.58
+		_tyre_shape.height = 0.34
+	var b := RigidBody3D.new()
+	b.mass = 11.0
+	b.collision_layer = 8     # props
+	b.collision_mask = 1 | 2 | 8
+	var pm := PhysicsMaterial.new()
+	pm.friction = 0.8
+	pm.bounce = 0.2
+	b.physics_material_override = pm
 	var cs := CollisionShape3D.new()
-	var shape := CylinderShape3D.new()
-	shape.radius = 0.6
-	shape.height = h * count
-	cs.shape = shape
-	body.add_child(cs)
-	_course.add_child(body)
-	body.global_transform = _road_xf(id, along, lateral, 0.0, h * count * 0.5)
+	cs.shape = _tyre_shape
+	b.add_child(cs)
+	var mi := MeshKit.mesh_instance(_tyre(), mat)
+	mi.scale = Vector3(1, 1.3, 1)
+	b.add_child(mi)
+	_course.add_child(b)
+	b.global_transform = xf
+	b.sleeping = true
+	return b
 
 
 func _tyre() -> TorusMesh:
@@ -564,24 +585,10 @@ func _stack_mats(rng: RandomNumberGenerator) -> Array:
 	return [black, _tyre_paints[2 + rng.randi() % 2]]
 
 
-## A single tyre lying flat on the road: a low bump to crawl over.
+## A single tyre lying flat on the road: a low bump to crawl over (loose, it can be pushed away).
 func _tyre_lying(id: String, along: float, lateral: float, rng: RandomNumberGenerator) -> void:
-	var xf := _road_xf(id, along, lateral, rng.randf_range(0.0, TAU), 0.17)
-	xf = xf * Transform3D(Basis.from_euler(Vector3(rng.randf_range(-0.12, 0.12), 0, rng.randf_range(-0.12, 0.12))), Vector3.ZERO)
-	var mi := MeshKit.mesh_instance(_tyre(), TexKit.rubber())
-	_course.add_child(mi)
-	mi.global_transform = xf * Transform3D(Basis.from_scale(Vector3(1, 1.25, 1)), Vector3.ZERO)
-	var body := StaticBody3D.new()
-	body.collision_layer = Colliders.LAYER_WORLD
-	body.collision_mask = 0
-	var cs := CollisionShape3D.new()
-	var shape := CylinderShape3D.new()
-	shape.radius = 0.56
-	shape.height = 0.3
-	cs.shape = shape
-	body.add_child(cs)
-	_course.add_child(body)
-	body.global_transform = xf
+	var xf := _road_xf(id, along, lateral, rng.randf_range(0.0, TAU), 0.18)
+	_loose_tyre(xf, TexKit.rubber())
 
 
 ## Tyre stacks lining both edges of a stretch between a0 and a1 (irregular gaps and heights).

@@ -94,8 +94,7 @@ func _tyre_walls(budget: int) -> void:
 			var p: Vector3 = c + r * side * lat
 			if last != Vector3.INF and p.distance_to(last) < 0.68:
 				continue
-			p.y = _ground(p.x, p.z) + 0.48
-			_body("tyres", "tyres", 45.0, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), p), Vector3(0, -0.48, 0))
+			tyre_stack(Vector3(p.x, 0, p.z), 3)
 			last = p
 			placed += 1
 
@@ -150,7 +149,7 @@ func _marshal_posts(quality: int) -> void:
 							_breakable(_body("carton", "carton", 4.0, Transform3D(b.rotated(Vector3.UP, PI * 0.5), p)), "flap", 4, 3.0)
 			_:
 				# tyre stack + cones
-				_body("tyres", "tyres", 45.0, Transform3D(Basis.IDENTITY, c + Vector3(0, 0.48, 0)), Vector3(0, -0.48, 0))
+				tyre_stack(c, 4)
 				for k in 3:
 					var p := c + t * (1.2 + k * 0.9) + Vector3(0, 0.37, 0)
 					_body("cone", "cone", 3.0, Transform3D(Basis.IDENTITY, p), Vector3(0, -0.35, 0))

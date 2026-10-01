@@ -509,8 +509,6 @@ func _benches(count: int) -> void:
 		var basis := Basis(Vector3.UP.cross(z).normalized(), Vector3.UP, z)
 		add("bench", Transform3D(basis, pos))
 		add("bin", Transform3D(basis, pos + basis.x * 1.4))
-		if rng.randf() < 0.6:
-			add_pot(pos - basis.x * 1.3)
 		scenery.occupy(pos, 2.0)
 		placed += 1
 
@@ -531,23 +529,53 @@ func add_bus_stop(i: int, side: float) -> void:
 
 func _harbor_extras() -> void:
 	var n: int = track.sample_count()
-	# planters and benches along the promenade behind the walls
-	var k := 0
-	for i in range(8, n, 23):
-		var side := 1.0 if (k % 2) == 0 else -1.0
-		k += 1
-		var pos := _behind_wall(i, side, 2.2)
-		if terrain.normal_at(pos.x, pos.z).y < 0.95 or not scenery.free_at(pos, 1.3, 0.5):
-			continue
-		var z: Vector3 = -track.rights[_idx(i)] * side
-		var basis := Basis(Vector3.UP.cross(z).normalized(), Vector3.UP, z)
-		add("planter", Transform3D(basis, pos))
-		scenery.occupy(pos, 1.4)
 	# cones stacked beside the pit area
 	var s0: int = track.start_index
 	for j in 6:
 		var pos := _behind_wall(s0 + 20 + j, 1.0, 1.6 + (j % 2) * 0.5)
 		add("cone", Transform3D(Basis(Vector3.UP, rng.randf() * TAU), pos))
+
+
+static var _tyre_meshes: Array = []
+static var _tyre_shape: CylinderShape3D
+
+
+## A stack of `levels` loose tyres standing on the ground at `pos`: every tyre is its own rigid body.
+func loose_tyre_stack(pos: Vector3, levels: int) -> void:
+	if _tyre_meshes.is_empty():
+		var mat := StandardMaterial3D.new()
+		mat.vertex_color_use_as_albedo = true
+		mat.roughness = 0.9
+		for k in 2:
+			var one := MeshKit.new_st()
+			Props._vlathe(one, [Vector2(0.18, -0.11), Vector2(0.3, -0.12), Vector2(0.33, 0.0), Vector2(0.3, 0.12), Vector2(0.18, 0.11)], 14,
+				Color(0.06, 0.06, 0.065) if k == 0 else Color(0.88, 0.88, 0.86))
+			Props._vlathe(one, [Vector2(0.18, 0.11), Vector2(0.17, 0.0), Vector2(0.18, -0.11)], 14, Color(0.03, 0.03, 0.03))
+			_tyre_meshes.append(MeshKit.commit(one, mat))
+		_tyre_shape = CylinderShape3D.new()
+		_tyre_shape.radius = 0.33
+		_tyre_shape.height = 0.24
+	var g: float = terrain.height_at(pos.x, pos.z)
+	for k in levels:
+		var b := RigidBody3D.new()
+		b.mass = 9.0
+		b.collision_layer = 8     # props
+		b.collision_mask = 1 | 2 | 4 | 8
+		var pm := PhysicsMaterial.new()
+		pm.friction = 0.7
+		pm.bounce = 0.12
+		b.physics_material_override = pm
+		var mi := MeshInstance3D.new()
+		mi.mesh = _tyre_meshes[1 if k == 2 else 0]
+		b.add_child(mi)
+		var cs := CollisionShape3D.new()
+		cs.shape = _tyre_shape
+		b.add_child(cs)
+		add_child(b)
+		b.global_transform = Transform3D(Basis(Vector3.UP, rng.randf() * TAU),
+			Vector3(pos.x + rng.randf_range(-0.03, 0.03), g + 0.125 + k * 0.245, pos.z + rng.randf_range(-0.03, 0.03)))
+		b.sleeping = true
+	_stats["tyres"] = int(_stats.get("tyres", 0)) + levels
 
 
 func _tyre_stacks(corners: Array) -> void:
@@ -560,5 +588,5 @@ func _tyre_stacks(corners: Array) -> void:
 		for k in range(-6, 7, 2):
 			var pos := _behind_wall(apex + k, side, 0.6)
 			if scenery.free_at(pos, 0.4, 0.2):
-				add("tyre_stack", Transform3D(Basis(Vector3.UP, rng.randf() * TAU), pos))
-				add("tyre_stack", Transform3D(Basis(Vector3.UP, rng.randf() * TAU), pos + track.tangents[_idx(apex + k)] * 0.7))
+				loose_tyre_stack(pos, 4)
+				loose_tyre_stack(pos + track.tangents[_idx(apex + k)] * 0.7, 4)
