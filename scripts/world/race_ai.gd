@@ -223,7 +223,7 @@ func _drive(b: Dictionary) -> Array:
 	# the car's real (tuned) grip: better tyres and suspension let the bots corner faster too
 	var g: float = car.grip
 	var a_lat := 9.81 * g * (1.0 - 0.3 * wet) * float(lv["corner"]) * _tune("CORNER", 1.0)
-	var decel := 9.81 * g * 0.95 * (1.0 - 0.3 * wet) / float(lv["brake"])
+	var decel := 9.81 * g * 0.95 * (1.0 - 0.3 * wet) / float(lv["brake"]) * minf(car.brake_gain, 1.3)
 	var v_target: float = lv["vmax"]
 	var reach := int(clampf(v * v / (2.0 * decel) + 40.0, 40.0, 260.0) / sp)
 	for d in range(2, reach, 3):

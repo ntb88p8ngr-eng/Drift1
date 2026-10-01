@@ -104,6 +104,7 @@ const TUNING := [
 	{"id": "steering", "name": "Lenkwinkel", "desc": "Winkel-Kit: +7° / +14° / +22° Lenkeinschlag für größere Driftwinkel"},
 	{"id": "turbo", "name": "Turbo", "desc": "Mehr Ladedruck, schnelleres Ansprechen – Sauger bekommen einen Turbo-Kit"},
 	{"id": "nitro", "name": "Nitro", "desc": "Stärkerer und längerer Nitro-Boost (Shift)"},
+	{"id": "brakes", "name": "Bremsen", "desc": "Sportbremsanlage: +15 % Bremskraft und besser dosierbar pro Stufe – bis zu 13 % kürzerer Bremsweg"},
 ]
 ## Underglow (free cosmetic): modes for the sides that are set to "Flasher".
 const UNDERGLOW_MODES := ["Dauerlicht", "Pulsieren", "Blinken", "Stroboskop", "Doppelblitz", "Schnellblinken", "Atmen", "Regenbogen"]

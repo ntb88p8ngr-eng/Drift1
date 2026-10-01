@@ -97,6 +97,29 @@ func _ready() -> void:
 			if absf(float(proj[2])) > float(tr.half_w) + 3.0:
 				on_road = false
 		Input.action_release("accelerate")
+		if gid == "rlgl" and not party._done:
+			# crossing the finish line while the light is red: the finish counts, no teleport back
+			var red_t := -1.0
+			for ph in party._rl_phases:
+				if not bool(ph[1]) and float(ph[0]) > party._t + 3.0:
+					red_t = float(ph[0]) - 1.0
+					break
+			party._t = red_t
+			party._red_since = red_t - 2.0     # long red already: movement would be caught
+			party._pin = false                  # (the 4 s full-throttle run above may have been caught)
+			party._penalty = 0.0
+			var fx: Transform3D = party.sites.course_xf("rlgl", party.sites.rlgl_finish() - 6.0, 0.0, 0.6)
+			car.place(fx)
+			car.linear_velocity = -fx.basis.z * 12.0
+			for f in 120:
+				await get_tree().physics_frame
+				if party._done:
+					break
+			print("  rlgl: light %d at the line, finished %s, value %.0f" % [party._rl_light(party._t), party._done, party._value])
+			if not party._done or party._value < 9000.0:
+				print("FAIL: rlgl: crossing the line on red did not count"); fails += 1
+			if party.sites.rlgl_lamps.size() < 6:
+				print("FAIL: rlgl: no traffic lights"); fails += 1
 		if gid == "arena" or gid == "balloon":
 			Input.action_release("fire")
 			var a = party._arena

@@ -56,6 +56,8 @@ var trail_active := false     # drift trail on (local: set by the world from the
 var is_bot := false            # a minigame bot: collides like a remote car, sounds positional
 ## Tuning to use instead of the player's saved tuning for this car (race bots: the player's level)
 var tuning_override: Dictionary = {}
+var brake_gain := 1.0     # brake tuning: force multiplier
+var brake_bite := 1.0     # brake tuning: longitudinal grip multiplier while braking
 var is_display := false
 var transmission := "auto"
 var remote_collisions := true
@@ -114,11 +116,13 @@ var speed := 0.0            # m/s, magnitude
 var forward_speed := 0.0    # m/s, signed along heading
 var slip_angle := 0.0       # rad, body slip (velocity vs heading)
 ## Handbrake pulled while already drifting: the car is pulled back in line instead of rotating further
-## (pulled from a straight line it still locks the rear for a drift entry). Decided at the moment the
+## (pulled from a straight line it still locks the rear for a drift entry; pulled in a drift that is already
+## too deep, beyond HB_DEEP_SLIP, it only locks the rear and the car slides on). Decided at the moment the
 ## handbrake is pulled, held until it is released.
 var hb_straighten := false
 var _hb_prev := false
 const HB_STRAIGHTEN_SLIP := 0.22   # rad (~13 deg) of body slip at the pull = "already drifting"
+const HB_DEEP_SLIP := 0.6          # rad (~34 deg): deeper than this the handbrake just locks the rear – the car slides on
 const HB_ALIGN := 1.7              # how fast the nose is turned towards the direction of travel (1/s)
 var grounded_wheels := 0
 var headlights := false
@@ -316,6 +320,10 @@ func _apply_tuning(t: Dictionary) -> void:
 			turbo_extra = 0.18 + 0.1 * (tu - 1)
 	spool_rate = 0.9 * (1.0 + 0.35 * tu)
 	nitro_power = 0.12 + 0.13 * n
+	# brakes: more force per stage; better pads modulate cleaner (a touch more grip while braking hard)
+	var bk := int(t.get("brakes", 0))
+	brake_gain = 1.0 + 0.15 * bk
+	brake_bite = 1.0 + 0.05 * bk
 	nitro_capacity = 2.5 + 1.25 * n
 
 
@@ -481,7 +489,10 @@ func _read_input(delta: float) -> void:
 	steer_input = move_toward(steer_input, steer_target, rate * delta)
 	handbrake = hb
 	if handbrake and not _hb_prev:
-		hb_straighten = absf(slip_angle) > HB_STRAIGHTEN_SLIP and speed > 8.0 and forward_speed > 0.0
+		hb_straighten = absf(slip_angle) > HB_STRAIGHTEN_SLIP and absf(slip_angle) < HB_DEEP_SLIP \
+			and speed > 8.0 and forward_speed > 0.0
+	elif hb_straighten and absf(slip_angle) > HB_DEEP_SLIP:
+		hb_straighten = false   # the slide got too deep while pulling: no more pull back, it slides
 	elif not handbrake:
 		hb_straighten = false
 	_hb_prev = handbrake
@@ -752,7 +763,7 @@ func _simulate(delta: float) -> void:
 	total_slip = 0.0
 	abs_active = false
 	var front_brake := 0.62
-	var brake_force_max := mass * 9.8 * 1.25
+	var brake_force_max := mass * 9.8 * 1.25 * brake_gain
 	# player settings: handbrake strength and how much the cars slide sideways
 	var hb_strength := clampf(float(Game.settings.get("handbrake_strength", 0.75)), 0.1, 1.0)
 	var slide := clampf(float(Game.settings.get("slide", 0.5)), 0.0, 1.0)
@@ -823,6 +834,8 @@ func _simulate(delta: float) -> void:
 		var is_front: bool = w["front"]
 		var axle_grip := 1.03 if is_front else 0.97 + 0.1 * hs
 		var max_f := grip * sg * axle_grip * wheel_load
+		if brake_input > 0.3 and brake_bite > 1.0:
+			max_f *= lerpf(1.0, brake_bite, clampf((brake_input - 0.3) / 0.7, 0.0, 1.0))
 
 		# longitudinal request
 		var split := (1.0 - rear_split) if is_front else rear_split

@@ -128,6 +128,28 @@ func _ready() -> void:
 		if car.speed_kmh() < v_start - 10.0:
 			ok = false   # flat out in a held drift the car must keep its speed
 		print("HELD %s stage%d: v %.0f -> %.0f km/h over 3 s, angle avg %.0f deg, rpm avg %.2f, gear %d" % [cid, stage, v_start, car.speed_kmh(), ang2 / n2, rpm2 / n2, car.gear])
+		# --- brakes: 100 -> 0 km/h, stock and with brake tuning stage 3 ---
+		var dists := []
+		for bk in [0, 3]:
+			car.tuning_override = {"brakes": bk}
+			car._apply_tuning({"brakes": bk})
+			car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), start + Vector3(-110, 0, -60))
+			car.angular_velocity = Vector3.ZERO
+			for f in 12:
+				car.linear_velocity = fwd * (100.0 / 3.6)
+				await get_tree().physics_frame
+			var p0: Vector3 = car.global_position
+			Input.action_press("brake")
+			var g := 0
+			while car.speed > 0.5 and g < 900:
+				await get_tree().physics_frame
+				g += 1
+			Input.action_release("brake")
+			dists.append(car.global_position.distance_to(p0))
+		car._apply_tuning(Game.get_tuning(cid))
+		print("BRAKE %s: 100-0 km/h %.1f m stock, %.1f m with brake stage 3" % [cid, dists[0], dists[1]])
+		if dists[1] > dists[0] * 0.93:
+			ok = false   # the brake tuning must shorten the stopping distance
 		# --- handbrake in a drift: straightens the car ---
 		var slips := {}
 		for use_hb in [false, true]:

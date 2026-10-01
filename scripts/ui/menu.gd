@@ -199,7 +199,7 @@ func _header(text: String) -> void:
 # Main
 # ---------------------------------------------------------------------------
 func _build_main() -> void:
-	var tut := UiKit.button("Tutorial" if bool(Game.settings.get("tutorial_done", false)) else "★  Tutorial  –  hier starten", func(): main.start_tutorial(), 360)
+	var tut := UiKit.button("Tutorial" if bool(Game.settings.get("tutorial_done", false)) else "★  Tutorial", func(): main.start_tutorial(), 360)
 	tut.tooltip_text = "Mitternacht, Regen, eine Nachricht auf dem Handy … die Steuerung auf einer Fahrt über die Grüne Hölle.\nJederzeit überspringbar."
 	_add(tut)
 	_add(UiKit.button("Einzelspieler", func(): show_screen("single"), 360))

@@ -7,6 +7,7 @@ extends Node3D
 ## Flow per minigame: announce (roulette) -> travel (countdown on the stretch) -> play -> results -> back.
 
 const PartySites = preload("res://scripts/world/party_sites.gd")
+const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const PartyArena = preload("res://scripts/world/party_arena.gd")
 const Car = preload("res://scripts/car/car.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
@@ -66,6 +67,9 @@ var _results := {}           # host: peer id -> value
 var _checkpoint := -104.0
 var _rl_phases: Array = []   # red light green light: [end time, green?]
 var _red_since := -1.0
+var _rl_last := -1
+const RL_YELLOW := 0.9      # seconds of yellow at the end of every green phase
+const RL_SAFE := 12.0       # metres before the finish line where moving on red is not caught
 var _penalty := 0.0
 var _yaw_acc := 0.0
 var _last_yaw := 0.0
@@ -564,6 +568,7 @@ func _begin_travel() -> void:
 	_yaw_acc = 0.0
 	_last_yaw = car.global_rotation.y
 	_red_since = -1.0
+	_rl_last = -1
 	_hint = -1
 	if id == "rlgl":
 		_make_rl_phases()
@@ -597,6 +602,8 @@ func _finish_local() -> void:
 	if _done:
 		return
 	_done = true
+	_pin = false      # a finisher is never held back at the start again
+	_penalty = 0.0
 	var car = world.local_car
 	var id: String = GAMES[_game]["id"]
 	if id == "rlgl" or id == "parkour" or id == "bowling":
@@ -621,31 +628,42 @@ func _play(delta: float, g: Dictionary) -> void:
 	_penalty = maxf(_penalty - delta, 0.0)
 	match id:
 		"rlgl":
-			var green := _rl_green(_t)
-			sites.set_rlgl_light(1 if green else 0)
+			# the traffic lights say it all (no text): green, yellow for the last second, red –
+			# with a beep on green, ticks on yellow and a buzzer on red
+			var light := _rl_light(_t)
+			sites.set_rlgl_light(light)
+			if light != _rl_last:
+				if light == 1:
+					Sfx.play(self, "light_go", -4.0)
+				elif light == 2:
+					Sfx.play(self, "light_warn", -6.0)
+				elif light == 0:
+					Sfx.play(self, "light_stop", -5.0)
+				_rl_last = light
 			if not _done:
 				_value = along - PartySites.RLGL_START
-				if green:
-					_red_since = -1.0
-					_show_status("GRÜN – FAHR!", UiKit.GOOD)
-				else:
-					if _red_since < 0.0:
-						_red_since = _t
-					_show_status("ROT – STOPP!", UiKit.BAD)
-					# a short reaction time, then any movement is caught
-					if _t - _red_since > 0.45 and car.speed > 0.9:
-						_hold(sites.start_xf(id, _slot, _ids.size()))
-						_hint = -1
-						_penalty = 1.5
-						_status_t = 1.5
-						world.hud.show_message("ERWISCHT!", "Zurück zum Start", UiKit.BAD, 1.8)
-				if _penalty <= 0.0 and _pin:
-					_release()
+				# over the line counts first – also when the light turns red at that moment
 				if along > sites.rlgl_finish():
 					_value = 10000.0 - _t
 					_finish_t = _t
 					_finish_local()
+					Sfx.play(self, "light_go", -2.0, null, 1.25)
 					world.hud.show_message("IM ZIEL!", Game.format_time(_t), UiKit.GOLD, 2.5)
+				elif light == 0:
+					if _red_since < 0.0:
+						_red_since = _t
+					# a short reaction time, then any movement is caught
+					# … except right before the line: nobody stops from speed in a few metres
+					if _t - _red_since > 0.45 and car.speed > 0.9 and along < sites.rlgl_finish() - RL_SAFE:
+						_hold(sites.start_xf(id, _slot, _ids.size()))
+						_hint = -1
+						_penalty = 1.5
+						Sfx.play(self, "whistle", -3.0)
+						world.hud.show_message("ERWISCHT!", "Zurück zum Start", UiKit.BAD, 1.8)
+				else:
+					_red_since = -1.0
+				if not _done and _penalty <= 0.0 and _pin:
+					_release()
 			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(sites.rlgl_finish() - along, 0.0))]
 		"parkour":
 			if not _done:
@@ -781,6 +799,16 @@ func _rl_green(t: float) -> bool:
 		if t < float(ph[0]):
 			return bool(ph[1])
 	return true
+
+
+## 1 green, 2 yellow (the last second of a green phase), 0 red.
+func _rl_light(t: float) -> int:
+	for ph in _rl_phases:
+		if t < float(ph[0]):
+			if not bool(ph[1]):
+				return 0
+			return 2 if float(ph[0]) - t < RL_YELLOW else 1
+	return 1
 
 
 func _on_final(rows: Array) -> void:

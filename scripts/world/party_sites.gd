@@ -279,29 +279,60 @@ func _gantry(id: String, along: float, text: String, color: Color, light := fals
 		l.rotation = Vector3(0, 0.0 if side > 0.0 else PI, 0)
 		root.add_child(l)
 	if light:
-		root.add_child(MeshKit.box_node(Vector3(7.0, 3.4, 1.2), _mat(Color(0.05, 0.05, 0.06), 0.4), Vector3(0, 5.9, 0)))
-		var red := _mat(Color(1.0, 0.1, 0.05), 0.3, 0.2)
-		var green := _mat(Color(0.1, 1.0, 0.3), 0.3, 0.2)
-		# the lamps face the cars coming up the stretch (+z of the gantry)
-		root.add_child(MeshKit.sphere_node(1.2, red, Vector3(-1.8, 5.9, 0.6), Vector3(1, 1, 0.4)))
-		root.add_child(MeshKit.sphere_node(1.2, green, Vector3(1.8, 5.9, 0.6), Vector3(1, 1, 0.4)))
-		rlgl_lamps = [red, green]
+		# a big three-lamp traffic light hanging from the gantry (red / yellow / green, top to bottom)
+		var lamps := _traffic_light(root, Vector3(0, 6.2, 0.35), 1.0)
+		rlgl_lamps = lamps
 
 
 func _build_rlgl() -> void:
 	_line("rlgl", RLGL_START)
 	_line("rlgl", rlgl_finish())
+	rlgl_lamps = []
 	_gantry("rlgl", rlgl_finish() + 6.0, "ROTES LICHT · GRÜNES LICHT", Color(1.0, 0.35, 0.35), true)
+	# more traffic lights on posts along both edges, so one is always in view
+	var hw: float = track.half_w
+	var post := _mat(Color(0.12, 0.12, 0.14), 0.5, 0.0)
+	var a := RLGL_START + 18.0
+	var side := 1.0
+	while a < rlgl_finish() - 8.0:
+		var xf := course_xf("rlgl", a, side * (hw + 1.6), float(track.ROAD_Y))
+		var root := Node3D.new()
+		_course.add_child(root)
+		# face the arriving cars (they come from -along = +z of the road frame), turned a bit inwards
+		root.global_transform = xf * Transform3D(Basis(Vector3.UP, side * 0.35), Vector3.ZERO)
+		root.add_child(MeshKit.box_node(Vector3(0.18, 3.6, 0.18), post, Vector3(0, 1.8, 0)))
+		Colliders.add_box(_course, root.global_transform * Transform3D(Basis.IDENTITY, Vector3(0, 1.8, 0)), Vector3(0.25, 3.6, 0.25))
+		rlgl_lamps.append_array(_traffic_light(root, Vector3(0, 4.2, 0), 0.6))
+		a += 34.0
+		side = -side
 	set_rlgl_light(0)
 	_tyre_edges("rlgl", 2.0, rlgl_finish() + 4.0, 9.0, _venue_rng("rlgl"), 2, 3)
 
 
-## -1 off, 0 red, 1 green
+## -1 off, 0 red, 1 green, 2 yellow (all traffic lights of the stretch together)
 func set_rlgl_light(state: int) -> void:
-	if rlgl_lamps.is_empty():
-		return
-	(rlgl_lamps[0] as StandardMaterial3D).emission_energy_multiplier = 8.0 if state == 0 else 0.15
-	(rlgl_lamps[1] as StandardMaterial3D).emission_energy_multiplier = 8.0 if state == 1 else 0.15
+	for k in range(0, rlgl_lamps.size(), 3):
+		(rlgl_lamps[k] as StandardMaterial3D).emission_energy_multiplier = 9.0 if state == 0 else 0.05
+		(rlgl_lamps[k + 1] as StandardMaterial3D).emission_energy_multiplier = 9.0 if state == 2 else 0.05
+		(rlgl_lamps[k + 2] as StandardMaterial3D).emission_energy_multiplier = 9.0 if state == 1 else 0.05
+
+
+## A traffic light (housing, visors, three lamps) facing +z of `parent`; returns [red, yellow, green]
+## materials (each light gets its own so they can all be switched together).
+func _traffic_light(parent: Node3D, pos: Vector3, s: float) -> Array:
+	var housing := _mat(Color(0.05, 0.05, 0.06), 0.5)
+	parent.add_child(MeshKit.box_node(Vector3(1.1, 3.1, 0.6) * s, housing, pos))
+	parent.add_child(MeshKit.box_node(Vector3(1.5, 3.5, 0.06) * s, _mat(Color(0.02, 0.02, 0.025), 0.7), pos - Vector3(0, 0, 0.32 * s)))
+	var cols := [Color(1.0, 0.08, 0.04), Color(1.0, 0.65, 0.02), Color(0.1, 1.0, 0.3)]
+	var out: Array = []
+	for k in 3:
+		var m := _mat(cols[k], 0.25, 0.05)
+		var lp := pos + Vector3(0, (1.0 - k) * 0.98 * s, 0.31 * s)
+		parent.add_child(MeshKit.cyl_node(0.4 * s, 0.4 * s, 0.08 * s, m, lp, Vector3(PI * 0.5, 0, 0), 20))
+		# visor over each lamp
+		parent.add_child(MeshKit.box_node(Vector3(0.95, 0.05, 0.4) * s, housing, lp + Vector3(0, 0.44 * s, 0.2 * s)))
+		out.append(m)
+	return out
 
 
 func _build_parkour() -> void:

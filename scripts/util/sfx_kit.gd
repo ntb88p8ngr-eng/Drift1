@@ -45,6 +45,14 @@ static func get_sound(name: String) -> AudioStreamWAV:
 			s = _wav(_drone(), true)
 		"whoosh":
 			s = _wav(_whoosh())
+		"light_go":
+			s = _wav(_beeps([[1320.0, 0.0, 0.12], [1760.0, 0.16, 0.3]]))
+		"light_warn":
+			s = _wav(_beeps([[880.0, 0.0, 0.1]]))
+		"light_stop":
+			s = _wav(_buzzer())
+		"whistle":
+			s = _wav(_whistle())
 		_:
 			s = _wav(PackedFloat32Array([0.0]))
 	_cache[name] = s
@@ -320,4 +328,50 @@ static func _whoosh() -> PackedFloat32Array:
 		var k := 0.02 + 0.25 * sin(PI * t / 0.9)
 		lp += (rng.randf_range(-1.0, 1.0) - lp) * k
 		b[i] = lp * sin(PI * t / 0.9) * 0.9
+	return b
+
+
+## Start-light beeps: [frequency, start, length] – a soft sine with a little square in it.
+static func _beeps(notes: Array) -> PackedFloat32Array:
+	var end := 0.0
+	for n in notes:
+		end = maxf(end, float(n[1]) + float(n[2]))
+	var b := _buf(end + 0.05)
+	for i in b.size():
+		var t := float(i) / RATE
+		var v := 0.0
+		for n in notes:
+			var lt := t - float(n[1])
+			if lt >= 0.0 and lt < float(n[2]):
+				var env := minf(lt * 300.0, 1.0) * minf((float(n[2]) - lt) * 120.0, 1.0)
+				var ph := TAU * float(n[0]) * lt
+				v += (sin(ph) * 0.75 + signf(sin(ph)) * 0.12) * env
+		b[i] = v * 0.55
+	return b
+
+
+## Red light: a short, harsh buzzer.
+static func _buzzer() -> PackedFloat32Array:
+	var b := _buf(0.55)
+	for i in b.size():
+		var t := float(i) / RATE
+		var env := minf(t * 200.0, 1.0) * minf((0.55 - t) * 40.0, 1.0)
+		var saw := fposmod(t * 220.0, 1.0) * 2.0 - 1.0
+		var saw2 := fposmod(t * 331.0, 1.0) * 2.0 - 1.0
+		b[i] = (saw * 0.5 + saw2 * 0.35) * env * 0.5
+	return b
+
+
+## Caught moving on red: a referee's whistle (trilling pea).
+static func _whistle() -> PackedFloat32Array:
+	var b := _buf(0.7)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var ph := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		var f := 2900.0 + 180.0 * sin(TAU * 32.0 * t)
+		ph += TAU * f / RATE
+		var env := minf(t * 60.0, 1.0) * minf((0.7 - t) * 20.0, 1.0)
+		b[i] = (sin(ph) * 0.7 + rng.randf_range(-0.12, 0.12)) * env * 0.45
 	return b
