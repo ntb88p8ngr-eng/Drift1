@@ -14,7 +14,7 @@ const COURSES := [
 	["rlgl", 190.0],
 	["parkour", 210.0],
 	["koth", 110.0],
-	["donut", 120.0],
+	["donut", 140.0],
 	["bowling", 95.0],
 	["arena", 110.0],
 ]
@@ -64,7 +64,8 @@ func plan(p_track: Node3D) -> bool:
 	var k := clampf(float(track.length) * 0.9 / total, 0.62, 1.0)
 	for c in COURSES:
 		var id: String = c[0]
-		var len := float(c[1]) * k
+		# the donut duel never shrinks: eight cars need room to spin without touching
+		var len := float(c[1]) * (1.0 if id == "donut" else k)
 		var cnt := int(ceil(len / sp)) + 10
 		var best := -1
 		var best_turn := 1e9
@@ -72,6 +73,8 @@ func plan(p_track: Node3D) -> bool:
 			if _overlaps(i, cnt, used, n):
 				continue
 			var t := turn[i + cnt] - turn[i]
+			if id == "donut":
+				t += _narrowness(i, cnt, n)
 			if t < best_turn:
 				best_turn = t
 				best = i
@@ -109,6 +112,16 @@ func plan(p_track: Node3D) -> bool:
 ## True when the arena game runs over the whole closed lap (no end walls).
 func arena_loop() -> bool:
 	return bool(sites[arena_id].get("loop", false))
+
+
+## Donut: penalty for a window whose road is narrow somewhere (wide stretches win, a straight but
+## narrow one only when nothing wider exists).
+func _narrowness(i: int, cnt: int, n: int) -> float:
+	var hw: float = track.half_w
+	if track.hws.size() == n:
+		for j in range(0, cnt, 3):
+			hw = minf(hw, float(track.hws[(i + j) % n]))
+	return maxf(9.0 - hw, 0.0) * 0.6
 
 
 func _overlaps(i: int, cnt: int, used: Array, n: int) -> bool:
@@ -158,7 +171,8 @@ func start_xf(id: String, slot: int, count: int) -> Transform3D:
 
 
 func donut_along(slot: int) -> float:
-	return 10.0 + (slot % 8) * minf(14.0, (float(sites["donut"]["len"]) - 12.0) / 8.0)
+	# 15 m apart (rings of 3.9 m): every car has its own circle with room to spare
+	return 12.0 + (slot % 8) * minf(15.0, (float(sites["donut"]["len"]) - 20.0) / 7.0)
 
 
 func rlgl_finish() -> float:
@@ -763,7 +777,7 @@ func _build_donut() -> void:
 		_course.add_child(ring)
 		ring.global_transform = xf * Transform3D(Basis.from_scale(Vector3(1, 0.05, 1)), Vector3.ZERO)
 	_gantry("donut", -4.0, "DONUT-DUELL", Color(1.0, 0.4, 0.8))
-	_tyre_edges("donut", 2.0, float(sites["donut"]["len"]) - 2.0, 8.0, _venue_rng("donut"), 1, 3)
+	# no tyre stacks along the edges here: the whole width of the road is for spinning
 
 
 # ---------------------------------------------------------------------------
