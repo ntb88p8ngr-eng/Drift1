@@ -87,6 +87,12 @@ jobs:
           if grep -E "SCRIPT ERROR" assist.log; then echo "::error::Assist keys test failed"; exit 1; fi
           grep -q "ASSIST KEYS TEST: PASS" assist.log
 
+      - name: Bots + party test (7 bots from the menu settings, parked during minigames)
+        run: |
+          timeout 240 ./godot --headless --path . res://tests/bots_party_test.tscn 2>&1 | tee botsparty.log || true
+          if grep -E "SCRIPT ERROR" botsparty.log; then echo "::error::Bots party test failed"; exit 1; fi
+          grep -q "BOTS PARTY TEST: PASS" botsparty.log
+
       - name: Lift test (offroad ride height really raises the body)
         run: |
           timeout 120 ./godot --headless --path . res://tests/lift_test.tscn 2>&1 | tee lift.log || true

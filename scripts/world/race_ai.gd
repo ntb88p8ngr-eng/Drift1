@@ -7,14 +7,15 @@ extends Node
 
 const Car = preload("res://scripts/car/car.gd")
 
-## corner: share of the cornering speed they dare, throttle: how hard they accelerate,
+## corner: share of the car's real cornering grip they use, throttle: how hard they accelerate,
 ## brake: braking distance factor (> 1 = earlier), line: how much they use the racing line,
-## err: random mistakes (late braking, wobbly steering), vmax: top speed they go for (m/s)
+## err: random mistakes (late braking, wobbly steering), vmax: top speed they go for (m/s),
+## nitro: they use the nitro on the straights
 const LEVELS := [
-	{"name": "Leicht", "corner": 0.64, "throttle": 0.7, "brake": 1.45, "line": 0.3, "err": 0.12, "vmax": 36.0},
-	{"name": "Mittel", "corner": 0.8, "throttle": 0.88, "brake": 1.2, "line": 0.6, "err": 0.07, "vmax": 50.0},
-	{"name": "Schwer", "corner": 0.95, "throttle": 1.0, "brake": 1.0, "line": 0.85, "err": 0.035, "vmax": 80.0},
-	{"name": "Profi", "corner": 1.03, "throttle": 1.0, "brake": 0.9, "line": 1.0, "err": 0.015, "vmax": 95.0},
+	{"name": "Leicht", "corner": 0.84, "throttle": 0.9, "brake": 1.25, "line": 0.45, "err": 0.07, "vmax": 60.0, "nitro": false},
+	{"name": "Mittel", "corner": 0.97, "throttle": 1.0, "brake": 1.08, "line": 0.8, "err": 0.035, "vmax": 95.0, "nitro": true},
+	{"name": "Schwer", "corner": 1.06, "throttle": 1.0, "brake": 0.95, "line": 0.95, "err": 0.015, "vmax": 130.0, "nitro": true},
+	{"name": "Profi", "corner": 1.13, "throttle": 1.0, "brake": 0.86, "line": 1.0, "err": 0.006, "vmax": 150.0, "nitro": true},
 ]
 const NAMES := ["Kenta", "Mika", "Ryo", "Sora", "Daigo", "Yuki", "Hana", "Taro"]
 const BOT_ID0 := 1000
@@ -22,12 +23,18 @@ const BOT_ID0 := 1000
 var world
 var level := 1
 var bots: Array = []           # see add_bot
+## Learned corner speeds: a factor per 20 m of track, lowered where a bot ran wide and raised a little
+## on every clean pass – shared by all bots and kept for the session (per track and level)
+const SEG := 10
+static var _learned := {}
+var seg_scale := PackedFloat32Array()
 var _net_t := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
-## The opponents of a race: [{id, name, car, paint}] (the same list goes to every machine online).
-static func make_roster(count: int, seed_v: int) -> Array:
+## The opponents of a race: [{id, name, car, paint, tuning}] (the same list goes to every machine online).
+## `tuning`: the stages every bot gets on its car – the player's level (see player_tuning()).
+static func make_roster(count: int, seed_v: int, tuning: Dictionary = {}) -> Array:
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_v
 	var out: Array = []
@@ -36,9 +43,14 @@ static func make_roster(count: int, seed_v: int) -> Array:
 	for k in clampi(count, 0, 7):
 		var ni := r.randi() % names.size()
 		out.append({"id": BOT_ID0 + k, "name": "KI " + str(names[ni]), "car": str(cars[r.randi() % cars.size()]),
-			"paint": str(Game.PAINTS[r.randi() % Game.PAINTS.size()]["id"])})
+			"paint": str(Game.PAINTS[r.randi() % Game.PAINTS.size()]["id"]), "tuning": tuning.duplicate()})
 		names.remove_at(ni)
 	return out
+
+
+## The tuning stages of the player's current car: the bots get the same level on theirs.
+static func player_tuning() -> Dictionary:
+	return Game.get_tuning(str(Game.settings.get("car", "r34")))
 
 
 func add_bot(id: int, car) -> void:
@@ -63,8 +75,18 @@ func is_bot(id: int) -> bool:
 func _physics_process(delta: float) -> void:
 	if world == null or not world.is_loaded:
 		return
+	if world._bots_parked:
+		return      # a party minigame is on: the bots wait (no lap counting, no stuck resets)
 	var tr = world.track
 	var length: float = tr.length
+	if seg_scale.is_empty():
+		var key := "%s/%d" % [str(tr.track_id), level]
+		if not _learned.has(key):
+			var arr := PackedFloat32Array()
+			arr.resize(int(ceil(float(tr.sample_count()) / SEG)))
+			arr.fill(1.0)
+			_learned[key] = arr
+		seg_scale = _learned[key]
 	for b in bots:
 		var car = b["car"]
 		if not is_instance_valid(car):
@@ -94,6 +116,7 @@ func _physics_process(delta: float) -> void:
 		car.remote_progress = total_progress(b)
 		car.remote_drift = 0.0
 		_watchdog(b, delta)
+		_learn(b, delta)
 	# online host: everybody sees the bots
 	if world.online and Net.is_host():
 		_net_t -= delta
@@ -173,7 +196,7 @@ func _drive(b: Dictionary) -> Array:
 	k_line /= 5.0
 	var hw: float = tr.half_w
 	var lat := -clampf(k_line * 260.0, -1.0, 1.0) * hw * 0.6 * float(lv["line"])
-	lat += float(b["lane"]) * hw * 0.25 * (1.0 - absf(k_line) * 120.0)
+	lat += float(b["lane"]) * hw * 0.25 * (1.0 - absf(k_line) * 120.0) * (1.0 - 0.7 * float(lv["line"]))
 	lat = clampf(lat, -hw + 1.6, hw - 1.6)
 	var target: Vector3 = tr.samples[ti] + tr.rights[ti] * lat
 	# pure pursuit: the wheel angle that drives through the target, divided by what the car's
@@ -197,8 +220,10 @@ func _drive(b: Dictionary) -> Array:
 		steer = clampf(steer + slide * 1.2, -1.0, 1.0)
 	# target speed from the corners ahead
 	var wet: float = tr.wetness
-	var a_lat := 9.81 * 1.05 * (1.0 - 0.3 * wet) * float(lv["corner"])
-	var decel := 9.81 * 0.95 * (1.0 - 0.3 * wet) / float(lv["brake"])
+	# the car's real (tuned) grip: better tyres and suspension let the bots corner faster too
+	var g: float = car.grip
+	var a_lat := 9.81 * g * (1.0 - 0.3 * wet) * float(lv["corner"]) * _tune("CORNER", 1.0)
+	var decel := 9.81 * g * 0.95 * (1.0 - 0.3 * wet) / float(lv["brake"])
 	var v_target: float = lv["vmax"]
 	var reach := int(clampf(v * v / (2.0 * decel) + 40.0, 40.0, 260.0) / sp)
 	for d in range(2, reach, 3):
@@ -207,7 +232,7 @@ func _drive(b: Dictionary) -> Array:
 			k = maxf(k, absf(tr.curvature[(i + d + e) % n]))
 		if k < 1e-4:
 			continue
-		var v_c := sqrt(a_lat / k)
+		var v_c := sqrt(a_lat * _seg_scale_at((i + d) % n) / k)
 		var dist := d * sp - 6.0
 		var v_now := sqrt(v_c * v_c + 2.0 * decel * maxf(dist, 0.0))
 		v_target = minf(v_target, v_now)
@@ -220,9 +245,80 @@ func _drive(b: Dictionary) -> Array:
 		thr = float(lv["throttle"]) * 0.55
 	elif v > v_target + 1.5:
 		brk = clampf((v - v_target) / 6.0, 0.25, 1.0)
-	if absf(slide) > 0.22:
-		thr *= 0.35
+	# edge guard: where will the car be in half a second? Beyond the asphalt -> more lock, lift, brake
+	var rel: Vector3 = car.global_position - tr.samples[i]
+	var lat_now: float = rel.dot(tr.rights[i])
+	var lat_v: float = car.linear_velocity.dot(tr.rights[i])
+	var pred := lat_now + lat_v * _tune("PRED", 0.5)
+	var lim: float = float(tr.hws[i]) - _tune("EDGE", 1.0)
+	if absf(pred) > lim:
+		var over := absf(pred) - lim
+		steer = clampf(steer - signf(pred) * minf(over * _tune("EDGEK", 0.25), 0.8), -1.0, 1.0)
+		thr *= clampf(1.0 - over * 0.3, 0.2, 1.0)
+		if over > 1.5 and v > 15.0:
+			brk = maxf(brk, clampf((over - 1.5) * 0.25, 0.0, 0.6))
+	# sliding: progressively less throttle (power oversteer in the drift-happy cars costs time)
+	var s0 := _tune("SLIDE0", 0.22)
+	if absf(slide) > s0:
+		thr *= clampf(1.0 - (absf(slide) - s0) / _tune("SLIDEW", 0.001), _tune("SLIDEMIN", 0.35), 1.0)
+	# corner exit: with a lot of lock the throttle comes in gradually (no power oversteer)
+	if thr > 0.0:
+		thr = minf(thr, 1.0 - _tune("EXIT", 0.0) * minf(absf(steer), 1.0))
+	# traction control: wheelspin on the driven rear wheels costs time – ease off like a good driver
+	var rspin := (maxf(float(car.wheels[2]["spin"]), 0.0) + maxf(float(car.wheels[3]["spin"]), 0.0)) * 0.5
+	if rspin > 1.2 and thr > 0.0:
+		thr *= clampf(1.0 - (rspin - 1.2) / 5.0, 0.35, 1.0)
+	# nitro on the straights: well below the target speed, nothing tight ahead, not sliding
+	var nitro := false
+	if bool(lv["nitro"]) and thr > 0.9 and v > 12.0 and v < v_target - 6.0 and absf(slide) < 0.08:
+		var straight := true
+		for d in range(4, int(90.0 / sp), 4):
+			if absf(tr.curvature[(i + d) % n]) > 1.0 / 220.0:
+				straight = false
+				break
+		nitro = straight
 	if bool(b["finished"]):
 		thr = 0.0
 		brk = 0.4
-	return [thr, brk, steer, false]
+		nitro = false
+	return [thr, brk, steer, false, nitro]
+
+
+## Tuning knobs for testing (environment variables), default otherwise.
+static func _tune(key: String, def: float) -> float:
+	var v := OS.get_environment("AI_" + key)
+	return float(v) if v != "" else def
+
+
+func _seg_scale_at(i: int) -> float:
+	if seg_scale.is_empty():
+		return 1.0
+	return seg_scale[clampi(i / SEG, 0, seg_scale.size() - 1)]
+
+
+## Learning: running wide off the asphalt lowers the corner speed for the 60 m before that spot;
+## a clean stretch nudges it back up (a bit faster every lap until the limit is found).
+func _learn(b: Dictionary, delta: float) -> void:
+	if seg_scale.is_empty() or world.state != "running":
+		return
+	var car = b["car"]
+	var tr = world.track
+	var n: int = tr.sample_count()
+	var i: int = maxi(car.track_hint, 0)
+	var rel: Vector3 = car.global_position - tr.samples[i]
+	var lat: float = absf(rel.dot(tr.rights[i]))
+	b["learn_cool"] = float(b.get("learn_cool", 0.0)) - delta
+	var seg := i / SEG
+	if lat > float(tr.hws[i]) + 0.3 and car.speed > 8.0:
+		if float(b["learn_cool"]) <= 0.0:
+			b["learn_cool"] = 1.2
+			for d in range(0, int(60.0 / tr.SPACING), SEG):
+				var sg := ((i - d + n) % n) / SEG
+				seg_scale[sg] = maxf(seg_scale[sg] * 0.96, 0.55)
+		b["clean_seg"] = -1
+	elif seg != int(b.get("clean_seg", -1)):
+		# entered a new segment cleanly: the previous one may be taken a touch faster next time
+		var prev_seg := int(b.get("clean_seg", -1))
+		if prev_seg >= 0 and float(b["learn_cool"]) <= -1.0:
+			seg_scale[prev_seg] = minf(seg_scale[prev_seg] * 1.006, 1.2)
+		b["clean_seg"] = seg

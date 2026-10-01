@@ -48,6 +48,7 @@ var scorer: DriftScorer
 var graffiti: Graffiti      # graffiti mode only
 var time_limit := 0.0       # graffiti mode: seconds
 var party: Party            # party mode (minigame coins) or null
+var _bots_parked := false
 var party_sites: PartySites
 var tutorial_site: TutorialSite   # tutorial mode (Grüne Hölle)
 var tutorial: Tutorial
@@ -248,6 +249,30 @@ func _spawn_cars() -> void:
 	_auto_lights = local_car.headlights
 
 
+## Party minigame: the race bots stop where they are, invisible and without collision (on every machine);
+## afterwards they carry on from the same spot. Only the machine that drives them freezes the physics.
+func _park_bots(on: bool) -> void:
+	for id in cars:
+		if int(id) < RaceAI.BOT_ID0 or not is_instance_valid(cars[id]):
+			continue
+		var c: Car = cars[id]
+		c.visible = not on
+		if on:
+			c.set_meta("park_layer", c.collision_layer)
+			c.set_meta("park_mask", c.collision_mask)
+			c.collision_layer = 0
+			c.collision_mask = 0
+			if c.is_bot:
+				c.set_meta("park_xf", c.global_transform)
+				c.freeze = true
+		else:
+			c.collision_layer = int(c.get_meta("park_layer", c.collision_layer))
+			c.collision_mask = int(c.get_meta("park_mask", c.collision_mask))
+			if c.is_bot:
+				c.freeze = false
+				c.place(c.get_meta("park_xf", c.global_transform))
+
+
 ## AI opponents: on the grid in front of the player (offline) / behind the players (online). Offline
 ## and on the host they are driven here, the others get them as remote cars.
 func _spawn_bots(night: float) -> void:
@@ -266,6 +291,8 @@ func _spawn_bots(night: float) -> void:
 		var e: Dictionary = roster[k]
 		var id := int(e.get("id", RaceAI.BOT_ID0 + k))
 		var info := {"car": str(e.get("car", "r34")), "paint": str(e.get("paint", "red")), "name": str(e.get("name", "KI")), "transmission": "auto"}
+		var tun = e.get("tuning", {})
+		info["tuning"] = tun if tun is Dictionary else {}
 		var car := _make_car(info, not driving, driving)
 		car.peer_id = id
 		car.headlights = night >= 0.4
@@ -287,6 +314,9 @@ func _make_car(info: Dictionary, remote: bool, bot := false) -> Car:
 	car.is_bot = bot
 	if bot:
 		car.input_enabled = false
+		var tun = info.get("tuning", {})
+		if tun is Dictionary and not tun.is_empty():
+			car.tuning_override = tun
 	car.remote_collisions = bool(config.get("collisions", true))
 	car.track = track
 	car.skidmarks = skidmarks
@@ -362,6 +392,11 @@ func _physics_process(delta: float) -> void:
 			if party == null or not party.active():
 				race_time += delta
 				_update_progress()
+	# race bots wait out a party minigame where they are (hidden, no collision)
+	var park := party != null and party.active()
+	if park != _bots_parked:
+		_bots_parked = park
+		_park_bots(park)
 	if state == "running" and not finished and (party == null or not party.active()):
 		scorer.update(local_car, delta, get_world_3d().direct_space_state)
 		local_car.trail_active = scorer.chain >= Car.DRIFT_TRAIL_POINTS

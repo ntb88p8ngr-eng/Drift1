@@ -917,8 +917,8 @@ func host_start_race() -> String:
 		"players": players.duplicate(true),
 	}
 	# AI opponents (races only): the same roster for everybody, the host drives them
-	if str(config["mode"]) == "race" and int(lobby.get("bots", 0)) > 0 and not bool(config["party"]):
-		config["bots"] = RaceAI.make_roster(clampi(int(lobby.get("bots", 0)), 0, 7), int(config["weather_seed"]))
+	if str(config["mode"]) == "race" and int(lobby.get("bots", 0)) > 0:
+		config["bots"] = RaceAI.make_roster(clampi(int(lobby.get("bots", 0)), 0, 7), int(config["weather_seed"]), RaceAI.player_tuning())
 		config["bot_level"] = clampi(int(lobby.get("bot_level", 1)), 0, 3)
 	_start_race.rpc(config)
 	return ""

@@ -57,6 +57,11 @@ func refresh_showroom(full: bool) -> void:
 
 
 func start_offline() -> void:
+	_start_world(offline_config())
+
+
+## The world config for a single player session from the menu settings.
+static func offline_config() -> Dictionary:
 	var cfg := {
 		"track": Game.settings["track"],
 		"mode": Game.settings["mode"],
@@ -72,10 +77,11 @@ func start_offline() -> void:
 		"online": false,
 		"collisions": true,
 	}
-	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0 and not bool(cfg["party"]):
-		cfg["bots"] = RaceAI.make_roster(int(Game.settings["bots"]), int(cfg["weather_seed"]))
+	# bots also race with party mode on (they wait out the minigames, see world._park_bots)
+	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0:
+		cfg["bots"] = RaceAI.make_roster(int(Game.settings["bots"]), int(cfg["weather_seed"]), RaceAI.player_tuning())
 		cfg["bot_level"] = int(Game.settings.get("bot_level", 1))
-	_start_world(cfg)
+	return cfg
 
 
 ## The tutorial: Grüne Hölle at midnight in the rain, starting in the garage of a house by the track.

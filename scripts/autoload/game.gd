@@ -627,9 +627,11 @@ func get_tuning(car_id: String) -> Dictionary:
 
 
 ## Gear ratios, final drive, shift time factor and redline of a car including its tuning.
-func tuned_gearing(car_id: String) -> Dictionary:
+func tuned_gearing(car_id: String, tuning: Dictionary = {}) -> Dictionary:
 	var car := get_car(car_id)
 	var t := get_tuning(car_id)
+	for k in tuning:
+		t[k] = int(tuning[k])
 	var st: Dictionary = GEARBOX_STAGES[clampi(int(t["gearbox"]), 0, GEARBOX_STAGES.size() - 1)]
 	var mult: Array = st["gears"]
 	var src: Array = car["gears"]
