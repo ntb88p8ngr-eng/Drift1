@@ -50,7 +50,36 @@ func _ready() -> void:
 	if not (tb is TabBar) or tb.current_tab == tab0:
 		print("FAIL: the options tabs cannot be switched with the gamepad"); fails += 1
 	await _pad(JOY_BUTTON_B)
-		# (A) on the focused main-screen entry: "Einzelspieler" is the second button
+		# a long screen: going down entry by entry, the list must scroll along so the selected
+	# entry stays inside the visible part
+	for screen in ["single", "options"]:
+		menu.show_screen(screen)
+		for f in 4:
+			await get_tree().process_frame
+		var hidden := 0
+		var scrolled := 0
+		var must_scroll := false
+		for k in 25:
+			await _pad(JOY_BUTTON_DPAD_DOWN)
+			var fo = vp.gui_get_focus_owner()
+			if fo == null:
+				continue
+			var sc = fo.get_parent()
+			while sc != null and not (sc is ScrollContainer):
+				sc = sc.get_parent()
+			if sc == null:
+				continue
+			scrolled = maxi(scrolled, int(sc.scroll_vertical))
+			must_scroll = must_scroll or r_end_below(fo, sc)
+			var r: Rect2 = fo.get_global_rect()
+			var view: Rect2 = sc.get_global_rect()
+			if r.position.y < view.position.y - 1.0 or r.end.y > view.end.y + 1.0:
+				hidden += 1
+		print("  %s: 25x down, scrolled to %d px, selected entry outside the view %d times" % [screen, scrolled, hidden])
+		if hidden > 0 or (must_scroll and scrolled == 0):
+			print("FAIL: %s: the list does not follow the selection" % screen); fails += 1
+		await _pad(JOY_BUTTON_B)
+	# (A) on the focused main-screen entry: "Einzelspieler" is the second button
 	for f in 4:
 		await get_tree().process_frame
 	var foc2 = vp.gui_get_focus_owner()
@@ -62,3 +91,8 @@ func _ready() -> void:
 			print("FAIL: (A) did not open the single player screen"); fails += 1
 	print("MENU PAD TEST: %s" % ("PASS" if fails == 0 else "FAIL"))
 	get_tree().quit(1 if fails else 0)
+
+
+## The entry lies below the list's unscrolled view (so the list has to scroll to show it).
+func r_end_below(fo: Control, sc: ScrollContainer) -> bool:
+	return fo.get_global_rect().end.y + float(sc.scroll_vertical) > sc.get_global_rect().end.y + 1.0

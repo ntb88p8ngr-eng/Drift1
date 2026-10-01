@@ -26,6 +26,8 @@ static func tabs(on_quality: Callable = Callable(), in_race := false) -> TabCont
 static func _scroll(content: Control) -> ScrollContainer:
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# gamepad / keyboard: the list scrolls along with the selected entry
+	sc.follow_focus = true
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.add_child(content)
 	return sc
