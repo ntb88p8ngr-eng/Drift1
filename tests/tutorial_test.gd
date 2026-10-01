@@ -79,6 +79,27 @@ func _ready() -> void:
 	var gap_ok: bool = world.track.in_wall_gap(world.track.index_at(site.EXIT_P), site.EXIT_SIDE)
 	if not gap_ok:
 		print("FAIL: no gap in the barrier at the turn-off"); fails += 1
+	# the roadblock past the turn-off: a car at 90 km/h must not get through
+	var tr = world.track
+	if site.roadblocks.size() != 2:
+		print("FAIL: %d roadblocks (expected 2)" % site.roadblocks.size()); fails += 1
+	else:
+		tut._hint_i = tut._hints.size()     # no more hint pauses during this check
+		if tut._hint_open:
+			tut._close_hint()
+		var bi: int = tr.index_at(site.EXIT_P + site.BLOCK_EXIT)
+		var xf0: Transform3D = tr.transform_at(bi - int(45.0 / tr.SPACING), 2.0, 0.6)
+		car.place(xf0)
+		car.linear_velocity = -xf0.basis.z * 25.0
+		var p_block: float = fposmod(float(tr.dists[bi]) - float(tr.start_dist), float(tr.length))
+		var past := -1e9
+		for f in 120 * 4:
+			await get_tree().physics_frame
+			var pr: float = tr.project(car.global_position, car.track_hint)[1]
+			past = maxf(past, pr - p_block)
+		print("  roadblock: the car got %.1f m past it (90 km/h run-up), speed now %.0f km/h" % [past, car.speed_kmh()])
+		if past > 0.5 or past < -3.0:
+			print("FAIL: the car drove through the roadblock"); fails += 1
 	# arrive at the camp
 	car.place(Transform3D(Basis.IDENTITY, site.path_pts[site.path_pts.size() - 6] + Vector3(0, 0.8, 0)))
 	var guard := 0

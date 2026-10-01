@@ -94,6 +94,7 @@ func build(p_track, p_terrain, p_scenery) -> void:
 	_build_lights()
 	await Game.load_tick()
 	_build_exit_and_camp()
+	_build_roadblocks()
 	await Game.load_tick()
 	_build_figure()
 	_build_cross()
@@ -1657,3 +1658,95 @@ func _build_turn_sign() -> void:
 	glow.shadow_enabled = false
 	glow.position = Vector3(0, 1.75, 1.2 * front)
 	turn_sign.add_child(glow)
+
+
+## Roadblocks: across the track just past the forest turn-off (no driving on by mistake) and behind
+## the driveway (no driving off the wrong way) – concrete barriers with red/white boards, amber
+## flashers and a sign. Solid.
+const BLOCK_EXIT := 34.0      # m past EXIT_P
+const BLOCK_BACK := 45.0      # m before HOUSE_P
+
+var roadblocks: Array = []    # world positions (centre of each block), for tests
+
+
+func _build_roadblocks() -> void:
+	_roadblock(EXIT_P + BLOCK_EXIT, true)
+	_roadblock(HOUSE_P - BLOCK_BACK, false)
+
+
+func _roadblock(progress: float, to_forest: bool) -> void:
+	var i: int = track.index_at(progress)
+	var t: Vector3 = track.tangents[i]
+	t.y = 0.0
+	t = t.normalized()
+	# the side the cars come from looks at the boards: -t for the exit block (they arrive from behind it)
+	var facing := -t if to_forest else t
+	var hw: float = float(track.hws[i]) if not track.hws.is_empty() else float(track.half_w)
+	var span: float = hw + 1.2
+	var root := Node3D.new()
+	root.name = "Roadblock"
+	add_child(root)
+	var c: Vector3 = track.edge_point(i, 0.0) + Vector3(0, track.ROAD_Y, 0)
+	root.global_transform = Transform3D(Basis.looking_at(facing, Vector3.UP), c)
+	roadblocks.append(c)
+	var concrete := TexKit.std(Color(0.72, 0.72, 0.7), 0.85)
+	var red := TexKit.std(Color(0.85, 0.08, 0.06), 0.5)
+	var white := TexKit.std(Color(0.95, 0.95, 0.95), 0.5)
+	var post := TexKit.std(Color(0.3, 0.3, 0.32), 0.6, 0.5)
+	var flash := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded;
+uniform float phase = 0.0;
+void fragment() {
+	float on = step(0.5, fract(TIME * 1.4 + phase));
+	ALBEDO = mix(vec3(0.25, 0.15, 0.02), vec3(1.0, 0.65, 0.08) * 3.0, on);
+}
+"""
+	flash.shader = sh
+	var x := -span
+	var k := 0
+	while x < span - 0.1:
+		var w := minf(2.0, span - x)
+		var cx := x + w * 0.5
+		# jersey barrier: wide foot, narrow top
+		root.add_child(MeshKit.box_node(Vector3(w - 0.05, 0.35, 0.62), concrete, Vector3(cx, 0.175, 0)))
+		root.add_child(MeshKit.box_node(Vector3(w - 0.05, 0.6, 0.3), concrete, Vector3(cx, 0.65, 0)))
+		# striped board on two posts above it
+		for px: float in [cx - w * 0.35, cx + w * 0.35]:
+			root.add_child(MeshKit.box_node(Vector3(0.06, 0.7, 0.06), post, Vector3(px, 1.3, 0.0)))
+		for st in 4:
+			var bx := cx - w * 0.5 + (st + 0.5) * w / 4.0
+			root.add_child(MeshKit.box_node(Vector3(w / 4.0, 0.32, 0.04), red if (st + k) % 2 == 0 else white, Vector3(bx, 1.5, -0.04)))
+		# amber flasher on every other element
+		if k % 2 == 0:
+			var lamp_m: ShaderMaterial = flash.duplicate()
+			lamp_m.set_shader_parameter("phase", 0.5 * float(k / 2 % 2))
+			root.add_child(MeshKit.cyl_node(0.11, 0.11, 0.14, lamp_m, Vector3(cx, 1.78, -0.04), Vector3(PI * 0.5, 0, 0), 12))
+		x += w
+		k += 1
+	Colliders.add_box(root, root.global_transform * Transform3D(Basis.IDENTITY, Vector3(0, 0.8, 0)), Vector3(span * 2.0, 1.6, 0.7))
+	# sign in the middle, above the boards
+	var sign := Node3D.new()
+	root.add_child(sign)
+	sign.position = Vector3(0, 2.55, -0.06)
+	sign.add_child(MeshKit.box_node(Vector3(3.6, 0.9, 0.05), white))
+	sign.add_child(MeshKit.box_node(Vector3(3.7, 1.0, 0.04), red, Vector3(0, 0, 0.02)))
+	for px: float in [-1.4, 1.4]:
+		root.add_child(MeshKit.box_node(Vector3(0.08, 2.6, 0.08), post, Vector3(px, 1.3, 0.05)))
+	var lbl := Label3D.new()
+	lbl.text = "STRECKE GESPERRT" + ("\n→ Waldweg rechts" if to_forest else "")
+	lbl.font_size = 64
+	lbl.pixel_size = 0.0042 if to_forest else 0.005
+	lbl.modulate = Color(0.75, 0.05, 0.04)
+	lbl.outline_size = 0
+	lbl.position = Vector3(0, 0, -0.03)
+	lbl.rotation.y = PI     # Label3D reads along +Z: turn it to the arriving cars
+	sign.add_child(lbl)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.6, 0.15)
+	glow.light_energy = 1.4
+	glow.omni_range = 9.0
+	glow.position = Vector3(0, 2.0, -2.0)
+	root.add_child(glow)

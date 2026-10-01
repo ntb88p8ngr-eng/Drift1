@@ -3,6 +3,8 @@ extends Node
 ##  BURNOUT – standstill, full throttle for 1.5 s: peak revs, speed
 ##  DRIFT   – 60 km/h in 2nd, handbrake flick, then full throttle + full lock for 2.5 s:
 ##            revs (share of the redline), speed change, drift angle, rear wheel spin
+##  STRAIGHT – in a drift: let go of everything vs. pull the handbrake – the handbrake must pull the
+##             car back in line (body slip under 6 degrees within a second, faster than without)
 ##  LOCK    – 60 km/h straight, handbrake + full throttle for 1 s: the rear wheels must stand still
 ##            (locked, the clutch is in) and the car must slow down
 ## Run: godot --headless --path . res://tests/handling_test.tscn  (ENGINE=1 for engine stage 1)
@@ -126,6 +128,40 @@ func _ready() -> void:
 		if car.speed_kmh() < v_start - 10.0:
 			ok = false   # flat out in a held drift the car must keep its speed
 		print("HELD %s stage%d: v %.0f -> %.0f km/h over 3 s, angle avg %.0f deg, rpm avg %.2f, gear %d" % [cid, stage, v_start, car.speed_kmh(), ang2 / n2, rpm2 / n2, car.gear])
+		# --- handbrake in a drift: straightens the car ---
+		var slips := {}
+		for use_hb in [false, true]:
+			car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), start + Vector3(-110, 0, -60))
+			car.angular_velocity = Vector3.ZERO
+			car.gear = 2
+			for f in 12:
+				car.linear_velocity = fwd * (65.0 / 3.6)
+				await get_tree().physics_frame
+			Input.action_press("steer_left")
+			Input.action_press("handbrake")
+			Input.action_press("accelerate")
+			for f in 24:
+				await get_tree().physics_frame
+			Input.action_release("handbrake")
+			for f in 120:
+				await get_tree().physics_frame
+			var s0: float = absf(rad_to_deg(car.slip_angle))
+			Input.action_release("accelerate")
+			Input.action_release("steer_left")
+			if use_hb:
+				Input.action_press("handbrake")
+			var s05 := 0.0
+			for f in 120:
+				await get_tree().physics_frame
+				if f == 59:
+					s05 = absf(rad_to_deg(car.slip_angle))
+			var s10: float = absf(rad_to_deg(car.slip_angle))
+			Input.action_release("handbrake")
+			slips[use_hb] = [s0, s05, s10, bool(car.hb_straighten) if use_hb else false, car.speed_kmh()]
+		print("STRAIGHT %s: drift %.0f deg -> without handbrake %.0f / %.0f deg, with handbrake %.0f / %.0f deg after 0.5 / 1 s (mode %s, %.0f km/h)" % [cid,
+			slips[false][0], slips[false][1], slips[false][2], slips[true][1], slips[true][2], slips[true][3], slips[true][4]])
+		if slips[true][0] < 13.0 or slips[true][2] > 6.0 or slips[true][2] > slips[false][2] + 1.0:
+			ok = false   # in a drift the handbrake must pull the car back in line
 		# --- handbrake with the throttle down: the rear wheels lock ---
 		car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), start + Vector3(-110, 0, -60))
 		car.angular_velocity = Vector3.ZERO

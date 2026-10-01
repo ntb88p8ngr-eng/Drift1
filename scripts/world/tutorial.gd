@@ -631,6 +631,7 @@ func _update_lightning(dt: float) -> void:
 	_flash = maxf(_flash - dt * 7.0, 0.0)
 	site.lightning.light_energy = _flash * 6.0
 	world.atmosphere.env.ambient_light_energy = _base_ambient * (1.0 + _flash * 5.0)
+	world.atmosphere.sky_mat.set_shader_parameter("cloud_flash", _flash)
 	site.window_mat.set_shader_parameter("flash", _flash)
 	if site.figure:
 		site.figure.visible = _flash > 0.25 and state == "drive"

@@ -45,6 +45,7 @@ var quality := 2
 var elapsed := 0.0
 var rain := 0.0          # rain intensity 0..1
 var storm := false       # a downpour (tutorial): far more and brighter drops, also at night
+const NIGHT_CLOUD := 0.5   # brightness of a closed cloud cover at night (share of the day colour, sRGB)
 var clouds := 0.4        # cloud coverage 0..1
 var wetness := 0.0       # road wetness 0..1 (lags behind the rain)
 var night := 0.0         # 0 = day … 1 = night
@@ -187,6 +188,8 @@ func _rain_at(t: float) -> float:
 
 
 func _clouds_at(t: float) -> float:
+	if storm:
+		return 1.0      # a storm: the sky is closed
 	var base := 0.3 + 0.25 * (_noise.get_noise_1d(t / 180.0 + 99.0) * 0.5 + 0.5)
 	# clouds build up about half a minute before the rain arrives
 	var ahead := maxf(_rain_at(t), _rain_at(t + 35.0))
@@ -232,11 +235,15 @@ func _apply(_delta: float) -> void:
 	sky_mat.set_shader_parameter("cloud_coverage", clouds)
 	sky_mat.set_shader_parameter("cloud_darkness", dark)
 	var lvl := _day_level(sp.x)
-	sky_mat.set_shader_parameter("cloud_color", (k["cloud"] as Color).lerp(Color(0.62, 0.63, 0.66) * lvl, dark * 0.85))
-	sky_mat.set_shader_parameter("cloud_shade", (k["shade"] as Color).lerp(Color(0.3, 0.31, 0.34) * lvl, dark * 0.85))
+	# at night the clouds must not turn black (then an overcast sky looks clear): they keep a dull grey
+	# from the light of the towns below – the thicker the cover, the more of it
+	var cl := maxf(lvl, NIGHT_CLOUD * overcast)
+	sky_mat.set_shader_parameter("cloud_color", (k["cloud"] as Color).lerp(Color(0.62, 0.63, 0.66) * cl, dark * 0.85))
+	sky_mat.set_shader_parameter("cloud_shade", (k["shade"] as Color).lerp(Color(0.3, 0.31, 0.34) * cl, dark * 0.85))
 	# kept small (wraps after many hours): huge noise coordinates lose precision on the GPU
 	sky_mat.set_shader_parameter("cloud_offset", Vector2(fposmod(elapsed * 0.004, 512.0), fposmod(elapsed * 0.0017, 512.0)))
-	sky_mat.set_shader_parameter("star_amount", k["stars"])
+	# no stars through the cloud cover
+	sky_mat.set_shader_parameter("star_amount", float(k["stars"]) * (1.0 - overcast))
 	sky_mat.set_shader_parameter("moon_amount", clampf(-sp.x / 8.0, 0.0, 1.0) * (1.0 - overcast))
 	sky_mat.set_shader_parameter("moon_dir", _moon_dir)
 	sky_mat.set_shader_parameter("exposure", 1.0)

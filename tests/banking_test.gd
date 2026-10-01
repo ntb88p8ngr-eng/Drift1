@@ -58,6 +58,17 @@ func _ready() -> void:
 		_fail("bank angle / length")
 	if signf(top) != signf(tr.curvature[top_i]):
 		_fail("the inside of the corner is the high side")
+	# a smooth entry: no step in the bank (roll) and no kink in the line
+	var max_db := 0.0
+	var max_dk := 0.0
+	for d in range(-180, 181):
+		var i := (kc + d + n) % n
+		var j := (i + 1) % n
+		max_db = maxf(max_db, absf(tr.bank[j] - tr.bank[i]))
+		max_dk = maxf(max_dk, absf(tr.curvature[j] - tr.curvature[i]))
+	print("ENTRY: bank change up to %.2f deg per 2 m, curvature change up to %.4f per 2 m" % [rad_to_deg(atan(max_db)), max_dk])
+	if rad_to_deg(atan(max_db)) > 1.3 or max_dk > 0.0022:
+		_fail("the Karussell entry is not smooth")
 	var far := 0
 	for d in range(-400, 401, 40):
 		if absf(tr.bank[(kc + d + 2000 + n) % n]) > 0.0:

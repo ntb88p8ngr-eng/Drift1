@@ -583,6 +583,27 @@ func forest_density(x: float, z: float, d := -1.0) -> float:
 
 
 ## Flattens a round pad (for buildings) to its average height with a soft edge.
+## Levels the ground around `pos` to the height `target` (pit lane, grandstands, campsites): fully
+## within `radius`, blended out over `falloff`. Unlike flatten() it may also touch the road corridor
+## (the target is the road's own height there).
+func level_to(pos: Vector3, radius: float, falloff: float, target: float) -> void:
+	var r_cells := int(ceil((radius + falloff) / CELL))
+	var cx := int(round((pos.x - origin.x) / CELL))
+	var cz := int(round((pos.z - origin.y) / CELL))
+	for dz in range(-r_cells, r_cells + 1):
+		for dx in range(-r_cells, r_cells + 1):
+			var ix := cx + dx
+			var iz := cz + dz
+			if ix < 0 or iz < 0 or ix >= nx or iz >= nz:
+				continue
+			var w := Vector2(origin.x + ix * CELL - pos.x, origin.y + iz * CELL - pos.z).length()
+			var k := 1.0 - smoothstep(radius, radius + falloff, w)
+			if k <= 0.0:
+				continue
+			var idx := iz * nx + ix
+			heights[idx] = lerpf(heights[idx], target, k)
+
+
 func flatten(pos: Vector3, radius: float, falloff := 8.0) -> float:
 	var target := 0.0
 	var count := 0

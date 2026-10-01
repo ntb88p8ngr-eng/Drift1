@@ -54,6 +54,8 @@ var lift := 0.0
 var ai_fn: Callable
 var trail_active := false     # drift trail on (local: set by the world from the drift chain)
 var is_bot := false            # a minigame bot: collides like a remote car, sounds positional
+## Tuning to use instead of the player's saved tuning for this car (race bots: the player's level)
+var tuning_override: Dictionary = {}
 var is_display := false
 var transmission := "auto"
 var remote_collisions := true
@@ -111,6 +113,13 @@ var reverse_timer := 0.0
 var speed := 0.0            # m/s, magnitude
 var forward_speed := 0.0    # m/s, signed along heading
 var slip_angle := 0.0       # rad, body slip (velocity vs heading)
+## Handbrake pulled while already drifting: the car is pulled back in line instead of rotating further
+## (pulled from a straight line it still locks the rear for a drift entry). Decided at the moment the
+## handbrake is pulled, held until it is released.
+var hb_straighten := false
+var _hb_prev := false
+const HB_STRAIGHTEN_SLIP := 0.22   # rad (~13 deg) of body slip at the pull = "already drifting"
+const HB_ALIGN := 2.8              # how fast the nose is turned towards the direction of travel (1/s)
 var grounded_wheels := 0
 var headlights := false
 var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.get_underglow)
@@ -189,11 +198,13 @@ func _ready() -> void:
 	damper_c = 2.0 * 0.38 * sqrt(spring_k * mass / 4.0)
 	antiroll_k = spring_k * 0.35
 	if not is_display:
-		_apply_tuning(Game.get_tuning(car_id))
+		_apply_tuning(tuning_override if not tuning_override.is_empty() else Game.get_tuning(car_id))
 	if burble < 0:
-		burble = Game.get_burble(car_id) if not is_remote else int(spec.get("burble", 1))
-		response = Game.get_response(car_id) if not is_remote else 1.0
-	if not is_remote and not is_display:
+		# the player's own maps only for the player's car (bots: the car's stock setting)
+		var own := not is_remote and not is_bot
+		burble = Game.get_burble(car_id) if own else int(spec.get("burble", 1))
+		response = Game.get_response(car_id) if own else 1.0
+	if not is_remote and not is_display and not is_bot:
 		Game.settings_changed.connect(_on_settings_changed)
 	turbo_gain = maxf(turbo_base, turbo_extra)
 	rpm = idle_rpm
@@ -210,7 +221,7 @@ func _ready() -> void:
 	underglow = Underglow.new()
 	underglow.name = "Underglow"
 	body.add_child(underglow)
-	set_underglow(underglow_cfg if not underglow_cfg.is_empty() or is_remote else Game.get_underglow(car_id))
+	set_underglow(underglow_cfg if not underglow_cfg.is_empty() or is_remote or is_bot else Game.get_underglow(car_id))
 
 	_setup_physics()
 	_setup_wheels()
@@ -286,7 +297,7 @@ func _apply_tuning(t: Dictionary) -> void:
 	max_torque *= 1.0 + 0.2 * e
 	_engine_stage = e
 	# gearbox stages change the ratios (longer 2nd/3rd gear), the final drive and the shift speed
-	var gb: Dictionary = Game.tuned_gearing(car_id)
+	var gb: Dictionary = Game.tuned_gearing(car_id, t)
 	gears = gb["gears"]
 	final_drive = gb["final"]
 	redline = gb["redline"]
@@ -464,10 +475,16 @@ func _read_input(delta: float) -> void:
 		brk = float(a[1])
 		steer_target = float(a[2])
 		hb = bool(a[3])
+		want_nitro = a.size() > 4 and bool(a[4])
 	# smoothed steering for digital input
 	var rate := 4.5 if absf(steer_target) > absf(steer_input) and signf(steer_target) == signf(steer_input) else 7.0
 	steer_input = move_toward(steer_input, steer_target, rate * delta)
 	handbrake = hb
+	if handbrake and not _hb_prev:
+		hb_straighten = absf(slip_angle) > HB_STRAIGHTEN_SLIP and speed > 8.0 and forward_speed > 0.0
+	elif not handbrake:
+		hb_straighten = false
+	_hb_prev = handbrake
 	if controls_locked:
 		# countdown: rev the engine against the launch control, handbrake on
 		throttle = thr
@@ -505,8 +522,10 @@ func _read_input(delta: float) -> void:
 	if response < 0.999 and throttle > _thr_prev:
 		throttle = minf(throttle, _thr_prev + delta * 2.0 * pow(15.0, (response - Game.RESPONSE_MIN) / (1.0 - Game.RESPONSE_MIN)))
 	_thr_prev = throttle
-	abs_on = bool(Game.settings.get("abs", true))
-	esp_on = bool(Game.settings.get("esp", false))
+	# bots: ABS on, no ESP (it cuts in at ~5 degrees of body slip – in almost every corner; the bots
+	# have their own traction control); the player's switches are the player's
+	abs_on = true if is_bot else bool(Game.settings.get("abs", true))
+	esp_on = false if is_bot else bool(Game.settings.get("esp", false))
 	esp_active = false
 	if esp_on and not handbrake and speed > 5.0 and gear >= 1:
 		# ESP: less power as soon as the rear steps out
@@ -915,6 +934,8 @@ func _simulate(delta: float) -> void:
 					f_long = clampf(f_long, -max_f, max_f) * 0.92
 					var remaining := sqrt(maxf(max_f * max_f - f_long * f_long, 0.0))
 					var lat_cap := maxf(remaining, max_f * (lerpf(0.5, 0.22, hb_strength) if locked else 0.3))
+					if locked and hb_straighten:
+						lat_cap = maxf(remaining, max_f * 0.85)   # straightening: the rear keeps its side grip
 					f_lat = clampf(f_lat, -lat_cap, lat_cap)
 				else:
 					var s2 := max_f / combined
@@ -949,7 +970,7 @@ func _simulate(delta: float) -> void:
 
 	# steering in a slide: the path bends towards the side you steer to (not only the nose), so the car
 	# goes where you point it while drifting – counter-steer opens the line, steering in tightens it
-	if grounded_wheels >= 3 and speed > 6.0 and not line_lock:
+	if grounded_wheels >= 3 and speed > 6.0 and not line_lock and not hb_straighten:
 		var slide_s := smoothstep(0.1, 0.35, absf(slip_angle))
 		if slide_s > 0.0:
 			var vdir := (vel - up * vel.dot(up)).normalized()
@@ -960,6 +981,15 @@ func _simulate(delta: float) -> void:
 	if yaw_damp > 0.0 and grounded_wheels >= 3 and speed > 8.0:
 		var slide_y := smoothstep(0.1, 0.4, absf(slip_angle))
 		apply_torque(-up * angular_velocity.dot(up) * yaw_damp * mass * slide_y)
+
+	# handbrake in a drift: turn the nose back towards the direction of travel (a yaw rate proportional
+	# to the slip, the car's own rotation damped) and take the sideways slide out
+	if hb_straighten and grounded_wheels >= 3 and speed > 3.0:
+		var yaw := angular_velocity.dot(up)
+		var want := -slip_angle * HB_ALIGN
+		apply_torque(up * (want - yaw) * mass * 3.0)
+		var v_side := vel.dot(right)
+		apply_central_force(-right * v_side * mass * 1.6 * smoothstep(0.02, 0.15, absf(slip_angle)))
 
 	# at speed: damp any rotation beyond what the steering asks for (the car doesn't pendulum after a
 	# quick lane change) – not with the handbrake pulled or flat out in a drift, so drifting still works

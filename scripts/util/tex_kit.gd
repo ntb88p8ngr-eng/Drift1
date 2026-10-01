@@ -517,6 +517,7 @@ uniform vec3 cloud_color : source_color = vec3(1.0, 1.0, 1.0);
 uniform vec3 cloud_shade : source_color = vec3(0.55, 0.58, 0.66);
 uniform vec2 cloud_offset = vec2(0.0);
 uniform float cloud_darkness = 0.0;
+uniform float cloud_flash = 0.0;   // lightning inside the clouds (0..1)
 uniform float star_amount = 0.0;
 uniform float moon_amount = 0.0;
 uniform vec3 moon_dir = vec3(-0.3, 0.5, -0.8);
@@ -669,6 +670,7 @@ vec4 sky_color(vec3 dir, bool cubemap) {
 		col += vec3(0.25, 0.3, 0.45) * pow(max(dot(dir, md), 0.0), 30.0) * moon_amount * 0.3;
 	}
 	float cover = 0.0;
+	float billow = 1.0;   // brightness variation of a closed cloud cover (rain clouds are lumpy)
 	if (h > 0.0) {
 		vec2 uv = dir.xz / (h + 0.08);
 		int oct = cubemap ? 4 : 6;
@@ -685,14 +687,20 @@ vec4 sky_color(vec3 dir, bool cubemap) {
 		float shade = clamp((n_sun - n) * 5.0 + 0.5, 0.0, 1.0);
 		vec3 cc = mix(lit, cloud_shade, shade);
 		cc = mix(cc, cloud_shade * 0.55, cloud_darkness * (0.4 + 0.6 * dens));
+		// a closed rain cover: lumps and darker bellies instead of a flat grey lid
+		float lump = fbm(uv * 1.7 + cloud_offset * 1.3 + vec2(3.1, 8.7), oct);
+		billow = mix(1.0, 0.45 + 1.1 * mix(n, lump, 0.5), cloud_darkness * smoothstep(0.0, 0.2, h));
+		cc *= billow;
 		// silver lining towards the sun
 		cc += sun_tint * pow(max(d, 0.0), 8.0) * 0.6 * (1.0 - dens) * above;
+		// lightning lights the cloud layer from inside (brightest where it is thick)
+		cc += vec3(0.62, 0.66, 0.8) * cloud_flash * (0.35 + 0.65 * dens) * (0.6 + 0.4 * n);
 		float a = dens * smoothstep(0.0, 0.1, h) * 0.96;
 		col = mix(col, cc, a);
 		cover = max(a, veil);
 	}
 	// overcast: the whole sky turns flat grey
-	col = mix(col, mix(cloud_shade, cloud_color, 0.35) * (0.6 + 0.4 * clamp(h * 2.0 + 0.5, 0.0, 1.0)), cloud_darkness * 0.55);
+	col = mix(col, mix(cloud_shade, cloud_color, 0.35) * (0.6 + 0.4 * clamp(h * 2.0 + 0.5, 0.0, 1.0)) * billow, cloud_darkness * 0.55);
 	return vec4(col, cover);
 }
 

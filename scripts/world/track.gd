@@ -45,6 +45,9 @@ const DEFS := {
 		"wide": [["Döttinger Höhe", "Tiergarten", 24.0]],
 		# [section, bank angle (deg)]: the Karussell as a steep banked hairpin
 		"banked": [["Karussell", 24.0]],
+		# [section, reach (samples either side), passes]: the line rounded locally (the map data has a
+		# kink at the Karussell entry – the radius jumped from 170 to 31 m within a few metres)
+		"smooth": [["Karussell", 80, 40]],
 		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.095, 0.095, 0.1),
 	},
 }
@@ -198,6 +201,30 @@ func _load_centerline() -> void:
 		samples[i] = Vector3(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2])
 		dists[i] = float(i) * SPACING
 	length = SPACING * count
+	_smooth_sections()
+
+
+## Rounds the centreline around named sections (def "smooth"): Laplacian passes on x/z whose weight
+## fades out towards the ends of the region, so the rest of the lap stays untouched.
+func _smooth_sections() -> void:
+	var n := samples.size()
+	for sdef in def.get("smooth", []):
+		var at := -1.0
+		for sec in meta.get("sections", []):
+			if str(sec[0]) == str(sdef[0]):
+				at = float(sec[1])
+		if at < 0.0:
+			continue
+		var c := int(round(at / SPACING)) % n
+		var reach: int = int(sdef[1])
+		for _p in int(sdef[2]):
+			var q := samples.duplicate()
+			for d in range(-reach, reach + 1):
+				var i := (c + d + n) % n
+				var t := absf(float(d)) / reach
+				var w := 0.6 * pow(1.0 - t * t, 2.0)
+				var avg: Vector3 = (q[(i - 2 + n) % n] + q[(i - 1 + n) % n] + q[(i + 1) % n] + q[(i + 2) % n]) * 0.25
+				samples[i] = Vector3(lerpf(q[i].x, avg.x, w), q[i].y, lerpf(q[i].z, avg.z, w))
 
 
 func _spline_centerline() -> void:
@@ -269,7 +296,8 @@ func _setup_profile() -> void:
 			if k > 0.0:
 				hws[i] = maxf(hws[i], lerpf(half_w, hw2, k))
 	# banked corners: from the section's anchor out to where the corner opens up (radius > 140 m),
-	# the bank rises over 30 m before and falls over 30 m after; the outside of the corner is high
+	# the bank rises over 80 m before and falls over 80 m after (smootherstep: no kink in the roll
+	# rate when driving in); the outside of the corner is high
 	for bdef in def.get("banked", []):
 		if not raw_secs.has(str(bdef[0])):
 			continue
@@ -288,14 +316,19 @@ func _setup_profile() -> void:
 			hi += 1
 		var sgn := signf(_curv_avg(c, 6))
 		var slope := tan(deg_to_rad(float(bdef[1]))) * sgn
-		var ramp := int(30.0 / SPACING)
+		var ramp := int(80.0 / SPACING)
 		for d in range(-lo - ramp, hi + ramp + 1):
 			var k := 1.0
 			if d < -lo:
-				k = smoothstep(0.0, 1.0, float(d + lo + ramp) / ramp)
+				k = _smootherstep(float(d + lo + ramp) / ramp)
 			elif d > hi:
-				k = smoothstep(0.0, 1.0, float(hi + ramp - d) / ramp)
+				k = _smootherstep(float(hi + ramp - d) / ramp)
 			bank[(c + d + n) % n] = slope * k
+
+
+static func _smootherstep(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 
 
 func _curv_avg(i: int, r: int) -> float:
@@ -711,6 +744,16 @@ func _build_walls() -> void:
 		cs.shape = shape
 		body.add_child(cs)
 	add_child(body)
+
+
+## Builds the barriers again (after openings were added to wall_gaps once the track was built).
+func rebuild_walls() -> void:
+	for nm in ["Walls", "WallBody", "Posts"]:
+		var old := get_node_or_null(nm)
+		if old:
+			remove_child(old)
+			old.free()
+	_build_walls()
 
 
 ## True when the barrier segment from sample i to i + 1 on this side is left open.
