@@ -292,6 +292,9 @@ func _setup_input() -> void:
 	_add_action("look_right", [], [], [[JOY_AXIS_RIGHT_X, 1.0]])
 	_add_action("look_up", [], [], [[JOY_AXIS_RIGHT_Y, -1.0]])
 	_add_action("look_down", [], [], [[JOY_AXIS_RIGHT_Y, 1.0]])
+	# menus on the gamepad: (A) confirms, (B) goes back
+	_add_action("ui_accept", [], [JOY_BUTTON_A], [])
+	_add_action("ui_cancel", [], [JOY_BUTTON_B], [])
 
 
 func _add_action(action: String, keys: Array, buttons: Array, axes: Array) -> void:
@@ -317,7 +320,7 @@ const CONTROLS_HELP := [
 	["S / ↓ / LT", "Bremse / Rückwärts"],
 	["W + S im Stand", "Launch Control / Burnout (S loslassen = Start)"],
 	["A D / ← → / Stick", "Lenken"],
-	["Leertaste / (A)", "Handbremse – mit Gas drehen die Hinterräder weiter"],
+	["Leertaste / (A)", "Handbremse – blockiert die Hinterräder, auch mit Gas"],
 	["Shift / (B)", "Nitro"],
 	["E / RB", "Hochschalten (in Automatik als Schaltwippe)"],
 	["Q / Strg / LB", "Runterschalten (in Automatik als Schaltwippe)"],
@@ -332,6 +335,8 @@ const CONTROLS_HELP := [
 	["N / Steuerkreuz →", "Neon blitzen (halten, bei eingebautem Underglow)"],
 	["Tab", "Leaderboard / Spielerliste"],
 	["Esc / Start", "Pause"],
+	["Enter / (A)", "Menü: bestätigen"],
+	["Esc / (B)", "Menü: zurück"],
 ]
 
 

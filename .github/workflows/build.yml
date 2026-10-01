@@ -69,6 +69,12 @@ jobs:
           if grep -E "SCRIPT ERROR" shift.log; then echo "::error::Shift test failed"; exit 1; fi
           grep -q "SHIFT TEST OK" shift.log
 
+      - name: Menu gamepad test ((A) confirms, (B) goes back, every screen focused)
+        run: |
+          timeout 120 ./godot --headless --path . res://tests/menu_pad_test.tscn 2>&1 | tee menupad.log || true
+          if grep -E "SCRIPT ERROR" menupad.log; then echo "::error::Menu gamepad test failed"; exit 1; fi
+          grep -q "MENU PAD TEST: PASS" menupad.log
+
       - name: Lift test (offroad ride height really raises the body)
         run: |
           timeout 120 ./godot --headless --path . res://tests/lift_test.tscn 2>&1 | tee lift.log || true

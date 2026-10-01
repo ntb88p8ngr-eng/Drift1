@@ -166,6 +166,18 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# gamepad: (A) like Enter – close a hint, skip a scene
+	if event is InputEventJoypadButton and event.is_action_pressed("ui_accept"):
+		if _hint_open:
+			_close_hint()
+			get_viewport().set_input_as_handled()
+		elif _shot >= 0 and state == "intro":
+			_skip_intro()
+			get_viewport().set_input_as_handled()
+		elif _shot >= 0 and state == "ending":
+			_skip_ending()
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k := (event as InputEventKey).keycode
 		if k == KEY_F1:
@@ -666,7 +678,7 @@ func _build_ui() -> void:
 	_sub.add_theme_constant_override("outline_size", 10)
 	_sub.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	root.add_child(_sub)
-	_skip = UiKit.label("[Enter] Szene überspringen   ·   [F1] Tutorial überspringen", 15, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_RIGHT)
+	_skip = UiKit.label("[Enter] / (A) Szene überspringen   ·   [F1] Tutorial überspringen", 15, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_RIGHT)
 	_skip.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_skip.position = Vector2(-620, -40)
 	_skip.size = Vector2(600, 24)
@@ -732,7 +744,7 @@ func _build_ui() -> void:
 	var hb := HBoxContainer.new()
 	hb.alignment = BoxContainer.ALIGNMENT_CENTER
 	hb.add_theme_constant_override("separation", 16)
-	hb.add_child(UiKit.button("Weiter  [Enter]", _close_hint, 240))
+	hb.add_child(UiKit.button("Weiter  [Enter] / (A)", _close_hint, 300))
 	hb.add_child(UiKit.button("Tutorial überspringen  [F1]", _skip_all, 320))
 	hv.add_child(hb)
 	_hint_panel.add_child(hv)

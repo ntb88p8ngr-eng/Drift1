@@ -16,6 +16,7 @@ var _content: VBoxContainer
 var _status: Label
 var _chat_lines: Array = []
 var _return_to := "main"
+var _back_fn := Callable()   # what (B) / Esc does on this screen (the Zurück / Fertig / Verlassen button)
 
 # lobby widgets
 var _lobby_players: VBoxContainer
@@ -119,6 +120,7 @@ func _clear() -> void:
 	for c in _float_bar.get_children():
 		_float_bar.remove_child(c)
 		c.queue_free()
+	_back_fn = Callable()
 
 
 ## A big button pinned to the bottom right corner of the screen (Zurück / Fertig).
@@ -127,6 +129,8 @@ func _float_button(text: String, callback: Callable) -> Button:
 	b.custom_minimum_size.y = 58
 	b.add_theme_font_size_override("font_size", 24)
 	_float_bar.add_child(b)
+	# the corner button is the way back: (B) on the gamepad / Esc press it too
+	_back_fn = callback
 	return b
 
 
@@ -159,10 +163,25 @@ func show_screen(screen: String) -> void:
 
 
 func _focus_first() -> void:
-	for c in _content.get_children():
-		if c is Button and (c as Button).is_inside_tree() and (c as Button).is_visible_in_tree():
-			(c as Button).grab_focus()
-			return
+	if not is_inside_tree():
+		return
+	if not UiKit.focus_first(_content):
+		UiKit.focus_first(_float_bar)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# (B) on the gamepad or Esc: back (the screen's Zurück / Fertig / Verlassen)
+	if event.is_action_pressed("ui_cancel") and _back_fn.is_valid():
+		get_viewport().set_input_as_handled()
+		_back_fn.call()
+		return
+	# gamepad: nothing focused yet (e.g. after a mouse click elsewhere) – the first stick / d-pad
+	# move or (A) puts the focus on the screen's first control
+	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		if get_viewport().gui_get_focus_owner() == null and (event.is_action_pressed("ui_up") or event.is_action_pressed("ui_down") \
+				or event.is_action_pressed("ui_left") or event.is_action_pressed("ui_right") or event.is_action_pressed("ui_accept")):
+			_focus_first()
+			get_viewport().set_input_as_handled()
 
 
 func _add(c: Control) -> void:
@@ -583,9 +602,11 @@ func _build_lobby() -> void:
 	buttons.add_child(UiKit.button("Auto / Lack", func():
 		_return_to = "lobby"
 		show_screen("garage"), 160))
-	buttons.add_child(UiKit.button("Verlassen", func():
+	var leave := func() -> void:
 		Net.leave()
-		show_screen("online"), 140))
+		show_screen("online")
+	buttons.add_child(UiKit.button("Verlassen", leave, 140))
+	_back_fn = leave
 	_add(buttons)
 	_refresh_lobby()
 

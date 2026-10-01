@@ -9,6 +9,8 @@ static func tabs(on_quality: Callable = Callable(), in_race := false) -> TabCont
 	var tc := TabContainer.new()
 	tc.custom_minimum_size = Vector2(660, 560 if not in_race else 520)
 	tc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# gamepad: the tab row takes the focus too (up from the first option), ◀ ▶ then switch tabs
+	tc.get_tab_bar().focus_mode = Control.FOCUS_ALL
 	var video := _scroll(video_page(on_quality, in_race))
 	video.name = "Grafik"
 	tc.add_child(video)

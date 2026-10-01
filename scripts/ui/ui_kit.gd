@@ -192,3 +192,18 @@ static func spacer(h := 12.0) -> Control:
 
 static func sep() -> HSeparator:
 	return HSeparator.new()
+
+
+## Gamepad / keyboard: gives the focus to the first visible control that can take it (buttons,
+## option lists, sliders, check boxes – not text fields) below `root`. False when there is none.
+static func focus_first(root: Node) -> bool:
+	for c in root.get_children():
+		if not (c is CanvasItem) or not (c as CanvasItem).visible:
+			continue
+		if (c is BaseButton or c is Range) and (c as Control).focus_mode != Control.FOCUS_NONE \
+				and not (c is BaseButton and (c as BaseButton).disabled):
+			(c as Control).grab_focus()
+			return true
+		if focus_first(c):
+			return true
+	return false

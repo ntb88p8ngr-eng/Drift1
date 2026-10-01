@@ -85,6 +85,8 @@ func _show(box: Control) -> void:
 	for b in [_main_box, _controls_box, _options_box]:
 		(b as Control).visible = b == box
 	_options_back.visible = box == _options_box
+	if visible:
+		(func() -> void: UiKit.focus_first(box)).call_deferred()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -93,6 +95,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		toggle()
 		get_viewport().set_input_as_handled()
+	elif visible and event.is_action_pressed("ui_cancel"):
+		# (B) / Esc: out of the options back to the pause list, from there back into the game
+		get_viewport().set_input_as_handled()
+		if _main_box.visible:
+			toggle()
+		else:
+			_show(_main_box)
 
 
 func toggle() -> void:
