@@ -40,7 +40,11 @@ const DEFS := {
 	# Nordschleife replica: course and heights from real data (tools/make_gruene_hoelle.py)
 	"gruene_hoelle": {
 		"data": "res://assets/tracks/gruene_hoelle",
-		"width": 12.0, "runoff": 4.0, "start_dist": 60.0,
+		"width": 18.0, "runoff": 4.0, "start_dist": 60.0,
+		# [from section, to section, road width]: the Döttinger Höhe twice the old width
+		"wide": [["Döttinger Höhe", "Tiergarten", 24.0]],
+		# [section, bank angle (deg)]: the Karussell as a steep banked hairpin
+		"banked": [["Karussell", 24.0]],
 		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.095, 0.095, 0.1),
 	},
 }
@@ -56,6 +60,10 @@ var tangents := PackedVector3Array()
 var rights := PackedVector3Array()
 var dists := PackedFloat32Array()
 var curvature := PackedFloat32Array()
+## half road width per sample (= half_w except where a track widens, see "wide")
+var hws := PackedFloat32Array()
+## cross slope per sample: height change per metre towards +rights (banked corners, see "banked")
+var bank := PackedFloat32Array()
 var off_left := PackedFloat32Array()
 var off_right := PackedFloat32Array()
 var curb_mask := PackedByteArray()
@@ -104,6 +112,7 @@ func build(id: String) -> void:
 	elevated = def.has("data")
 	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
+	_setup_profile()
 	await Game.load_tick(0.2)
 	_compute_offsets()
 	_build_grid()
@@ -237,22 +246,113 @@ func section_at(progress: float) -> String:
 	return name
 
 
+## Road width and banking per sample from the track definition ("wide", "banked").
+func _setup_profile() -> void:
+	var n := samples.size()
+	hws.resize(n)
+	hws.fill(half_w)
+	bank.resize(n)
+	bank.fill(0.0)
+	var raw_secs := {}
+	for sec in meta.get("sections", []):
+		raw_secs[str(sec[0])] = float(sec[1])
+	# widened stretches, with 60 m long tapers at both ends
+	for wdef in def.get("wide", []):
+		if not raw_secs.has(str(wdef[0])) or not raw_secs.has(str(wdef[1])):
+			continue
+		var d0: float = raw_secs[str(wdef[0])]
+		var d1: float = raw_secs[str(wdef[1])]
+		var hw2: float = float(wdef[2]) * 0.5
+		for i in n:
+			var d := dists[i]
+			var k := smoothstep(d0 - 30.0, d0 + 30.0, d) * (1.0 - smoothstep(d1 - 30.0, d1 + 30.0, d))
+			if k > 0.0:
+				hws[i] = maxf(hws[i], lerpf(half_w, hw2, k))
+	# banked corners: from the section's anchor out to where the corner opens up (radius > 140 m),
+	# the bank rises over 30 m before and falls over 30 m after; the outside of the corner is high
+	for bdef in def.get("banked", []):
+		if not raw_secs.has(str(bdef[0])):
+			continue
+		var c := int(round(float(raw_secs[str(bdef[0])]) / SPACING)) % n
+		# the anchor lies in the tightest part: look for it within 40 m
+		var best := c
+		for d in range(-20, 21):
+			if absf(curvature[(c + d + n) % n]) > absf(curvature[best]):
+				best = (c + d + n) % n
+		c = best
+		var lo := 0
+		var hi := 0
+		while lo < 150 and absf(_curv_avg(c - lo - 1, 3)) > 1.0 / 140.0:
+			lo += 1
+		while hi < 150 and absf(_curv_avg(c + hi + 1, 3)) > 1.0 / 140.0:
+			hi += 1
+		var sgn := signf(_curv_avg(c, 6))
+		var slope := tan(deg_to_rad(float(bdef[1]))) * sgn
+		var ramp := int(30.0 / SPACING)
+		for d in range(-lo - ramp, hi + ramp + 1):
+			var k := 1.0
+			if d < -lo:
+				k = smoothstep(0.0, 1.0, float(d + lo + ramp) / ramp)
+			elif d > hi:
+				k = smoothstep(0.0, 1.0, float(hi + ramp - d) / ramp)
+			bank[(c + d + n) % n] = slope * k
+
+
+func _curv_avg(i: int, r: int) -> float:
+	var n := samples.size()
+	var acc := 0.0
+	for d in range(-r, r + 1):
+		acc += curvature[(i + d + n) % n]
+	return acc / (2 * r + 1)
+
+
+## Point at `lateral` metres to the right of sample i on the (banked) road plane, without ROAD_Y.
+func edge_point(i: int, lateral: float) -> Vector3:
+	var p := samples[i] + rights[i] * lateral
+	if not bank.is_empty():
+		p.y += lateral * bank[i]
+	return p
+
+
+## Height offset of the banked road at `lateral` metres to the right of sample i (0 elsewhere).
+func bank_y(i: int, lateral: float) -> float:
+	return lateral * bank[i] if not bank.is_empty() else 0.0
+
+
+## Ground height offset beside a banked road: the road plane carried on to just past the barrier.
+func ground_bank_y(i: int, lateral: float) -> float:
+	if bank.is_empty() or bank[i] == 0.0:
+		return 0.0
+	var lim := wall_base + hws[i] - half_w + 1.5
+	# a bit lower than the road plane: the 4 m ground grid can't follow the tilted, curved surface
+	# exactly and would poke through at the road edges
+	return clampf(lateral, -lim, lim) * bank[i] - 0.9 * absf(bank[i])
+
+
+func max_half_w() -> float:
+	var m := half_w
+	for h in hws:
+		m = maxf(m, h)
+	return m
+
+
 func _compute_offsets() -> void:
 	var n := samples.size()
 	off_left.resize(n)
 	off_right.resize(n)
 	curb_mask.resize(n)
-	var min_off := half_w + 1.0
 	for i in n:
 		var k := curvature[i]
-		var l := wall_base
-		var r := wall_base
+		var wb_i := wall_base + hws[i] - half_w
+		var min_off := hws[i] + 1.0
+		var l := wb_i
+		var r := wb_i
 		if absf(k) > 1e-4:
 			var radius := 1.0 / absf(k)
 			if k > 0.0:
-				l = clampf(radius - 4.0, min_off, wall_base)
+				l = clampf(radius - 4.0, min_off, wb_i)
 			else:
-				r = clampf(radius - 4.0, min_off, wall_base)
+				r = clampf(radius - 4.0, min_off, wb_i)
 		off_left[i] = l
 		off_right[i] = r
 	off_left = _min_then_blur(off_left, 8, 4)
@@ -356,11 +456,11 @@ func _build_road() -> void:
 		var d1 := dists[i2] if i2 != 0 else length
 		var y0 := Vector3(0, ROAD_Y + lift_s[i], 0)
 		var y1 := Vector3(0, ROAD_Y + lift_s[i2], 0)
-		var a := samples[i] - rights[i] * half_w + y0
-		var b := samples[i] + rights[i] * half_w + y0
-		var c := samples[i2] + rights[i2] * half_w + y1
-		var d := samples[i2] - rights[i2] * half_w + y1
-		var nrm := rights[i].cross(tangents[i]).normalized() if elevated else Vector3.UP
+		var a := edge_point(i, -hws[i]) + y0
+		var b := edge_point(i, hws[i]) + y0
+		var c := edge_point(i2, hws[i2]) + y1
+		var d := edge_point(i2, -hws[i2]) + y1
+		var nrm := (b - a).normalized().cross(tangents[i]).normalized() if elevated else Vector3.UP
 		MeshKit.quad(st, a, b, c, d, nrm, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
 	road_material = mat
@@ -378,11 +478,13 @@ func _build_road_collision() -> void:
 	var y := Vector3(0, ROAD_Y, 0)
 	for i in n:
 		var i2 := (i + 1) % n
-		var a := samples[i] - rights[i] * half_w + y
-		var b := samples[i] + rights[i] * half_w + y
-		var c := samples[i2] + rights[i2] * half_w + y
-		var d := samples[i2] - rights[i2] * half_w + y
-		faces.append_array(PackedVector3Array([a, b, c, a, c, d]))
+		var a := edge_point(i, -hws[i]) + y
+		var b := edge_point(i, hws[i]) + y
+		var c := edge_point(i2, hws[i2]) + y
+		var d := edge_point(i2, -hws[i2]) + y
+		# clockwise seen from above = Godot's front face (the other order made the road collision
+		# face downwards, so the cars ran on the terrain under it)
+		faces.append_array(PackedVector3Array([a, c, b, a, d, c]))
 	var body := StaticBody3D.new()
 	body.name = "RoadBody"
 	body.collision_layer = 1
@@ -423,6 +525,8 @@ func _build_puddles() -> void:
 	for k in count:
 		var i := rng.randi_range(0, n - 1)
 		var lateral := rng.randf_range(-half_w + 1.0, half_w - 1.0)
+		if hws[i] != half_w or bank[i] != 0.0:
+			continue
 		var c: Vector3 = samples[i] + rights[i] * lateral
 		var la := rng.randf_range(1.2, 3.6)
 		var lc := rng.randf_range(0.7, 1.8)
@@ -500,14 +604,14 @@ func _build_curbs() -> void:
 			var r1: Vector3 = rights[i2] * side
 			var y := Vector3(0, ROAD_Y + 0.012, 0)
 			var yo := Vector3(0, ROAD_Y + 0.06, 0)
-			var a: Vector3 = samples[i] + r0 * (half_w - 0.2) + y
-			var b: Vector3 = samples[i] + r0 * (half_w + curb_w) + yo
-			var c: Vector3 = samples[i2] + r1 * (half_w + curb_w) + yo
-			var d: Vector3 = samples[i2] + r1 * (half_w - 0.2) + y
+			var a: Vector3 = edge_point(i, side * (hws[i] - 0.2)) + y
+			var b: Vector3 = edge_point(i, side * (hws[i] + curb_w)) + yo
+			var c: Vector3 = edge_point(i2, side * (hws[i2] + curb_w)) + yo
+			var d: Vector3 = edge_point(i2, side * (hws[i2] - 0.2)) + y
 			MeshKit.quad(st, a, b, c, d, Vector3.UP, Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1), col)
 			# outer lip down to the ground
-			var e: Vector3 = samples[i] + r0 * (half_w + curb_w + 0.15)
-			var f: Vector3 = samples[i2] + r1 * (half_w + curb_w + 0.15)
+			var e: Vector3 = edge_point(i, side * (hws[i] + curb_w + 0.15))
+			var f: Vector3 = edge_point(i2, side * (hws[i2] + curb_w + 0.15))
 			MeshKit.quad(st, b, e, f, c, r0 + Vector3.UP, Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1), col)
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
@@ -536,8 +640,8 @@ func _build_walls() -> void:
 			var i2 := (i + 1) % n
 			var r0: Vector3 = rights[i] * side
 			var r1: Vector3 = rights[i2] * side
-			var a: Vector3 = samples[i] + r0 * offs[i]
-			var b: Vector3 = samples[i2] + r1 * offs[i2]
+			var a: Vector3 = edge_point(i, side * offs[i])
+			var b: Vector3 = edge_point(i2, side * offs[i2])
 			var a_out: Vector3 = a + r0 * thick
 			var b_out: Vector3 = b + r1 * thick
 			var up := Vector3(0, h, 0)
@@ -639,7 +743,7 @@ func _build_posts() -> void:
 		for i in range(0, n, 2):
 			if in_wall_gap(i, side) or in_wall_gap(i - 1, side):
 				continue
-			var p: Vector3 = samples[i] + rights[i] * side * (offs[i] + 0.12) + Vector3(0, 0.42, 0)
+			var p: Vector3 = edge_point(i, side * (offs[i] + 0.12)) + Vector3(0, 0.42, 0)
 			xfs.append(Transform3D(Basis.IDENTITY, p))
 	mm.instance_count = xfs.size()
 	for k in xfs.size():
@@ -769,11 +873,14 @@ func nearest_index(pos: Vector3) -> int:
 	return maxi(best, 0)
 
 
-## Distance from `pos` to the centerline, 1e9 when far away (> ~60 m).
+## Distance from `pos` to the centerline, 1e9 when far away (> ~60 m). Where the road is wider than
+## its base width (half_w) the extra width is taken off, so "distance < half_w + x" checks (scenery,
+## AI, road tests) work the same on the widened parts.
 func distance_to_center(pos: Vector3) -> float:
 	var cx := int(floor(pos.x / CELL))
 	var cz := int(floor(pos.z / CELL))
 	var best_d := 1e18
+	var best_i := -1
 	for dx in range(-3, 4):
 		for dz in range(-3, 4):
 			var key := Vector2i(cx + dx, cz + dz)
@@ -781,8 +888,13 @@ func distance_to_center(pos: Vector3) -> float:
 				continue
 			for i in _grid[key]:
 				var s: Vector3 = samples[i]
-				best_d = minf(best_d, Vector2(pos.x - s.x, pos.z - s.z).length_squared())
-	return sqrt(best_d) if best_d < 1e17 else 1e9
+				var dd := Vector2(pos.x - s.x, pos.z - s.z).length_squared()
+				if dd < best_d:
+					best_d = dd
+					best_i = i
+	if best_d >= 1e17:
+		return 1e9
+	return maxf(sqrt(best_d) - (hws[best_i] - half_w), 0.0)
 
 
 ## Distance to the road edge (R, 0..8 m) and gravel-trap weight (G) at 1 m resolution, shared by the
@@ -798,7 +910,7 @@ func edge_data() -> Dictionary:
 func _compute_edge(sliced := false) -> void:
 	# 1 m texels; 2 m on the long data tracks (a distance field interpolates well, 60 MB would not)
 	var px := 2.0 if elevated else 1.0
-	var b: Rect2 = bounds.grow(half_w + 12.0)
+	var b: Rect2 = bounds.grow(max_half_w() + 12.0)
 	var origin := b.position
 	var w := int(ceil(b.size.x / px))
 	var h := int(ceil(b.size.y / px))
@@ -809,7 +921,7 @@ func _compute_edge(sliced := false) -> void:
 	data.resize(w * h * 2)
 	for k in w * h:
 		data[k * 2] = 255
-	var reach := int(ceil((half_w + 8.0) / px))
+	var reach := int(ceil((max_half_w() + 8.0) / px))
 	for i in samples.size():
 		if sliced and i % 256 == 0:
 			await Game.load_tick()
@@ -833,7 +945,7 @@ func _compute_edge(sliced := false) -> void:
 				if dd >= best[k]:
 					continue
 				best[k] = dd
-				var edge := sqrt(dd) - half_w
+				var edge := sqrt(dd) - hws[i]
 				data[k * 2] = int(clampf(edge / 8.0, 0.0, 1.0) * 255.0)
 				var side := wx * r.x + wz * r.z
 				var g := absf(tw) if tw * side > 0.0 else 0.0
@@ -847,15 +959,16 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 	var rel := pos - samples[idx]
 	var side_d := rel.dot(rights[idx])
 	var lat := absf(side_d)
-	if lat <= half_w:
+	var hw_i: float = hws[idx] if idx < hws.size() else half_w
+	if lat <= hw_i:
 		var g := 1.0 - 0.18 * wetness
 		var pd := puddle_at(pos, idx)
 		if pd > 0.0:
 			g *= 1.0 - 0.5 * pd
 		return [g, "asphalt"]
-	if curb_mask[idx] == 1 and lat <= half_w + 1.4:
+	if curb_mask[idx] == 1 and lat <= hw_i + 1.4:
 		return [0.97 * (1.0 - 0.3 * wetness), "curb"]
-	if trap.size() > idx and trap[idx] * side_d > 0.0 and absf(trap[idx]) > 0.4 and lat < half_w + trap_w:
+	if trap.size() > idx and trap[idx] * side_d > 0.0 and absf(trap[idx]) > 0.4 and lat < hw_i + trap_w:
 		return [0.5 * (1.0 - 0.1 * wetness), "gravel"]
 	if ground_fn.is_valid():
 		var g2: Array = ground_fn.call(pos)
@@ -868,7 +981,7 @@ func transform_at(idx: int, lateral := 0.0, height := 0.5) -> Transform3D:
 	var n := samples.size()
 	idx = (idx % n + n) % n
 	var b := Basis.looking_at(tangents[idx], Vector3.UP)
-	return Transform3D(b, samples[idx] + rights[idx] * lateral + Vector3(0, height, 0))
+	return Transform3D(b, edge_point(idx, lateral) + Vector3(0, height, 0))
 
 
 func grid_transform(slot: int) -> Transform3D:

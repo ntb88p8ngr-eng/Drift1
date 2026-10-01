@@ -36,6 +36,7 @@ var splat := PackedColorArray()
 var material: ShaderMaterial
 var outer_material: ShaderMaterial
 var flat_r := 17.0             # distance to the centreline that is guaranteed flat
+var banked := false            # the track has banked corners (the ground follows them)
 
 var _dist := PackedFloat32Array()
 var _dn := Vector2i.ZERO
@@ -81,6 +82,11 @@ func generate(p_track: Node3D) -> void:
 	_quay_z = b.end.y + 45.0 if track_id == "harbor" else 1e9
 	flat_r = float(track.wall_base) + 5.0
 	big = bool(track.elevated)
+	banked = false
+	for bk in track.bank:
+		if bk != 0.0:
+			banked = true
+			break
 	if big:
 		_load_data()
 	var margin := BIG_MARGIN if big else MARGIN
@@ -283,6 +289,10 @@ func _stamp_near() -> void:
 				if d < _near_d[k]:
 					_near_d[k] = d
 					_near_h[k] = lerpf(a.y, b.y, u)
+					if banked:
+						# banked corner: the ground follows the tilted road plane
+						var r: Vector3 = track.rights[i]
+						_near_h[k] += track.ground_bank_y(i, ex * r.x + ez * r.z)
 
 
 func _road_h_raw(x: float, z: float) -> float:
@@ -350,6 +360,8 @@ func _build_distance_field() -> void:
 					_dist[k] = d
 					if big:
 						_rh[k] = s.y + clampf(wx * fl.x + wz * fl.y, -3.0, 3.0) * grade
+						if banked:
+							_rh[k] += track.ground_bank_y(i, wx * track.rights[i].x + wz * track.rights[i].z)
 
 
 ## Distance from (x, z) to the track centreline (capped at DIST_MAX).

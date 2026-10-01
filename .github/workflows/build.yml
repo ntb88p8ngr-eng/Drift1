@@ -75,6 +75,12 @@ jobs:
           if grep -E "SCRIPT ERROR" menupad.log; then echo "::error::Menu gamepad test failed"; exit 1; fi
           grep -q "MENU PAD TEST: PASS" menupad.log
 
+      - name: Banking test (Grüne Hölle widths, Karussell banking, road collision)
+        run: |
+          timeout 400 ./godot --headless --path . res://tests/banking_test.tscn 2>&1 | tee banking.log || true
+          if grep -E "SCRIPT ERROR" banking.log; then echo "::error::Banking test failed"; exit 1; fi
+          grep -q "BANKING TEST: PASS" banking.log
+
       - name: Lift test (offroad ride height really raises the body)
         run: |
           timeout 120 ./godot --headless --path . res://tests/lift_test.tscn 2>&1 | tee lift.log || true

@@ -90,6 +90,22 @@ func _ready() -> void:
 	views.append(["edge_straight", eb + Vector3(0, 2.0, 0) - tr.tangents[i5] * 6.0 - tr.rights[i5] * 3.0, eb + tr.tangents[i5] * 6.0])
 	# high overview of the whole area
 	var oc: Vector2 = tr.bounds.get_center()
+	# tracks with banked corners / widened stretches: the steepest bank and the widest point
+	if not tr.bank.is_empty():
+		var bi := 0
+		var wi := 0
+		for k in n:
+			if absf(tr.bank[k]) > absf(tr.bank[bi]):
+				bi = k
+			if tr.hws[k] > tr.hws[wi]:
+				wi = k
+		if absf(tr.bank[bi]) > 0.0:
+			var bs := signf(tr.bank[bi])
+			var bp: Vector3 = tr.edge_point((bi - 22 + n) % n, -bs * 3.0)
+			views.append(["banking", bp + Vector3(0, 2.2, 0), tr.edge_point((bi + 6) % n, bs * 4.0) + Vector3(0, 0.8, 0)])
+			views.append(["banking_side", tr.edge_point(bi, -bs * 16.0) + Vector3(0, 7.0, 0), tr.edge_point(bi, bs * 6.0)])
+		if tr.hws[wi] > tr.half_w:
+			views.append(["wide", tr.edge_point(wi, -4.0) + Vector3(0, 1.8, 0), tr.edge_point((wi + 40) % n, 0.0) + Vector3(0, 1.0, 0)])
 	views.append(["overview", Vector3(oc.x, 230.0, oc.y + 230.0), Vector3(oc.x, 0.0, oc.y + 10.0)])
 	# playground: pit lane and the crossing of the figure eight
 	var pgn = world.scenery.get_node_or_null("Playground")
