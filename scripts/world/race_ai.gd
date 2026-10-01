@@ -12,10 +12,11 @@ const Car = preload("res://scripts/car/car.gd")
 ## err: random mistakes (late braking, wobbly steering), vmax: top speed they go for (m/s),
 ## nitro: they use the nitro on the straights
 const LEVELS := [
-	{"name": "Leicht", "corner": 0.84, "throttle": 0.9, "brake": 1.25, "line": 0.45, "err": 0.07, "vmax": 60.0, "nitro": false},
-	{"name": "Mittel", "corner": 0.97, "throttle": 1.0, "brake": 1.08, "line": 0.8, "err": 0.035, "vmax": 95.0, "nitro": true},
-	{"name": "Schwer", "corner": 1.06, "throttle": 1.0, "brake": 0.95, "line": 0.95, "err": 0.015, "vmax": 130.0, "nitro": true},
-	{"name": "Profi", "corner": 1.13, "throttle": 1.0, "brake": 0.86, "line": 1.0, "err": 0.006, "vmax": 150.0, "nitro": true},
+	{"name": "Leicht", "corner": 0.84, "throttle": 0.9, "brake": 1.25, "line": 0.45, "err": 0.07, "vmax": 60.0, "nitro": false, "grip": 1.0, "power": 1.0},
+	{"name": "Mittel", "corner": 0.97, "throttle": 1.0, "brake": 1.08, "line": 0.8, "err": 0.035, "vmax": 95.0, "nitro": true, "grip": 1.0, "power": 1.0},
+	# the top levels drive like a pro *and* get a little help (racing-game style): more tyre grip and power
+	{"name": "Schwer", "corner": 1.06, "throttle": 1.0, "brake": 0.95, "line": 0.95, "err": 0.015, "vmax": 130.0, "nitro": true, "grip": 1.06, "power": 1.1},
+	{"name": "Profi", "corner": 1.1, "throttle": 1.0, "brake": 0.86, "line": 1.0, "err": 0.006, "vmax": 150.0, "nitro": true, "grip": 1.12, "power": 1.2},
 ]
 const NAMES := ["Kenta", "Mika", "Ryo", "Sora", "Daigo", "Yuki", "Hana", "Taro"]
 const BOT_ID0 := 1000
@@ -58,6 +59,9 @@ func add_bot(id: int, car) -> void:
 		"time": 0.0, "best": 0.0, "stuck_t": 0.0, "off_t": 0.0, "wrong_t": 0.0, "lane": _rng.randf_range(-1.0, 1.0),
 		"lane_t": 0.0, "err": 0.0, "err_t": 0.0, "progress": 0.0}
 	bots.append(b)
+	var lv: Dictionary = LEVELS[clampi(level, 0, LEVELS.size() - 1)]
+	car.grip *= float(lv.get("grip", 1.0))
+	car.max_torque *= float(lv.get("power", 1.0))
 	car.ai_fn = _drive.bind(b)
 	car.respawn_fn = Callable()
 
@@ -195,7 +199,7 @@ func _drive(b: Dictionary) -> Array:
 		k_line += tr.curvature[(ti + d + n) % n]
 	k_line /= 5.0
 	var hw: float = tr.half_w
-	var lat := -clampf(k_line * 260.0, -1.0, 1.0) * hw * 0.6 * float(lv["line"])
+	var lat := -clampf(k_line * _tune("LINEK", 260.0), -1.0, 1.0) * hw * _tune("LINEW", 0.75) * float(lv["line"])
 	lat += float(b["lane"]) * hw * 0.25 * (1.0 - absf(k_line) * 120.0) * (1.0 - 0.7 * float(lv["line"]))
 	lat = clampf(lat, -hw + 1.6, hw - 1.6)
 	var target: Vector3 = tr.samples[ti] + tr.rights[ti] * lat
