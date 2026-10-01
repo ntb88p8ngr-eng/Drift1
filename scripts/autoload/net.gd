@@ -62,6 +62,7 @@ var _fails := {}           # remote address -> [failed logins, locked until (mse
 var _crypto := Crypto.new()
 
 var _loaded := {}
+var _keepalive_last := 0
 var _broadcaster: PacketPeerUDP
 var _listener: PacketPeerUDP
 var _broadcast_timer := 0.0
@@ -717,8 +718,31 @@ func _on_peer_auth_failed(id: int) -> void:
 # ---------------------------------------------------------------------------
 # Multiplayer callbacks
 # ---------------------------------------------------------------------------
-func _on_peer_connected(_id: int) -> void:
-	pass
+## Connection timeout once a peer is in: generous, because loading a map (terrain, shader compile)
+## can block the game for several seconds on a slow machine (ENet: limit, min ms, max ms).
+const PLAY_TIMEOUT := [32, 30000, 60000]
+
+
+func _on_peer_connected(id: int) -> void:
+	_relax_timeout(id)
+
+
+func _relax_timeout(id: int) -> void:
+	var ep := peer as ENetMultiplayerPeer
+	if ep == null:
+		return
+	var p := ep.get_peer(id)
+	if p:
+		p.set_timeout(PLAY_TIMEOUT[0], PLAY_TIMEOUT[1], PLAY_TIMEOUT[2])
+
+
+## Keeps the connection alive during long loading steps (called from Game.load_tick): services ENet
+## so pings are answered even while the world is built and no frame is drawn.
+func keepalive() -> void:
+	if peer == null or Time.get_ticks_msec() - _keepalive_last < 100:
+		return
+	_keepalive_last = Time.get_ticks_msec()
+	peer.poll()
 
 
 func _on_peer_disconnected(id: int) -> void:
@@ -736,6 +760,8 @@ func _on_peer_disconnected(id: int) -> void:
 
 func _on_connected_to_server() -> void:
 	_rv_queue.clear()
+	# the short fail-over timeout of the join attempt must not stay: it dropped players while loading
+	_relax_timeout(1)
 	_register.rpc_id(1, Game.local_player_info())
 	connected_ok.emit()
 

@@ -205,6 +205,16 @@ jobs:
           grep -q "NET CLIENT IN LOBBY" net3.log
           grep -q "NET HOST SEES PLAYER" host3.log
 
+      - name: Loading-stall test (code join; the host blocks 12 s loading the map – the client must stay connected)
+        run: |
+          MD_SIGNAL=file ./godot --headless --path . res://tests/net_test.tscn -- --role=host --pw=geheim --port=24593 --stall=1 --host_stall=6000 > host4.log 2>&1 &
+          H4=$!
+          sleep 6
+          MD_SIGNAL=file timeout 70 ./godot --headless --path . res://tests/net_test.tscn -- --role=client --pw=geheim --port=24593 --stall=100 --after=16 --mode=code 2>&1 | tee net4.log || true
+          wait $H4 || true
+          if grep -E "SCRIPT ERROR" net4.log host4.log; then echo "::error::Loading-stall test failed"; exit 1; fi
+          grep -q "STALL: CONNECTED" net4.log
+
       - name: Smoke test (headless – scripts, physics, networking)
         run: |
           timeout 300 ./godot --headless --path . -- --smoke-test 2>&1 | tee smoke.log || true

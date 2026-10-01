@@ -247,6 +247,7 @@ func load_begin(stage: String, from: float, to: float) -> void:
 
 ## `frac` = progress within the current stage (0..1), negative = unchanged.
 func load_tick(frac := -1.0) -> void:
+	Net.keepalive()
 	if frac >= 0.0:
 		load_progress = maxf(load_progress, lerpf(_load_range.x, _load_range.y, clampf(frac, 0.0, 1.0)))
 	if async_loading and Time.get_ticks_msec() - _load_last > 30:
