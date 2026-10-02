@@ -29,7 +29,8 @@ static func theme() -> Theme:
 	hover.border_width_left = 4
 	var pressed := _box(Color(0.4, 0.18, 0.7, 0.95), ACCENT, 2)
 	var disabled := _box(Color(0.06, 0.06, 0.07, 0.6), Color(0.2, 0.2, 0.22), 1)
-	var focus := _box(Color(0, 0, 0, 0), Color(0.85, 0.7, 1.0), 2)
+	# the selected entry is filled (no outline): drawn over the normal box, a bright violet wash
+	var focus := _box(Color(0.6, 0.32, 1.0, 0.42), Color(0, 0, 0, 0), 0)
 	for cls in ["Button", "OptionButton", "CheckBox", "CheckButton"]:
 		t.set_stylebox("normal", cls, normal)
 		t.set_stylebox("hover", cls, hover)
@@ -38,6 +39,8 @@ static func theme() -> Theme:
 		t.set_stylebox("focus", cls, focus)
 		t.set_color("font_color", cls, TEXT)
 		t.set_color("font_hover_color", cls, Color.WHITE)
+		t.set_color("font_focus_color", cls, Color.WHITE)
+		t.set_color("font_hover_pressed_color", cls, Color.WHITE)
 		t.set_color("font_pressed_color", cls, Color.WHITE)
 		t.set_color("font_disabled_color", cls, Color(0.45, 0.45, 0.5))
 	var panel := _box(Color(0.04, 0.035, 0.07, 0.86), Color(0.35, 0.18, 0.6, 0.8), 1)
@@ -47,8 +50,10 @@ static func theme() -> Theme:
 	t.set_stylebox("panel", "Panel", panel)
 	var edit := _box(Color(0.02, 0.02, 0.04, 0.9), Color(0.35, 0.2, 0.55), 1)
 	t.set_stylebox("normal", "LineEdit", edit)
-	t.set_stylebox("focus", "LineEdit", _box(Color(0.02, 0.02, 0.04, 0.9), ACCENT, 2))
+	t.set_stylebox("focus", "LineEdit", _box(Color(0.22, 0.1, 0.38, 0.9), Color(0, 0, 0, 0), 0))
 	t.set_color("font_color", "LineEdit", TEXT)
+	for cls2 in ["HSlider", "VSlider", "ItemList", "Tree", "TabBar", "TabContainer"]:
+		t.set_stylebox("focus", cls2, _box(Color(0.6, 0.32, 1.0, 0.22), Color(0, 0, 0, 0), 0))
 	t.set_stylebox("normal", "TextEdit", edit)
 	t.set_stylebox("normal", "RichTextLabel", _box(Color(0.02, 0.02, 0.04, 0.6), Color(0.2, 0.12, 0.3), 1))
 	t.set_color("default_color", "RichTextLabel", TEXT)

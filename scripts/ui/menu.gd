@@ -16,6 +16,7 @@ var _content: VBoxContainer
 var _status: Label
 var _chat_lines: Array = []
 var _return_to := "main"
+var _opts_return := "main"      # where the settings go back to (main menu or the online lobby)
 var _back_fn := Callable()   # what (B) / Esc does on this screen (the Zurück / Fertig / Verlassen button)
 
 # lobby widgets
@@ -209,7 +210,9 @@ func _build_main() -> void:
 		show_screen("garage"), 360))
 	_add(UiKit.button("Leaderboard", func(): show_screen("leaderboard"), 360))
 	_add(UiKit.button("Steuerung", func(): show_screen("controls"), 360))
-	_add(UiKit.button("Optionen", func(): show_screen("options"), 360))
+	_add(UiKit.button("Optionen", func():
+		_opts_return = "main"
+		show_screen("options"), 360))
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
 	_add(UiKit.spacer(18))
 	var car: Dictionary = Game.get_car(Game.settings["car"])
@@ -633,6 +636,9 @@ func _build_lobby() -> void:
 	var leave := func() -> void:
 		Net.leave()
 		show_screen("online")
+	buttons.add_child(UiKit.button("Einstellungen", func():
+		_opts_return = "lobby"
+		show_screen("options"), 170))
 	buttons.add_child(UiKit.button("Verlassen", leave, 140))
 	_back_fn = leave
 	_add(buttons)
@@ -1111,4 +1117,4 @@ func _build_options() -> void:
 	_add(UiKit.label("Kategorie wechseln: RB / LB  ·  E / Q", 15, UiKit.TEXT_DIM))
 	_add(SettingsUi.tabs(func(): main.refresh_showroom(true)))
 	_add(UiKit.spacer(8))
-	_float_button("◀  Zurück", func(): show_screen("main"))
+	_float_button("◀  Zurück", func(): show_screen(_opts_return))
