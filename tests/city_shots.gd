@@ -45,6 +45,9 @@ func _ready() -> void:
 		var jp: Vector2 = best_j["pos"]
 		var ji: int = tr.index_at(float(best_j["progress"]) - 28.0)
 		views["junction"] = [tr.samples[ji] + Vector3(0, 7.0, 0), Vector3(jp.x, 0.0, jp.y)]
+	# the fog at the city's border, from inside
+	var fr: Rect2 = city.fog.rect
+	views["fog"] = [Vector3(fr.end.x - 12.0, 3.0, fr.get_center().y - 40.0), Vector3(fr.end.x + 4.0, 2.0, fr.get_center().y + 30.0)]
 	# a side street, the special places, a park
 	var st: Dictionary = city.net.streets[city.net.streets.size() / 3]
 	var sp: PackedVector2Array = st["pts"]

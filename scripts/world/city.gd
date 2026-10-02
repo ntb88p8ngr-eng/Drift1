@@ -24,6 +24,7 @@ const Streets = preload("res://scripts/world/city/streets.gd")
 const CityLights = preload("res://scripts/world/city/city_lights.gd")
 const CityLamps = preload("res://scripts/world/city/city_lamps.gd")
 const Pigeons = preload("res://scripts/world/city/pigeons.gd")
+const CityFog = preload("res://scripts/world/city/city_fog.gd")
 const CityAtlas = preload("res://scripts/world/city/city_atlas.gd")
 
 const DOWNTOWN := Vector2(560.0, -230.0)     # inside the expressway loop: the high-rise district
@@ -101,6 +102,7 @@ var _screen_mats: Array = []
 var _sakura_spots: Array = []
 var _crossing_i := 0
 var _stats := {}
+var fog
 
 
 func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
@@ -204,6 +206,11 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 		return out
 	_flocks()
 	lamps.build(world)
+	# low fog along the city's square border, a little in from its edge: it turns you round
+	fog = CityFog.new()
+	fog.name = "BorderFog"
+	add_child(fog)
+	fog.setup(world, net.area.grow(-3.0))
 	_stats.merge({"streets": net.streets.size(), "junctions": net.junctions.size(), "parks": parks.size(), "lots": lots.size()})
 	_stats.merge(bld.stats)
 	_stats.merge(places.stats)
@@ -232,6 +239,8 @@ func set_night(n: float) -> void:
 		cm.set_night(n)
 	if lamps:
 		lamps.set_night(n)
+	if fog:
+		fog.set_night(n)
 	if lights_node:
 		lights_node.set_night(n)
 	for m in _screen_mats:
