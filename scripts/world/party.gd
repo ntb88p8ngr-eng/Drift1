@@ -629,16 +629,16 @@ func _play(delta: float, g: Dictionary) -> void:
 	match id:
 		"rlgl":
 			# the traffic lights say it all (no text): green, yellow for the last second, red –
-			# with a beep on green, ticks on yellow and a buzzer on red
+			# with soft chimes: rising on green, one note on yellow, falling on red
 			var light := _rl_light(_t)
 			sites.set_rlgl_light(light)
 			if light != _rl_last:
 				if light == 1:
-					Sfx.play(self, "light_go", -4.0)
+					Sfx.play(self, "light_go", -15.0)
 				elif light == 2:
-					Sfx.play(self, "light_warn", -6.0)
+					Sfx.play(self, "light_warn", -19.0)
 				elif light == 0:
-					Sfx.play(self, "light_stop", -5.0)
+					Sfx.play(self, "light_stop", -15.0)
 				_rl_last = light
 			if not _done:
 				_value = along - PartySites.RLGL_START
@@ -647,7 +647,7 @@ func _play(delta: float, g: Dictionary) -> void:
 					_value = 10000.0 - _t
 					_finish_t = _t
 					_finish_local()
-					Sfx.play(self, "light_go", -2.0, null, 1.25)
+					Sfx.play(self, "light_go", -12.0, null, 1.25)
 					world.hud.show_message("IM ZIEL!", Game.format_time(_t), UiKit.GOLD, 2.5)
 				elif light == 0:
 					if _red_since < 0.0:
@@ -658,7 +658,7 @@ func _play(delta: float, g: Dictionary) -> void:
 						_hold(sites.start_xf(id, _slot, _ids.size()))
 						_hint = -1
 						_penalty = 1.5
-						Sfx.play(self, "whistle", -3.0)
+						Sfx.play(self, "whistle", -10.0)
 						world.hud.show_message("ERWISCHT!", "Zurück zum Start", UiKit.BAD, 1.8)
 				else:
 					_red_since = -1.0

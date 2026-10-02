@@ -86,13 +86,11 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	var sp: float = track.SPACING
 	# camps: every ~110 m on the long track (a festival), every ~190 m elsewhere (fewer in the docks)
 	var step_m: float = 70.0 if big else (260.0 if track.track_id == "harbor" else 140.0)
-	if track.track_id == "tokyo":
-		step_m = 1e9      # no camping in the city – only the spectators
 	step_m *= [1.6, 1.25, 1.0, 0.85][clampi(quality, 0, 3)]
 	var step := maxi(int(step_m / sp), 8)
 	var i := int(track.start_index) + int(60.0 / sp)
 	var placed := 0
-	var guard := 0
+	var guard := n if track.track_id == "tokyo" else 0     # no camping in the city – only the spectators
 	while guard < n:
 		var idx := i % n
 		if placed % 6 == 0:
@@ -102,8 +100,9 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 			placed += 1
 		i += int(step * rng.randf_range(0.75, 1.25))
 		guard += step
-	_paths_between_camps()
-	_access_points()
+	if track.track_id != "tokyo":
+		_paths_between_camps()
+		_access_points()
 	if paddock:
 		paddock.link_paths(self)
 	# spectators: small groups all round the lap, right behind the barrier

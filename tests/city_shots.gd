@@ -7,6 +7,9 @@ const World = preload("res://scripts/world/world.gd")
 
 func _ready() -> void:
 	Game.persist = false
+	# small and cheap: software rendering of the whole city is slow
+	Game.settings["shadow_quality"] = 1
+	get_window().size = Vector2i(960, 540)
 	var args := {"tod": "night", "out": "/tmp", "views": "crossing,highway,aerial,station"}
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--") and a.contains("="):
@@ -25,18 +28,42 @@ func _ready() -> void:
 	var c: Vector3 = tr.samples[ci]
 	var t: Vector3 = tr.tangents[ci]
 	var hi: int = tr.index_at(city._highest_progress(-1) + 60.0)
+	var sk: Vector3 = city._sakura_spots[city._sakura_spots.size() / 2]
 	var views := {
+		"sakura": [sk + Vector3(9, 3.0, 7), sk + Vector3(0, 3.5, 0)],
 		"crossing": [c - t * 45.0 + Vector3(0, 2.2, 0), c + t * 20.0 + Vector3(0, 6.0, 0)],
 		"highway": [tr.samples[hi] + Vector3(0, 2.0, 0) - tr.tangents[hi] * 6.0, tr.samples[(hi + 40) % tr.sample_count()] + Vector3(0, 2.0, 0)],
 		"aerial": [Vector3(250, 230, 380), Vector3(380, 0, -200)],
 		"station": [tr.samples[tr.nearest_index(Vector3(130, 0, 235))] + Vector3(0, 3.0, 0) - tr.rights[tr.nearest_index(Vector3(130, 0, 235))] * 6.0, Vector3(130, 2.0, 262)],
 	}
+	# a side street, the special places, a park
+	var st: Dictionary = city.net.streets[city.net.streets.size() / 3]
+	var sp: PackedVector2Array = st["pts"]
+	var m0: Vector2 = sp[sp.size() / 2]
+	var m1: Vector2 = sp[mini(sp.size() / 2 + 3, sp.size() - 1)]
+	var sdir := Vector3(m1.x - m0.x, 0, m1.y - m0.y).normalized()
+	views["street"] = [Vector3(m0.x, 1.8, m0.y) - sdir * 12.0, Vector3(m0.x, 3.0, m0.y) + sdir * 30.0]
+	for l in city.lots:
+		var lot: Dictionary = l[1]
+		var lc: Vector3 = lot["c"]
+		var az: Vector3 = lot["az"]
+		var ax: Vector3 = lot["ax"]
+		if not views.has(l[0]):
+			views[l[0]] = [lc - az * (float(lot["d"]) * 0.5 + 16.0) + ax * 6.0 + Vector3(0, 3.0, 0), lc + Vector3(0, 3.5, 0)]
+	if city.parks.size() > 0:
+		var pc: Vector3 = city.parks[0][0]
+		var pr: float = city.parks[0][1]
+		views["park"] = [pc + Vector3(pr * 0.7, 6.0, pr * 0.7), pc]
 	for name in str(args["views"]).split(","):
+		if not views.has(name):
+			print("no view ", name)
+			continue
 		var v: Array = views[name]
 		cam.global_position = v[0]
 		cam.look_at(v[1], Vector3.UP)
-		for f in 14:
+		for f in 5:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(str(args["out"]).path_join("city_%s_%s.png" % [args["tod"], name]))
+		print("shot %s at %d ms" % [name, Time.get_ticks_msec()])
 	get_tree().quit()

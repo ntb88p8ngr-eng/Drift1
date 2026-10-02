@@ -36,6 +36,7 @@ CLASSES = {
     "red": ((0.7, 0.02, 0.02), 0.2, 0.3),
     "white": ((0.9, 0.9, 0.9), 0.0, 0.4),
     "mirror": ((0.9, 0.9, 0.92), 1.0, 0.02),
+    "gold": ((0.62, 0.48, 0.16), 1.0, 0.28),
 }
 
 CARS = {
@@ -192,6 +193,93 @@ CARS = {
     },
 }
 
+# NPC traffic cars (city streets): a detailed model for close up and a light one for the distance
+TRAFFIC = {
+    "camry": {
+        "length": 4.80, "subsurf": 1, "body_tris": 14000, "wheel_tris": 900, "unsteer": True,
+        "exclude": ["Plane", "Interior.001", "interior_main", "interior_seats front", "interior_seats rear",
+                    "Text", "Text.001", "Circle"],
+        "materials": {
+            "Car Paint (Metallic)": "paint", "Chrome": "chrome", "Chrome.001": "black", "Emit": "head_inner",
+            "HL Glass": "head_lens", "Material.001": "head_lens", "Material.002": "chrome", "Material.003": "chrome",
+            "Material.004": "black", "Material.005": "glass", "Material.006": "glass", "Material.007": "chrome",
+            "Material.008": "trim", "Material.009": "black", "Material.010": "chrome", "Material.011": "chrome",
+            "Material.012": "black", "RubberTires": "trim", "aaaa": "tail", "rear lamp glass": "tail",
+            "brakeCaliper_brass": "caliper", "brakeCaliper_paint_noText": "caliper", "brakeCaliper_pads": "black",
+            "brakeCaliper_steel": "caliper", "brakeDisc_chrome": "disc", "brakeDisc_metal_black": "disc",
+            "brakeDisc_steel": "disc", "felga": "rim", "sruba'": "chrome", "opoma ": "tyre", "opona2": "tyre",
+            "glass red.001": "tail", "glass.001": "glass", "taillight cheat.001": "tail", "taillights light": "tail",
+            None: "black",
+        },
+        # the "taillights_glass" objects at the front are the headlight units
+        "object_materials": {
+            "taillights_glass.002": {"glass red.001": "indicator", "glass.001": "head_lens", "taillight cheat.001": "head_inner",
+                                     "taillights light": "head_inner"},
+            "taillights_glass.003": {"glass red.001": "indicator", "glass.001": "head_lens", "taillight cheat.001": "head_inner",
+                                     "taillights light": "head_inner"},
+        },
+        "object_class": {},
+        "wheel_parts": ["Plane.004", "Plane.005", "Plane.007", "Plane.010"],
+        "caliper_parts": [],
+        "part_max_tris": {"brakeDisc": 1500, "Plane.004": 3000, "Plane.005": 3000, "Plane.007": 3000, "Plane.010": 3000},
+        "procedural_wheels": 0.205,
+    },
+    "impreza": {
+        "length": 4.42, "subsurf": 1, "body_tris": 14000, "wheel_tris": 900, "unsteer": True,
+        "exclude": ["Plane", "light_cycles_key", "light_cycles_fill", "ground_plane", "subaru_interior",
+                    "subaru_interior_steering_wheel"],
+        "exclude_parents": ["BACKUP"],
+        "materials": {
+            "subaru_carpaint": "paint", "black_plast": "black", "black_painted_metal": "black", "chrome_yellow": "gold",
+            "chrome_mate": "metal", "wheel_center": "chrome", "break_lights": "tail", "car_light": "head_inner",
+            "car_light_orange": "indicator", "chrome": "chrome", "chrome_strip_arch_front": "chrome",
+            "expanded_metal": "grille", "glass": "glass", "glass_pure": "head_lens", "licence_plate": "white",
+            "lights_back_interior": "chrome", "lights_back_interior_2": "chrome", "lights_back_interior_3": "chrome",
+            "mirror": "mirror", "red_glossy": "tail", "rubber": "tyre", "subaru_marks": "black",
+            "subaru_sign": "chrome", "subaru_undercarriage": "black", "white_plast": "white", "interior": "black",
+            None: "black",
+        },
+        "object_materials": {"subaru_lights_back": {"glass_pure": "tail"}, "subaru_back_doors": {"glass_pure": "tail"}},
+        "object_class": {},
+        "wheel_parts": ["subaru_wheel.B.R", "subaru_wheel.B.L", "subaru_wheel.F.R", "subaru_wheel.F.L"],
+        "caliper_parts": [],
+        "part_max_tris": {"subaru_wheel": 5000, "subaru_wheel_tire": 3000, "subaru_lights_back": 3000, "subaru_back_doors": 4000,
+                          "subaru_rearview_mirror": 1500, "subaru_wipers": 800, "subaru_bumper_front": 5000,
+                          "subaru_lights_front": 3000},
+    },
+    "civic": {
+        "length": 4.14, "subsurf": 1, "body_tris": 14000, "wheel_tris": 900,
+        "exclude": ["Plane", "Plane.001", "Recaro_seats", "Rear_seat_bench", "DashBoard", "Steering_wheel",
+                    "Inside_mirror", "TypeR_Logo_front", "Civic_logo", "Roof_antenna"],
+        "exclude_parents": ["TypeR_Logo_back"],
+        "materials": {
+            "Red_paint": "paint", "BlackPLastic": "tyre", "Rim_metal": "rim", "Tyre_Marks": "tyre", "Black_Metal": "black",
+            "Black_Plastic": "black", "Black_Plastic_Headlights": "black", "Black_difuse": "black",
+            "Brake_Disc.001": "disc", "Brake_disc_metal.001": "disc", "Red_Brake_metal.001": "caliper",
+            "Fog_Bulb": "white", "Fog_Glass": "head_lens", "Headlight_metal": "head_inner",
+            "Headlight_metal_Hex": "head_inner", "Headlights_Glass": "head_lens", "Honda_logo": "chrome",
+            "Lights_glass_headlight": "head_lens", "Mirror": "mirror", "Rear_lights_glass": "tail",
+            "Shiny_metal": "chrome", "Shiny_metal_Exhaust": "chrome", "Shiny_metal_red": "tail",
+            "Shiny_metal_red_hex": "tail", "Shiny_metal_red_ribbed": "tail", "Shiny_metal_ribbed": "chrome",
+            "Side_mirror_blinker_glass": "indicator", "Spoiler_light": "tail", "Underside": "black",
+            "Windows": "glass", "Yellow_bulb": "indicator", "type-r": "white", None: "black",
+        },
+        "object_materials": {"Front_Wipers": {"Tyre_Marks": "trim"}, "Rear_Wiper": {"Tyre_Marks": "trim"}},
+        "object_class": {},
+        "wheel_parts": ["Eagle_F1"],
+        "caliper_parts": ["Brakes"],
+        # one object holds all four tyres / all four brakes: cut into the four corners
+        "split_quad": ["Eagle_F1", "Brakes"],
+        "part_max_tris": {"Eagle_F1": 14000, "Brakes": 3000, "Front_Grille_Mesh": 2500, "UnderTray": 3000,
+                          "Stop_lights_inside": 3000, "Headlights_Inside": 3000, "Side_Mirrors": 2000,
+                          "Front_Wipers": 800, "Rear_Wiper": 400, "Exhaust": 800, "Fog_lights": 1200},
+    },
+}
+for _k, _cfg in list(TRAFFIC.items()):
+    CARS[_k] = _cfg
+    CARS[_k] = dict(_cfg, wheel_tris=_cfg.get("wheel_tris_hi", _cfg["wheel_tris"]))
+    CARS[_k + "_lo"] = dict(_cfg, body_tris=1800, wheel_tris=200)
+
 WHEELS = ["FL", "FR", "RL", "RR"]
 
 
@@ -261,6 +349,61 @@ def decimate_mesh(me, target_tris):
     return best
 
 
+def proc_wheel(R, W, class_mats, seg=32, spokes=5):
+    """A wheel about the X axis at the origin: tyre with rounded shoulders, a five-spoke alloy on both
+    faces, dark brake area behind the spokes."""
+    bm = bmesh.new()
+    rim_r = R * 0.66
+    hw = W * 0.5
+    def lathe(prof, mat):
+        rings = []
+        for x, r in prof:
+            ring = []
+            for k in range(seg):
+                a = 2.0 * math.pi * k / seg
+                ring.append(bm.verts.new((x, r * math.cos(a), r * math.sin(a))))
+            rings.append(ring)
+        for i in range(len(rings) - 1):
+            for k in range(seg):
+                k2 = (k + 1) % seg
+                f = bm.faces.new((rings[i][k], rings[i][k2], rings[i + 1][k2], rings[i + 1][k]))
+                f.material_index = mat
+                f.smooth = True
+    # tyre: inner sidewall, shoulders, tread, other side
+    lathe([(-hw, rim_r), (-hw, R * 0.86), (-hw + W * 0.08, R * 0.97), (-hw + W * 0.22, R),
+           (hw - W * 0.22, R), (hw - W * 0.08, R * 0.97), (hw, R * 0.86), (hw, rim_r)], 0)
+    # rim lip and barrel
+    lathe([(hw, rim_r), (hw - W * 0.06, rim_r * 0.97), (-hw + W * 0.06, rim_r * 0.97), (-hw, rim_r)], 1)
+    for side in (-1.0, 1.0):
+        x = side * (hw - W * 0.12)
+        # dark disc behind the spokes
+        lathe([(x - side * 0.01, 0.0001), (x - side * 0.01, rim_r * 0.96)], 2)
+        # hub
+        lathe([(x + side * 0.012, 0.0001), (x + side * 0.012, rim_r * 0.2), (x, rim_r * 0.24)], 1)
+        # spokes: tapered boxes from the hub to the lip
+        for k in range(spokes):
+            a = 2.0 * math.pi * k / spokes
+            d = Vector((0.0, math.cos(a), math.sin(a)))
+            t = Vector((0.0, -math.sin(a), math.cos(a)))
+            pts = []
+            for rr, wd in ((rim_r * 0.18, rim_r * 0.16), (rim_r * 0.97, rim_r * 0.24)):
+                for sx in (0.0, side * 0.018):
+                    for st in (-1.0, 1.0):
+                        pts.append(Vector((x + sx, 0.0, 0.0)) + d * rr + t * (wd * 0.5 * st))
+            v = [bm.verts.new(p) for p in pts]
+            quads = [(0, 1, 5, 4), (2, 3, 7, 6), (0, 4, 6, 2), (1, 5, 7, 3), (0, 1, 3, 2), (4, 5, 7, 6)]
+            for q in quads:
+                f = bm.faces.new([v[i] for i in q])
+                f.material_index = 1
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("procwheel")
+    bm.to_mesh(me)
+    bm.free()
+    for cls in ("tyre", "rim", "black"):
+        me.materials.append(class_mats[cls])
+    return me
+
+
 def main():
     car_id, src, out = sys.argv[-3], sys.argv[-2], sys.argv[-1]
     cfg = CARS[car_id]
@@ -288,6 +431,8 @@ def main():
         if ob.type not in ("MESH", "CURVE", "FONT", "SURFACE"):
             continue
         if ob.hide_render or ob.name in cfg["exclude"]:
+            continue
+        if cfg.get("exclude_parents") and ancestor_matches(ob, cfg["exclude_parents"]):
             continue
         if ob.users_collection and all(c.hide_render for c in ob.users_collection):
             continue
@@ -346,6 +491,19 @@ def main():
             a, b = split_mesh(p["mesh"], lambda c: c.x < 0.0)
             p["mesh"] = a
             parts.append({"name": p["name"] + "_r", "kind": "wheel", "mesh": b})
+    # objects that hold all four wheels / brakes: cut at the centre line and between the axles
+    if cfg.get("split_quad"):
+        allb = [p["mesh"] for p in parts if p["kind"] == "body"]
+        ys = [v.co.y for me in allb for v in me.vertices]
+        y_mid = (min(ys) + max(ys)) * 0.5
+        for p in list(parts):
+            if matches(p["name"], cfg["split_quad"]):
+                left, right = split_mesh(p["mesh"], lambda c: c.x < 0.0)
+                fl, rl = split_mesh(left, lambda c: c.y < y_mid)
+                fr, rr = split_mesh(right, lambda c: c.y < y_mid)
+                p["mesh"] = fl
+                for me, suf in ((rl, "_rl"), (fr, "_fr"), (rr, "_rr")):
+                    parts.append({"name": p["name"] + suf, "kind": p["kind"], "mesh": me})
     # one modelled wheel copied to the other corners (lost collection instancing in old files)
     wc = cfg.get("wheel_clone")
     if wc:
@@ -437,6 +595,19 @@ def main():
             for p in parts:
                 if p["kind"] != "body" and p["slot"] == w:
                     p["mesh"].transform(R)
+
+    if cfg.get("procedural_wheels"):
+        # the source wheels don't survive the reduction: clean modelled ones at the same place and size
+        tyre_w = cfg["procedural_wheels"] / scale
+        for w in WHEELS:
+            mn, mx = bbox(wheel_meshes[w])
+            c = (mn + mx) * 0.5
+            r = (mx.z - mn.z) * 0.5
+            parts[:] = [p for p in parts if not (p["kind"] == "wheel" and p["slot"] == w)]
+            me = proc_wheel(r, tyre_w, class_mats)
+            me.transform(Matrix.Translation(c))
+            parts.append({"name": "procwheel_" + w, "kind": "wheel", "mesh": me, "slot": w})
+        wheel_meshes = {w: [p["mesh"] for p in parts if p["kind"] == "wheel" and p["slot"] == w] for w in WHEELS}
 
     tyre_mn, tyre_mx = bbox([m for ms in wheel_meshes.values() for m in ms])
     centres = {}

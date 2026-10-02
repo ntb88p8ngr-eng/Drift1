@@ -1020,12 +1020,17 @@ static func leaf_material(kind: String, tint := Color.WHITE) -> ShaderMaterial:
 		tex = needle_texture()
 	elif kind == "fern":
 		tex = fern_texture()
+	elif kind == "sakura":
+		tex = blossom_texture()
 	m.set_shader_parameter("leaf_tex", tex)
 	m.set_shader_parameter("tint", tint)
 	if kind == "needle":
 		m.set_shader_parameter("backlight_color", Color(0.08, 0.14, 0.05))
 		m.set_shader_parameter("wind", 0.5)
 		m.set_shader_parameter("alpha_cut", 0.4)
+	elif kind == "sakura":
+		m.set_shader_parameter("backlight_color", Color(0.45, 0.2, 0.28))
+		m.set_shader_parameter("wind", 0.8)
 	elif kind == "fern":
 		m.set_shader_parameter("backlight_color", Color(0.12, 0.2, 0.04))
 		m.set_shader_parameter("wind", 2.2)
@@ -1234,6 +1239,50 @@ static func _coverage(bytes: PackedByteArray, scale: float, cutoff: float) -> fl
 
 
 ## A sprig with several leaves on a twig – used on leaf cards (RGBA, alpha-tested).
+## Cherry blossom: a twig with clusters of five-petal flowers (pink to white, darker centres).
+static func blossom_texture() -> ImageTexture:
+	if _cache.has("tex_blossom"):
+		return _cache["tex_blossom"]
+	var size := 256
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1.0, 0.8, 0.88, 0.0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var flowers: Array = []
+	for i in 34:
+		var c := Vector2(rng.randf_range(0.14, 0.86), rng.randf_range(0.08, 0.85))
+		flowers.append([c, rng.randf_range(0.055, 0.085), rng.randf() * TAU, rng.randf()])
+	for y in size:
+		for x in size:
+			var p := Vector2((float(x) + 0.5) / size, (float(y) + 0.5) / size)
+			var col := Color(0, 0, 0, 0)
+			var tx := 0.5 + sin((1.0 - p.y) * 4.0) * 0.05
+			if absf(p.x - tx) < 0.012 and p.y > 0.2:
+				col = Color(0.22, 0.13, 0.1, 1.0)
+			for f in flowers:
+				var rel: Vector2 = p - (f[0] as Vector2)
+				var r: float = f[1]
+				var d := rel.length() / r
+				if d > 1.0:
+					continue
+				# five petals: the radius dips between them, a notch at each petal tip
+				var a := atan2(rel.y, rel.x) + float(f[2])
+				var petal := 0.72 + 0.28 * absf(cos(a * 2.5))
+				petal -= 0.12 * pow(absf(cos(a * 2.5)), 24.0)
+				if d > petal:
+					continue
+				var shade: float = f[3]
+				var base := Color(1.0, 0.62, 0.76).lerp(Color(1.0, 0.9, 0.94), shade)
+				var c2 := base.lerp(Color(0.85, 0.3, 0.45), (1.0 - smoothstep(0.0, 0.28, d)) * 0.8)
+				c2 = c2.darkened(0.12 * d)
+				col = Color(c2.r, c2.g, c2.b, 1.0)
+			img.set_pixel(x, y, col)
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_cache["tex_blossom"] = tex
+	return tex
+
+
 static func leaf_texture() -> ImageTexture:
 	if _cache.has("tex_leaf"):
 		return _cache["tex_leaf"]

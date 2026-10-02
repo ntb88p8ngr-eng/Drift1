@@ -5,6 +5,8 @@ extends Node3D
 signal exit_requested(target: String)   # "menu", "lobby", "restart", "leave"
 
 const Traffic = preload("res://scripts/world/traffic.gd")
+const TrafficCars = preload("res://scripts/world/traffic_cars.gd")
+const CityTraffic = preload("res://scripts/world/city/city_traffic.gd")
 const Track = preload("res://scripts/world/track.gd")
 const Scenery = preload("res://scripts/world/scenery.gd")
 const Terrain = preload("res://scripts/world/terrain.gd")
@@ -41,7 +43,9 @@ var grass: Grass
 var flares: LensFlare
 var skidmarks: Skidmarks
 var local_car: Car
-var traffic: Node3D          # optional NPC traffic (traffic.gd)
+var traffic: Node3D          # optional NPC traffic on the race route (traffic.gd)
+var city_traffic: Node3D     # Neo Tokyo: traffic on all the city streets (city/city_traffic.gd)
+var traffic_cars: Node3D     # draws all the traffic cars (traffic_cars.gd)
 var cars := {}              # peer_id -> Car
 var camera: CameraRig
 var hud: Hud
@@ -247,13 +251,24 @@ func _spawn_cars() -> void:
 		cars[1] = local_car
 		local_car.place(track.grid_transform(0))
 	_spawn_bots(night)
-	# optional NPC traffic (offline; not on the open playground pad or the 20 km Nordschleife)
+	# optional NPC traffic (offline; not in party mode, on the open playground pad or the 20 km
+	# Nordschleife): on the race route, and in Neo Tokyo on every street of the city
 	var dens := clampi(int(config.get("traffic", 0)), 0, Traffic.DENSITY.size() - 1)
-	if dens > 0 and not online and track.track_id != "playground" and not track.elevated:
+	var partying := bool(config.get("party", false))
+	if dens > 0 and not online and not partying and track.track_id != "playground" and not track.elevated:
+		traffic_cars = TrafficCars.new()
+		traffic_cars.name = "TrafficCars"
+		add_child(traffic_cars)
+		traffic_cars.setup(self)
 		traffic = Traffic.new()
 		traffic.name = "Traffic"
 		add_child(traffic)
-		traffic.setup(self, maxi(int(track.length / 1000.0 * float(Traffic.DENSITY[dens])), 4))
+		traffic.setup(self, maxi(int(track.length / 1000.0 * float(Traffic.DENSITY[dens])), 4), traffic_cars)
+		if scenery.city != null:
+			city_traffic = CityTraffic.new()
+			city_traffic.name = "CityTraffic"
+			add_child(city_traffic)
+			city_traffic.setup(self, scenery.city.net, dens, traffic_cars)
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
 	local_car.headlights = night >= 0.4
 	_auto_lights = local_car.headlights

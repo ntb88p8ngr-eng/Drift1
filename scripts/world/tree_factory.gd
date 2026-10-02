@@ -22,6 +22,10 @@ static func _material(key: String) -> Material:
 				_mats[key] = TexKit.leaf_material("leaf", Color(1.0, 1.0, 1.0))
 			"leaf_autumn":
 				_mats[key] = TexKit.leaf_material("leaf", Color(1.6, 0.95, 0.45))
+			"leaf_sakura":
+				_mats[key] = TexKit.leaf_material("sakura", Color(1.0, 1.0, 1.0))
+			"bark_sakura":
+				_mats[key] = TexKit.bark_material(Color(0.45, 0.36, 0.34))
 			"leaf_oak":
 				_mats[key] = TexKit.leaf_material("oak", Color(1.0, 1.0, 1.0))
 			"needle":
@@ -63,6 +67,31 @@ static func deciduous(seed_value: int, detail: float, autumn := false) -> ArrayM
 		MeshKit.tube(bark, pts, [0.16, 0.1, 0.04], 5, Vector2(1, 0.4))
 	var mesh := MeshKit.commit(bark, _material("bark"), null, true)
 	MeshKit.commit(leaves, _material("leaf_autumn" if autumn else "leaf"), mesh)
+	return mesh
+
+
+## Cherry tree (sakura): a short trunk splitting low into wide, spreading, slightly drooping limbs;
+## a broad flat crown of dense pink blossom clusters.
+static func sakura(seed_value: int, detail: float) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var bark := MeshKit.new_st()
+	var leaves := MeshKit.new_st()
+	var height := rng.randf_range(5.5, 7.0)
+	var ctx := {
+		"rng": rng, "bark": bark, "leaves": leaves, "detail": detail,
+		"max_depth": 3 if detail > 0.6 else 2,
+		"crown": Vector3(0, height * 0.65, 0),
+		"leaf_size": 0.95 if detail > 0.6 else 1.6,
+		"leaf_count": 16 if detail > 0.6 else 10,
+		"trunk_children": 4, "t_min": 0.3, "angle_min": 48.0, "angle_max": 74.0,
+		"limb_scale": 1.3, "up_bias": 0.0, "gnarl": 1.4,
+	}
+	_character(ctx, rng)
+	var dir := (Vector3(rng.randf_range(-0.12, 0.12), 1.0, rng.randf_range(-0.12, 0.12))).normalized()
+	_branch(ctx, Vector3(0, -0.2, 0), dir, height * 0.42, 0.24 * height / 7.0, 0)
+	var mesh := MeshKit.commit(bark, _material("bark_sakura"), null, true)
+	MeshKit.commit(leaves, _material("leaf_sakura"), mesh)
 	return mesh
 
 

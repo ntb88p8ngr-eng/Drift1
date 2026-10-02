@@ -111,7 +111,7 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	rng.seed = hash(track.track_id) + 77
 	var zones: int = [3, 4, 6, 7][clampi(quality, 0, 3)]
 	# the open playground pad has no barriers to stand behind: only the grandstand there
-	if track.track_id != "playground":
+	if track.track_id != "playground" and track.track_id != "tokyo":
 		for i in _corner_indices(zones):
 			await Game.load_tick()
 			_build_zone(i, quality)
@@ -289,47 +289,37 @@ func _build_net(posts: Array) -> void:
 		return
 	if _net_mat == null:
 		_net_mat = StandardMaterial3D.new()
-		_net_mat.albedo_texture = _net_texture()
 		_net_mat.albedo_color = Color(1.0, 0.45, 0.08)
-		_net_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-		_net_mat.alpha_scissor_threshold = 0.5
-		_net_mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE
-		_net_mat.alpha_antialiasing_edge = 0.3
-		_net_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-		_net_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		_net_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		_net_mat.roughness = 0.8
+	# a real net: ropes along it (thicker top and bottom), strands every 30 cm, posts every other sample
 	var st := MeshKit.new_st()
 	var pole := MeshKit.new_st()
-	var u := 0.0
 	for i in range(posts.size() - 1):
 		var a: Vector3 = posts[i]
 		var b: Vector3 = posts[i + 1]
 		var len := a.distance_to(b)
-		var up := Vector3(0, 1.25, 0)
-		var nrm := (b - a).cross(Vector3.UP).normalized()
-		MeshKit.quad(st, a + Vector3(0, 0.05, 0), b + Vector3(0, 0.05, 0), b + up, a + up, nrm,
-			Vector2(u, 1), Vector2(u + len / 1.2, 1), Vector2(u + len / 1.2, 0), Vector2(u, 0))
-		u += len / 1.2
+		if len < 0.05:
+			continue
+		var dir := (b - a) / len
+		var basis := Basis.looking_at(dir, Vector3.UP)
+		var mid := (a + b) * 0.5
+		for r in 6:
+			var y := 0.08 + r * 0.232
+			var th := 0.035 if (r == 0 or r == 5) else 0.018
+			MeshKit.box(st, Transform3D(basis, mid + Vector3(0, y, 0)), Vector3(th, th, len + 0.02))
+		var k := maxi(int(len / 0.3), 1)
+		for j in k:
+			var p := a.lerp(b, (j + 0.5) / k)
+			MeshKit.box(st, Transform3D(basis, p + Vector3(0, 0.66, 0)), Vector3(0.016, 1.16, 0.016))
 		if i % 2 == 0:
-			MeshKit.box(pole, Transform3D(Basis.IDENTITY, a + Vector3(0, 0.65, 0)), Vector3(0.05, 1.3, 0.05))
+			MeshKit.box(pole, Transform3D(Basis.IDENTITY, a + Vector3(0, 0.7, 0)), Vector3(0.06, 1.4, 0.06))
 	var mi := MeshKit.mesh_instance(MeshKit.commit(st, _net_mat), null, false)
 	mi.name = "SafetyNet"
-	mi.visibility_range_end = 350.0
+	mi.visibility_range_end = 300.0
 	add_child(mi)
 	var pm := MeshKit.mesh_instance(MeshKit.commit(pole, TexKit.std(Color(0.3, 0.3, 0.32), 0.5, 0.6)), null, false)
 	pm.visibility_range_end = 350.0
 	add_child(pm)
-
-
-static func _net_texture() -> ImageTexture:
-	var img := Image.create(32, 32, true, Image.FORMAT_RGBA8)
-	for y in 32:
-		for x in 32:
-			var line := (x % 8) < 2 or (y % 8) < 2
-			img.set_pixel(x, y, Color(1, 1, 1, 1) if line else Color(1, 1, 1, 0))
-	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
 
 
 func _flag(pos: Vector3) -> void:

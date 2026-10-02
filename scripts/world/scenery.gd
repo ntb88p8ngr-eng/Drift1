@@ -1313,7 +1313,7 @@ func _build_lamps() -> void:
 		_playground_lamps(pole_mat, head_mat)
 		return
 	if track.track_id == "tokyo":
-		every = 18      # street lamps all along the city streets (the expressway has its own)
+		return          # the city brings its own streetlights (city/streets.gd, lit by the light pool)
 	var k := 0
 	for i in range(0, n, every):
 		if track.samples[i].y > 0.15:

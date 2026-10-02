@@ -28,6 +28,7 @@ const BALLOON_COLS := [Color(1.0, 0.15, 0.2), Color(0.2, 0.55, 1.0), Color(1.0, 
 const BOT_NAMES := ["Bot Blitz", "Bot Kurbel", "Bot Turbo"]
 const LAYER_WORLD := 1
 const Car = preload("res://scripts/car/car.gd")
+const Sfx = preload("res://scripts/util/sfx_kit.gd")
 
 var party: Node
 var world: Node3D
@@ -262,6 +263,7 @@ func fire(id: int) -> void:
 	base_v.y = 0.0
 	for d in dirs:
 		_add_shot(origin, (d as Vector3) * SHOT_SPEED + base_v, id, kind, true)
+	_shot_sound(origin, kind, id == me)
 	if id == me and world.online:
 		Net.party_to_host({"t": "ar", "k": "shot", "o": origin, "d": dirs, "v": base_v, "kind": kind})
 
@@ -273,7 +275,7 @@ func _add_shot(origin: Vector3, vel: Vector3, owner: int, kind: String, live: bo
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	# a stretched glowing tracer along the flight direction
-	mi.global_transform = Transform3D(Basis.looking_at(vel.normalized(), Vector3.UP).scaled(Vector3(1, 1, 5.0)), origin)
+	mi.global_transform = Transform3D(Basis.looking_at(vel.normalized(), Vector3.UP) * Basis.from_scale(Vector3(1, 1, 5.0)), origin)
 	shots.append({"node": mi, "pos": origin, "vel": vel, "life": SHOT_LIFE, "owner": owner, "kind": kind, "live": live})
 
 
@@ -450,6 +452,7 @@ func on_msg(from: int, msg: Dictionary) -> void:
 			var v: Vector3 = msg.get("v", Vector3.ZERO)
 			for d in msg.get("d", []):
 				_add_shot(o, (d as Vector3) * SHOT_SPEED + v, from, str(msg.get("kind", "normal")), false)
+			_shot_sound(o, str(msg.get("kind", "normal")), false)
 		"hit":
 			if int(msg.get("v", 0)) == me and fighters.has(me):
 				_damage(me, from, msg.get("dir", Vector3.FORWARD))
@@ -692,6 +695,19 @@ func _shield_node(car: Node) -> Node3D:
 	mi.visible = false
 	car.add_child(mi)
 	return mi
+
+
+## The bang of a shot, where it was fired (rapid fire a little higher and quieter, the triple deeper).
+func _shot_sound(at: Vector3, kind: String, mine: bool) -> void:
+	var pitch := 1.0
+	var vol := -3.0 if mine else -6.0
+	match kind:
+		"rapid":
+			pitch = 1.18
+			vol -= 3.0
+		"triple":
+			pitch = 0.88
+	Sfx.play(self, "shot", vol, at, pitch * randf_range(0.95, 1.05))
 
 
 func _spark(p: Vector3, kind: String) -> void:

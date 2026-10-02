@@ -46,11 +46,13 @@ static func get_sound(name: String) -> AudioStreamWAV:
 		"whoosh":
 			s = _wav(_whoosh())
 		"light_go":
-			s = _wav(_beeps([[1320.0, 0.0, 0.12], [1760.0, 0.16, 0.3]]))
+			s = _wav(_chimes([[784.0, 0.0], [1046.5, 0.13]], 0.9))
 		"light_warn":
-			s = _wav(_beeps([[880.0, 0.0, 0.1]]))
+			s = _wav(_chimes([[659.3, 0.0]], 0.5))
 		"light_stop":
-			s = _wav(_buzzer())
+			s = _wav(_chimes([[523.3, 0.0], [392.0, 0.16]], 1.0))
+		"shot":
+			s = _wav(_shot())
 		"whistle":
 			s = _wav(_whistle())
 		_:
@@ -350,7 +352,47 @@ static func _beeps(notes: Array) -> PackedFloat32Array:
 	return b
 
 
-## Red light: a short, harsh buzzer.
+## Soft chimes (the traffic lights): sine tones with a gentle strike and a long decay, a little
+## octave shimmer. notes: [[frequency, start]], length in seconds.
+static func _chimes(notes: Array, length: float) -> PackedFloat32Array:
+	var b := _buf(length)
+	for i in b.size():
+		var t := float(i) / RATE
+		var v := 0.0
+		for n in notes:
+			var lt := t - float(n[1])
+			if lt >= 0.0:
+				var env := minf(lt * 150.0, 1.0) * exp(-lt * 6.0)
+				var ph := TAU * float(n[0]) * lt
+				v += (sin(ph) + sin(ph * 2.0) * 0.18 * exp(-lt * 12.0)) * env
+		b[i] = v * 0.35 * minf((length - t) * 30.0, 1.0)
+	return b
+
+
+## A gun shot: the sharp crack, the bang (noise getting darker), a low punch and a short echo off
+## the walls.
+static func _shot() -> PackedFloat32Array:
+	var b := _buf(0.6)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var lp := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * (0.55 * exp(-t * 9.0) + 0.06)
+		var crack := n * exp(-t * 110.0)
+		var body := lp * exp(-t * 13.0)
+		var thump := sin(TAU * (95.0 - 60.0 * t) * t) * exp(-t * 24.0)
+		b[i] = crack * 0.55 + body * 1.5 + thump * 0.9
+	var echo := int(0.085 * RATE)
+	for i in range(b.size() - 1, echo, -1):
+		b[i] += b[i - echo] * 0.22
+	for i in b.size():
+		b[i] = tanh(b[i] * 1.2) * 0.85
+	return b
+
+
+## Red light: a short, harsh buzzer (no longer used by the traffic lights).
 static func _buzzer() -> PackedFloat32Array:
 	var b := _buf(0.55)
 	for i in b.size():

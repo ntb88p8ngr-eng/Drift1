@@ -14,4 +14,15 @@ All models were downloaded from Blend Swap and converted with `tools/convert_car
 | `gallardo.glb` | Lamborghini Gallardo | "Lamborghini Gallardo + Interior + Cycles" by Neubi – http://www.blendswap.com/blends/view/67469 | CC-BY-SA 3.0, Fan Art (non-commercial) |
 | `aventador.glb` | Lamborghini Aventador | "Lamborghini Aventador (For games)" by Shadman – http://www.blendswap.com/blends/view/82620 | CC-BY 3.0, Fan Art (non-commercial) |
 
+## Traffic cars (`traffic/`)
+
+Converted with the same script (`camry`, `impreza`, `civic` – each also as a light `_lo` version for
+the distance). The Camry got new modelled wheels (the source wheels did not survive the reduction).
+
+| File | Model | Author / Source | License |
+|---|---|---|---|
+| `traffic/camry.glb` | Toyota Camry 2001 | Blend Swap blend #94098 "Toyota Camry 2001" – http://www.blendswap.com/blends/view/94098 | CC-BY 3.0, Fan Art (non-commercial) |
+| `traffic/impreza.glb` | Subaru Impreza WRX STI | "Subaru Impreza WRX STI" by lubomircenovsky – http://www.blendswap.com/blends/view/47523 | CC-BY-SA 3.0 |
+| `traffic/civic.glb` | Honda Civic Type-R EP3 2005 | "Honda Civic Type-R EP3 2005" by heraSK – http://www.blendswap.com/blends/view/76289 | CC-BY-SA 3.0, Fan Art (non-commercial) |
+
 Brand names are used only to describe the real cars the models depict.
