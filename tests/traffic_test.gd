@@ -10,7 +10,7 @@ func _ready() -> void:
 	Game.persist = false
 	var world := World.new()
 	world.setup({"track": "tokyo", "mode": "free", "laps": 1, "time_of_day": "day", "weather": "dry",
-		"day_cycle": 0, "weather_seed": 3, "online": false, "traffic": true})
+		"day_cycle": 0, "weather_seed": 3, "online": false, "traffic": 3})
 	add_child(world)
 	if not world.is_loaded:
 		await world.loaded
@@ -36,7 +36,7 @@ func _ready() -> void:
 	var block_p := fposmod(float(t0["progress"]) + 30.0, tr.length)
 	var i: int = tr.index_at(block_p)
 	var car = world.local_car
-	car.place(Transform3D(Basis.looking_at(tr.tangents[i], Vector3.UP), tr.edge_point(i, tr.half_w * tf.LANE) + Vector3(0, 0.6, 0)))
+	car.place(Transform3D(Basis.looking_at(tr.tangents[i], Vector3.UP), tr.edge_point(i, tr.half_w * float(t0["lane"])) + Vector3(0, 0.6, 0)))
 	car.freeze = true         # parked: stays put whatever happens
 	var start_pos: Vector3 = car.global_position
 	for f in 120 * 8:

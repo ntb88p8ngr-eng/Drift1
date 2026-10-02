@@ -158,7 +158,7 @@ func _person_raw(p: Vector3, look_at: Vector3) -> void:
 	var b := Basis.looking_at(d.normalized(), Vector3.UP)
 	var sc := rng.randf_range(0.9, 1.08)
 	var shirt: Color = Crowd.SHIRTS[rng.randi() % Crowd.SHIRTS.size()]
-	_add("person", Transform3D(b.scaled(Vector3(sc, sc * rng.randf_range(0.95, 1.06), sc)), p), Color(shirt.r, shirt.g, shirt.b, rng.randf()))
+	_add("person", Transform3D((b * Basis.from_scale(Vector3(sc, sc * rng.randf_range(0.95, 1.06), sc))), p), Color(shirt.r, shirt.g, shirt.b, rng.randf()))
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ func _camp(i: int, side: float) -> bool:
 	var bp = spot.call(2.0, -r, r, -r, r)
 	if bp != null:
 		_add("grill", Transform3D(Basis(Vector3.UP, rng.randf() * TAU), bp))
-		_add("fire", Transform3D(Basis.IDENTITY.scaled(Vector3(0.45, 0.25, 0.45)), bp + Vector3(0, 0.82, 0)), Color(1, 1, 1, rng.randf()))
+		_add("fire", Transform3D((Basis.IDENTITY * Basis.from_scale(Vector3(0.45, 0.25, 0.45))), bp + Vector3(0, 0.82, 0)), Color(1, 1, 1, rng.randf()))
 		for k in rng.randi_range(2, 5):
 			var a := rng.randf_range(0.0, TAU)
 			_person(bp + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.9, 1.5), bp)
@@ -287,7 +287,7 @@ func _camp(i: int, side: float) -> bool:
 		if p == null:
 			continue
 		var col: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
-		_add("tent", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.05), s * long)), p),
+		_add("tent", Transform3D((Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s * rng.randf_range(0.85, 1.05), s * long))), p),
 			Color(col.r, col.g, col.b, 1))
 	# people walking about
 	var walkers := rng.randi_range(5, 12) if big else rng.randi_range(2, 6)
@@ -367,7 +367,7 @@ func _string_lights(a: Vector3, b: Vector3) -> void:
 	# the wire
 	var mid := (a + b) * 0.5 - Vector3(0, l * 0.04, 0)
 	var dir := b - a
-	_add("wire", Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP).scaled(Vector3(1, 1, l)), mid))
+	_add("wire", Transform3D((Basis.looking_at(dir.normalized(), Vector3.UP) * Basis.from_scale(Vector3(1, 1, l))), mid))
 
 
 ## Gravel paths linking neighbouring camps on the same side (where the way is clear of the road).
@@ -412,6 +412,9 @@ func _spectators(i: int, side: float) -> void:
 	var base: Vector3 = scenery._roadside(i, 2.6, side)
 	if track.samples[i].y > 0.15:
 		return        # on the expressway: nobody stands up there
+	if track.in_wall_gap(i, side) or track.in_wall_gap((i + 4) % track.sample_count(), side) \
+			or track.in_wall_gap((i - 4 + track.sample_count()) % track.sample_count(), side):
+		return        # an opening in the barrier (side street, driveway): nobody stands in it
 	if not _ok(base, 1.5) or not scenery.free_at(base, 1.0, 1.5):
 		return
 	var along: Vector3 = track.tangents[i]

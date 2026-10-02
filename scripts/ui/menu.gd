@@ -282,9 +282,9 @@ func _build_single() -> void:
 	_add(bot_rows)
 	_add(graffiti_row)
 	_add(party_rows)
-	var traffic_opt := UiKit.option(["Aus", "An – Autos im normalen Stadtverkehr"], 1 if bool(Game.settings.get("traffic", false)) else 0, func(i):
-		Game.set_setting("traffic", i == 1))
-	traffic_opt.tooltip_text = "NPC-Autos fahren auf der rechten Spur mit (bremsen für alles vor ihnen). Nur offline, nicht auf Playground und Grüner Hölle."
+	var traffic_opt := UiKit.option(["Aus", "Wenig (6 / km)", "Mittel (12 / km)", "Viel (20 / km)", "Rushhour (30 / km)"], clampi(int(Game.settings.get("traffic", 0)), 0, 4), func(i):
+		Game.set_setting("traffic", i))
+	traffic_opt.tooltip_text = "NPC-Autos fahren auf beiden Spuren mit (bremsen für alles vor ihnen). Nur offline, nicht auf Playground und Grüner Hölle."
 	_add(UiKit.labeled("Verkehr", traffic_opt))
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))

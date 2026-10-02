@@ -168,7 +168,7 @@ var settings := {
 	"bots": 0,
 	"bot_level": 1,
 	"party": false,
-	"traffic": false,
+	"traffic": 0,       # NPC traffic density 0 (off) .. 4 (rush hour), see traffic.gd
 	"party_games": 3,
 	"party_coins": 5,
 	"time_of_day": "dusk",
@@ -494,6 +494,7 @@ func load_settings() -> void:
 		settings["burble"] = {}
 	if not (settings.get("response") is Dictionary):
 		settings["response"] = {}
+	settings["traffic"] = (2 if settings["traffic"] else 0) if settings["traffic"] is bool else clampi(int(settings["traffic"]), 0, 4)
 	if not (settings.get("bindings") is Dictionary):
 		settings["bindings"] = {}
 	apply_bindings()

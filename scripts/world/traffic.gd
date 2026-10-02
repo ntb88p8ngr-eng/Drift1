@@ -9,7 +9,9 @@ const Props = preload("res://scripts/world/prop_meshes.gd")
 const KINDS := ["car_sedan", "car_sedan", "car_hatch", "car_hatch", "car_kei", "car_van"]
 const PAINTS := [Color(0.92, 0.92, 0.9), Color(0.1, 0.1, 0.11), Color(0.55, 0.56, 0.58), Color(0.62, 0.05, 0.05),
 	Color(0.08, 0.18, 0.5), Color(0.75, 0.72, 0.62), Color(0.95, 0.75, 0.1), Color(0.15, 0.3, 0.2)]
-const LANE := 0.42            # lateral position: share of the half width, right of the centreline
+const LANE := 0.42            # lateral position of the lanes: share of the half width either side
+## Density levels (menu "Verkehr"): cars per km of lap.
+const DENSITY := [0.0, 6.0, 12.0, 20.0, 30.0]
 const GAP := 14.0             # metres they keep to the car in front
 
 var world
@@ -18,6 +20,7 @@ var cars: Array = []          # {body, progress, v, v_want, size}
 var _rng := RandomNumberGenerator.new()
 
 
+## count: number of cars (spread over the lap, every second one in the left lane)
 func setup(p_world, count: int) -> void:
 	world = p_world
 	track = world.track
@@ -70,7 +73,9 @@ func setup(p_world, count: int) -> void:
 		# spread over the lap, away from the start grid
 		var prog := fposmod(120.0 + L * (k + _rng.randf_range(0.0, 0.5)) / count, L)
 		var v_want := _rng.randf_range(11.0, 17.0)       # 40 – 60 km/h
-		cars.append({"body": body, "progress": prog, "v": v_want, "v_want": v_want, "size": size})
+		# two lanes in the driving direction (the city streets are one-way): right and left
+		var lane := (1.0 if k % 2 == 0 else -1.0) * LANE
+		cars.append({"body": body, "progress": prog, "v": v_want, "v_want": v_want, "size": size, "lane": lane})
 		_place(cars[k])
 
 
@@ -97,10 +102,10 @@ func _physics_process(delta: float) -> void:
 		var prog := fposmod(float(track.dists[int(pr[0])]) - float(track.start_dist), L)
 		obstacles.append([prog, float(pr[2]), maxf(float(c.forward_speed), 0.0)])
 	for t in cars:
-		obstacles.append([float(t["progress"]), float(track.half_w) * LANE, float(t["v"])])
+		obstacles.append([float(t["progress"]), float(track.half_w) * float(t["lane"]), float(t["v"])])
 	for t in cars:
 		var prog: float = t["progress"]
-		var lane: float = float(track.half_w) * LANE
+		var lane: float = float(track.half_w) * float(t["lane"])
 		var want: float = t["v_want"]
 		# slower in tight corners
 		var i: int = track.index_at(prog + 12.0)
@@ -132,7 +137,7 @@ func _place(t: Dictionary) -> void:
 	var n: int = track.sample_count()
 	var i2: int = (i + 1) % n
 	var f := clampf((prog - fposmod(float(track.dists[i]) - float(track.start_dist), float(track.length))) / float(track.SPACING), 0.0, 1.0)
-	var lane: float = float(track.half_w) * LANE
+	var lane: float = float(track.half_w) * float(t["lane"])
 	var a: Vector3 = track.edge_point(i, lane)
 	var b: Vector3 = track.edge_point(i2, lane)
 	var p := a.lerp(b, f) + Vector3(0, float(track.ROAD_Y), 0)

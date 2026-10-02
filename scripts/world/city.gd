@@ -168,7 +168,7 @@ func _person(p: Vector3, look_at: Vector3) -> void:
 	# city crowd: more dark suits and white shirts
 	if rng.randf() < 0.45:
 		shirt = [Color(0.08, 0.08, 0.1), Color(0.2, 0.2, 0.24), Color(0.92, 0.92, 0.94)][rng.randi() % 3]
-	_add("person", Transform3D(Basis.looking_at(d.normalized(), Vector3.UP).scaled(Vector3(sc, sc, sc)), Vector3(p.x, 0.0, p.z)), Color(shirt.r, shirt.g, shirt.b, rng.randf()))
+	_add("person", Transform3D((Basis.looking_at(d.normalized(), Vector3.UP) * Basis.from_scale(Vector3(sc, sc, sc))), Vector3(p.x, 0.0, p.z)), Color(shirt.r, shirt.g, shirt.b, rng.randf()))
 
 
 # ---------------------------------------------------------------------------
@@ -432,16 +432,16 @@ func _blocks() -> void:
 
 func _building(p: Vector3, basis: Basis, w: float, dep: float, hgt: float, d: float) -> void:
 	var f := rng.randi() % _facade_mats.size()
-	var xf := Transform3D(basis.scaled(Vector3(w, hgt, dep)), p + Vector3(0, hgt * 0.5, 0))
+	var xf := Transform3D((basis * Basis.from_scale(Vector3(w, hgt, dep))), p + Vector3(0, hgt * 0.5, 0))
 	_add("bld_%d" % (f + 1), xf)
-	_add("roof", Transform3D(basis.scaled(Vector3(w + 0.4, 0.5, dep + 0.4)), p + Vector3(0, hgt + 0.25, 0)))
+	_add("roof", Transform3D((basis * Basis.from_scale(Vector3(w + 0.4, 0.5, dep + 0.4))), p + Vector3(0, hgt + 0.25, 0)))
 	if rng.randf() < 0.55 and hgt < 80.0:
 		_add("roofstuff", Transform3D(basis.rotated(Vector3.UP, rng.randf_range(0.0, PI)), p + Vector3(rng.randf_range(-w, w) * 0.2, hgt + 0.5, rng.randf_range(-dep, dep) * 0.2)))
 	# a setback crown on some towers
 	if hgt > 70.0 and rng.randf() < 0.5:
 		var hc := rng.randf_range(10.0, 25.0)
-		_add("bld_%d" % ((f + 3) % _facade_mats.size() + 1), Transform3D(basis.scaled(Vector3(w * 0.65, hc, dep * 0.65)), p + Vector3(0, hgt + hc * 0.5, 0)))
-		_add("roof", Transform3D(basis.scaled(Vector3(w * 0.65 + 0.3, 0.5, dep * 0.65 + 0.3)), p + Vector3(0, hgt + hc + 0.25, 0)))
+		_add("bld_%d" % ((f + 3) % _facade_mats.size() + 1), Transform3D((basis * Basis.from_scale(Vector3(w * 0.65, hc, dep * 0.65))), p + Vector3(0, hgt + hc * 0.5, 0)))
+		_add("roof", Transform3D((basis * Basis.from_scale(Vector3(w * 0.65 + 0.3, 0.5, dep * 0.65 + 0.3))), p + Vector3(0, hgt + hc + 0.25, 0)))
 		if rng.randf() < 0.5:
 			var tip := MeshKit.sphere_node(0.7, scenery._glow_material(Color(1.0, 0.1, 0.05), 0.5, 6.0), p + Vector3(0, hgt + hc + 1.0, 0))
 			add_child(tip)
@@ -464,10 +464,10 @@ func _building(p: Vector3, basis: Basis, w: float, dep: float, hgt: float, d: fl
 		var along: Vector3 = n.cross(Vector3.UP).normalized()
 		var fb := Basis(along, Vector3.UP, -n)        # -Z of the frame looks out of the facade
 		var front := p + n * (half + 0.05)
-		_add("shopfront", Transform3D(fb.scaled(Vector3(face_w * 0.9, 2.8, 0.15)), front + Vector3(0, 1.6, 0)))
+		_add("shopfront", Transform3D((fb * Basis.from_scale(Vector3(face_w * 0.9, 2.8, 0.15))), front + Vector3(0, 1.6, 0)))
 		if rng.randf() < 0.7:
 			var ac: Color = SHOP_COLS[rng.randi() % SHOP_COLS.size()]
-			_add("awning", Transform3D(fb.scaled(Vector3(face_w * 0.85, 1.0, 1.0)), front + Vector3(0, 3.3, 0)), Color(ac.r, ac.g, ac.b, 1))
+			_add("awning", Transform3D((fb * Basis.from_scale(Vector3(face_w * 0.85, 1.0, 1.0))), front + Vector3(0, 3.3, 0)), Color(ac.r, ac.g, ac.b, 1))
 		# vertical neon signs sticking out from the corners, a horizontal one over the shop
 		for k in rng.randi_range(1, 3):
 			var sc: Color = SHOP_COLS[rng.randi() % SHOP_COLS.size()]
@@ -476,14 +476,14 @@ func _building(p: Vector3, basis: Basis, w: float, dep: float, hgt: float, d: fl
 				break
 			var sx := rng.randf_range(-face_w * 0.45, face_w * 0.45)
 			var sp: Vector3 = front + along * sx + n * 0.6 + Vector3(0, 4.2 + sh * 0.5, 0)
-			_add("sign", Transform3D(Basis(n, Vector3.UP, along).scaled(Vector3(1.0, sh, 0.25)), sp), Color(sc.r, sc.g, sc.b, rng.randf()))
+			_add("sign", Transform3D((Basis(n, Vector3.UP, along) * Basis.from_scale(Vector3(1.0, sh, 0.25))), sp), Color(sc.r, sc.g, sc.b, rng.randf()))
 		if rng.randf() < 0.6:
 			var hc: Color = SHOP_COLS[rng.randi() % SHOP_COLS.size()]
-			_add("sign", Transform3D(fb.rotated(fb.z, PI * 0.5).scaled(Vector3(1.2, face_w * 0.7, 0.2)), front + Vector3(0, 4.0, 0) + n * 0.12), Color(hc.r, hc.g, hc.b, rng.randf()))
+			_add("sign", Transform3D((fb.rotated(fb.z, PI * 0.5) * Basis.from_scale(Vector3(1.2, face_w * 0.7, 0.2))), front + Vector3(0, 4.0, 0) + n * 0.12), Color(hc.r, hc.g, hc.b, rng.randf()))
 		# billboard on the roof of the low buildings that face the road
 		if hgt < 30.0 and rng.randf() < 0.25:
 			var bc: Color = SHOP_COLS[rng.randi() % SHOP_COLS.size()]
-			_add("sign", Transform3D(fb.rotated(fb.z, PI * 0.5).scaled(Vector3(5.0, face_w * 0.8, 0.3)), p + Vector3(0, hgt + 3.0, 0) + n * (half - 1.0)), Color(bc.r, bc.g, bc.b, rng.randf()))
+			_add("sign", Transform3D((fb.rotated(fb.z, PI * 0.5) * Basis.from_scale(Vector3(5.0, face_w * 0.8, 0.3))), p + Vector3(0, hgt + 3.0, 0) + n * (half - 1.0)), Color(bc.r, bc.g, bc.b, rng.randf()))
 		_stats["shops"] = int(_stats.get("shops", 0)) + 1
 	_stats["buildings"] = int(_stats.get("buildings", 0)) + 1
 
@@ -622,8 +622,8 @@ func _gantry_sign(progress: float) -> void:
 # Scramble crossing
 # ---------------------------------------------------------------------------
 func _crossing() -> void:
-	# on the start avenue, 210 m into the lap (the long straight north)
-	_crossing_p = 210.0
+	# on the start avenue, 90 m after the start line (the middle of the long straight north)
+	_crossing_p = 90.0
 	_crossing_i = track.index_at(_crossing_p)
 	var i := _crossing_i
 	var c: Vector3 = track.samples[i]
@@ -949,7 +949,7 @@ func _street_furniture() -> void:
 				if scenery.free_at(tp, 0.8, -100.0) and _road_dist(tp) > float(track.wall_base) + 1.0:
 					var kind := "sakura" if _sakura_zone(tp) else "tree"
 					var sc := rng.randf_range(0.85, 1.15)
-					_add(kind, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc, sc)), tp))
+					_add(kind, Transform3D((Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sc, sc, sc))), tp))
 					if kind == "sakura":
 						_sakura_spots.append(tp)
 					scenery.occupy(tp, 1.2)
@@ -1042,7 +1042,7 @@ func _park() -> void:
 		if absf(d - r * 0.62) < 2.5 or not scenery.free_at(tp, 1.5, -100.0):
 			continue
 		var sc := rng.randf_range(0.9, 1.3)
-		_add("sakura", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc, sc)), tp))
+		_add("sakura", Transform3D((Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sc, sc, sc))), tp))
 		_sakura_spots.append(tp)
 		scenery.occupy(tp, 2.0)
 		if rng.randf() < 0.35:

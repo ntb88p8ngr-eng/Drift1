@@ -248,11 +248,12 @@ func _spawn_cars() -> void:
 		local_car.place(track.grid_transform(0))
 	_spawn_bots(night)
 	# optional NPC traffic (offline; not on the open playground pad or the 20 km Nordschleife)
-	if bool(config.get("traffic", false)) and not online and track.track_id != "playground" and not track.elevated:
+	var dens := clampi(int(config.get("traffic", 0)), 0, Traffic.DENSITY.size() - 1)
+	if dens > 0 and not online and track.track_id != "playground" and not track.elevated:
 		traffic = Traffic.new()
 		traffic.name = "Traffic"
 		add_child(traffic)
-		traffic.setup(self, clampi(int(track.length / 150.0), 6, 24))
+		traffic.setup(self, maxi(int(track.length / 1000.0 * float(Traffic.DENSITY[dens])), 4))
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
 	local_car.headlights = night >= 0.4
 	_auto_lights = local_car.headlights
