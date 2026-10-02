@@ -341,7 +341,9 @@ func _spawn_bots(night: float) -> void:
 func _make_car(info: Dictionary, remote: bool, bot := false) -> Car:
 	var car := Car.new()
 	car.car_id = str(info.get("car", "r34"))
-	car.paint = Game.get_paint(str(info.get("paint", "red")), str(info.get("custom_color", "")))
+	car.paint = Game.get_paint(str(info.get("paint", "red")), str(info.get("custom_color", "")), str(info.get("paint_finish", "gloss")))
+	if info.get("rims") is Dictionary:
+		car.rims_cfg = info["rims"]
 	car.player_name = str(info.get("name", "Driver"))
 	car.is_remote = remote
 	car.is_bot = bot

@@ -222,6 +222,8 @@ var settings := {
 	"burble": {},
 	"response": {},
 	"underglow": {},
+	"rims": {},
+	"paint_finish": "gloss",
 	"bindings": {},     # action -> {"key": physical keycode, "pad": [kind 0 button / 1 axis, index, axis sign]}
 }
 
@@ -721,14 +723,33 @@ func get_car(car_id: String) -> Dictionary:
 	return CARS["r34"]
 
 
-func get_paint(paint_id: String, custom_html: String = "") -> Dictionary:
+func get_paint(paint_id: String, custom_html: String = "", finish: String = "gloss") -> Dictionary:
+	var out: Dictionary = PAINTS[0]
 	if paint_id == "custom" and custom_html != "":
 		var c := Color.from_string(custom_html, Color(0.6, 0.03, 0.03))
-		return {"id": "custom", "name": "Eigene Farbe", "color": c, "metallic": 0.1, "roughness": 0.2}
-	for p in PAINTS:
-		if p["id"] == paint_id:
-			return p
-	return PAINTS[0]
+		out = {"id": "custom", "name": "Eigene Farbe", "color": c, "metallic": 0.1, "roughness": 0.2}
+	else:
+		for p in PAINTS:
+			if p["id"] == paint_id:
+				out = p
+	out = out.duplicate()
+	out["finish"] = finish
+	return out
+
+
+## Rims per car: {style: car_body.gd RIM_STYLES index (0 = the car's own), color: RIM_COLORS index}
+func get_rims(car_id: String) -> Dictionary:
+	var all: Dictionary = settings.get("rims", {})
+	var r: Dictionary = all.get(car_id, {})
+	return {"style": int(r.get("style", 0)), "color": int(r.get("color", 0))}
+
+
+func set_rims(car_id: String, cfg: Dictionary) -> void:
+	var all: Dictionary = settings.get("rims", {})
+	all[car_id] = cfg
+	settings["rims"] = all
+	save_settings()
+	settings_changed.emit()
 
 
 # ---------------------------------------------------------------------------
@@ -897,6 +918,8 @@ func local_player_info() -> Dictionary:
 		"car": settings["car"],
 		"paint": settings["paint"],
 		"custom_color": settings["custom_color"],
+		"paint_finish": str(settings.get("paint_finish", "gloss")),
+		"rims": get_rims(str(settings["car"])),
 		"transmission": settings["transmission"],
 		"burble": get_burble(str(settings["car"])),
 		"underglow": get_underglow(str(settings["car"])),

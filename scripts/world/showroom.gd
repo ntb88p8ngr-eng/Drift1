@@ -250,7 +250,7 @@ func rebuild_car() -> void:
 	car = Car.new()
 	car.is_display = true
 	car.car_id = Game.settings["car"]
-	car.paint = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"])
+	car.paint = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
 	turntable.add_child(car)
 	car.headlights = true
 	car.body.set_lights(true, false, false)
@@ -258,7 +258,7 @@ func rebuild_car() -> void:
 
 func refresh_paint() -> void:
 	if car:
-		car.set_paint(Game.get_paint(Game.settings["paint"], Game.settings["custom_color"]))
+		car.set_paint(Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss"))))
 		car.set_underglow(Game.get_underglow(car.car_id))
 
 

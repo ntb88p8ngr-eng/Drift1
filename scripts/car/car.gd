@@ -127,6 +127,7 @@ const HB_ALIGN := 1.7              # how fast the nose is turned towards the dir
 var grounded_wheels := 0
 var headlights := false
 var underglow_cfg: Dictionary = {}   # empty = the local player's setting (Game.get_underglow)
+var rims_cfg: Dictionary = {}        # empty = the local player's setting (Game.get_rims)
 var underglow: Node3D
 var _engine_stage := 0
 var spin_hold := SPIN_HOLD     # per car: spinning rear wheels grip again below this share of the grip
@@ -226,6 +227,9 @@ func _ready() -> void:
 	underglow.name = "Underglow"
 	body.add_child(underglow)
 	set_underglow(underglow_cfg if not underglow_cfg.is_empty() or is_remote or is_bot else Game.get_underglow(car_id))
+	if rims_cfg.is_empty() and not is_remote and not is_bot:
+		rims_cfg = Game.get_rims(car_id)
+	body.apply_rims(rims_cfg)
 
 	_setup_physics()
 	_setup_wheels()
@@ -282,6 +286,10 @@ func _on_settings_changed() -> void:
 		var ug := Game.get_underglow(car_id)
 		if underglow and ug != underglow.cfg:
 			set_underglow(ug)
+		var rc := Game.get_rims(car_id)
+		if body and rc != rims_cfg:
+			rims_cfg = rc
+			body.apply_rims(rc)
 
 
 func set_underglow(cfg: Dictionary) -> void:

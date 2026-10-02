@@ -5,6 +5,8 @@ extends CanvasLayer
 const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const TexKit = preload("res://scripts/util/tex_kit.gd")
+const CarBody = preload("res://scripts/car/car_body.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 
@@ -216,7 +218,7 @@ func _build_main() -> void:
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
 	_add(UiKit.spacer(18))
 	var car: Dictionary = Game.get_car(Game.settings["car"])
-	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"])
+	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
 	_add(UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT))
 	_add(UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM))
 	_add(UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD))
@@ -400,6 +402,36 @@ func _build_garage() -> void:
 			_color_picker.visible = false
 			Game.set_setting("paint", Game.PAINTS[i]["id"])
 		main.refresh_showroom(false), 280), _color_picker])))
+	# paint finish
+	var fin_names: Array = []
+	var fin_idx := 0
+	for i in TexKit.PAINT_FINISHES.size():
+		fin_names.append(TexKit.PAINT_FINISHES[i][1])
+		if TexKit.PAINT_FINISHES[i][0] == str(Game.settings.get("paint_finish", "gloss")):
+			fin_idx = i
+	_add(UiKit.labeled("Lack-Effekt", UiKit.option(fin_names, fin_idx, func(i):
+		Game.set_setting("paint_finish", TexKit.PAINT_FINISHES[i][0])
+		main.refresh_showroom(false))))
+	# rims (per car)
+	var rims: Dictionary = Game.get_rims(str(Game.settings["car"]))
+	var style_names: Array = []
+	for st in CarBody.RIM_STYLES:
+		style_names.append(st[0])
+	var col_names: Array = []
+	for cl in CarBody.RIM_COLORS:
+		col_names.append(cl[0])
+	var rim_col := UiKit.option(col_names, int(rims["color"]), func(i):
+		var r2 := Game.get_rims(str(Game.settings["car"]))
+		r2["color"] = i
+		Game.set_rims(str(Game.settings["car"]), r2)
+		main.refresh_showroom(true), 180)
+	rim_col.disabled = int(rims["style"]) == 0
+	_add(UiKit.labeled("Felgen", UiKit.row([UiKit.option(style_names, int(rims["style"]), func(i):
+		var r2 := Game.get_rims(str(Game.settings["car"]))
+		r2["style"] = i
+		rim_col.disabled = i == 0
+		Game.set_rims(str(Game.settings["car"]), r2)
+		main.refresh_showroom(true), 280), rim_col])))
 	_add(UiKit.labeled("Getriebe", UiKit.option(["Automatik (Standard)", "Manuell (E/Q schalten)"], 0 if Game.settings["transmission"] == "auto" else 1, func(i):
 		Game.set_setting("transmission", "auto" if i == 0 else "manual"))))
 	_car_desc = UiKit.label("", 16, UiKit.TEXT_DIM)

@@ -850,10 +850,49 @@ static func paint_material(paint: Dictionary) -> StandardMaterial3D:
 	return m
 
 
+## Paint finishes (garage "Lack-Effekt"): [id, name]
+const PAINT_FINISHES := [["gloss", "Glanz"], ["metallic", "Metallic"], ["pearl", "Perleffekt"], ["candy", "Candy"],
+	["matte", "Matt"], ["satin", "Seidenmatt"], ["chrome", "Chrom"]]
+
+
 static func apply_paint(m: StandardMaterial3D, paint: Dictionary) -> void:
-	m.albedo_color = paint.get("color", Color(0.62, 0.025, 0.03))
+	var col: Color = paint.get("color", Color(0.62, 0.025, 0.03))
+	m.albedo_color = col
 	m.metallic = float(paint.get("metallic", 0.1))
 	m.roughness = float(paint.get("roughness", 0.2))
+	m.clearcoat_enabled = true
+	m.clearcoat = 1.0
+	m.clearcoat_roughness = 0.03
+	m.rim_enabled = false
+	match str(paint.get("finish", "gloss")):
+		"metallic":
+			m.metallic = maxf(m.metallic, 0.7)
+			m.roughness = 0.32
+		"pearl":
+			# a pale sheen that comes up at grazing angles over the colour
+			m.metallic = 0.35
+			m.roughness = 0.24
+			m.rim_enabled = true
+			m.rim = 0.65
+			m.rim_tint = 0.25
+		"candy":
+			m.albedo_color = Color(col.r * 0.8, col.g * 0.8, col.b * 0.8)
+			m.metallic = 0.85
+			m.roughness = 0.12
+			m.clearcoat_roughness = 0.0
+		"matte":
+			m.metallic = 0.0
+			m.roughness = 0.82
+			m.clearcoat_enabled = false
+		"satin":
+			m.metallic = 0.2
+			m.roughness = 0.5
+			m.clearcoat_enabled = false
+		"chrome":
+			m.albedo_color = col.lerp(Color(0.9, 0.9, 0.92), 0.35)
+			m.metallic = 1.0
+			m.roughness = 0.04
+			m.clearcoat_enabled = false
 
 
 static func std(color: Color, roughness := 0.5, metallic := 0.0, emission := Color.BLACK, emission_energy := 0.0) -> StandardMaterial3D:

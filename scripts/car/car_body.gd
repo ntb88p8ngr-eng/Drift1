@@ -901,11 +901,53 @@ func _build_interior() -> void:
 # ---------------------------------------------------------------------------
 # Wheels (lathe-turned tyre + rim, shared per body type)
 # ---------------------------------------------------------------------------
+## Rim tuning: [name, spokes, twin spokes]; 0 = the car's own wheels.
+const RIM_STYLES := [["Original", 0, false], ["5 Speichen", 5, false], ["Doppelspeichen", 5, true], ["10 Speichen", 10, false],
+	["Y-Speichen", 6, true], ["8 Speichen", 8, false], ["Turbofan", 20, false]]
+## [name, colour, roughness]
+const RIM_COLORS := [["Silber", Color(0.75, 0.76, 0.78), 0.28], ["Schwarz", Color(0.04, 0.04, 0.045), 0.35],
+	["Gunmetal", Color(0.22, 0.23, 0.25), 0.3], ["Gold", Color(0.78, 0.57, 0.2), 0.25], ["Bronze", Color(0.45, 0.28, 0.14), 0.3],
+	["Weiß", Color(0.9, 0.9, 0.9), 0.35], ["Chrom", Color(0.95, 0.95, 0.97), 0.04]]
+var wheel_r := 0.33
+var wheel_w := 0.24
+
+
+## Puts the chosen rims on all four wheels (style 0: the car's own again).
+func apply_rims(cfg: Dictionary) -> void:
+	var style := clampi(int(cfg.get("style", 0)), 0, RIM_STYLES.size() - 1)
+	var ci := clampi(int(cfg.get("color", 0)), 0, RIM_COLORS.size() - 1)
+	var mesh: ArrayMesh = null
+	if style > 0:
+		var st: Array = RIM_STYLES[style]
+		var cl: Array = RIM_COLORS[ci]
+		mesh = _make_wheel(wheel_r, wheel_w, int(st[1]), bool(st[2]), cl[1], float(cl[2]), "%d_%d" % [style, ci])
+	for i in wheel_nodes.size():
+		var spin: Node3D = wheel_nodes[i][1]
+		var old := spin.get_node_or_null("CustomRim")
+		if old:
+			spin.remove_child(old)
+			old.free()
+		for c in spin.get_children():
+			(c as Node3D).visible = mesh == null
+		if mesh:
+			var mi := MeshKit.mesh_instance(mesh)
+			mi.name = "CustomRim"
+			if i % 2 == 0:
+				mi.rotation.y = PI
+			spin.add_child(mi)
+
+
 func _wheel_mesh() -> ArrayMesh:
 	if _wheel_cache.has(body_id):
 		return _wheel_cache[body_id]
-	var R: float = spec["wheel_r"]
-	var w: float = spec["wheel_w"]
+	var mesh := _make_wheel(spec["wheel_r"], spec["wheel_w"], int(spec["spokes"]), bool(spec["twin"]), spec["rim"], 0.28, body_id)
+	_wheel_cache[body_id] = mesh
+	return mesh
+
+
+func _make_wheel(R: float, w: float, spokes: int, twin: bool, rim_col: Color, rim_rough: float, key: String) -> ArrayMesh:
+	if _wheel_cache.has("rim_%s_%.3f_%.3f" % [key, R, w]):
+		return _wheel_cache["rim_%s_%.3f_%.3f" % [key, R, w]]
 	var hw := w * 0.5
 	var rim_r := R * 0.69
 	# tyre
@@ -932,8 +974,6 @@ func _wheel_mesh() -> ArrayMesh:
 	var hub := [Vector2(face_x - 0.045, 0.085), Vector2(face_x - 0.028, 0.08), Vector2(face_x - 0.018, 0.05), Vector2(face_x - 0.016, 0.0)]
 	MeshKit.lathe(rst, hub, 24)
 	# spokes
-	var spokes: int = spec["spokes"]
-	var twin: bool = spec["twin"]
 	for k in spokes:
 		var a := TAU * float(k) / spokes
 		if twin:
@@ -946,13 +986,13 @@ func _wheel_mesh() -> ArrayMesh:
 		var a := TAU * float(k) / 5.0 + 0.3
 		var p := Vector3(face_x - 0.02, cos(a) * 0.058, sin(a) * 0.058)
 		MeshKit.box(rst, Transform3D(Basis.IDENTITY, p), Vector3(0.018, 0.016, 0.016), Color.WHITE)
-	var rim_mat := TexKit.std(spec["rim"], 0.28, 0.9)
+	var rim_mat := TexKit.std(rim_col, rim_rough, 0.9)
 	MeshKit.commit(rst, rim_mat, mesh)
 	# brake disc
 	var dst := MeshKit.new_st()
 	MeshKit.lathe(dst, [Vector2(hw - 0.13, R * 0.52), Vector2(hw - 0.1, R * 0.52), Vector2(hw - 0.1, R * 0.22)], 32)
 	MeshKit.commit(dst, TexKit.std(Color(0.35, 0.35, 0.37), 0.4, 0.9), mesh)
-	_wheel_cache[body_id] = mesh
+	_wheel_cache["rim_%s_%.3f_%.3f" % [key, R, w]] = mesh
 	return mesh
 
 
@@ -986,6 +1026,8 @@ func _spoke(st: SurfaceTool, a_hub: float, a_rim: float, rim_r: float, face_x: f
 
 func _build_wheels() -> void:
 	var r: float = spec["wheel_r"]
+	wheel_r = r
+	wheel_w = float(spec["wheel_w"])
 	var tr: float = spec["track"]
 	var mesh := _wheel_mesh()
 	var positions := [
@@ -1026,6 +1068,8 @@ func _build_lights() -> void:
 # Imported model
 # ---------------------------------------------------------------------------
 func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
+	wheel_r = float(m["wheel_r"])
+	wheel_w = float(m.get("wheel_w", 0.25))
 	spec = m
 	_front = -float(m["length"]) * 0.5
 	_rear = float(m["length"]) * 0.5
