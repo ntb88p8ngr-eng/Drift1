@@ -169,6 +169,7 @@ var settings := {
 	"bot_level": 1,
 	"party": false,
 	"traffic": 0,       # NPC traffic density 0 (off) .. 4 (rush hour), see traffic.gd
+	"traffic_speed": 1, # NPC traffic speed: traffic.gd SPEEDS index (30 .. 120 km/h)
 	"party_games": 3,
 	"party_coins": 5,
 	"time_of_day": "dusk",
@@ -496,6 +497,7 @@ func load_settings() -> void:
 	if not (settings.get("response") is Dictionary):
 		settings["response"] = {}
 	settings["traffic"] = (2 if settings["traffic"] else 0) if settings["traffic"] is bool else clampi(int(settings["traffic"]), 0, 4)
+	settings["traffic_speed"] = clampi(int(settings.get("traffic_speed", 1)), 0, 4)
 	if not (settings.get("bindings") is Dictionary):
 		settings["bindings"] = {}
 	apply_bindings()

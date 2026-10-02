@@ -282,10 +282,14 @@ func _build_single() -> void:
 	_add(bot_rows)
 	_add(graffiti_row)
 	_add(party_rows)
-	var traffic_opt := UiKit.option(["Aus", "Wenig (6 / km)", "Mittel (12 / km)", "Viel (20 / km)", "Rushhour (30 / km)"], clampi(int(Game.settings.get("traffic", 0)), 0, 4), func(i):
+	var traffic_opt := UiKit.option(["Aus", "Wenig (10 / km)", "Mittel (18 / km)", "Viel (28 / km)", "Rushhour (40 / km)"], clampi(int(Game.settings.get("traffic", 0)), 0, 4), func(i):
 		Game.set_setting("traffic", i))
-	traffic_opt.tooltip_text = "NPC-Autos fahren auf beiden Spuren mit (bremsen für alles vor ihnen). Nur offline, nicht auf Playground und Grüner Hölle."
+	traffic_opt.tooltip_text = "NPC-Autos fahren auf beiden Spuren mit, wechseln die Spur und bremsen für alles vor ihnen; in Neo Tokyo auch in der ganzen Stadt. Nur offline, nicht auf Playground und Grüner Hölle."
 	_add(UiKit.labeled("Verkehr", traffic_opt))
+	var speed_opt := UiKit.option(["30 km/h", "50 km/h", "70 km/h", "90 km/h", "120 km/h"], clampi(int(Game.settings.get("traffic_speed", 1)), 0, 4), func(i):
+		Game.set_setting("traffic_speed", i))
+	speed_opt.tooltip_text = "Wie schnell der Verkehr fährt (in engen Kurven und in der Stadt langsamer)."
+	_add(UiKit.labeled("Verkehrstempo", speed_opt))
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 	_add(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(Game.settings["day_cycle"]), func(m): Game.set_setting("day_cycle", m))))

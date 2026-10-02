@@ -34,6 +34,7 @@ var _prev_fwd := Vector3.ZERO
 var _swipe := 0.0
 var _stick_s := Vector2.ZERO   # smoothed right stick
 var _y_hold := -1.0            # how long (Y) has been held (-1 = not held / already used)
+var persist := true            # changes to the view (mode, zoom, height) go into the settings
 const Y_HOLD := 0.45
 
 ## Motion blur like the eye at speed: the centre (where you look) stays sharp, towards the sides the
@@ -88,6 +89,16 @@ func _ready() -> void:
 	_blur_rect.material = _blur_mat
 	_blur_rect.visible = false
 	layer.add_child(_blur_rect)
+
+
+## The standard chase view, whatever the player set up elsewhere, and nothing changed here is saved
+## (the tutorial teaches the camera from scratch).
+func use_defaults() -> void:
+	persist = false
+	set_free_look(false)
+	mode = 0
+	_zoom = 1.2
+	_tilt = 0.0
 
 
 ## Motion blur strength from the settings, the car's speed and how fast the view turns.
@@ -155,7 +166,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_look_hold = mb.pressed
 		elif mb.button_index == MOUSE_BUTTON_LEFT and not free_look:
 			_tilt_drag = mb.pressed
-			if not mb.pressed:
+			if not mb.pressed and persist:
 				Game.settings["camera_tilt"] = _tilt
 				Game.save_settings()
 		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
@@ -165,8 +176,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				# chase view: the wheel moves the camera closer / further back
 				_zoom = clampf(_zoom + step * 0.1, ZOOM_MIN, 2.4)
-				Game.settings["camera_zoom"] = _zoom
-				Game.save_settings()
+				if persist:
+					Game.settings["camera_zoom"] = _zoom
+					Game.save_settings()
 	if event is InputEventJoypadButton and event.is_action("camera_next"):
 		# gamepad (Y): a short press switches the view, held it unlocks the free camera (_process)
 		if event.is_pressed():
@@ -185,7 +197,8 @@ func _next_mode() -> void:
 	if free_look:
 		set_free_look(false)
 	mode = (mode + 1) % MODES.size()
-	Game.settings["camera_mode"] = mode
+	if persist:
+		Game.settings["camera_mode"] = mode
 
 
 func _process(delta: float) -> void:

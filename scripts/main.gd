@@ -77,6 +77,7 @@ static func offline_config() -> Dictionary:
 		"online": false,
 		"collisions": true,
 		"traffic": int(Game.settings.get("traffic", 0)),
+		"traffic_speed": int(Game.settings.get("traffic_speed", 1)),
 	}
 	# bots also race with party mode on (they wait out the minigames, see world._park_bots)
 	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0:

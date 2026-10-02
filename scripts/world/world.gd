@@ -263,12 +263,13 @@ func _spawn_cars() -> void:
 		traffic = Traffic.new()
 		traffic.name = "Traffic"
 		add_child(traffic)
-		traffic.setup(self, maxi(int(track.length / 1000.0 * float(Traffic.DENSITY[dens])), 4), traffic_cars)
+		var spd_level := clampi(int(config.get("traffic_speed", 1)), 0, Traffic.SPEEDS.size() - 1)
+		traffic.setup(self, maxi(int(track.length / 1000.0 * float(Traffic.DENSITY[dens])), 4), traffic_cars, spd_level)
 		if scenery.city != null:
 			city_traffic = CityTraffic.new()
 			city_traffic.name = "CityTraffic"
 			add_child(city_traffic)
-			city_traffic.setup(self, scenery.city.net, dens, traffic_cars)
+			city_traffic.setup(self, scenery.city.net, dens, traffic_cars, float(Traffic.SPEEDS[spd_level]))
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
 	local_car.headlights = night >= 0.4
 	_auto_lights = local_car.headlights

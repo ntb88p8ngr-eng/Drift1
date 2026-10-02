@@ -4,17 +4,24 @@ extends Node3D
 ## incoming lane to the outgoing ones. Cars follow each other, slow down for the turns, wait at a
 ## junction while something crosses their way (whoever waited longest goes first), pick a random
 ## way at each junction and turn round where a street ends at the race route (closed in race mode).
-## They brake for the players too. Moved every frame (cars far from the camera less often) and drawn
-## by traffic_cars.gd.
+## They brake for the players too, pull away and brake smoothly (the acceleration eases in), drive at
+## the speed chosen in the menu, and when a player knocks one aside it carries on from where it ended
+## up and steers back into its lane. Moved every frame (cars beyond drawing range less often) and
+## drawn by traffic_cars.gd.
 
-const DENSITY := [0.0, 3.0, 6.0, 10.0, 15.0]     # cars per km of street, both directions
-const MAX_CARS := 420
+const DENSITY := [0.0, 5.0, 9.0, 14.0, 20.0]     # cars per km of street, both directions
+const MAX_CARS := 560
 const LANE_Y := 0.03
-const ACC := 2.2
+const ACC := 2.0
 const DEC := 4.5
+const DEC_MAX := 7.5
+const JERK := 5.0
 const LAT_ACC := 2.6
-const NEAR := 260.0              # closer to the camera: updated every frame, further: every 4th
+const LAT_W := 1.3               # back into the lane after a knock: spring rate
+const NEAR := 520.0              # beyond drawing range: updated every 4th frame only
 const SEG_CELL := 32.0
+const ID_BASE := 100000          # car ids for traffic_cars.gd (the route traffic's start at 0)
+const BASE_KMH := 50.0           # the street speeds below are for this menu setting
 
 class Path:
 	var pts := PackedVector3Array()
@@ -44,6 +51,10 @@ class Car:
 	var xf := Transform3D.IDENTITY
 	var acc := 0.0
 	var id := 0
+	var a := 0.0                  # acceleration (eases towards what's needed)
+	var lat := 0.0                # off the lane after a knock (m, + right)
+	var lat_v := 0.0
+	var shaken := 0.0
 
 var world
 var render
@@ -54,12 +65,14 @@ var _rng := RandomNumberGenerator.new()
 var _time := 0.0
 var _frame := 0
 var _players: Array = []        # [position, velocity]
+var _speed_k := 1.0             # menu speed against BASE_KMH
 
 
-func setup(p_world, net, level: int, p_render) -> void:
+func setup(p_world, net, level: int, p_render, speed_kmh := BASE_KMH) -> void:
 	world = p_world
 	render = p_render
 	_rng.seed = 7171
+	_speed_k = speed_kmh / BASE_KMH
 	if render == null or not render.ok or level <= 0:
 		return
 	var t0 := Time.get_ticks_msec()
@@ -203,7 +216,7 @@ func _build(net) -> float:
 		var centre: PackedVector2Array = pc[0]
 		var w: float = pc[1]
 		var kind: String = pc[2]
-		var vmax := 14.0 if kind == "ring" else (12.0 if kind == "feeder" else (11.0 if w >= 10.0 else 8.5))
+		var vmax := (14.0 if kind == "ring" else (12.0 if kind == "feeder" else (11.0 if w >= 10.0 else 8.5))) * _speed_k
 		var ids: Array = []
 		for dir in 2:
 			var c := centre.duplicate()
@@ -482,11 +495,21 @@ func _process(delta: float) -> void:
 		c.acc = 0.0
 		_step(c, dt)
 	for c: Car in cars:
-		render.add(c.model, c.xf, c.paint, c.odo, c.brake, c.v)
+		render.add(c.model, c.xf, c.paint, c.odo, c.brake, c.v, ID_BASE + c.id)
 
 
 func _step(c: Car, dt: float) -> void:
 	var p: Path = paths[c.path]
+	# knocked by a player: carry on from where it ended up (along the lane; across it the spring
+	# below steers it back), and wait a moment
+	var e: Vector3 = render.disturbance(ID_BASE + c.id)
+	if e != Vector3.ZERO:
+		c.s = maxf(c.s + e.x, 0.0)
+		c.lat = clampf(c.lat + e.y, -12.0, 12.0)
+		c.lat_v = 0.0
+		c.v = maxf(c.v + e.x * 2.0, 0.0) * 0.5
+		c.a = minf(c.a, 0.0)
+		c.shaken = maxf(c.shaken, 1.0)
 	var want := minf(c.want, p.vmax)
 	var rem := p.length - c.s
 	# the car in front (on this path, or the first one on the next)
@@ -548,11 +571,35 @@ func _step(c: Car, dt: float) -> void:
 			var pv := maxf((pl[1] as Vector3).dot(fwd), 0.0)
 			var g := along - c.half - 2.4
 			want = minf(want, sqrt(maxf(pv * pv + 2.0 * DEC * (g - 1.5), 0.0)))
-	var nv := move_toward(c.v, want, (ACC if want > c.v else DEC * 1.6) * dt)
-	c.brake = nv < c.v - 0.3 * dt or nv < 0.3
+	if c.shaken > 0.0:
+		c.shaken -= dt
+		want = 0.0 if c.shaken > 0.6 else minf(want, 2.5)
+	# pulling away eases in (no jolts); braking comes almost at once (it has to stop at the line)
+	var a_want := clampf((want - c.v) * 1.6, -DEC_MAX, ACC)
+	var rate := JERK * 8.0 if a_want < c.a else JERK
+	c.a = move_toward(c.a, a_want, rate * dt)
+	var nv := maxf(c.v + c.a * dt, 0.0)
+	if nv <= 0.0:
+		c.a = maxf(c.a, 0.0)
+	c.brake = c.a < -0.6 or nv < 0.3
 	c.v = nv
 	c.s += nv * dt
 	c.odo += nv * dt
+	# never into the one in front on the same lane
+	var me := p.cars.find(c)
+	if me > 0:
+		var ld: Car = p.cars[me - 1]
+		var lim := ld.s - ld.half - c.half - 0.4
+		if c.s > lim:
+			c.s = maxf(lim, c.s - nv * dt)
+			c.v = minf(c.v, ld.v)
+	# back into the lane (a damped spring)
+	if c.lat != 0.0 or c.lat_v != 0.0:
+		c.lat_v += (-c.lat * LAT_W * LAT_W - 2.0 * LAT_W * c.lat_v) * dt
+		c.lat += c.lat_v * dt
+		if absf(c.lat) < 0.01 and absf(c.lat_v) < 0.01:
+			c.lat = 0.0
+			c.lat_v = 0.0
 	# on to the next path
 	while c.s >= p.length:
 		if c.next < 0:
@@ -562,6 +609,10 @@ func _step(c: Car, dt: float) -> void:
 		var q: Path = paths[c.next]
 		if q.conn and q.reserved != c and not _may_enter(q, c):
 			c.s = p.length - 0.01
+			var me2 := p.cars.find(c)
+			if me2 > 0:
+				var ld2: Car = p.cars[me2 - 1]
+				c.s = minf(c.s, ld2.s - ld2.half - c.half - 0.4)
 			c.v = 0.0
 			break
 		c.s -= p.length
@@ -574,6 +625,9 @@ func _step(c: Car, dt: float) -> void:
 		p = q
 		c.next = _choose(q)
 	c.xf = _xf(p, c.s)
+	if c.lat != 0.0:
+		var f := -c.xf.basis.z
+		c.xf.origin += Vector3(-f.z, 0, f.x).normalized() * c.lat
 
 
 ## May a car take connector q now? Nothing on (or committed to) a crossing connector, nobody there

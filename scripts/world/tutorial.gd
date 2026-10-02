@@ -14,6 +14,8 @@ var world          # world.gd
 var site: Site
 var car
 var cam: Camera3D
+var _garage_cam := false        # the fixed shot from the back of the garage while driving out
+var _garage_blend := -1.0       # then the hand-over to the chase camera (0..1)
 var state := "intro"           # intro, drive, ending, done
 var _shots: Array = []         # {"d": seconds, "enter": Callable, "update": Callable(k, t)}
 var _shot := -1
@@ -156,6 +158,8 @@ func _process(delta: float) -> void:
 	match state:
 		"drive":
 			_drive(dt)
+			if _garage_cam:
+				_update_garage_cam(delta)
 	_update_turn_arrow()
 	if _hint_open and not get_tree().paused and not world.pause_menu.visible:
 		get_tree().paused = true
@@ -401,10 +405,11 @@ func _make_hints() -> void:
 	_hints = [
 		[-1.0, "GAS & BREMSE", "[W] / [↑] / RT  –  Gas\n[S] / [↓] / LT  –  Bremse, im Stand rückwärts\n\nFahr aus der Garage die Einfahrt hinunter und bieg RECHTS auf die Strecke ab.", true],
 		[hp + 45.0, "LENKEN", "[A] [D] / [←] [→] / linker Stick  –  lenken\n\nDie Strecke ist nass und es ist dunkel: lenk sanft, gib gefühlvoll Gas.\nJe schneller du fährst, desto feiner lenkt das Auto.", true],
+		[hp + 200.0, "KAMERA", "[C] / (Y)  –  Ansicht wechseln: Verfolger, Verfolger weit, Motorhaube, Stoßstange, Dach\nMausrad  –  näher ran / weiter weg\nLinke Maustaste halten + Maus hoch/runter  –  höher / flacher\nRechte Maustaste halten  –  umschauen      [B] / (X)  –  Blick zurück\n[V] / (Y) halten  –  freie Kamera\n\nIm Tutorial startest du mit der Standard-Ansicht; im Spiel merkt sich die Kamera deine Einstellung.", true],
 		[hp + 380.0, "SCHALTEN", "Die Automatik schaltet selbst.\n[E] / RB  –  hoch,  [Q] / LB  –  runter: wie Schaltwippen, auch in der Automatik.\n[M]  –  Automatik ⇄ Manuell", true],
 		[hp + 820.0, "HANDBREMSE & DRIFTEN", "[Leertaste] / (A)  –  Handbremse\n\nKurz ziehen, einlenken, Gas geben: das Heck kommt – gegenlenken und mit dem Gas halten.\nJeder Drift bringt Punkte (DRIFT-SCORE oben). Ab 50.000 am Stück ziehst du eine Driftspur.", true],
 		[hp + 1320.0, "NITRO", "[Shift] / (B)  –  Nitro\n\nDer blaue Balken im Tacho. Am besten auf der Geraden – und nicht vor der Kurve!", true],
-		[hp + 1760.0, "LICHT & KAMERA", "[L]  –  Licht an / aus      [C]  –  Kamera wechseln\n[B]  –  Blick zurück       [R]  –  zurücksetzen, falls du feststeckst\n\nGleich kommt Aremberg: eine harte Rechtskurve. Früh bremsen!", true],
+		[hp + 1760.0, "LICHT & ZURÜCKSETZEN", "[L]  –  Licht an / aus\n[R]  –  zurücksetzen, falls du feststeckst\n\nGleich kommt Aremberg: eine harte Rechtskurve. Früh bremsen!", true],
 		[Site.EXIT_P - 420.0, "", "Kurz vor dem Adenauer Forst: rechts geht ein Waldweg ab – achte auf die Warnblinker.", false],
 		[Site.EXIT_P - 90.0, "", "Da vorne – RECHTS in den Waldweg!", false],
 	]
@@ -415,8 +420,14 @@ func _start_drive() -> void:
 	_letterbox(false)
 	_fade_to(0.0, 0.6)
 	_title_show("", "")
-	cam.current = false
-	world.camera.make_current()
+	# a fixed shot from the back of the garage: the car from behind, the open door ahead; once the
+	# car is out it hands over to the chase camera – in its standard view, not the player's own
+	world.camera.use_defaults()
+	_garage_cam = true
+	_garage_blend = -1.0
+	cam.current = true
+	cam.fov = 68.0
+	_update_garage_cam(0.0)
 	world.hud.visible = true
 	world.hud.show_message("MITTERNACHT", "Fahr zu Kenji – Waldweg vor dem Adenauer Forst", Color(1.0, 0.8, 0.5), 3.0)
 	car.controls_locked = false
@@ -432,6 +443,29 @@ func _start_drive() -> void:
 	_hint_i = 0
 	_show_hint(_hints[0])
 	_hint_i = 1
+
+
+## The camera at the back of the garage follows the car with its eyes while it rolls out; 9 m
+## outside it glides over into the chase camera.
+func _update_garage_cam(delta: float) -> void:
+	var eye := site.to_world(Vector3(Site.GARAGE_X + 0.7, Site.GF + 1.8, 3.2))
+	var cxf: Transform3D = car.visual_transform() if car.has_method("visual_transform") else car.global_transform
+	var look := cxf.origin + Vector3(0, 0.6, 0) - cxf.basis.z * 2.0
+	var fixed := Transform3D(Basis.looking_at((look - eye).normalized(), Vector3.UP), eye)
+	if _garage_blend < 0.0:
+		cam.global_transform = fixed
+		if cxf.origin.distance_to(site.car_xf.origin) > 9.0:
+			_garage_blend = 0.0
+		return
+	_garage_blend = minf(_garage_blend + delta / 1.8, 1.0)
+	var k := smoothstep(0.0, 1.0, _garage_blend)
+	var chase: Transform3D = world.camera.global_transform
+	cam.global_transform = Transform3D(fixed.basis.slerp(chase.basis.orthonormalized(), k).orthonormalized(), fixed.origin.lerp(chase.origin, k))
+	cam.fov = lerpf(68.0, world.camera.fov, k)
+	if _garage_blend >= 1.0:
+		_garage_cam = false
+		cam.current = false
+		world.camera.make_current()
 
 
 ## Grip: the gravel track and the clearing are loose, everything else as the track says.

@@ -63,6 +63,8 @@ static func get_sound(name: String) -> AudioStreamWAV:
 			s = _wav(_traffic_engine(), true)
 		"whistle":
 			s = _wav(_whistle())
+		"hydrant_spray":
+			s = _wav(_spray(), true)
 		_:
 			s = _wav(PackedFloat32Array([0.0]))
 	_cache[name] = s
@@ -314,6 +316,25 @@ static func _fire() -> PackedFloat32Array:
 		# seamless loop: fade the roar in/out over the loop point
 		var edge := minf(t / 0.2, (4.0 - t) / 0.2)
 		b[i] = lp * 1.6 * clampf(0.6 + edge, 0.6, 1.0) + pop
+	return b
+
+
+## The hiss of a water jet from a broken hydrant (and its splashing), looped.
+static func _spray() -> PackedFloat32Array:
+	var b := _buf(3.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var lp := 0.0
+	var lo := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.45
+		lo += (lp - lo) * 0.015
+		var mod := 0.85 + 0.15 * sin(t * TAU * 2.3) * sin(t * TAU * 0.7 + 1.0)
+		var splash := rng.randf_range(-1.0, 1.0) * 0.25 if rng.randf() < 0.002 else 0.0
+		# seamless loop: the level dips a little over the loop point
+		var edge := clampf(minf(t / 0.15, (3.0 - t) / 0.15), 0.0, 1.0)
+		b[i] = ((lp - lo) * 0.7 + lo * 2.2 + splash) * mod * (0.75 + 0.25 * edge)
 	return b
 
 

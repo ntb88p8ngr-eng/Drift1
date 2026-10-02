@@ -20,7 +20,7 @@ func _ready() -> void:
 	var k := -1
 	for i in lamps.poles.size():
 		var o: Vector3 = (lamps.poles[i]["xf"] as Transform3D).origin
-		if world.terrain.distance_to_road(o.x, o.z) > 60.0:
+		if str(lamps.poles[i]["kind"]).begins_with("lamp") and world.terrain.distance_to_road(o.x, o.z) > 60.0:
 			k = i
 			break
 	var pl: Dictionary = lamps.poles[k]

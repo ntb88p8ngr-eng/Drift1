@@ -539,7 +539,8 @@ func _furniture(k: int) -> void:
 				# hydrants
 				if d >= float(next_hydrant[si]):
 					next_hydrant[si] = d + rng.randf_range(55.0, 90.0)
-					add_inst.call("hydrant", Transform3D(Basis.looking_at(face, Vector3.UP) * Basis.from_scale(Vector3.ONE * 1.9), Vector3(kerb.x + t.x * 1.2, 0, kerb.y + t.y * 1.2)), Color(1, 1, 1, 1))
+					# breakable (a fountain when knocked off): city_lamps.gd
+					lamps.add_hydrant(Vector3(kerb.x + t.x * 1.2, 0, kerb.y + t.y * 1.2), face)
 				# vending machines, bicycles, benches, bins, post boxes
 				if d >= float(next_misc[si]):
 					next_misc[si] = d + rng.randf_range(14.0, 40.0)
@@ -556,14 +557,10 @@ func _furniture(k: int) -> void:
 				next_pole = d + rng.randf_range(28.0, 34.0)
 				var pp := p + nrm * (hw + 0.8)
 				if net.value_at(p + nrm * (hw + 2.0)) != net.ROAD:
-					add_inst.call("pole", Transform3D(Basis.looking_at(Vector3(t.x, 0, t.y), Vector3.UP), Vector3(pp.x, 0, pp.y)), Color(1, 1, 1, 1))
-					poles[0].append(Vector3(pp.x, 0, pp.y))
-					# the little security light every utility pole carries, over the street
-					var inward := Vector3(-nrm.x, 0, -nrm.y)
-					var lp := Vector3(pp.x, 5.2, pp.y) + inward * 0.9
-					cm.box("metal", Transform3D(Basis.looking_at(inward, Vector3.UP), lp - inward * 0.45 + Vector3(0, 0.1, 0)), Vector3(0.06, 0.06, 0.9), Color(0.4, 0.4, 0.42, 0.5))
-					cm.glow_box(Transform3D(Basis.looking_at(inward, Vector3.UP), lp), Vector3(0.22, 0.08, 0.5), Color(0.92, 0.97, 1.0), 0.05)
-					light.call(lp - Vector3(0, 0.15, 0), Color(0.88, 0.95, 1.0), 13.0, 2.2, 1)
+					# breakable, with the little security light every one carries over the street
+					# (city_lamps.gd); the wires between them follow
+					var pi: int = lamps.add_utility_pole(Vector3(pp.x, 0, pp.y), Vector3(t.x, 0, t.y), Vector3(-nrm.x, 0, -nrm.y))
+					poles[0].append([Vector3(pp.x, 0, pp.y), pi])
 					stats["pole_lights"] = int(stats.get("pole_lights", 0)) + 1
 		total += l
 	_wires(poles[0])
@@ -763,25 +760,15 @@ func _signal(p: Vector3, face: Vector3, across: Vector3, hw: float) -> void:
 	stats["signals"] = int(stats.get("signals", 0)) + 1
 
 
-## Sagging cables between neighbouring utility poles.
+## Sagging cables between neighbouring utility poles ([position, index in city_lamps]); they come
+## down with a pole.
 func _wires(poles: Array) -> void:
 	for k in poles.size() - 1:
-		var a: Vector3 = poles[k]
-		var b: Vector3 = poles[k + 1]
+		var a: Vector3 = poles[k][0]
+		var b: Vector3 = poles[k + 1][0]
 		if a.distance_to(b) > 45.0:
 			continue
-		var t := (b - a).normalized()
-		var side := Vector3(-t.z, 0, t.x)
-		for wy: float in [8.6, 9.5]:
-			for wx: float in [-0.8, 0.8]:
-				var segs := 8
-				for s in segs:
-					var u0 := float(s) / segs
-					var u1 := float(s + 1) / segs
-					var p0 := a.lerp(b, u0) + side * wx + Vector3(0, wy - sin(u0 * PI) * 0.6, 0)
-					var p1 := a.lerp(b, u1) + side * wx + Vector3(0, wy - sin(u1 * PI) * 0.6, 0)
-					var dir := p1 - p0
-					cm.box("metal", Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), (p0 + p1) * 0.5), Vector3(0.03, 0.03, dir.length()), Color(0.05, 0.05, 0.05, 0.9))
+		lamps.add_span(int(poles[k][1]), int(poles[k + 1][1]))
 
 
 ## Race mode: a row of water-filled barriers across every side street, a few metres from the race
