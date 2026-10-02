@@ -58,7 +58,7 @@ var _hint_title: Label
 var _hint_text: Label
 var _objective: Label
 var _banner: Label
-var _turn_arrow: Label          # big "➜ RECHTS" at the start until you are on the road heading right
+var _arrow_shown := false       # the HUD's 3D arrow points the way out at the start (until you are on the road heading right)
 var _turned := false
 
 
@@ -450,6 +450,13 @@ func _drive(_dt: float) -> void:
 		_objective.text = "ZIEL: Waldweg vor dem Adenauer Forst  ·  %.1f km" % (to_go / 1000.0)
 	else:
 		_objective.text = "ZIEL: Kenji am Wohnwagen  ·  %d m" % int(d_camp)
+	# the mission compass in the HUD
+	if world.hud != null:
+		var tr = world.track
+		if to_go > 0.0:
+			world.hud.set_mission(tr.samples[tr.index_at(Site.EXIT_P)], "WALDWEG")
+		else:
+			world.hud.set_mission(Vector3(site.camp.x, 0.0, site.camp.z), "KENJI")
 	var sec: String = world.track.section_at(_progress)
 	if sec != "":
 		_objective.text += "\n" + sec
@@ -496,6 +503,8 @@ func _close_hint() -> void:
 # ---------------------------------------------------------------------------
 func _start_ending() -> void:
 	state = "ending"
+	if world.hud != null:
+		world.hud.clear_mission()
 	_objective.visible = false
 	_banner.text = ""
 	car.controls_locked = true
@@ -759,35 +768,6 @@ func _build_ui() -> void:
 	_objective.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	_objective.visible = false
 	root.add_child(_objective)
-	_turn_arrow = UiKit.label("RECHTS", 52, Color(1.0, 0.62, 0.12), HORIZONTAL_ALIGNMENT_CENTER)
-	_turn_arrow.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	_turn_arrow.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
-	_turn_arrow.offset_left = -300.0
-	_turn_arrow.offset_right = -40.0
-	_turn_arrow.offset_top = -150.0
-	_turn_arrow.offset_bottom = 50.0
-	_turn_arrow.add_theme_constant_override("outline_size", 14)
-	_turn_arrow.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_turn_arrow.pivot_offset = Vector2(130, 100)
-	# a big drawn arrow above the word (the font has no arrow glyph of that size)
-	var pts := PackedVector2Array([Vector2(20, 60), Vector2(140, 60), Vector2(140, 20), Vector2(240, 95),
-		Vector2(140, 170), Vector2(140, 130), Vector2(20, 130)])
-	var edge := Line2D.new()
-	edge.points = pts
-	edge.closed = true
-	edge.width = 12.0
-	edge.default_color = Color(0, 0, 0, 0.85)
-	edge.joint_mode = Line2D.LINE_JOINT_ROUND
-	_turn_arrow.add_child(edge)
-	var poly := Polygon2D.new()
-	poly.polygon = pts
-	poly.color = Color(1.0, 0.62, 0.12)
-	_turn_arrow.add_child(poly)
-	for n: Node2D in [edge, poly]:
-		n.position = Vector2(10, -40)
-		n.scale = Vector2(1.0, 0.9)
-	_turn_arrow.visible = false
-	root.add_child(_turn_arrow)
 	_banner = UiKit.label("", 30, Color(1, 1, 1), HORIZONTAL_ALIGNMENT_CENTER)
 	_banner.set_anchors_preset(Control.PRESET_CENTER)
 	_banner.position = Vector2(-600, -230)
@@ -853,8 +833,8 @@ func _phone_msg(who: String, text: String, mine: bool) -> void:
 	_msgs.add_child(row)
 
 
-## The way onto the track at the start: the chevrons on the sign run towards the right, and a big
-## arrow on screen until the car is on the road going the right way.
+## The way onto the track at the start: the chevrons on the sign run towards the right, and the
+## HUD's animated 3D arrow points to the road until the car is on it going the right way.
 func _update_turn_arrow() -> void:
 	var t := Time.get_ticks_msec() * 0.001
 	var on := not _turned and (state == "drive" or state == "intro")
@@ -871,9 +851,17 @@ func _update_turn_arrow() -> void:
 		var right_way: bool = fwd.dot(tr.tangents[maxi(car.track_hint, 0)]) > 0.5
 		if on_road and right_way and car.speed > 4.0:
 			_turned = true
-	_turn_arrow.visible = state == "drive" and not _turned and not _hint_open
-	if _turn_arrow.visible:
-		var pulse := 0.5 + 0.5 * sin(t * 6.0)
-		_turn_arrow.offset_left = -300.0 + pulse * 22.0
-		_turn_arrow.offset_right = -40.0 + pulse * 22.0
-		_turn_arrow.modulate.a = 0.75 + 0.25 * pulse
+	var show := state == "drive" and not _turned and not _hint_open
+	if show and world.hud != null:
+		# towards the road a little ahead in the driving direction
+		var tr = world.track
+		var p: Vector3 = car.global_position
+		var i: int = tr.nearest_index(p)
+		var goal: Vector3 = tr.samples[i] + tr.tangents[i] * 25.0
+		var fwd: Vector3 = -car.global_transform.basis.z
+		var yaw := Vector2(fwd.x, fwd.z).normalized().angle_to(Vector2(goal.x - p.x, goal.z - p.z).normalized())
+		world.hud.force_arrow(yaw, "RECHTS" if yaw > 0.6 else ("LINKS" if yaw < -0.6 else ""))
+		_arrow_shown = true
+	elif _arrow_shown and world.hud != null:
+		world.hud.clear_forced_arrow()
+		_arrow_shown = false

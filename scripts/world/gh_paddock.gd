@@ -106,6 +106,48 @@ func _road_y(progress: float) -> float:
 	return float(track.samples[track.index_at(progress)].y)
 
 
+## The ground from the track's edge to behind the garages, from well before the pit entry to well
+## after the exit: one smooth surface at the height of the road's edge right beside each point
+## (spots levelled one by one left humps in between – a hill at the entry), blending into the
+## hills around it.
+func _level_corridor() -> void:
+	var cell: float = terrain.CELL
+	var o: Vector2 = terrain.origin
+	var L: float = track.length
+	var p0 := PIT_FROM - 75.0
+	var p1 := PIT_TO + 75.0
+	var far := _lat + LANE_W * 0.5 + GARAGE_D + 16.0
+	var lo := Vector2(1e9, 1e9)
+	var hi := Vector2(-1e9, -1e9)
+	var p := p0
+	while p <= p1:
+		for lat: float in [float(track.half_w), far + 14.0]:
+			var q := _at(p, lat)
+			lo = Vector2(minf(lo.x, q.x), minf(lo.y, q.z))
+			hi = Vector2(maxf(hi.x, q.x), maxf(hi.y, q.z))
+		p += 5.0
+	var hs: PackedFloat32Array = terrain.heights
+	var nx: int = terrain.nx
+	var nz: int = terrain.nz
+	var hint := -1
+	for iz in range(maxi(int(floor((lo.y - o.y) / cell)), 0), mini(int(ceil((hi.y - o.y) / cell)) + 1, nz)):
+		for ix in range(maxi(int(floor((lo.x - o.x) / cell)), 0), mini(int(ceil((hi.x - o.x) / cell)) + 1, nx)):
+			var wp := Vector3(o.x + ix * cell, 0.0, o.y + iz * cell)
+			var pr: Array = track.project(wp, hint)
+			hint = pr[0]
+			var rel := fposmod(float(pr[1]) + L * 0.5, L) - L * 0.5
+			var lat := float(pr[2]) * pit_side
+			if lat < float(track.half_w) + 0.3:
+				continue          # the road itself, or the other side
+			var k := smoothstep(p0, p0 + 22.0, rel) * (1.0 - smoothstep(p1 - 22.0, p1, rel)) * (1.0 - smoothstep(far, far + 14.0, lat))
+			if k <= 0.0:
+				continue
+			var edge: Vector3 = track.edge_point(int(pr[0]), pit_side * float(track.half_w))
+			var idx := iz * nx + ix
+			hs[idx] = lerpf(hs[idx], edge.y - 0.02, k)
+	terrain.heights = hs
+
+
 # ---------------------------------------------------------------------------
 # Pit lane
 # ---------------------------------------------------------------------------
@@ -115,16 +157,10 @@ func _pit_lane() -> void:
 	track.wall_gaps.append([fposmod(PIT_FROM - 45.0, L), fposmod(PIT_FROM - 5.0, L), pit_side])
 	track.wall_gaps.append([PIT_TO + 5.0, PIT_TO + 45.0, pit_side])
 	track.rebuild_walls()
-	# level the ground at road height: lane, garages and the paddock behind them – only outside the
-	# barrier (levelling across the road left ragged steps beside it)
-	var p := PIT_FROM - 20.0
-	while p <= PIT_TO + 20.0:
-		var y := _road_y(p) - 0.02
-		var lat_k := _wall_off + 4.0
-		while lat_k < _lat + LANE_W * 0.5 + GARAGE_D + 12.0:
-			terrain.level_to(_at(p, lat_k), 3.0, 1.5, y)
-			lat_k += 3.0
-		p += 3.0
+	# level the ground: lane, entry and exit, garages and the paddock behind them, as one smooth
+	# surface at the height of the road's edge beside it
+	_level_corridor()
+	var p := PIT_FROM
 	# the lane (curved entry and exit from the track edge)
 	var pts: Array = []
 	var edge: float = float(track.half_w) + 1.0
@@ -136,14 +172,6 @@ func _pit_lane() -> void:
 		p += 10.0
 	pts.append(_at(PIT_TO + 25.0, lerpf(edge, _lat, 0.55)))
 	pts.append(_at(PIT_TO + 48.0, edge))
-	# the entry and exit connectors cross the shoulder: the ground under them at road height too
-	for k in [0, 1, 2, pts.size() - 3, pts.size() - 2, pts.size() - 1]:
-		var cp: Vector3 = pts[k]
-		var pr: Array = track.project(cp, -1)
-		var y := float(track.samples[int(pr[0])].y) - 0.02
-		for f in 5:
-			var q: Vector3 = cp.lerp(pts[clampi(k + (1 if k < 3 else -1), 0, pts.size() - 1)], f / 5.0)
-			terrain.level_to(q, LANE_W * 0.5, 1.5, y)
 	scenery.add_path(pts, LANE_W, "asphalt", false)
 	# white lines: the lane's edge and the fast lane / working lane split
 	for lat_l in [_lat - LANE_W * 0.5 + 0.3, _lat + 0.5]:
@@ -169,11 +197,46 @@ func _pit_lane() -> void:
 	scenery.occupy(_at((PIT_FROM + PIT_TO) * 0.5, _lat), 9.5)
 	for q in range(int(PIT_FROM) - 50, int(PIT_TO) + 50, 8):
 		scenery.occupy(_at(q, _lat + 6.0), 9.5)
+	# and the strip between the barrier and the lane (the pit wall): no spectators standing there
+	for q in range(int(PIT_FROM) - 60, int(PIT_TO) + 60, 5):
+		scenery.occupy(_at(q, (_wall_off + _lat) * 0.5), 4.5)
 
 
 # ---------------------------------------------------------------------------
 # Garages
 # ---------------------------------------------------------------------------
+## A slab between progress pa and pb, from lateral l0 to l1, heights y0..y1 above the road: its
+## corners follow the curve, so neighbouring slabs meet without gaps.
+func _slab(st: SurfaceTool, pa: float, pb: float, l0: float, l1: float, y0: float, y1: float, col: Color) -> void:
+	var pt := func(pp: float, lat: float, y: float) -> Vector3:
+		var q := _at(pp, lat)
+		q.y = _road_y(pp) + float(track.ROAD_Y) + y
+		return q
+	var c := [pt.call(pa, l0, y0), pt.call(pb, l0, y0), pt.call(pb, l1, y0), pt.call(pa, l1, y0),
+		pt.call(pa, l0, y1), pt.call(pb, l0, y1), pt.call(pb, l1, y1), pt.call(pa, l1, y1)]
+	var ctr := Vector3.ZERO
+	for v in c:
+		ctr += v
+	ctr /= 8.0
+	for f in [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [3, 2, 6, 7], [0, 3, 7, 4], [1, 2, 6, 5]]:
+		var a: Vector3 = c[f[0]]
+		var b: Vector3 = c[f[1]]
+		var cc: Vector3 = c[f[2]]
+		var d: Vector3 = c[f[3]]
+		var n := ((a + b + cc + d) * 0.25 - ctr).normalized()
+		MeshKit.quad(st, a, b, cc, d, n, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, col)
+
+
+## A pit crew member in the team's racing overall (crowd.gd's person, one colour head to toe).
+func _crew(p: Vector3, look_at: Vector3, team: Color) -> void:
+	var g := p + Vector3(0, 0.04, 0)        # on the garage floor / apron
+	var d := look_at - g
+	d.y = 0.0
+	if d.length() < 0.01:
+		d = Vector3(0, 0, -1)
+	var sc := rng.randf_range(0.95, 1.05)
+	festival._add("person", Transform3D(Basis.looking_at(d.normalized(), Vector3.UP) * Basis.from_scale(Vector3(sc, sc, sc)), g),
+		Color(team.r, team.g, team.b, 2.0 + rng.randf() * 0.5))
 func _garages() -> void:
 	var st := MeshKit.new_st()
 	var wall := Color(0.86, 0.86, 0.84)
@@ -203,15 +266,13 @@ func _garages() -> void:
 		var box := func(c: Vector3, s: Vector3, col: Color) -> void:
 			MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, c), s, col)
 		# side walls, back wall, roof slab, upper floor with glass, open door with the dark inside
+		# side wall, floor, team band, the glass of the upper floor, the dark inside (the back wall,
+		# the slabs and the upper floor are built after the loop as one piece along the curve)
 		box.call(Vector3(-w * 0.5 + 0.15, 3.0, GARAGE_D * 0.5), Vector3(0.3, 6.0, GARAGE_D), wall)
-		box.call(Vector3(0, 3.0, GARAGE_D - 0.15), Vector3(w, 6.0, 0.3), wall)
 		box.call(Vector3(0, 0.02, GARAGE_D * 0.5), Vector3(w, 0.04, GARAGE_D), floor_c)
 		box.call(Vector3(0, 4.3, 0.15), Vector3(w, 1.0, 0.3), team)
-		box.call(Vector3(0, 6.1, GARAGE_D * 0.5 - 0.5), Vector3(w + 0.02, 0.3, GARAGE_D + 1.0), wall)
-		box.call(Vector3(0, 7.6, GARAGE_D * 0.5 + 1.0), Vector3(w + 0.02, 2.8, GARAGE_D - 2.0), wall)
 		box.call(Vector3(0, 7.7, 2.05), Vector3(w - 0.4, 1.8, 0.05), glass)
-		box.call(Vector3(0, 9.1, GARAGE_D * 0.5 + 1.0), Vector3(w + 0.2, 0.2, GARAGE_D - 1.6), Color(0.3, 0.3, 0.33, 0.5))
-		box.call(Vector3(0, 2.0, GARAGE_D - 0.4), Vector3(w - 0.6, 3.6, 0.1), dark)
+		box.call(Vector3(0, 2.0, GARAGE_D - 0.6), Vector3(w - 0.6, 3.6, 0.1), dark)
 		# concrete apron and garage floor painted into the ground (no grass coming through)
 		scenery.add_ground_patch(Transform3D(fr, base + out * (GARAGE_D * 0.5 - 0.5)), Vector2(w + 0.2, GARAGE_D + 1.0), "paving", false, 0.07)
 		# guardrail along the front of the roof terrace (the spectators stand behind it)
@@ -224,20 +285,33 @@ func _garages() -> void:
 		# tool wall and a work bench inside
 
 		box.call(Vector3(-w * 0.5 + 0.6, 0.5, GARAGE_D - 2.0), Vector3(0.6, 1.0, 2.5), Color(0.6, 0.1, 0.1, 0.6))
-		bodies.append([xf * Transform3D(Basis.IDENTITY, Vector3(0, 3.0, GARAGE_D - 0.15)), Vector3(w, 6.0, 0.3)])
 		bodies.append([xf * Transform3D(Basis.IDENTITY, Vector3(-w * 0.5 + 0.15, 3.0, GARAGE_D * 0.5)), Vector3(0.3, 6.0, GARAGE_D)])
 		bodies.append([xf * Transform3D(Basis.IDENTITY, Vector3(0, 7.6, GARAGE_D * 0.5 + 1.0)), Vector3(w, 3.0, GARAGE_D - 2.0)])
-		# the car being worked on, a tyre set and mechanics
-		if rng.randf() < 0.75 and scenery.details:
-			scenery.details.add_parked_car(Transform3D(fr.rotated(Vector3.UP, PI), base + out * (GARAGE_D * 0.45)), "car_sedan" if k % 3 else "car_hatch")
-		if rng.randf() < 0.7 and scenery.details:
-			for t in 2:
-				scenery.details.loose_tyre_stack(base + out * 1.2 + along * (w * 0.5 - 0.6 - t * 0.75), rng.randi_range(3, 4))
-		for m in rng.randi_range(1, 4):
-			var mp: Vector3 = base + out * rng.randf_range(0.8, GARAGE_D * 0.8) + along * rng.randf_range(-w * 0.35, w * 0.35)
-			festival._person(mp, mp - out * 3.0 + along * rng.randf_range(-2.0, 2.0))
+		# no cars in the garages: now and then a crew member or two in the team's racing overall
+		if rng.randf() < 0.45:
+			for m in rng.randi_range(1, 2):
+				var mp: Vector3 = base + out * rng.randf_range(0.6, 3.0) + along * rng.randf_range(-w * 0.3, w * 0.3)
+				_crew(mp, mp - out * 4.0 + along * rng.randf_range(-3.0, 3.0), team)
 		p += GARAGE_W
 		k += 1
+	# the back wall, the floor slab, the upper floor and the roof: continuous along the curve (each
+	# garage on its own left wedge-shaped gaps at the back on the outside of the bend)
+	var p0 := (PIT_FROM + PIT_TO) * 0.5 - GARAGES * GARAGE_W * 0.5
+	for kk in GARAGES:
+		var pa := p0 + kk * GARAGE_W
+		var pb := pa + GARAGE_W
+		_slab(st, pa, pb, front_lat + GARAGE_D - 0.3, front_lat + GARAGE_D, 0.0, 6.0, wall)
+		_slab(st, pa, pb, front_lat - 1.0, front_lat + GARAGE_D, 5.95, 6.25, wall)
+		_slab(st, pa, pb, front_lat + 2.0, front_lat + GARAGE_D, 6.25, 9.0, wall)
+		_slab(st, pa, pb, front_lat + 1.8, front_lat + GARAGE_D + 0.2, 9.0, 9.2, Color(0.3, 0.3, 0.33, 0.5))
+		var ba := _at(pa, front_lat + GARAGE_D - 0.15)
+		var bb := _at(pb, front_lat + GARAGE_D - 0.15)
+		var dir := Vector3(bb.x - ba.x, 0, bb.z - ba.z)
+		var len := dir.length()
+		if len > 0.01:
+			dir /= len
+			var y0 := _road_y(pa) + float(track.ROAD_Y)
+			bodies.append([Transform3D(Basis(dir, Vector3.UP, dir.cross(Vector3.UP)), (ba + bb) * 0.5 + Vector3(0, y0 + 4.6 - (ba.y + bb.y) * 0.5, 0)), Vector3(len + 0.1, 9.2, 0.3)])
 	# the last side wall and a row of floodlight masts on the roof
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshKit.commit(st, _vc())

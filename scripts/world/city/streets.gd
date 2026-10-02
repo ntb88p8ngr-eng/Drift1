@@ -20,11 +20,12 @@ var cm
 var track
 var scenery
 var add_inst: Callable          # (kind, Transform3D, custom Color)
+var lamps                       # city_lamps.gd: the breakable streetlights
 var light: Callable             # (pos, colour, range, energy, kind)
 var rng := RandomNumberGenerator.new()
 var plates: Array = []          # [Vector2 centre, radius, Array of the street directions leaving it]
 var _plate_grid := {}           # Vector2i (PLATE_CELL cells) -> plates there
-const PLATE_CELL := 24.0        # > the largest plate radius + the largest `extra` asked for
+const PLATE_CELL := 36.0        # > the largest plate radius (26) + the largest `extra` asked for (8)
 var closures: Array = []        # race mode barriers (RigidBodies), removable for free roam
 var sakura_streets := {}
 var people_spots: Array = []    # [Vector3 position, Vector3 facing] for pedestrians
@@ -82,7 +83,13 @@ func _find_plates() -> void:
 				dirs.append(ends[b][2])
 		if net.owner_at(c) == -3 or _near_track(c, 6.0):
 			continue
-		plates.append([c, r + 2.0, dirs])
+		# where two streets meet at a sharp angle their ribbons overlap far out: cover all of it
+		var need := r + 2.0
+		for x in dirs.size():
+			for y in range(x + 1, dirs.size()):
+				var ang := acos(clampf((dirs[x] as Vector2).dot(dirs[y]), -1.0, 1.0))
+				need = maxf(need, r / maxf(tan(ang * 0.5), 0.25) + 1.5)
+		plates.append([c, minf(need, 26.0), dirs])
 	for pl in plates:
 		var c: Vector2 = pl[0]
 		var key := Vector2i(int(floor(c.x / PLATE_CELL)), int(floor(c.y / PLATE_CELL)))
@@ -98,6 +105,15 @@ func _near_track(p: Vector2, extra: float) -> bool:
 	var i: int = track.nearest_index(Vector3(p.x, 0, p.y))
 	var s: Vector3 = track.samples[i]
 	return Vector2(s.x, s.z).distance_to(p) < maxf(float(track.off_left[i]), float(track.off_right[i])) + extra
+
+
+## Does street k end here on another street (a T-junction without a plate)?
+func _t_junction(e0: Vector2, k: int) -> bool:
+	for d: Vector2 in [Vector2.ZERO, Vector2(1.5, 0), Vector2(-1.5, 0), Vector2(0, 1.5), Vector2(0, -1.5)]:
+		var o: int = net.owner_at(e0 + d)
+		if o == -2 or (o >= 0 and o != k):
+			return true
+	return false
 
 
 func _in_plate(p: Vector2, extra := 0.0) -> bool:
@@ -122,11 +138,15 @@ func _ribbon(k: int) -> void:
 		var na := _normal(pts, j)
 		var nb := _normal(pts, j + 1)
 		var l := a.distance_to(b)
+		v += l
+		# the junction plate covers the street's end: no ribbon under it (no overlap, no flicker)
+		if _in_plate(a, -1.0) and _in_plate(b, -1.0):
+			continue
 		var pa := Vector3(a.x, y, a.y)
 		var pb := Vector3(b.x, y, b.y)
+		# u 0.2 – 0.8: the road shader's edge lines (for the race track) stay off the streets
 		cm.quad("road", pa - Vector3(na.x, 0, na.y) * hw, pa + Vector3(na.x, 0, na.y) * hw, pb + Vector3(nb.x, 0, nb.y) * hw, pb - Vector3(nb.x, 0, nb.y) * hw,
-			Vector3.UP, Color(1, 1, 1), Vector2(0, v), Vector2(1, v), Vector2(1, v + l), Vector2(0, v + l))
-		v += l
+			Vector3.UP, Color(1, 1, 1), Vector2(0.2, v - l), Vector2(0.8, v - l), Vector2(0.8, v), Vector2(0.2, v))
 	stats["street_m"] = int(stats.get("street_m", 0)) + int(v)
 
 
@@ -146,7 +166,7 @@ func _plate(c: Vector2, r: float) -> void:
 		var p1 := Vector3(c.x + cos(a1) * r, Y_PLATE, c.y + sin(a1) * r)
 		var pc := Vector3(c.x, Y_PLATE, c.y)
 		cm.quad("road", pc, p0, p1, pc, Vector3.UP, Color(1, 1, 1),
-			Vector2(0.5, c.y), Vector2(0.5 + cos(a0) * r / 16.0, p0.z), Vector2(0.5 + cos(a1) * r / 16.0, p1.z), Vector2(0.5, c.y))
+			Vector2(0.5, c.y), Vector2(0.5 + cos(a0) * 0.25, p0.z), Vector2(0.5 + cos(a1) * 0.25, p1.z), Vector2(0.5, c.y))
 
 
 func _markings(k: int) -> void:
@@ -206,7 +226,7 @@ func _markings(k: int) -> void:
 			if (pl[0] as Vector2).distance_to(e0) < 4.0:
 				off = float(pl[1])
 				plate_dirs = pl[2]
-		if off == 0.0 and not _near_track(e0, 4.0):
+		if off == 0.0 and not _near_track(e0, 4.0) and not _t_junction(e0, k):
 			continue
 		if off == 0.0:
 			off = 3.0
@@ -428,7 +448,7 @@ func _furniture(k: int) -> void:
 				# hydrants
 				if d >= float(next_hydrant[si]):
 					next_hydrant[si] = d + rng.randf_range(55.0, 90.0)
-					add_inst.call("hydrant", Transform3D(Basis.looking_at(face, Vector3.UP), Vector3(kerb.x + t.x * 1.2, 0, kerb.y + t.y * 1.2)), Color(1, 1, 1, 1))
+					add_inst.call("hydrant", Transform3D(Basis.looking_at(face, Vector3.UP) * Basis.from_scale(Vector3.ONE * 1.9), Vector3(kerb.x + t.x * 1.2, 0, kerb.y + t.y * 1.2)), Color(1, 1, 1, 1))
 				# vending machines, bicycles, benches, bins, post boxes
 				if d >= float(next_misc[si]):
 					next_misc[si] = d + rng.randf_range(14.0, 40.0)
@@ -466,25 +486,110 @@ func _furniture(k: int) -> void:
 			if (pl[0] as Vector2).distance_to(e0) < 4.0:
 				off = float(pl[1])
 		if off == 0.0:
-			if not _near_track(e0, 4.0):
+			if _near_track(e0, 4.0):
+				off = 4.0
+			elif _t_junction(e0, k):
+				off = 3.0
+			else:
 				continue
-			off = 4.0
 		var nrm := Vector2(-dir.y, dir.x)
 		var sp := e0 + dir * (off + 5.0) + nrm * (hw + 1.0)
 		# the signal faces the cars coming up the street towards the junction
 		_signal(Vector3(sp.x, 0, sp.y), Vector3(dir.x, 0, dir.y), Vector3(-nrm.x, 0, -nrm.y), hw)
 
 
+static var _barricade_mesh: ArrayMesh
+
+## A Japanese road closure stand: an A-frame with yellow and black striped legs, a white board
+## "通行止め / ROAD CLOSED" (readable from both sides) and a blinking red lamp on top; a RigidBody.
+func _barricade() -> RigidBody3D:
+	if _barricade_mesh == null:
+		_barricade_mesh = _make_barricade_mesh()
+	var b := RigidBody3D.new()
+	b.mass = 22.0
+	b.collision_layer = 8
+	b.collision_mask = 1 | 2 | 4 | 8
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(2.5, 1.7, 0.9)
+	cs.shape = sh
+	cs.position = Vector3(0, 0.85, 0)
+	b.add_child(cs)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _barricade_mesh
+	b.add_child(mi)
+	b.sleeping = true
+	stats["roadblocks"] = int(stats.get("roadblocks", 0)) + 1
+	return b
+
+
+static func _make_barricade_mesh() -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	# the board: both faces show the atlas cell, a white rim round it
+	var st := MeshKit.new_st()
+	var rect: Rect2 = CityAtlas.shop(63)
+	var u0 := rect.position.x
+	var u1 := rect.end.x
+	var v0 := rect.position.y
+	var v1 := rect.end.y
+	var w := 1.15
+	var h0 := 0.95
+	var h1 := 1.55
+	var col := Color(0.6, 0, 0, 1)        # (red channel: how much it glows at night)
+	for side: float in [-1.0, 1.0]:
+		var z := side * 0.03
+		if side > 0.0:
+			MeshKit.quad(st, Vector3(-w, h0, z), Vector3(w, h0, z), Vector3(w, h1, z), Vector3(-w, h1, z), Vector3(0, 0, 1),
+				Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0), col)
+		else:
+			MeshKit.quad(st, Vector3(w, h0, z), Vector3(-w, h0, z), Vector3(-w, h1, z), Vector3(w, h1, z), Vector3(0, 0, -1),
+				Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0), col)
+	mesh = MeshKit.commit(st, CityAtlas.material(), mesh)
+	# frame: rim, A-frame legs (yellow / black stripes), feet; the lamp housing
+	var fr := MeshKit.new_st()
+	var white := Color(0.95, 0.95, 0.93)
+	MeshKit.box(fr, Transform3D(Basis.IDENTITY, Vector3(0, h1 + 0.04, 0)), Vector3(w * 2.0 + 0.1, 0.08, 0.07), white)
+	MeshKit.box(fr, Transform3D(Basis.IDENTITY, Vector3(0, h0 - 0.04, 0)), Vector3(w * 2.0 + 0.1, 0.08, 0.07), white)
+	for sx: float in [-1.0, 1.0]:
+		MeshKit.box(fr, Transform3D(Basis.IDENTITY, Vector3(sx * (w + 0.04), (h0 + h1) * 0.5, 0)), Vector3(0.08, h1 - h0 + 0.16, 0.07), white)
+		for sz: float in [-1.0, 1.0]:
+			# a leg leaning out to the foot, in stripes
+			var top := Vector3(sx * (w - 0.1), h1 + 0.02, 0)
+			var foot := Vector3(sx * (w - 0.1), 0.0, sz * 0.42)
+			var seg := 6
+			for k in seg:
+				var a := top.lerp(foot, float(k) / seg)
+				var b2 := top.lerp(foot, float(k + 1) / seg)
+				var basis := Basis.looking_at((b2 - a).normalized(), Vector3.RIGHT if absf((b2 - a).normalized().y) > 0.99 else Vector3.UP)
+				var c := Color(0.98, 0.8, 0.05) if k % 2 == 0 else Color(0.08, 0.08, 0.08)
+				MeshKit.box(fr, Transform3D(basis, (a + b2) * 0.5), Vector3(0.06, 0.06, a.distance_to(b2) + 0.01), c)
+		# the foot bar on the ground
+		MeshKit.box(fr, Transform3D(Basis.IDENTITY, Vector3(sx * (w - 0.1), 0.03, 0)), Vector3(0.08, 0.06, 0.9), Color(0.1, 0.1, 0.1))
+	MeshKit.box(fr, Transform3D(Basis.IDENTITY, Vector3(0, h1 + 0.12, 0)), Vector3(0.16, 0.08, 0.16), Color(0.1, 0.1, 0.1))
+	var fm := StandardMaterial3D.new()
+	fm.vertex_color_use_as_albedo = true
+	fm.roughness = 0.55
+	mesh = MeshKit.commit(fr, fm, mesh)
+	# the blinking red lamp
+	var lamp := MeshKit.new_st()
+	MeshKit.box(lamp, Transform3D(Basis.IDENTITY, Vector3(0, h1 + 0.25, 0)), Vector3(0.18, 0.18, 0.18), Color(1, 0.1, 0.05))
+	var lm := ShaderMaterial.new()
+	lm.shader = Shader.new()
+	lm.shader.code = """
+shader_type spatial;
+render_mode unshaded;
+void fragment() {
+	float on = step(0.5, fract(TIME * 1.3));
+	ALBEDO = vec3(1.0, 0.08, 0.04) * (0.35 + 2.6 * on);
+}
+"""
+	mesh = MeshKit.commit(lamp, lm, mesh)
+	return mesh
+
+
 func _streetlight(p: Vector3, face: Vector3, hw: float) -> void:
-	var arm := minf(hw * 0.55, 3.5)
-	var col := Color(0.42, 0.43, 0.45, 0.5)
-	var basis := Basis.looking_at(face, Vector3.UP)
-	cm.box("metal", Transform3D(basis, p + Vector3(0, 4.2, 0)), Vector3(0.16, 8.4, 0.16), col)
-	cm.box("metal", Transform3D(basis, p + Vector3(0, 8.3, 0) + face * arm * 0.5), Vector3(0.1, 0.1, arm), col)
-	cm.box("metal", Transform3D(basis, p + Vector3(0, 8.25, 0) + face * arm), Vector3(0.45, 0.18, 0.9), col.darkened(0.2))
-	var head := p + Vector3(0, 8.13, 0) + face * arm
-	cm.glow_box(Transform3D(basis, head), Vector3(0.36, 0.04, 0.7), Color(1.0, 0.93, 0.8), 0.05)
-	light.call(head - Vector3(0, 0.2, 0), Color(1.0, 0.9, 0.74), 22.0, 4.5, 1)
+	# breakable: drawn, made solid and knocked over by city_lamps.gd
+	lamps.add(p, face, hw)
 	stats["streetlights"] = int(stats.get("streetlights", 0)) + 1
 
 
@@ -625,4 +730,9 @@ func _closures(parent: Node3D) -> void:
 			b.sleeping = true
 			b.add_to_group("race_closure")
 			closures.append(b)
-		cm.sign_box(Transform3D(Basis.looking_at(r, Vector3.UP), c + r * 1.5 + Vector3(0, 1.4, 0)), Vector3(1.4, 0.9, 0.06), CityAtlas.shop(63), 0.4, true)
+		# the "road closed" barricade in front of them, facing the race route: knock it over if you like
+		var bar := _barricade()
+		parent.add_child(bar)
+		bar.global_transform = Transform3D(Basis.looking_at(r, Vector3.UP), c - r * 1.8 + Vector3(0, 0.02, 0))
+		bar.add_to_group("race_closure")
+		closures.append(bar)

@@ -207,6 +207,7 @@ var settings := {
 	"camera_zoom": 1.2,
 	"camera_tilt": 0.0,
 	"show_fps": false,
+	"nav_arrow": true,
 	"show_perf": false,
 	"units_kmh": true,
 	"last_ip": "127.0.0.1",

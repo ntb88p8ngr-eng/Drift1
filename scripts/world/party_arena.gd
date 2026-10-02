@@ -697,7 +697,7 @@ func _shield_node(car: Node) -> Node3D:
 	return mi
 
 
-## The bang of a shot, where it was fired (rapid fire a little higher and quieter, the triple deeper).
+## A soft futuristic "pew" where it was fired (rapid fire a little higher and quieter, the triple deeper).
 func _shot_sound(at: Vector3, kind: String, mine: bool) -> void:
 	var pitch := 1.0
 	var vol := -3.0 if mine else -6.0
@@ -707,7 +707,7 @@ func _shot_sound(at: Vector3, kind: String, mine: bool) -> void:
 			vol -= 3.0
 		"triple":
 			pitch = 0.88
-	Sfx.play(self, "shot", vol, at, pitch * randf_range(0.95, 1.05))
+	Sfx.play(self, "pew", vol - 4.0, at, pitch * randf_range(0.95, 1.05))
 
 
 func _spark(p: Vector3, kind: String) -> void:

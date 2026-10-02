@@ -196,10 +196,32 @@ func _place_coin(i: int) -> void:
 	(c["node"] as Node3D).visible = bool(c["active"])
 
 
+## The HUD's mission compass points at the nearest coin while one can be taken.
+func _coin_compass(can_take: bool) -> void:
+	if world.hud == null:
+		return
+	var best = null
+	var bd := 1e18
+	if can_take:
+		var p: Vector3 = world.local_car.global_position
+		for c in _coins:
+			if bool(c["active"]):
+				var q: Vector3 = (c["node"] as Node3D).global_position
+				var d := p.distance_squared_to(q)
+				if d < bd:
+					bd = d
+					best = q
+	if best == null:
+		world.hud.clear_mission()
+	else:
+		world.hud.set_mission(best, "MÜNZE")
+
+
 func _process_coins(delta: float) -> void:
 	var t := Time.get_ticks_msec() * 0.001
 	_coin_mat.emission_energy_multiplier = 1.3 + 0.6 * sin(t * 3.0)
 	var can_take: bool = state == "idle" and games_played < games_total and world.state == "running" and not world.finished
+	_coin_compass(can_take)
 	var car = world.local_car
 	for i in _coins.size():
 		var c: Dictionary = _coins[i]

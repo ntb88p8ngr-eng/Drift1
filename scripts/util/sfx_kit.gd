@@ -53,6 +53,14 @@ static func get_sound(name: String) -> AudioStreamWAV:
 			s = _wav(_chimes([[523.3, 0.0], [392.0, 0.16]], 1.0))
 		"shot":
 			s = _wav(_shot())
+		"pole_hit":
+			s = _wav(_clang())
+		"pew":
+			s = _wav(_pew())
+		"body_hit":
+			s = _wav(_body_hit())
+		"traffic_engine":
+			s = _wav(_traffic_engine(), true)
 		"whistle":
 			s = _wav(_whistle())
 		_:
@@ -389,6 +397,83 @@ static func _shot() -> PackedFloat32Array:
 		b[i] += b[i - echo] * 0.22
 	for i in b.size():
 		b[i] = tanh(b[i] * 1.2) * 0.85
+	return b
+
+
+## Someone bowled over: a dull thump and a little clatter of blocks.
+static func _body_hit() -> PackedFloat32Array:
+	var b := _buf(0.6)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17
+	var lp := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		var thump := sin(TAU * (110.0 - 70.0 * t) * t) * exp(-t * 20.0)
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.25
+		var clatter := 0.0
+		for k in 5:
+			var t0 := 0.06 + k * 0.07
+			if t > t0:
+				clatter += sin(TAU * (700.0 + k * 230.0) * (t - t0)) * exp(-(t - t0) * 60.0) * 0.35
+		b[i] = tanh((thump * 0.9 + lp * exp(-t * 30.0) * 0.5 + clatter) * 1.2) * 0.75
+	return b
+
+
+## A soft futuristic "pew": a sine sweeping quickly down, a touch of octave shimmer, a short echo.
+static func _pew() -> PackedFloat32Array:
+	var b := _buf(0.42)
+	var ph := 0.0
+	var ph2 := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		var f := 260.0 + 1300.0 * exp(-t * 16.0)
+		ph += TAU * f / RATE
+		ph2 += TAU * f * 2.01 / RATE
+		var env := minf(t * 400.0, 1.0) * exp(-t * 11.0)
+		b[i] = (sin(ph) + 0.18 * sin(ph2) * exp(-t * 25.0)) * env * 0.5
+	var echo := int(0.09 * RATE)
+	for i in range(b.size() - 1, echo, -1):
+		b[i] += b[i - echo] * 0.25
+	return b
+
+
+## A soft engine hum for the traffic: a smooth four-cylinder murmur and some road noise, made of
+## whole-Hz partials so the one-second loop joins seamlessly (the pitch follows the speed).
+static func _traffic_engine() -> PackedFloat32Array:
+	var b := _buf(1.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	var hum := [[48.0, 1.0], [96.0, 0.55], [144.0, 0.3], [192.0, 0.18], [24.0, 0.35]]
+	var noise: Array = []
+	for k in 48:
+		noise.append([float(rng.randi_range(180, 1400)), rng.randf_range(0.2, 1.0) / (1.0 + k * 0.08), rng.randf() * TAU])
+	for i in b.size():
+		var t := float(i) / RATE
+		var v := 0.0
+		for h in hum:
+			v += sin(TAU * float(h[0]) * t) * float(h[1])
+		# a gentle throb at the firing rhythm
+		v *= 0.85 + 0.15 * sin(TAU * 12.0 * t)
+		var n := 0.0
+		for nz in noise:
+			n += sin(TAU * float(nz[0]) * t + float(nz[2])) * float(nz[1])
+		b[i] = v * 0.22 + n * 0.035
+	return b
+
+
+## A car taking out a lamp post: the hit, then the hollow steel pole ringing (inharmonic partials).
+static func _clang() -> PackedFloat32Array:
+	var b := _buf(1.3)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	var parts := [[310.0, 1.0, 4.5], [745.0, 0.7, 6.5], [1290.0, 0.45, 9.0], [2110.0, 0.3, 13.0], [3020.0, 0.18, 18.0]]
+	for i in b.size():
+		var t := float(i) / RATE
+		var v := 0.0
+		for pt in parts:
+			v += sin(TAU * float(pt[0]) * t) * float(pt[1]) * exp(-t * float(pt[2]))
+		var hit := rng.randf_range(-1.0, 1.0) * exp(-t * 55.0)
+		b[i] = tanh((v * 0.32 + hit * 0.9) * 1.3) * 0.8
 	return b
 
 

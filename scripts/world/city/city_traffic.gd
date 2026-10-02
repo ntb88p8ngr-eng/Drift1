@@ -482,7 +482,7 @@ func _process(delta: float) -> void:
 		c.acc = 0.0
 		_step(c, dt)
 	for c: Car in cars:
-		render.add(c.model, c.xf, c.paint, c.odo, c.brake)
+		render.add(c.model, c.xf, c.paint, c.odo, c.brake, c.v)
 
 
 func _step(c: Car, dt: float) -> void:

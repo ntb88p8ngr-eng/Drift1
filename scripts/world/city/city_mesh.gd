@@ -20,38 +20,62 @@ shader_type spatial;
 render_mode diffuse_burley;
 
 uniform float night = 0.0;
+uniform vec3 sky_top : source_color = vec3(0.33, 0.52, 0.85);
+uniform vec3 sky_horizon : source_color = vec3(0.8, 0.86, 0.93);
+uniform vec3 city : source_color = vec3(0.2, 0.21, 0.24);
 varying vec4 vcol;
-varying vec3 wnrm;
 
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 void vertex() {
 	vcol = COLOR;
-	wnrm = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 }
 
 void fragment() {
 	// UV = metres along the facade / above the ground; COLOR: r = building seed, g = share of lit
 	// windows, b = bay width code, a = style (0 office glass, 1 homes)
 	float bay = 2.4 + vcol.b * 2.5;
-	vec2 cell = floor(UV / vec2(bay, 3.6));
-	vec2 f = fract(UV / vec2(bay, 3.6));
+	vec2 g = UV / vec2(bay, 3.6);
+	vec2 cell = floor(g);
+	vec2 f = fract(g);
+	// windows only a few pixels big: fade the per-window detail to its average (no sparkling)
+	vec2 fw = fwidth(g);
+	float detail = 1.0 - smoothstep(0.12, 0.45, max(fw.x, fw.y));
 	float seed = vcol.r * 113.0;
 	float r = h(cell + seed);
-	float lit = step(1.0 - vcol.g, r);
-	vec3 room = mix(vec3(1.0, 0.84, 0.58), vec3(0.82, 0.92, 1.0), h(cell * 1.7 + seed));
-	room = mix(room, vec3(1.0, 0.6, 0.35), step(0.93, h(cell * 3.1 + seed)) * vcol.a);
-	// blinds / curtains: part of the window covered, a little darker light
-	float blind = step(f.y, 0.25 + 0.6 * h(cell + seed + 7.0)) * step(0.5, h(cell + seed + 2.0));
-	float frame = max(step(f.x, 0.04), step(0.96, f.x));
+	// lit rooms: the building's share at night, fewer by day (offices with the lights on)
+	float share = mix(vcol.g * 0.35, vcol.g, night);
+	float lit = mix(share, step(1.0 - share, r), detail);
+	vec3 room = mix(vec3(1.0, 0.84, 0.58), vec3(0.82, 0.92, 1.0), mix(0.5, h(cell * 1.7 + seed), detail));
+	room = mix(room, vec3(1.0, 0.6, 0.35), step(0.93, h(cell * 3.1 + seed)) * vcol.a * detail);
+	float blind = mix(0.25, step(f.y, 0.25 + 0.6 * h(cell + seed + 7.0)) * step(0.5, h(cell + seed + 2.0)), detail);
+	// the window frames, antialiased
+	float edge = 0.04 + fw.x * 1.2;
+	float frame = (1.0 - smoothstep(0.04, edge, f.x) + smoothstep(1.0 - edge, 0.96, f.x)) * detail + 0.08 * (1.0 - detail);
+	frame = clamp(frame, 0.0, 1.0);
 	vec3 tint = mix(vec3(0.07, 0.11, 0.15), vec3(0.11, 0.1, 0.08), vcol.a);
 	tint *= 0.75 + 0.5 * h(vec2(seed, 3.0));
-	ALBEDO = mix(tint, vec3(0.05), frame);
-	METALLIC = 0.72 * (1.0 - frame);
-	ROUGHNESS = mix(0.04, 0.5, frame) + 0.05 * h(cell * 0.7 + seed);
-	SPECULAR = 0.7;
+	// a steady reflection of the sky and the skyline (no screen-space tricks): every pane sits a
+	// little differently in its frame, so the facade shimmers as you drive past
+	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 v = normalize((INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz);
+	vec3 rf = reflect(-v, n);
+	rf.y += (h(cell * 1.9 + seed) - 0.5) * 0.14 * detail;
+	rf.x += (h(cell * 2.7 + seed) - 0.5) * 0.08 * detail;
+	rf = normalize(rf);
+	vec3 env = rf.y > 0.0 ? mix(sky_horizon, sky_top, smoothstep(0.0, 0.55, rf.y))
+		: mix(sky_horizon * 0.5, city, smoothstep(0.0, -0.2, rf.y));
+	float az = atan(rf.x, rf.z);
+	float towers = step(rf.y, 0.05 + 0.12 * h(vec2(floor(az * 14.0), 3.0)));
+	env = mix(env, city * 1.4, towers * step(0.0, rf.y));
+	float fres = 0.1 + 0.9 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 4.0);
+	ALBEDO = mix(tint * 0.5, vec3(0.05), frame);
+	METALLIC = 0.0;
+	ROUGHNESS = mix(0.16, 0.5, frame);
+	SPECULAR = 0.6;
 	float on = lit * (1.0 - frame) * mix(1.0, 0.55, blind);
-	EMISSION = room * on * mix(0.04, 2.4, night) * (0.6 + 0.4 * r);
+	EMISSION = env * fres * (1.0 - frame) * mix(0.9, 0.22, night)
+		+ room * on * mix(0.55, 2.4, night) * (0.6 + 0.4 * r);
 }
 """
 
@@ -93,8 +117,8 @@ void vertex() {
 
 void fragment() {
 	ALBEDO = vcol.rgb * 0.5;
-	// alpha = how much it glows in daylight (neon signs: some, lamp glass: little)
-	EMISSION = vcol.rgb * mix(vcol.a * 1.2, 3.2, night);
+	// alpha = how much it glows in daylight (neon signs and shop windows clearly, lamp glass a little)
+	EMISSION = vcol.rgb * mix(vcol.a * 2.6 + 0.08, 3.2, night);
 	ROUGHNESS = 0.3;
 }
 """
@@ -106,6 +130,9 @@ var stats := {}
 ## While set, geometry goes to the detail layer of its material: small parts (balconies, AC units,
 ## sills, rails) that are only drawn up close and cast no shadows.
 var detail := false
+## While set: (x, z) -> ground height. Road and markings are lifted onto the ground (near the race
+## route the ground rises to the road's height).
+var ground := Callable()
 
 ## One chunk's geometry of one material, as plain arrays (non-indexed triangles).
 class Buf:
@@ -175,7 +202,11 @@ static func _make_unit_box() -> void:
 func set_night(n: float) -> void:
 	(mats["glass"] as ShaderMaterial).set_shader_parameter("night", n)
 	(mats["glow"] as ShaderMaterial).set_shader_parameter("night", n)
-	(mats["sign"] as ShaderMaterial).set_shader_parameter("glow", lerpf(0.35, 2.4, n))
+	(mats["sign"] as ShaderMaterial).set_shader_parameter("glow", lerpf(1.0, 2.4, n))
+	var g := mats["glass"] as ShaderMaterial
+	g.set_shader_parameter("sky_top", Color(0.33, 0.52, 0.85).lerp(Color(0.02, 0.03, 0.07), n))
+	g.set_shader_parameter("sky_horizon", Color(0.8, 0.86, 0.93).lerp(Color(0.1, 0.08, 0.14), n))
+	g.set_shader_parameter("city", Color(0.2, 0.21, 0.24).lerp(Color(0.05, 0.04, 0.06), n))
 
 
 func buf(mat: String, p: Vector3) -> Buf:
@@ -231,11 +262,20 @@ func quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, n: Vector
 		uva := Vector2(0, 0), uvb := Vector2(1, 0), uvc := Vector2(1, 1), uvd := Vector2(0, 1)) -> void:
 	var bf := buf(mat, (a + c) * 0.5)
 	var nn := n.normalized()
+	if ground.is_valid() and (mat == "road" or mat == "line"):
+		a.y += float(ground.call(a.x, a.z))
+		b.y += float(ground.call(b.x, b.z))
+		c.y += float(ground.call(c.x, c.z))
+		d.y += float(ground.call(d.x, d.z))
 	_tri(bf, a, b, c, nn, col, uva, uvb, uvc)
 	_tri(bf, a, c, d, nn, col, uva, uvc, uvd)
 
 
 func tri(mat: String, a: Vector3, b: Vector3, c: Vector3, n: Vector3, col: Color) -> void:
+	if ground.is_valid() and (mat == "road" or mat == "line"):
+		a.y += float(ground.call(a.x, a.z))
+		b.y += float(ground.call(b.x, b.z))
+		c.y += float(ground.call(c.x, c.z))
 	_tri(buf(mat, (a + b + c) / 3.0), a, b, c, n.normalized(), col, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO)
 
 
@@ -310,9 +350,12 @@ func commit(parent: Node3D, ranges: Dictionary) -> void:
 				continue
 			var is_detail := layer.ends_with("_d")
 			var mat := layer.trim_suffix("_d")
+			# the mesh sits at its chunk's centre (visibility ranges are measured from a node's
+			# position: with every chunk at the world origin, half the city vanished)
+			var centre := Vector3((key.x + 0.5) * CHUNK, 0.0, (key.y + 0.5) * CHUNK)
 			var arr := []
 			arr.resize(Mesh.ARRAY_MAX)
-			arr[Mesh.ARRAY_VERTEX] = b.v
+			arr[Mesh.ARRAY_VERTEX] = Transform3D(Basis.IDENTITY, -centre) * b.v
 			arr[Mesh.ARRAY_NORMAL] = b.n
 			arr[Mesh.ARRAY_COLOR] = b.c
 			# only glass (metres along the facade), signs (atlas) and the road read UVs
@@ -331,6 +374,7 @@ func commit(parent: Node3D, ranges: Dictionary) -> void:
 			mesh.surface_set_material(0, mats[mat])
 			var mi := MeshInstance3D.new()
 			mi.mesh = mesh
+			mi.position = centre
 			mi.name = "City_%s_%d_%d" % [layer, key.x, key.y]
 			var reach: float = float(ranges.get(layer, DETAIL_RANGE if is_detail else 600.0))
 			mi.visibility_range_end = reach + CHUNK * 0.75

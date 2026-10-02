@@ -5,6 +5,11 @@ extends CanvasLayer
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const Gauge = preload("res://scripts/ui/gauge.gd")
 const Minimap = preload("res://scripts/ui/minimap.gd")
+const IsoArrow = preload("res://scripts/ui/iso_arrow.gd")
+const IsoCompass = preload("res://scripts/ui/iso_compass.gd")
+const MISSION_COL := Color(0.3, 0.95, 0.9)
+const NAV_ORANGE := Color(1.0, 0.55, 0.1)
+const NAV_RED := Color(1.0, 0.12, 0.08)
 
 var world   # world.gd
 
@@ -38,6 +43,15 @@ var _count_time := 0.0
 
 
 var _fps_label: Label
+var _nav: Control               # the 3D direction arrow (iso_arrow.gd)
+var _nav_caption: Label
+var _nav_alpha := 0.0
+var _nav_on := false
+var _forced_nav = null          # [yaw, caption, colour] while something (the tutorial) shows its own way
+var _compass: Control           # the mission compass (iso_compass.gd)
+var _compass_label: Label
+var _compass_alpha := 0.0
+var _mission = null             # [target Vector3, name] or null
 var _fps_t := 0.0
 var _fps_frames := 0
 var _fps_worst := 0.0
@@ -208,6 +222,29 @@ func _ready() -> void:
 	_scoreboard.visible = false
 	_root.add_child(_scoreboard)
 
+	# --- 3D direction arrow (bends ahead, wrong way, back to the road) ---
+	_nav = IsoArrow.new()
+	_anchor(_nav, 0.5, 0.29, -80, 0, 160, 112)
+	_nav.modulate.a = 0.0
+	_nav.visible = false
+	_root.add_child(_nav)
+	_nav_caption = UiKit.label("", 20, NAV_ORANGE, HORIZONTAL_ALIGNMENT_CENTER)
+	_nav_caption.add_theme_constant_override("outline_size", 10)
+	_nav_caption.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_anchor(_nav_caption, 0.5, 0.29, -250, 106, 500, 32)
+	_root.add_child(_nav_caption)
+	# --- mission compass (points at the goal whenever there is one) ---
+	_compass = IsoCompass.new()
+	_anchor(_compass, 0.5, 0.0, -66, 112, 132, 96)
+	_compass.modulate.a = 0.0
+	_compass.visible = false
+	_root.add_child(_compass)
+	_compass_label = UiKit.label("", 16, MISSION_COL, HORIZONTAL_ALIGNMENT_CENTER)
+	_compass_label.add_theme_constant_override("outline_size", 8)
+	_compass_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_anchor(_compass_label, 0.5, 0.0, -200, 204, 400, 26)
+	_root.add_child(_compass_label)
+
 	# --- results ---
 	_results_box = VBoxContainer.new()
 	_results_box.add_theme_constant_override("separation", 10)
@@ -227,6 +264,105 @@ func _anchor(c: Control, ax: float, ay: float, x: float, y: float, w: float, h: 
 	c.offset_top = y
 	c.offset_right = x + w
 	c.offset_bottom = y + h
+
+
+## Shows the 3D arrow pointing `yaw` (radians, + = right of the car) with a caption until
+## clear_forced_arrow(), whatever the road does (the tutorial's way out of the yard).
+func force_arrow(yaw: float, caption := "", color := NAV_ORANGE) -> void:
+	_forced_nav = [yaw, caption, color]
+
+
+func clear_forced_arrow() -> void:
+	_forced_nav = null
+
+
+## The mission goal the compass points at (a tutorial destination, the nearest party coin …).
+func set_mission(target: Vector3, title := "") -> void:
+	_mission = [target, title]
+
+
+func clear_mission() -> void:
+	_mission = null
+
+
+## The compass: the goal's bearing relative to the view (which follows the car), its distance.
+func _update_compass(delta: float) -> void:
+	var want := _mission != null and not _results.visible
+	_compass_alpha = move_toward(_compass_alpha, 1.0 if want else 0.0, delta * (4.0 if want else 2.5))
+	_compass.visible = _compass_alpha > 0.01
+	_compass.modulate.a = _compass_alpha
+	_compass_label.visible = _compass.visible
+	_compass_label.modulate.a = _compass_alpha
+	if not want:
+		return
+	var car = world.local_car
+	var target: Vector3 = _mission[0]
+	var p: Vector3 = car.global_position
+	var fwd: Vector3 = -car.global_transform.basis.z
+	var cam := get_viewport().get_camera_3d()
+	if cam != null:
+		fwd = -cam.global_transform.basis.z
+	var f2 := Vector2(fwd.x, fwd.z)
+	var to := Vector2(target.x - p.x, target.z - p.z)
+	if f2.length() > 0.01 and to.length() > 0.01:
+		_compass.bearing = f2.normalized().angle_to(to.normalized())
+	var dist := to.length()
+	_compass.near = clampf(1.0 - dist / 60.0, 0.0, 1.0)
+	var d_text := ("%d m" % int(dist)) if dist < 1000.0 else ("%.1f km" % (dist / 1000.0))
+	var title: String = _mission[1]
+	_compass_label.text = ("%s  ·  %s" % [title, d_text]) if title != "" else d_text
+
+
+## The arrow: where the road goes 40+ m ahead when that's a real bend, the way round when driving
+## the wrong way, the way back when off the road. Fades in and out.
+func _update_nav(delta: float) -> void:
+	var car = world.local_car
+	var want := false
+	var yaw := 0.0
+	var cap := ""
+	var col := NAV_ORANGE
+	if _forced_nav != null:
+		want = true
+		yaw = _forced_nav[0]
+		cap = _forced_nav[1]
+		col = _forced_nav[2]
+	elif bool(Game.settings.get("nav_arrow", true)) and world.state == "running" and not _results.visible \
+			and (world.party == null or not world.party.active()):
+		var tr = world.track
+		var p: Vector3 = car.global_position
+		var pr: Array = tr.project(p, int(car.track_hint))
+		var lateral := absf(float(pr[2]))
+		var vel: Vector3 = (car as RigidBody3D).linear_velocity
+		var dir: Vector3 = vel if car.speed > 6.0 else -car.global_transform.basis.z
+		var f2 := Vector2(dir.x, dir.z).normalized()
+		var tan: Vector3 = tr.tangents[int(pr[0])]
+		var off_road := lateral > float(tr.half_w) + 8.0
+		var ahead: float = 15.0 if off_road else 40.0 + float(car.speed)
+		var target: Vector3 = tr.samples[tr.index_at(float(pr[1]) + ahead)]
+		var to := Vector2(target.x - p.x, target.z - p.z).normalized()
+		yaw = f2.angle_to(to)
+		if f2.dot(Vector2(tan.x, tan.z).normalized()) < -0.3 and car.speed > 3.0 and not off_road:
+			want = true
+			col = NAV_RED
+			cap = "FALSCHE RICHTUNG"
+		elif off_road:
+			want = true
+			cap = "ZUR STRECKE"
+		else:
+			# a real bend coming (a little hysteresis so it doesn't flicker)
+			var lim := 0.3 if _nav_on else 0.42
+			want = absf(yaw) > lim and car.speed > 2.0
+	_nav_on = want
+	_nav_alpha = move_toward(_nav_alpha, 1.0 if want else 0.0, delta * (5.0 if want else 2.5))
+	_nav.visible = _nav_alpha > 0.01
+	_nav.modulate.a = _nav_alpha
+	if want:
+		_nav.yaw = yaw
+		_nav.tint = col
+		_nav_caption.text = cap
+		_nav_caption.add_theme_color_override("font_color", col.lightened(0.15))
+	_nav_caption.modulate.a = _nav_alpha
+	_nav_caption.visible = _nav.visible and _nav_caption.text != ""
 
 
 ## Highest single drift of the session – yours or another player's (online), or the track record.
@@ -301,6 +437,8 @@ func _process(delta: float) -> void:
 	_update_fps(delta)
 	if world == null or world.local_car == null:
 		return
+	_update_nav(delta)
+	_update_compass(delta)
 	_scoreboard.visible = Input.is_action_pressed("scoreboard") and not _results.visible
 	if _scoreboard.visible:
 		_score_refresh -= delta

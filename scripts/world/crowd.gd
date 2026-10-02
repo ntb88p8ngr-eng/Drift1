@@ -22,10 +22,11 @@ vec3 rot_z(vec3 v, float a) { float c = cos(a); float s = sin(a); return vec3(v.
 vec3 rot_x(vec3 v, float a) { float c = cos(a); float s = sin(a); return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c); }
 
 void vertex() {
-	vec4 cd = INSTANCE_CUSTOM;              // rgb = shirt colour, a = phase / mood
+	vec4 cd = INSTANCE_CUSTOM;              // rgb = shirt colour, a = phase / mood (> 1.5: racing overall)
 	float id = float(INSTANCE_ID);
-	float phase = cd.a * 6.2831 + id * 0.37;
-	float mood = fract(cd.a * 7.13 + h1(id) * 0.3);
+	bool overall = cd.a > 1.5;              // pit crew: one-colour overall, arms down
+	float phase = fract(cd.a) * 6.2831 + id * 0.37;
+	float mood = overall ? 0.1 : fract(cd.a * 7.13 + h1(id) * 0.3);
 	float t = TIME * (0.85 + h1(id + 3.0) * 0.4);
 	float part = COLOR.r;
 	float arm = COLOR.a;
@@ -66,6 +67,10 @@ void vertex() {
 	vec3 hair = mix(vec3(0.05, 0.04, 0.03), vec3(0.45, 0.32, 0.18), h1(id + 17.0) * h1(id + 19.0));
 	if (h1(id + 23.0) > 0.7) { hair = cd.rgb * 0.9; }   // cap in the shirt colour
 	vec3 shoes = h1(id + 29.0) > 0.5 ? vec3(0.9) : vec3(0.06);
+	if (overall) {
+		pants = cd.rgb;
+		shoes = vec3(0.05);
+	}
 	part_col = part < 0.2 ? pants : (part < 0.4 ? cd.rgb : (part < 0.6 ? skin : (part < 0.8 ? hair : shoes)));
 }
 
@@ -140,6 +145,11 @@ func _corner_indices(count: int) -> Array:
 		var ds := absi(i - int(track.start_index))
 		if mini(ds, n - ds) < 25:
 			ok = false
+		# the Grüne Hölle's pit straight (pit lane, garages, grandstands): no corner crowd, net or flags
+		if track.track_id == "gruene_hoelle":
+			var rel := fposmod(float(track.dists[i]) - float(track.start_dist) + float(track.length) * 0.5, float(track.length)) - float(track.length) * 0.5
+			if rel > -300.0 and rel < 160.0:
+				ok = false
 		if ok:
 			out.append(i)
 		if out.size() >= count:
@@ -244,6 +254,8 @@ func _add_people(xfs: Array, customs: Array, label: String) -> void:
 		var xf: Transform3D = xfs[i]
 		mm.set_instance_transform(i, Transform3D(xf.basis, xf.origin - center))
 		mm.set_instance_custom_data(i, customs[i])
+		if scenery != null and scenery.people != null:
+			scenery.people.register(mm, i, xf, customs[i])
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.name = label

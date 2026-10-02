@@ -319,8 +319,8 @@ func _access_points() -> void:
 				continue
 			# the apron: 30 m along the barrier, 8 m deep, right behind it
 			var ap: Vector3 = scenery._roadside(i, 5.0, side)
-			if not _ok(ap, 2.0):
-				continue
+			if not _ok(ap, 2.0) or not scenery.free_at(ap, 8.0, 0.0):
+				continue          # (not on the paddock, the pit lane or a camp)
 			ap = _ground(ap)
 			var t: Vector3 = Vector3(track.tangents[i].x, 0, track.tangents[i].z).normalized()
 			scenery.add_ground_patch(Transform3D(Basis.looking_at(t, Vector3.UP), ap), Vector2(8.0, 30.0), "asphalt")

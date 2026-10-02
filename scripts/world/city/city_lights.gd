@@ -74,6 +74,8 @@ func _process(delta: float) -> void:
 				continue
 			for i in _grid[key]:
 				var e: Array = emitters[i]
+				if float(e[3]) <= 0.0:
+					continue          # a knocked-over lamp
 				var rel: Vector3 = (e[0] as Vector3) - cp
 				var d := rel.length()
 				if d > REACH:

@@ -92,7 +92,7 @@ func _process(delta: float) -> void:
 		t["progress"] = fposmod(prog + nv * delta, L)
 		t["odo"] = float(t["odo"]) + nv * delta
 		t["xf"] = _xf(t)
-		render.add(int(t["model"]), t["xf"], t["paint"], float(t["odo"]), bool(t["brake"]))
+		render.add(int(t["model"]), t["xf"], t["paint"], float(t["odo"]), bool(t["brake"]), nv)
 
 
 func _xf(t: Dictionary) -> Transform3D:

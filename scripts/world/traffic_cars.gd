@@ -6,6 +6,8 @@ extends Node3D
 ## The traffic systems call add() for every car each frame; a small pool of solid boxes follows the
 ## cars closest to the players (they push you; a crash doesn't throw them off their lane).
 
+const Sfx = preload("res://scripts/util/sfx_kit.gd")
+
 const MODELS := ["camry", "impreza", "civic"]
 const WEIGHTS := [4, 3, 3]
 ## Paints: lots of white, silver and black like real Japanese traffic, some colour.
@@ -19,6 +21,8 @@ const TIERS := [[75.0, true, true], [200.0, false, true], [480.0, false, false]]
 const CAPACITY := [80, 260, 420]
 const POOL := 20
 const BRAKE_FLAG := 5000.0      # custom.a = odometer (wrapped) + this while braking
+const VOICES := 6               # soft engine sounds on the cars closest to the camera
+const SOUND_RANGE := 60.0
 
 const SHADER := """
 shader_type spatial;
@@ -85,6 +89,8 @@ var _cand: Array = []            # [distance², Transform3D, model] close to a p
 var _bodies: Array = []
 var _shapes: Array = []
 var ok := false
+var _snd: Array = []             # AudioStreamPlayer3D pool
+var _snd_cand: Array = []        # [distance², position, speed]
 
 
 func setup(p_world) -> void:
@@ -138,6 +144,15 @@ func setup(p_world) -> void:
 		_shapes.append([box, cs])
 	# draw after the traffic systems have added their cars for this frame
 	process_priority = 100
+	for k in VOICES:
+		var a := AudioStreamPlayer3D.new()
+		a.stream = Sfx.get_sound("traffic_engine")
+		a.unit_size = 7.0
+		a.max_distance = SOUND_RANGE
+		a.volume_db = -80.0
+		a.attenuation_filter_cutoff_hz = 6000.0
+		add_child(a)
+		_snd.append([a, 0.0])
 
 
 ## A random model (index into models) and a paint for it.
@@ -168,9 +183,11 @@ func half_length(model: int) -> float:
 	return float(models[model]["half"])
 
 
-## One car for this frame. odo: metres driven (turns the wheels).
-func add(model: int, xf: Transform3D, paint: Color, odo: float, brake: bool) -> void:
+## One car for this frame. odo: metres driven (turns the wheels); speed in m/s (its engine sound).
+func add(model: int, xf: Transform3D, paint: Color, odo: float, brake: bool, speed := 0.0) -> void:
 	var d2 := _cam.distance_squared_to(xf.origin)
+	if d2 < SOUND_RANGE * SOUND_RANGE:
+		_snd_cand.append([d2, xf.origin, speed])
 	var m: Dictionary = models[model]
 	for p in _players:
 		var pd := (p as Vector3).distance_squared_to(xf.origin)
@@ -201,6 +218,7 @@ func _process(_delta: float) -> void:
 		for t in TIERS.size():
 			(mms[t] as MultiMesh).visible_instance_count = int(c[t])
 			c[t] = 0
+	_update_sound()
 	# where the camera and the players are, for the next frame
 	var cam := get_viewport().get_camera_3d()
 	if cam:
@@ -215,6 +233,31 @@ func _process(_delta: float) -> void:
 		_night = n
 		for mat in _mats:
 			(mat as ShaderMaterial).set_shader_parameter("night", n)
+
+
+## The nearest few cars hum softly: louder and higher the faster they go, a quiet idle when stopped.
+func _update_sound() -> void:
+	_snd_cand.sort_custom(func(a, b): return float(a[0]) < float(b[0]))
+	var dt := get_process_delta_time()
+	for k in _snd.size():
+		var v: Array = _snd[k]
+		var a: AudioStreamPlayer3D = v[0]
+		if k < _snd_cand.size():
+			var c: Array = _snd_cand[k]
+			var spd: float = c[2]
+			a.global_position = c[1]
+			var want := lerpf(-24.0, -12.0, clampf(spd / 16.0, 0.0, 1.0))
+			v[1] = move_toward(float(v[1]), 1.0, dt * 2.0)
+			a.volume_db = lerpf(-60.0, want, float(v[1]))
+			a.pitch_scale = 0.8 + spd * 0.045
+			if not a.playing:
+				a.play(randf())
+		else:
+			v[1] = move_toward(float(v[1]), 0.0, dt * 3.0)
+			a.volume_db = lerpf(-60.0, a.volume_db, float(v[1])) if float(v[1]) > 0.0 else -80.0
+			if float(v[1]) <= 0.0 and a.playing:
+				a.stop()
+	_snd_cand.clear()
 
 
 func _physics_process(_delta: float) -> void:
@@ -357,13 +400,20 @@ static func _merge(path: String) -> Dictionary:
 			var b: Array = by_class[cls]
 			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 			var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-			var start: int = (b[0] as PackedVector3Array).size()
-			(b[0] as PackedVector3Array).append_array(xf * verts)
-			(b[1] as PackedVector3Array).append_array(rot * nrm)
+			# (packed arrays are copied out of an Array: append to a local, store it back)
+			var vv: PackedVector3Array = b[0]
+			var nn: PackedVector3Array = b[1]
+			var cc: PackedColorArray = b[2]
+			var start: int = vv.size()
+			vv.append_array(xf * verts)
+			nn.append_array(rot * nrm)
 			var cols := PackedColorArray()
 			cols.resize(verts.size())
 			cols.fill(Color(1, 1, 1, 1.0 if wheel else 0.0))
-			(b[2] as PackedColorArray).append_array(cols)
+			cc.append_array(cols)
+			b[0] = vv
+			b[1] = nn
+			b[2] = cc
 			var idx = arr[Mesh.ARRAY_INDEX]
 			var out: PackedInt32Array = b[3]
 			if idx == null or (idx as PackedInt32Array).is_empty():

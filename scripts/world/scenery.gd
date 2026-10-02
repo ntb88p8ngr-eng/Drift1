@@ -4,9 +4,11 @@ extends Node3D
 ## skyline. Lamps, windows and signs follow the time of day through set_night().
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
+const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
+const PeopleHits = preload("res://scripts/world/people_hits.gd")
 const Festival = preload("res://scripts/world/festival.gd")
 const City = preload("res://scripts/world/city.gd")
 const Details = preload("res://scripts/world/details.gd")
@@ -33,6 +35,7 @@ var night := 0.0            # 0 = day … 1 = night (lamps / window glow)
 var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
+var people: Node3D             # people_hits.gd: every instanced person can be run over
 var festival: Node3D
 var city: Node3D
 var details: Node3D
@@ -71,6 +74,10 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	LOD0_END = [50.0, 62.0, 75.0, 95.0][quality]
 	LOD1_END = [150.0, 185.0, 225.0, 280.0][quality]
 	rng.seed = hash(track.track_id)
+	people = PeopleHits.new()
+	people.name = "PeopleHits"
+	add_child(people)
+	people.world = get_parent()
 	var id: String = track.track_id
 	big = bool(track.elevated)
 	if big:
@@ -333,6 +340,10 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 			buf[j + 15] = c.a
 			j += 16
 		mm.buffer = buf
+		# people can be run over: register every one with its slot
+		if people != null and mesh == Crowd.person_mesh():
+			for idx in items.size():
+				people.register(mm, idx, items[idx][0], items[idx][1])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.name = label
@@ -1441,10 +1452,21 @@ func _on_lamp_hit(body: Node3D, lamp: RigidBody3D) -> void:
 	var v: Vector3 = (body as RigidBody3D).linear_velocity
 	if v.length() < 3.0:
 		return      # parking against it doesn't knock it over
+	# it snaps off just above the foot (the stump stays); kicked at the base, the top swings back
+	# onto the car
+	var foot := lamp.global_transform
+	var mats := lamp.find_children("*", "MeshInstance3D", false, false)
+	var pole_mat: Material = (mats[0] as MeshInstance3D).material_override if not mats.is_empty() else null
+	var stub := MeshKit.cyl_node(0.115, 0.12, 0.35, pole_mat, Vector3(0, 0.175, 0), Vector3.ZERO, 10)
+	add_child(stub)
+	stub.global_transform = foot * Transform3D(Basis.IDENTITY, Vector3(0, 0.175, 0))
+	lamp.global_position += foot.basis.y * 0.36
 	lamp.set_deferred("freeze", false)
-	var push := Vector3(v.x, 0, v.z) * lamp.mass * 0.3 + Vector3(0, lamp.mass * 1.5, 0)
-	lamp.call_deferred("apply_impulse", push, lamp.global_basis * Vector3(0, 1.2, 0))
-	lamp.call_deferred("apply_torque_impulse", Vector3(v.z, 0, -v.x).normalized() * lamp.mass * 6.0)
+	var dir := Vector3(v.x, 0, v.z).normalized()
+	var spd := minf(Vector2(v.x, v.z).length(), 30.0)
+	lamp.call_deferred("apply_impulse", dir * lamp.mass * spd * 0.5 + Vector3(0, lamp.mass * 2.0, 0), lamp.global_basis * Vector3(0, 0.5, 0))
+	lamp.call_deferred("apply_torque_impulse", Vector3(-dir.z, 0, dir.x) * lamp.mass * spd * 0.8)
+	Sfx.play(self, "pole_hit", 0.0, foot.origin + Vector3(0, 1.0, 0), randf_range(0.9, 1.1))
 	for l in lamp.find_children("*", "Light3D", true, false):
 		(l as Light3D).visible = false
 		lamp_lights.erase(l)
@@ -1500,17 +1522,25 @@ func add_path(pts: Array, width: float, kind: String, paint := true) -> void:
 		if l < 0.01:
 			continue
 		dir /= l
-		var side := Vector3(-dir.z, 0, dir.x) * width * 0.5
-		var q := [a - side, a + side, b + side, b - side]
-		for m in 4:
-			var qv: Vector3 = q[m]
-			qv.y = _ground_y(qv, lift)
-			q[m] = qv
-		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(0, u), Vector2(width * 0.5, u), Vector2(width * 0.5, u + l * 0.5), Vector2(0, u + l * 0.5))
+		var side := Vector3(-dir.z, 0, dir.x)
+		# strips across a wide path, so it follows the ground (a bump between its edges would
+		# come through the middle)
+		var strips := maxi(int(ceil(width / 1.5)), 1)
+		for sgi in strips:
+			var w0 := -width * 0.5 + width * sgi / strips
+			var w1 := -width * 0.5 + width * (sgi + 1) / strips
+			var q := [a + side * w0, a + side * w1, b + side * w1, b + side * w0]
+			for m in 4:
+				var qv: Vector3 = q[m]
+				qv.y = _ground_y(qv, lift)
+				q[m] = qv
+			var u0 := (w0 + width * 0.5) * 0.5
+			var u1 := (w1 + width * 0.5) * 0.5
+			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(u0, u), Vector2(u1, u), Vector2(u1, u + l * 0.5), Vector2(u0, u + l * 0.5))
 		u += l * 0.5
 		# without paint the ground is still marked under the path (no grass through it), but only
 		# well inside its edges
-		_ground_paints.append([a, width * 0.5 + 1.0 if paint else maxf(width * 0.5 - 1.5, 0.5), GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
+		_ground_paints.append([a, width * 0.5 + 1.0 if paint else maxf(width * 0.5 - 1.5, 0.5), GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0)), not paint])
 		if k % 3 == 0:
 			occupy(a, width * 0.5 + 0.8)
 
@@ -1532,7 +1562,7 @@ func add_ground_patch(xf: Transform3D, size: Vector2, kind: String, paint := tru
 				qv.y = _ground_y(qv, lift)
 				q[m] = qv
 			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(x0, z0) * 0.5, Vector2(x1, z0) * 0.5, Vector2(x1, z1) * 0.5, Vector2(x0, z1) * 0.5)
-			_ground_paints.append([(q[0] + q[2]) * 0.5, 2.0 if paint else 0.6, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
+			_ground_paints.append([(q[0] + q[2]) * 0.5, 2.0 if paint else 0.6, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0)), not paint])
 
 
 ## A painted line on the ground along the frame's z axis.
@@ -1585,6 +1615,9 @@ func _finish_ground() -> void:
 		var p: Vector3 = pt[0]
 		var radius: float = pt[1]
 		var col: Color = pt[2]
+		# "hard" marks (under a clean asphalt lane or apron) stay strictly inside their radius: the
+		# coarse splat grid would paint ragged pale edges around them
+		var hard: bool = pt.size() > 3 and bool(pt[3])
 		var cx := int(round((p.x - o.x) / cell))
 		var cz := int(round((p.z - o.y) / cell))
 		var r := int(ceil(radius / cell)) + 1
@@ -1595,7 +1628,7 @@ func _finish_ground() -> void:
 				if ix < 0 or iz < 0 or ix >= terrain.nx or iz >= terrain.nz:
 					continue
 				var d := Vector2(o.x + ix * cell - p.x, o.y + iz * cell - p.z).length()
-				var k := 1.0 - smoothstep(radius * 0.5, radius + cell * 0.5, d)
+				var k := (1.0 - smoothstep(maxf(radius - cell, 0.0), radius, d)) if hard else (1.0 - smoothstep(radius * 0.5, radius + cell * 0.5, d))
 				if k > 0.0:
 					var idx: int = iz * terrain.nx + ix
 					sp[idx] = sp[idx].lerp(col, k * 0.85)

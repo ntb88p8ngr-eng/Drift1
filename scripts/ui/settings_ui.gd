@@ -269,6 +269,11 @@ static func gameplay_page() -> VBoxContainer:
 	v.add_child(UiKit.labeled("Seitliches Rutschen", UiKit.row([sl, sl_val], 8)))
 	v.add_child(UiKit.labeled("Einheit", UiKit.option(["km/h", "mph"], 0 if Game.settings["units_kmh"] else 1, func(i):
 		Game.set_setting("units_kmh", i == 0))))
+	var nav := CheckButton.new()
+	nav.button_pressed = bool(Game.settings.get("nav_arrow", true))
+	nav.tooltip_text = "Ein animierter 3D-Pfeil oben im Bild zeigt Kurven voraus, falsche Richtung und den Weg zurück zur Strecke."
+	nav.toggled.connect(func(on): Game.set_setting("nav_arrow", on))
+	v.add_child(UiKit.labeled("Richtungspfeile", nav))
 	return v
 
 

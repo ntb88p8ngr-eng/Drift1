@@ -68,8 +68,11 @@ func add_flock(home: Vector3, n: int, radius: float) -> void:
 	mmi.multimesh = mm
 	mmi.visibility_range_end = 140.0
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# placed at the flock (visibility ranges are measured from the node, not from the birds)
+	mmi.position = home
+	mmi.custom_aabb = AABB(Vector3(-40, -2, -40), Vector3(80, 30, 80))
 	add_child(mmi)
-	var f := {"home": home, "radius": radius, "birds": birds, "mm": mm, "mmi": mmi, "state": "ground", "t": 0.0, "cool": 0.0}
+	var f := {"home": home, "origin": home, "radius": radius, "birds": birds, "mm": mm, "mmi": mmi, "state": "ground", "t": 0.0, "cool": 0.0}
 	flocks.append(f)
 	_write(f)
 	stats["pigeons"] = int(stats.get("pigeons", 0)) + n
@@ -160,12 +163,13 @@ func _fly(f: Dictionary, delta: float) -> void:
 
 func _write(f: Dictionary) -> void:
 	var mm: MultiMesh = f["mm"]
+	var origin: Vector3 = f["origin"]
 	var flying: bool = f["state"] == "fly"
 	var birds: Array = f["birds"]
 	for k in birds.size():
 		var b: Dictionary = birds[k]
 		var air := flying and (b["v"] as Vector3).length() > 0.2
-		mm.set_instance_transform(k, Transform3D(Basis(Vector3.UP, float(b["yaw"])), b["p"]))
+		mm.set_instance_transform(k, Transform3D(Basis(Vector3.UP, float(b["yaw"])), (b["p"] as Vector3) - origin))
 		mm.set_instance_custom_data(k, Color(1.0 if air else 0.0, float(b["phase"]), 0, 0))
 
 

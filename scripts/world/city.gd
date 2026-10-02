@@ -22,6 +22,7 @@ const Buildings = preload("res://scripts/world/city/buildings.gd")
 const Places = preload("res://scripts/world/city/places.gd")
 const Streets = preload("res://scripts/world/city/streets.gd")
 const CityLights = preload("res://scripts/world/city/city_lights.gd")
+const CityLamps = preload("res://scripts/world/city/city_lamps.gd")
 const Pigeons = preload("res://scripts/world/city/pigeons.gd")
 const CityAtlas = preload("res://scripts/world/city/city_atlas.gd")
 
@@ -85,6 +86,7 @@ var bld
 var places
 var streets
 var lights_node
+var lamps
 var pigeons
 var rng := RandomNumberGenerator.new()
 var emitters: Array = []
@@ -157,7 +159,14 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_lap("places")
 	await Game.load_tick()
 	streets = Streets.new()
+	lamps = CityLamps.new()
+	lamps.name = "Streetlights"
+	lamps.emitters = emitters
+	add_child(lamps)
+	streets.lamps = lamps
+	cm.ground = func(x: float, z: float) -> float: return maxf(float(terrain.height_at(x, z)), 0.0)
 	streets.build(net, cm, track, scenery, _add, _light, self)
+	cm.ground = Callable()
 	_lap("streets")
 	_race_route_lights()
 	_route_markings()
@@ -194,11 +203,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 					out.append([c.global_position, float(c.speed)])
 		return out
 	_flocks()
-	# wet streets and glass towers: screen-space reflections from "high" up (elsewhere only on ultra)
-	if quality >= 2 and world != null and "atmosphere" in world and world.atmosphere != null:
-		var env: Environment = world.atmosphere.env
-		if env != null:
-			env.ssr_enabled = true
+	lamps.build(world)
 	_stats.merge({"streets": net.streets.size(), "junctions": net.junctions.size(), "parks": parks.size(), "lots": lots.size()})
 	_stats.merge(bld.stats)
 	_stats.merge(places.stats)
@@ -225,6 +230,8 @@ func _lap(label: String) -> void:
 func set_night(n: float) -> void:
 	if cm:
 		cm.set_night(n)
+	if lamps:
+		lamps.set_night(n)
 	if lights_node:
 		lights_node.set_night(n)
 	for m in _screen_mats:

@@ -16,7 +16,7 @@ func _ready() -> void:
 			args[a.substr(2, a.find("=") - 2)] = a.substr(a.find("=") + 1)
 	var world := World.new()
 	world.setup({"track": "tokyo", "mode": "free", "laps": 1, "time_of_day": args["tod"], "weather": "dry",
-		"day_cycle": 0, "weather_seed": 7, "online": false})
+		"day_cycle": 0, "weather_seed": 7, "online": false, "traffic": int(args.get("traffic", "2"))})
 	add_child(world)
 	for f in 30:
 		await get_tree().process_frame
