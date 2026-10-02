@@ -7,6 +7,7 @@ extends Node3D
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const Props = preload("res://scripts/world/prop_meshes.gd")
+const GlbKit = preload("res://scripts/util/glb_kit.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
 const Colliders = preload("res://scripts/util/colliders.gd")
 const GhPaddock = preload("res://scripts/world/gh_paddock.gd")
@@ -216,13 +217,18 @@ func _camp(i: int, side: float) -> bool:
 		var cb := Basis(Vector3.UP, yaw)
 		var xf := Transform3D(cb, p)
 		var tint := Color(1, 1, 1).darkened(rng.randf_range(0.0, 0.15))
-		_add("caravan", xf, Color(tint.r, tint.g, tint.b * rng.randf_range(0.9, 1.0), 1))
-		Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.4, 0)), Vector3(2.3, 2.6, 5.8))
+		tint.b *= rng.randf_range(0.9, 1.0)
+		# a caravan or a motorhome (picked by its place: the camp layout stays as it was)
+		var v := _variant(p, CAMPERS.size())
+		var sz: Vector3 = _sizes["camper_%d" % v]
+		_add("camper_%d" % v, xf)
+		Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, sz.y * 0.5, 0)), Vector3(sz.x, sz.y, sz.z))
+		var flank := sz.x * 0.5 - 1.1       # the awning and the car sit against its sides
 		if rng.randf() < 0.7:
 			var awn: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
-			_add("awning", xf, Color(awn.r, awn.g, awn.b, 1))
+			_add("awning", xf * Transform3D(Basis.IDENTITY, Vector3(flank, 0, 0)), Color(awn.r, awn.g, awn.b, 1))
 		# the car on the side away from the awning
-		var cp: Vector3 = _ground(p - cb.x * 3.4 + cb.z * rng.randf_range(-0.8, 0.8))
+		var cp: Vector3 = _ground(p - cb.x * (3.4 + flank) + cb.z * rng.randf_range(-0.8, 0.8))
 		if _ok(cp, 3.0) and scenery.details:
 			scenery.details.add_parked_car(Transform3D(Basis(Vector3.UP, yaw + rng.randf_range(-0.15, 0.15)), cp))
 		if first_caravan == null:
@@ -286,8 +292,13 @@ func _camp(i: int, side: float) -> bool:
 		if p == null:
 			continue
 		var col: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
-		_add("tent", Transform3D((Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s * rng.randf_range(0.85, 1.05), s * long))), p),
-			Color(col.r, col.g, col.b, 1))
+		var yaw_t := rng.randf() * TAU
+		rng.randf()
+		# one of the tents, as big as the spot allows
+		var tv := _variant(p, TENTS.size())
+		var tsz: Vector3 = _sizes["tent_%d" % tv]
+		var fit := minf(1.0, 1.25 * 1.2 * s * long / (maxf(tsz.x, tsz.z) * 0.5))
+		_add("tent_%d" % tv, Transform3D(Basis(Vector3.UP, yaw_t) * Basis.from_scale(Vector3.ONE * fit), p))
 	# people walking about
 	var walkers := rng.randi_range(5, 12) if big else rng.randi_range(2, 6)
 	for k in walkers:
@@ -441,16 +452,32 @@ func _spectators(i: int, side: float) -> void:
 # ---------------------------------------------------------------------------
 # Meshes
 # ---------------------------------------------------------------------------
+const CAMPERS := ["01_acorn_teardrop", "02_rambler_retro", "03_summit_offroad", "04_longline_family",
+	"01_sprout_campervan", "02_sundrift_overcab", "03_ridgeline_expedition", "04_horizon_coach"]
+const TENTS := ["01_small_a_frame", "02_medium_dome", "03_large_family_tunnel", "04_tiny_wedge_bivy", "05_extra_large_bell"]
+var _sizes := {}
+
+
+## A model variant from the place (not from the layout's random numbers: the camps stay as they were).
+static func _variant(p: Vector3, n: int) -> int:
+	return absi(hash(Vector2i(int(p.x * 10.0), int(p.z * 10.0)))) % n
+
+
 func _make_meshes() -> void:
 	var pm := Props.material()
 	var w := Color(1, 1, 1, 1)
-	# dome tent (tinted), dark door and a darker groundsheet edge
+	# the campers (caravans and motorhomes, front +X: turned so it points -Z like the layout expects)
+	# and tents (front +Z: turned round) – assets/props/camp
+	for k in CAMPERS.size():
+		var m := GlbKit.merged("res://assets/props/camp/%s.glb" % CAMPERS[k], Transform3D(Basis(Vector3.UP, PI * 0.5)))
+		_meshes["camper_%d" % k] = [m, 420.0, true]
+		_sizes["camper_%d" % k] = m.get_aabb().size if m else Vector3(2.3, 2.6, 5.8)
+	for k in TENTS.size():
+		var m := GlbKit.merged("res://assets/props/camp/%s.glb" % TENTS[k], Transform3D(Basis(Vector3.UP, PI)))
+		_meshes["tent_%d" % k] = [m, 260.0, true]
+		_sizes["tent_%d" % k] = m.get_aabb().size if m else Vector3(2.3, 1.1, 2.3)
+	# (the old box caravan, kept for reference only)
 	var st := MeshKit.new_st()
-	Props._vlathe(st, [Vector2(1.15, 0.0), Vector2(1.1, 0.3), Vector2(0.92, 0.68), Vector2(0.58, 0.95), Vector2(0.0, 1.08)], 10, w)
-	Props._b(st, Vector3(0, 0.33, -1.06), Vector3(0.55, 0.62, 0.05), Color(0.12, 0.12, 0.13), Vector3(-0.2, 0, 0))
-	_meshes["tent"] = [MeshKit.commit(st, pm), 260.0, true]
-	# caravan: white body, dark windows, a stripe, wheels, drawbar
-	st = MeshKit.new_st()
 	var body := Color(0.95, 0.95, 0.93)
 	Props._b(st, Vector3(0, 1.45, 0), Vector3(2.2, 2.2, 5.4), body)
 	Props._b(st, Vector3(0, 2.6, 0.2), Vector3(2.0, 0.12, 4.6), Color(0.85, 0.85, 0.84))

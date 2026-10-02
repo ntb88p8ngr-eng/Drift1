@@ -6,6 +6,7 @@ extends Node3D
 ## away (a cap on how many there are at once keeps the physics cheap).
 
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
+const Props = preload("res://scripts/world/prop_meshes.gd")
 const Debris = preload("res://scripts/util/debris.gd")
 
 const CELL := 8.0
@@ -30,6 +31,9 @@ var _rng := RandomNumberGenerator.new()
 var _box_meshes := {}
 var _mats := {}
 var stats := {}
+## Parked cars: [MultiMesh, index, Transform3D, custom, kind, static body, awake] by grid cell.
+var _cars := {}
+var _awake: Array = []          # the parked cars that became bodies (speed-capped)
 
 
 func _ready() -> void:
@@ -46,8 +50,92 @@ func register(mm: MultiMesh, index: int, xf: Transform3D, custom: Color) -> void
 	stats["people"] = int(stats.get("people", 0)) + 1
 
 
+## A parked car drawn as instance `index` of `mm`, solid through `body`: becomes a real car body
+## (it rolls and slides away, pushes back with its weight) when a car comes at it.
+func register_car(mm: MultiMesh, index: int, xf: Transform3D, custom: Color, kind: String, body: Node3D) -> void:
+	var o := xf.origin
+	var key := Vector2i(int(floor(o.x / CELL)), int(floor(o.z / CELL)))
+	if not _cars.has(key):
+		_cars[key] = []
+	_cars[key].append([mm, index, xf, custom, kind, body, false])
+	stats["parked_cars"] = int(stats.get("parked_cars", 0)) + 1
+
+
+func _wake_cars() -> void:
+	for k in range(_awake.size() - 1, -1, -1):
+		var b = _awake[k]
+		if not is_instance_valid(b):
+			_awake.remove_at(k)
+			continue
+		var rb := b as RigidBody3D
+		if rb.linear_velocity.length_squared() > 30.0 * 30.0:
+			rb.linear_velocity = rb.linear_velocity.normalized() * 30.0
+	for car in world.cars.values():
+		if not is_instance_valid(car) or not car.visible or not (car is RigidBody3D):
+			continue
+		var rb := car as RigidBody3D
+		var sp := rb.linear_velocity.length()
+		if sp < 1.5:
+			continue
+		var cp := rb.global_position
+		var inv := rb.global_transform.affine_inverse()
+		var c := Vector2i(int(floor(cp.x / CELL)), int(floor(cp.z / CELL)))
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				for e in _cars.get(c + Vector2i(dx, dz), []):
+					if bool(e[6]):
+						continue
+					var lp: Vector3 = inv * (e[2] as Transform3D).origin
+					if absf(lp.x) < 3.2 and absf(lp.z) < 4.6 + sp * 0.025 and absf(lp.y) < 2.5:
+						_wake(e)
+
+
+func _wake(e: Array) -> void:
+	e[6] = true
+	var mm: MultiMesh = e[0]
+	mm.set_instance_transform(int(e[1]), Transform3D(Basis.IDENTITY, Vector3(0, -2000, 0)))
+	var xf: Transform3D = e[2]
+	var kind: String = e[4]
+	var sz: Vector3 = Props.CAR_SIZES[kind]
+	if is_instance_valid(e[5]):
+		(e[5] as Node).queue_free()
+	var b := RigidBody3D.new()
+	b.name = "ParkedCar"
+	b.mass = 1150.0
+	b.collision_layer = 8
+	b.collision_mask = 1 | 2 | 4 | 8 | 16
+	b.continuous_cd = true
+	b.angular_damp = 0.5
+	b.linear_damp = 0.15
+	# drawn the same way (the prop shader takes the paint from the instance data)
+	var one := MultiMesh.new()
+	one.transform_format = MultiMesh.TRANSFORM_3D
+	one.use_custom_data = true
+	one.mesh = mm.mesh
+	one.instance_count = 1
+	one.set_instance_transform(0, Transform3D.IDENTITY)
+	one.set_instance_custom_data(0, e[3])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = one
+	b.add_child(mmi)
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(sz.x, sz.y - 0.2, sz.z)
+	cs.shape = bs
+	cs.position = Vector3(0, sz.y * 0.5 + 0.1, 0)
+	b.add_child(cs)
+	add_child(b)
+	b.global_transform = xf
+	_awake.append(b)
+	stats["cars_woken"] = int(stats.get("cars_woken", 0)) + 1
+
+
 func _physics_process(delta: float) -> void:
-	if world == null or _grid.is_empty():
+	if world == null:
+		return
+	if not _cars.is_empty():
+		_wake_cars()
+	if _grid.is_empty():
 		return
 	for car in world.cars.values():
 		if not is_instance_valid(car) or not car.visible or not (car is RigidBody3D):

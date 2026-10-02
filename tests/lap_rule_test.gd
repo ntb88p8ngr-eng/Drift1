@@ -1,6 +1,7 @@
 extends Node
-## Driving the wrong way spoils the lap only past a quarter of it or within 10 % of start/finish:
-## turning round at 15 % (after a spin) costs nothing, at 50 % or just past the line it does.
+## Driving the wrong way spoils the lap only after 10 s of it, and only past a quarter of the lap or
+## within 10 % of start/finish: at 15 % (after a spin) it costs nothing, at 50 % or just past the line
+## it does – but a few seconds backwards never.
 ## Run: godot --headless --path . res://tests/lap_rule_test.tscn
 
 const World = preload("res://scripts/world/world.gd")
@@ -16,10 +17,11 @@ func _ready() -> void:
 		await world.loaded
 	var fails := 0
 	var tr = world.track
-	for case in [[0.15, false], [0.5, true], [0.05, true]]:
+	for case in [[0.15, false, 12], [0.5, true, 12], [0.05, true, 12], [0.5, false, 5]]:
 		world.crossed_start = true
 		world._lap_spoilt = false
 		world._rev_m = 0.0
+		world._rev_t = 0.0
 		world._last_prog = -1.0
 		var p: float = tr.length * float(case[0])
 		var i: int = tr.index_at(p)
@@ -29,11 +31,12 @@ func _ready() -> void:
 		for f in 10:
 			await get_tree().physics_frame
 		world._rev_m = 0.0
+		world._rev_t = 0.0
 		world._lap_spoilt = false
-		for f in 120 * 3:
-			car.linear_velocity = -(tr.tangents[tr.index_at(world.progress)] as Vector3) * 12.0
+		for f in 120 * int(case[2]):
+			car.linear_velocity = -(tr.tangents[tr.index_at(world.progress)] as Vector3) * 6.0
 			await get_tree().physics_frame
-		print("LAP RULE: backwards from %d %% of the lap: %.0f m back, spoilt %s (expected %s)" % [int(float(case[0]) * 100), world._rev_m, world._lap_spoilt, case[1]])
+		print("LAP RULE: backwards from %d %% of the lap for %d s: %.0f m back, spoilt %s (expected %s)" % [int(float(case[0]) * 100), int(case[2]), world._rev_m, world._lap_spoilt, case[1]])
 		if world._lap_spoilt != bool(case[1]):
 			print("FAIL"); fails += 1
 	print("LAP RULE TEST: %s" % ("PASS" if fails == 0 else "FAIL"))

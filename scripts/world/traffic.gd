@@ -66,7 +66,7 @@ func setup(p_world, count: int, p_render, speed_level := 1) -> void:
 		t.id = ID_BASE + k
 		# spread over the lap, away from the start grid
 		t.progress = fposmod(120.0 + L * (k + _rng.randf_range(0.0, 0.5)) / count, L)
-		t.v_want = speed_kmh / 3.6 * _rng.randf_range(0.85, 1.1)
+		t.v_want = speed_kmh / 3.6 * _rng.randf_range(0.96, 1.05)
 		t.v = t.v_want * 0.8
 		t.lane = 1.0 if k % 2 == 0 else -1.0
 		t.lat = t.lane * _lane_lat
@@ -110,15 +110,17 @@ func _drive(t: TCar, obstacles: Array, progs: PackedFloat32Array, delta: float) 
 	var L: float = track.length
 	# knocked by a player (traffic_cars.gd reports where the solid car is against where it should
 	# be): carry on from where it now is – the lane spring steers it back into a lane
+	if render.hit(t.id):
+		t.v *= 0.5
+		t.a = minf(t.a, 0.0)
+		t.shaken = 1.2
 	var e: Vector3 = render.disturbance(t.id)
 	if e != Vector3.ZERO:
+		# loose: its place along the lap is where the body is; it aims for the lane nearest to it
 		t.progress = fposmod(t.progress + e.x, L)
-		t.lat += e.y
+		t.lane = 1.0 if t.lat + e.y >= 0.0 else -1.0
+		t.lat = t.lane * _lane_lat
 		t.lat_v = 0.0
-		t.lane = 1.0 if t.lat >= 0.0 else -1.0
-		t.v = maxf(t.v + e.x * 2.0, 0.0) * 0.6
-		t.a = minf(t.a, 0.0)
-		t.shaken = maxf(t.shaken, 1.0)
 	var want := t.v_want
 	# slower in tight corners
 	var k := absf(float(track.curvature[track.index_at(t.progress + 10.0 + t.v)]))
@@ -159,7 +161,8 @@ func _drive(t: TCar, obstacles: Array, progs: PackedFloat32Array, delta: float) 
 				break
 	# the intelligent driver model: eases up to its speed, follows at a safe time gap and comes to
 	# a smooth stop behind whatever stands in its lane
-	var free_road := 1.0 - pow(t.v / maxf(want, 0.5), 4.0)
+	# (aiming a little above its speed, so it actually gets there)
+	var free_road := 1.0 - pow(t.v / maxf(want * 1.04, 0.5), 4.0)
 	var inter := 0.0
 	if gap < LOOK:
 		var s_star := MIN_GAP + maxf(0.0, t.v * HEADWAY + t.v * (t.v - lv) / (2.0 * sqrt(ACC * BRAKE)))
@@ -181,7 +184,9 @@ func _drive(t: TCar, obstacles: Array, progs: PackedFloat32Array, delta: float) 
 	# across the road: a damped spring to the lane's centre (a smooth S, never a jerk)
 	var target := t.lane * _lane_lat
 	var lat_a := (target - t.lat) * LAT_W * LAT_W - 2.0 * LAT_W * t.lat_v
-	t.lat_v = clampf(t.lat_v + lat_a * delta, -2.2, 2.2)
+	# no faster sideways than a car steering at this speed (no sliding across standing still)
+	var lat_max := minf(2.2, t.v * 0.25)
+	t.lat_v = clampf(t.lat_v + lat_a * delta, -lat_max, lat_max)
 	t.lat += t.lat_v * delta
 	# along: the acceleration eases towards what's needed; firm braking comes at once
 	var urgent := a_want < minf(t.a, -2.0) or (gap < MIN_GAP + 3.0 and lv < t.v)

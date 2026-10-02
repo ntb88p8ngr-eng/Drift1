@@ -78,6 +78,7 @@ var _sector_mask := 0
 ## Driving the wrong way: metres covered backwards along the lap (a spin's wiggle doesn't count),
 ## and whether that has spoilt this lap (only past 25 % of it, or within 10 % of start/finish).
 var _rev_m := 0.0
+var _rev_t := 0.0               # ... and for how long (s): the lap is spoilt only after 10 s of it
 var _lap_spoilt := false
 var _net_timer := 0.0
 var _wait_timeout := 15.0
@@ -460,17 +461,22 @@ func _update_progress() -> void:
 		if _last_prog > length * 0.8 and prog < length * 0.2:
 			_on_cross_forward()
 		elif _last_prog < length * 0.2 and prog > length * 0.8:
-			# backwards over the line: that's within 10 % of it
-			_spoil_lap()
+			# backwards over the line: that's within 10 % of it (once it's been 10 s of it)
+			if _rev_t >= 10.0:
+				_spoil_lap()
 		var dp := wrapf(prog - _last_prog, -length * 0.5, length * 0.5)
 		if dp < 0.0:
 			_rev_m -= dp
+			if float(local_car.speed) > 2.0:
+				_rev_t += get_physics_process_delta_time()
 		elif dp > 0.3:
 			_rev_m = maxf(_rev_m - dp, 0.0)
+			if _rev_m <= 0.0:
+				_rev_t = 0.0
 		# backwards for real: the lap only counts as spoilt once a quarter of it is done, or near
 		# start/finish (turning round early in the lap after a spin costs nothing)
 		var frac := prog / length
-		if _rev_m > 15.0 and (frac > 0.25 or frac < 0.1):
+		if _rev_m > 15.0 and _rev_t >= 10.0 and (frac > 0.25 or frac < 0.1):
 			_spoil_lap()
 	_sector_mask |= 1 << clampi(int(prog / length * SECTORS), 0, SECTORS - 1)
 	_last_prog = prog
@@ -500,6 +506,7 @@ func _on_cross_forward() -> void:
 	_sector_mask = 1
 	_lap_spoilt = false
 	_rev_m = 0.0
+	_rev_t = 0.0
 
 
 func _popcount(v: int) -> int:

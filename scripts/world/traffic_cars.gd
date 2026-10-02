@@ -4,10 +4,12 @@ extends Node3D
 ## tiers (detailed close up, light further away, without shadows in the distance). The wheels turn in
 ## the shader from each car's odometer; brake lights light up, head and tail lights glow at night.
 ## The traffic systems call add() for every car each frame. The cars closest to the players are
-## solid: a pool of real rigid bodies (car mass, kept upright) that a controller steers after where
-## the car should be, with no more force than tyres have – hit one and it is knocked aside, spins,
-## pushes back with its own mass, then drives back into its lane (the traffic systems ask
-## disturbance() and carry on from where the car ended up).
+## solid: a pool of rigid bodies (car mass, kept upright) that follow their lane exactly (frozen,
+## kinematic) – until a player is about to hit one. Then it turns loose: the crash is real physics
+## (it is knocked aside, spins, pushes back with its own mass), and afterwards it drives back into
+## its lane like a car (steering towards a point on the lane ahead, its tyres holding it against
+## sliding sideways) and freezes onto the lane again. The traffic systems ask hit() and
+## disturbance() to carry on from where the car ended up.
 
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
 
@@ -25,10 +27,7 @@ const CAPACITY := [120, 380, 700]
 const POOL := 20
 const NEAR_R := 55.0            # solid within this distance of a player
 const MASS := 1300.0
-const KP := 4.0                 # position error -> correcting speed (1/s)
-const TAU := 0.12               # how quickly the speed follows (s)
 const MAX_ACC := 8.5            # what the tyres can do (m/s²)
-const YAW_KP := 5.0
 const MAX_ALPHA := 8.0          # rad/s²
 const BRAKE_FLAG := 5000.0      # custom.a = odometer (wrapped) + this while braking
 const VOICES := 6               # soft engine sounds on the cars closest to the camera
@@ -105,8 +104,8 @@ var _err_step := {}              # car id -> the physics step it was measured in
 var _err_seen := {}              # car id -> the step disturbance() last handed out
 var _step := 0
 var _vis := {}                   # car id -> [previous, current body transform] (drawn interpolated)
-var _yaw_prev := {}              # car id -> the target's yaw last step
-var _tpos_prev := {}             # car id -> the target's position last step (its velocity, sideways too)
+var _loose := {}                 # car id -> seconds it has been back on its lane (loose after a hit)
+var _hits := {}                  # car id -> true: just hit (hit() hands it out once)
 var _phys_t := 0.0
 var ok := false
 var _snd: Array = []             # AudioStreamPlayer3D pool
@@ -222,8 +221,8 @@ func add(model: int, xf: Transform3D, paint: Color, odo: float, brake: bool, spe
 			near = minf(near, (p as Vector3).distance_squared_to(xf.origin))
 		if near < NEAR_R * NEAR_R or _body_of.has(id):
 			_targets[id] = [xf, speed, model, _phys_t, near]
-		# a solid one is drawn where its body is (interpolated between the physics steps)
-		if _vis.has(id):
+		# a loose one is drawn where its body is (interpolated between the physics steps)
+		if _loose.has(id) and _vis.has(id):
 			var v: Array = _vis[id]
 			xf = (v[0] as Transform3D).interpolate_with(v[1], clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0))
 	var d2 := _cam.distance_squared_to(xf.origin)
@@ -296,15 +295,24 @@ func _update_sound() -> void:
 	_snd_cand.clear()
 
 
-## Where the solid car `id` was knocked to, against where it should be: Vector3(along, across
-## (+ right), yaw) – once, when it's more than a nudge (the traffic system then carries on from there).
+## Where the loose car `id` is against where it should be: Vector3(along, across (+ right), yaw) –
+## once per physics step while it is loose (ZERO otherwise); the traffic system carries on from there.
 func disturbance(id: int) -> Vector3:
-	var e: Vector3 = _err.get(id, Vector3.ZERO)
+	if not _loose.has(id):
+		return Vector3.ZERO
 	var st: int = _err_step.get(id, -1)
-	if (absf(e.x) > 0.5 or absf(e.y) > 0.45 or absf(e.z) > 0.4) and st > int(_err_seen.get(id, -1)):
+	if st > int(_err_seen.get(id, -1)):
 		_err_seen[id] = st
-		return e
+		return _err.get(id, Vector3.ZERO)
 	return Vector3.ZERO
+
+
+## True once when the car `id` has just been hit (it then waits a moment and drives on gently).
+func hit(id: int) -> bool:
+	if _hits.has(id):
+		_hits.erase(id)
+		return true
+	return false
 
 
 func _physics_process(delta: float) -> void:
@@ -316,7 +324,7 @@ func _physics_process(delta: float) -> void:
 	for id in _targets.keys():
 		if _phys_t - float(_targets[id][3]) > 0.3:
 			_targets.erase(id)
-	# keep the bodies on their cars (a knocked one until it's back on its way); free ones go to the
+	# keep the bodies on their cars (a loose one until it's back on its lane); free ones go to the
 	# nearest new cars
 	var free: Array = []
 	var far2 := (NEAR_R + 15.0) * (NEAR_R + 15.0)
@@ -325,11 +333,8 @@ func _physics_process(delta: float) -> void:
 		if id >= 0:
 			if not _targets.has(id):
 				_release(k)
-			else:
-				var d2: float = _targets[id][4]
-				var e: Vector3 = _err.get(id, Vector3.ZERO)
-				if d2 > far2 and (e.length_squared() < 0.25 or d2 > 150.0 * 150.0):
-					_release(k)
+			elif float(_targets[id][4]) > far2 and (not _loose.has(id) or float(_targets[id][4]) > 150.0 * 150.0):
+				_release(k)
 		if _owner[k] < 0:
 			free.append(k)
 	if not free.is_empty():
@@ -342,16 +347,31 @@ func _physics_process(delta: float) -> void:
 			if free.is_empty():
 				break
 			_assign(free.pop_back(), int(c[1]))
+	var pcars: Array = []
+	if world != null:
+		for car in world.cars.values():
+			if is_instance_valid(car) and car.visible and car is RigidBody3D:
+				pcars.append(car)
 	for k in POOL:
 		var id: int = _owner[k]
-		if id >= 0:
-			_steer(k, id, delta)
+		if id < 0:
+			continue
+		if _loose.has(id):
+			_drive_loose(k, id, delta, pcars)
+		else:
+			_follow(k, id, delta, pcars)
+
+
+## Where car id should be now: its lane transform, moved on by its speed since it was reported.
+func _target(id: int) -> Transform3D:
+	var tg: Array = _targets[id]
+	var txf: Transform3D = tg[0]
+	var fwd := _flat_fwd(txf)
+	return Transform3D(txf.basis, txf.origin + fwd * float(tg[1]) * (_phys_t - float(tg[3])))
 
 
 func _assign(k: int, id: int) -> void:
 	var tg: Array = _targets[id]
-	var txf: Transform3D = tg[0]
-	var fwd := _flat_fwd(txf)
 	var body: RigidBody3D = _bodies[k]
 	var m: Dictionary = models[int(tg[2])]
 	var sz: Vector3 = m["size"]
@@ -360,21 +380,14 @@ func _assign(k: int, id: int) -> void:
 		(sh[0] as BoxShape3D).size = sz
 		(sh[1] as CollisionShape3D).position = Vector3(0, sz.y * 0.5 + 0.02, 0)
 	body.inertia = Vector3(1, 1, 1) * MASS * (sz.x * sz.x + sz.z * sz.z) / 12.0
-	var pos := txf.origin + fwd * float(tg[1]) * (_phys_t - float(tg[3]))
-	var xf := Transform3D(Basis.looking_at(fwd, Vector3.UP), pos)
-	body.global_transform = xf
-	body.freeze = false
+	# frozen on its lane (no falling in, no drifting): exactly where it's drawn
+	body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	body.freeze = true
+	body.global_transform = _target(id)
 	body.collision_layer = 1
 	body.collision_mask = 1 | 2 | 4 | 8
-	body.linear_velocity = fwd * float(tg[1])
-	body.angular_velocity = Vector3.ZERO
 	_owner[k] = id
 	_body_of[id] = k
-	_vis[id] = [xf, xf]
-	_err.erase(id)
-	_err_step.erase(id)
-	_yaw_prev[id] = atan2(-fwd.x, -fwd.z)
-	_tpos_prev[id] = pos
 
 
 func _release(k: int) -> void:
@@ -390,52 +403,86 @@ func _release(k: int) -> void:
 	_err.erase(id)
 	_err_step.erase(id)
 	_err_seen.erase(id)
-	_yaw_prev.erase(id)
-	_tpos_prev.erase(id)
+	_loose.erase(id)
+	_hits.erase(id)
 
 
-## Steers body k after car id's target: the speed the target has plus a correction towards it, with
-## no more grip than a car has; the heading likewise. Reports where it is against the target.
-func _steer(k: int, id: int, delta: float) -> void:
-	var tg: Array = _targets[id]
-	var txf: Transform3D = tg[0]
-	var spd: float = tg[1]
-	var fwd := _flat_fwd(txf)
-	var tpos := txf.origin + fwd * spd * (_phys_t - float(tg[3]))
+## On its lane: the body moves exactly with the car. A player about to run into it (closing in, or
+## pressing against it) turns it loose, so the crash is real physics with the car's own mass.
+func _follow(k: int, id: int, delta: float, pcars: Array) -> void:
+	var body: RigidBody3D = _bodies[k]
+	var xf := _target(id)
+	var fwd := _flat_fwd(xf)
+	var spd: float = _targets[id][1]
+	body.global_transform = xf
+	var sz: Vector3 = (_shapes[k][0] as BoxShape3D).size
+	var inv := xf.affine_inverse()
+	for car in pcars:
+		var rb := car as RigidBody3D
+		var lp: Vector3 = inv * rb.global_position
+		var rel := rb.linear_velocity - fwd * spd
+		var closing := -(xf.basis.inverse() * rel).dot(lp.normalized()) if lp.length() > 0.01 else 0.0
+		var reach := maxf(closing, 0.0) * delta * 3.0
+		if absf(lp.x) < sz.x * 0.5 + 1.1 + reach and absf(lp.z) < sz.z * 0.5 + 2.4 + reach and absf(lp.y) < 2.5 \
+				and (closing > 1.0 or (absf(lp.x) < sz.x * 0.5 + 0.95 and absf(lp.z) < sz.z * 0.5 + 2.25)):
+			body.freeze = false
+			body.linear_velocity = fwd * spd
+			body.angular_velocity = Vector3.ZERO
+			_loose[id] = 0.0
+			_hits[id] = true
+			_vis[id] = [xf, xf]
+			return
+
+
+## Loose after a hit: drives back onto its lane like a car – steers towards a point on the lane
+## ahead (no sharper than a car can turn), its tyres hold it against sliding sideways, the speed
+## follows what the traffic system wants. Once it's back on the lane and nobody leans on it, it
+## freezes onto the lane again.
+func _drive_loose(k: int, id: int, delta: float, pcars: Array) -> void:
 	var body: RigidBody3D = _bodies[k]
 	var bxf := body.global_transform
 	var v: Array = _vis[id]
 	v[0] = v[1]
 	v[1] = bxf
-	var err := tpos - bxf.origin
-	err.y = 0.0
-	var corr := err * KP
-	if corr.length() > 6.0:
-		corr = corr.normalized() * 6.0
-	# the target's own velocity (sideways too, while it changes lanes or steers back into one)
-	var tvel := fwd * spd
-	if _tpos_prev.has(id):
-		var tv: Vector3 = (tpos - (_tpos_prev[id] as Vector3)) / maxf(delta, 1e-4)
-		tv.y = 0.0
-		if tv.length() < spd + 6.0:
-			tvel = tv
-	_tpos_prev[id] = tpos
+	var txf := _target(id)
+	var tfwd := _flat_fwd(txf)
+	var spd: float = _targets[id][1]
+	var bf := _flat_fwd(bxf)
+	var br := Vector3(-bf.z, 0, bf.x)
 	var lv := body.linear_velocity
-	var acc := (tvel + corr - Vector3(lv.x, 0, lv.z)) / TAU
-	if acc.length() > MAX_ACC:
-		acc = acc.normalized() * MAX_ACC
-	body.apply_central_force(acc * MASS)
-	var yaw_t := atan2(-fwd.x, -fwd.z)
-	var bf := -bxf.basis.z
+	var v_f := lv.dot(bf)
+	var v_s := lv.dot(br)
+	var a_s := clampf(-v_s / 0.15, -MAX_ACC, MAX_ACC)
+	var a_f := clampf((spd - v_f) * 1.5, -7.0, 3.0)
+	body.apply_central_force((bf * a_f + br * a_s) * MASS)
+	var look := txf.origin + tfwd * maxf(4.0, absf(v_f) * 0.8 + 3.0)
+	var to := look - bxf.origin
+	to.y = 0.0
 	var yaw_b := atan2(-bf.x, -bf.z)
-	var yaw_err := wrapf(yaw_t - yaw_b, -PI, PI)
-	var rate := wrapf(yaw_t - float(_yaw_prev.get(id, yaw_t)), -PI, PI) / maxf(delta, 1e-4)
-	_yaw_prev[id] = yaw_t
-	var alpha := clampf((rate + yaw_err * YAW_KP - body.angular_velocity.y) / 0.1, -MAX_ALPHA, MAX_ALPHA)
+	var err := wrapf(atan2(-to.x, -to.z) - yaw_b, -PI, PI)
+	var max_rate := absf(v_f) / 4.5
+	var rate := clampf(err * 2.5, -max_rate, max_rate) * (1.0 if v_f >= 0.0 else -1.0)
+	var alpha := clampf((rate - body.angular_velocity.y) / 0.1, -MAX_ALPHA, MAX_ALPHA)
 	body.apply_torque(Vector3(0, body.inertia.y * alpha, 0))
-	var rel := bxf.origin - tpos
-	_err[id] = Vector3(rel.dot(fwd), rel.dot(Vector3(-fwd.z, 0, fwd.x)), -yaw_err)
+	var rel := bxf.origin - txf.origin
+	var yaw_err := wrapf(atan2(-tfwd.x, -tfwd.z) - yaw_b, -PI, PI)
+	var e := Vector3(rel.dot(tfwd), rel.dot(Vector3(-tfwd.z, 0, tfwd.x)), -yaw_err)
+	_err[id] = e
 	_err_step[id] = _step
+	# back on the lane?
+	var leaned := false
+	for car in pcars:
+		if (car as Node3D).global_position.distance_to(bxf.origin) < 5.5:
+			leaned = true
+	if absf(e.y) < 0.35 and absf(e.z) < 0.08 and absf(e.x) < 1.0 and not leaned:
+		_loose[id] = float(_loose[id]) + delta
+		if float(_loose[id]) > 0.4:
+			body.freeze = true
+			body.global_transform = txf
+			_loose.erase(id)
+			_vis.erase(id)
+	else:
+		_loose[id] = 0.0
 
 
 static func _flat_fwd(xf: Transform3D) -> Vector3:

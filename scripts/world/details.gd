@@ -78,8 +78,17 @@ func add_parked_car(xf: Transform3D, kind := "") -> void:
 	var tint: Color = CAR_PAINTS[rng.randi() % CAR_PAINTS.size()]
 	add(kind, xf, tint)
 	var sz: Vector3 = Props.CAR_SIZES[kind]
-	Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, sz.y * 0.5 + 0.1, 0)), Vector3(sz.x, sz.y - 0.2, sz.z))
+	var body := Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, sz.y * 0.5 + 0.1, 0)), Vector3(sz.x, sz.y - 0.2, sz.z))
+	# people_hits.gd turns it into a real car body when someone drives into it
+	car_bodies[car_key(xf.origin)] = body
 	_stats["parked_cars"] = int(_stats.get("parked_cars", 0)) + 1
+
+
+var car_bodies := {}             # car_key(position) -> its static collider
+
+
+static func car_key(p: Vector3) -> Vector3i:
+	return Vector3i(int(round(p.x * 10.0)), int(round(p.y * 10.0)), int(round(p.z * 10.0)))
 
 
 ## A small car park beside the road (behind the barrier): asphalt, bay lines, two rows of cars with

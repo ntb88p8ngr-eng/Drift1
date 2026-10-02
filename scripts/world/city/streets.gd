@@ -685,9 +685,8 @@ func _misc(p: Vector3, face: Vector3, along: Vector2) -> void:
 	var basis := Basis.looking_at(face, Vector3.UP)
 	var r := rng.randf()
 	if r < 0.3:
-		add_inst.call("vending", Transform3D(basis, p), Color(1, 1, 1, 1))
-		cm.glow_box(Transform3D(basis, p + Vector3(0, 1.3, 0) + face * 0.41), Vector3(1.9, 0.95, 0.03), Color(0.85, 0.93, 1.0), 0.6)
-		light.call(p + face * 1.2 + Vector3(0, 1.4, 0), Color(0.8, 0.9, 1.0), 4.5, 0.8, 0)
+		# knockable (city_lamps.gd)
+		lamps.add_vending(p, face)
 	elif r < 0.5:
 		for k in rng.randi_range(2, 5):
 			add_inst.call("bicycle", Transform3D(Basis.looking_at(face, Vector3.UP).rotated(Vector3.UP, PI * 0.5 + rng.randf_range(-0.1, 0.1)), p + Vector3(along.x, 0, along.y) * (k * 0.7)), Color(1, 1, 1, 1))
@@ -735,28 +734,10 @@ func _parking_bay(p: Vector2, t: Vector2, side: float, k: int) -> void:
 	stats["parking_bays"] = int(stats.get("parking_bays", 0)) + 1
 
 
-## Car and pedestrian signals at a street's mouth: pole on the kerb, mast arm over the lane.
+## Car and pedestrian signals at a street's mouth: pole on the kerb, mast arm over the lane – they
+## can be knocked over (city_lamps.gd).
 func _signal(p: Vector3, face: Vector3, across: Vector3, hw: float) -> void:
-	var col := Color(0.6, 0.6, 0.62, 0.5)
-	var basis := Basis.looking_at(face, Vector3.UP)
-	cm.box("metal", Transform3D(basis, p + Vector3(0, 2.9, 0)), Vector3(0.18, 5.8, 0.18), col)
-	var arm := hw * 0.9
-	cm.box("metal", Transform3D(Basis.looking_at(across, Vector3.UP), p + Vector3(0, 5.5, 0) + across * arm * 0.5), Vector3(0.12, 0.12, arm), col)
-	var head := p + Vector3(0, 5.3, 0) + across * arm
-	var hb := Basis.looking_at(face, Vector3.UP)
-	cm.box("frame", Transform3D(hb, head), Vector3(1.3, 0.42, 0.28), Color(0.12, 0.12, 0.13))
-	var phase := rng.randi() % 3
-	for kk in 3:
-		var lamp_col: Color = [Color(0.1, 1.0, 0.55), Color(1.0, 0.8, 0.1), Color(1.0, 0.12, 0.06)][kk]
-		var on: bool = kk == phase
-		var pos := head + hb.x * (-0.42 + kk * 0.42) + face * 0.15
-		if on:
-			cm.glow_box(Transform3D(hb, pos), Vector3(0.3, 0.3, 0.04), lamp_col, 0.9)
-		else:
-			cm.box("frame", Transform3D(hb, pos), Vector3(0.3, 0.3, 0.04), lamp_col.darkened(0.8))
-	# pedestrian signal on the pole
-	cm.box("frame", Transform3D(hb, p + Vector3(0, 2.7, 0) + face * 0.15), Vector3(0.35, 0.7, 0.2), Color(0.12, 0.12, 0.13))
-	cm.glow_box(Transform3D(hb, p + Vector3(0, 2.85 if phase == 2 else 2.55, 0) + face * 0.26), Vector3(0.25, 0.25, 0.02), Color(0.2, 0.7, 1.0) if phase == 2 else Color(1.0, 0.15, 0.08), 0.8)
+	lamps.add_signal(p, face, across, hw, rng.randi() % 3)
 	stats["signals"] = int(stats.get("signals", 0)) + 1
 
 

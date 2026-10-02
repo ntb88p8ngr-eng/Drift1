@@ -12,6 +12,7 @@ const NAV_ORANGE := Color(1.0, 0.55, 0.1)
 const NAV_RED := Color(1.0, 0.12, 0.08)
 ## The arrow only comes up once its reason (a bend, the wrong way, off the road) has lasted this long.
 const NAV_DELAY := 3.0
+const WRONG_WAY_DELAY := 10.0
 
 var world   # world.gd
 
@@ -358,7 +359,8 @@ func _update_nav(delta: float) -> void:
 			want = absf(yaw) > lim and car.speed > 2.0
 		_nav_on = want
 		_nav_hold = _nav_hold + delta if want else 0.0
-		want = want and _nav_hold >= NAV_DELAY
+		# the wrong way only after 10 s of really driving that way (a spin doesn't count)
+		want = want and _nav_hold >= (WRONG_WAY_DELAY if col == NAV_RED else NAV_DELAY)
 	else:
 		_nav_on = false
 		_nav_hold = 0.0

@@ -50,6 +50,23 @@ func _ready() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(out.path_join("tut_%d_%s.png" % [i, sh[2]]))
 		print("SHOT ", sh[2])
+	# the drive starts: the fixed shot from the back of the garage, then out on the driveway
+	if only.split(",").has("garagecam"):
+		tut._skip_intro()
+		tut._close_hint()
+		tut.set_process(true)
+		var car0 = world.local_car
+		var xf0: Transform3D = car0.global_transform
+		for e in [[0.0, "start"], [6.0, "rolling"], [16.0, "out"]]:
+			car0.place(Transform3D(xf0.basis, xf0.origin - xf0.basis.z * float(e[0])))
+			car0.freeze = true
+			for f in 150:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(out.path_join("tut_cam_%s.png" % e[1]))
+			print("SHOT cam_", e[1], " garage cam ", tut._garage_cam, " blend ", tut._garage_blend)
+		car0.freeze = false
+		tut.set_process(false)
 	# the turn-right sign as seen from the end of the driveway, with the on-screen arrow
 	if only == "" or only.split(",").has("sign"):
 		tut._skip_intro()

@@ -346,6 +346,13 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		if people != null and mesh == Crowd.person_mesh():
 			for idx in items.size():
 				people.register(mm, idx, items[idx][0], items[idx][1])
+		# parked cars: real car bodies once someone drives into them
+		if people != null and details != null and label.begins_with("Prop_car_"):
+			for idx in items.size():
+				var xf0: Transform3D = items[idx][0]
+				var body = details.car_bodies.get(details.car_key(xf0.origin))
+				if body != null:
+					people.register_car(mm, idx, xf0, items[idx][1], label.substr(5), body)
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.name = label

@@ -36,6 +36,7 @@ class Path:
 	var waiting := -1.0           # connectors: since when a car waits for it (-1 nobody)
 	var reserved = null           # connectors: the car that has committed to it
 	var reverse := -1             # lanes: the same street's other lane
+	var crossings: Array = []     # lanes: [arc length here, other lane, arc length there] where lanes cross outside a junction
 
 class Car:
 	var path := 0
@@ -208,7 +209,8 @@ func _build(net) -> float:
 	var radius := {}
 	for pc in pieces:
 		for ni in [pc[3], pc[4]]:
-			radius[ni] = maxf(float(radius.get(ni, 5.0)), float(pc[1]) * 0.5 + 1.5)
+			# cars wait this far back: clear of the curves of the other lanes through the junction
+			radius[ni] = maxf(float(radius.get(ni, 6.5)), float(pc[1]) * 0.5 + 3.0)
 	# --- lanes
 	var lanes_in := {}
 	var lanes_out := {}
@@ -216,7 +218,8 @@ func _build(net) -> float:
 		var centre: PackedVector2Array = pc[0]
 		var w: float = pc[1]
 		var kind: String = pc[2]
-		var vmax := (14.0 if kind == "ring" else (12.0 if kind == "feeder" else (11.0 if w >= 10.0 else 8.5))) * _speed_k
+		# the menu's speed on the main streets, a little less on the narrow ones (bends: slower)
+		var vmax := BASE_KMH / 3.6 * _speed_k * (1.0 if kind == "ring" or kind == "feeder" or w >= 10.0 else 0.8)
 		var ids: Array = []
 		for dir in 2:
 			var c := centre.duplicate()
@@ -283,10 +286,55 @@ func _build(net) -> float:
 				if _crosses(cx, cy):
 					cx.conflicts.append(made[y][0])
 					cy.conflicts.append(made[x][0])
+	_find_crossings()
 	stats["junctions"] = nodes.size()
 	stats["lanes"] = paths.size() - n_conn
 	stats["connectors"] = n_conn
 	return km
+
+
+## Lanes that cross each other away from any junction (streets drawn across one another): the cars
+## there give way to whoever is nearer the crossing.
+func _find_crossings() -> void:
+	var grid := {}
+	for li in paths.size():
+		var p: Path = paths[li]
+		if p.conn:
+			continue
+		for j in p.pts.size() - 1:
+			var a := p.pts[j]
+			var key := Vector2i(int(floor(a.x / 16.0)), int(floor(a.z / 16.0)))
+			if not grid.has(key):
+				grid[key] = []
+			grid[key].append(Vector2i(li, j))
+	var seen := {}
+	for key in grid:
+		var segs: Array = []
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				segs.append_array(grid.get(key + Vector2i(dx, dz), []))
+		for x in (grid[key] as Array):
+			for y in segs:
+				if x.x >= y.x or y.x == (paths[x.x] as Path).reverse:
+					continue
+				var pa: Path = paths[x.x]
+				var pb: Path = paths[y.x]
+				var a0 := Vector2(pa.pts[x.y].x, pa.pts[x.y].z)
+				var a1 := Vector2(pa.pts[x.y + 1].x, pa.pts[x.y + 1].z)
+				var b0 := Vector2(pb.pts[y.y].x, pb.pts[y.y].z)
+				var b1 := Vector2(pb.pts[y.y + 1].x, pb.pts[y.y + 1].z)
+				var hit = Geometry2D.segment_intersects_segment(a0, a1, b0, b1)
+				if hit == null:
+					continue
+				var tag := Vector2i(x.x, y.x)
+				if seen.has(tag):
+					continue
+				seen[tag] = true
+				var sa: float = pa.cum[x.y] + a0.distance_to(hit)
+				var sb: float = pb.cum[y.y] + b0.distance_to(hit)
+				pa.crossings.append([sa, y.x, sb])
+				pb.crossings.append([sb, x.x, sa])
+	stats["crossings"] = seen.size()
 
 
 ## The part of a polyline between arc lengths s0 and s1 (wrapping round for a closed ring).
@@ -453,7 +501,7 @@ func _spawn(count: int) -> void:
 		c.half = render.half_length(c.model)
 		c.path = li
 		c.s = s
-		c.want = lane.vmax * _rng.randf_range(0.85, 1.05)
+		c.want = lane.vmax * _rng.randf_range(0.97, 1.05)
 		c.v = c.want * 0.7
 		c.odo = _rng.randf() * 100.0
 		c.next = _choose(lane)
@@ -502,14 +550,14 @@ func _step(c: Car, dt: float) -> void:
 	var p: Path = paths[c.path]
 	# knocked by a player: carry on from where it ended up (along the lane; across it the spring
 	# below steers it back), and wait a moment
+	if render.hit(ID_BASE + c.id):
+		c.v *= 0.5
+		c.a = minf(c.a, 0.0)
+		c.shaken = 1.2
 	var e: Vector3 = render.disturbance(ID_BASE + c.id)
 	if e != Vector3.ZERO:
+		# loose: its place along the lane is where the body is (it steers itself back onto it)
 		c.s = maxf(c.s + e.x, 0.0)
-		c.lat = clampf(c.lat + e.y, -12.0, 12.0)
-		c.lat_v = 0.0
-		c.v = maxf(c.v + e.x * 2.0, 0.0) * 0.5
-		c.a = minf(c.a, 0.0)
-		c.shaken = maxf(c.shaken, 1.0)
 	var want := minf(c.want, p.vmax)
 	var rem := p.length - c.s
 	# the car in front (on this path, or the first one on the next)
@@ -557,6 +605,17 @@ func _step(c: Car, dt: float) -> void:
 				want = minf(want, sqrt(2.0 * DEC * maxf(rem - 0.8, 0.0)))
 				if c.v < 0.6 and rem < 10.0 and q.waiting < 0.0:
 					q.waiting = _time
+	# a crossing outside a junction: give way to a car nearer to it
+	for cr in p.crossings:
+		var d: float = float(cr[0]) - c.s
+		if d < -c.half or d > 14.0:
+			continue
+		var other: Path = paths[cr[1]]
+		for oc: Car in other.cars:
+			var od: float = float(cr[2]) - oc.s
+			if od > -oc.half - 1.0 and od < 9.0 and (od < d or (absf(od - d) < 0.5 and oc.id < c.id)):
+				want = minf(want, sqrt(2.0 * DEC * maxf(d - c.half - 3.0, 0.0)))
+				break
 	# players and bots in the way
 	if not _players.is_empty():
 		var fwd := -c.xf.basis.z

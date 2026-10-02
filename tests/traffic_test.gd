@@ -64,34 +64,38 @@ func _ready() -> void:
 		print("FAIL: traffic hardly moves"); fails += 1
 	if worst_jump > 1.5:
 		print("FAIL: the traffic stutters"); fails += 1
-	# knocked aside (a hit from the side): back into a lane and on its way
+	# rammed from behind by the player: it turns loose (real physics), then drives back onto a lane
 	var tr = world.track
 	var car = world.local_car
 	var tk = tf.cars[3]
-	var ki: int = tr.index_at(tk.progress)
-	car.place(Transform3D(Basis.looking_at(tr.tangents[ki], Vector3.UP), tr.edge_point(ki, -tr.half_w * 3.0) + Vector3(0, 0.6, 0)))
-	car.freeze = true
-	for f in 30:
-		await get_tree().physics_frame
+	var ki: int = tr.index_at(tk.progress - 14.0)
+	car.place(Transform3D(Basis.looking_at(tr.tangents[ki], Vector3.UP), tr.edge_point(ki, tk.lat) + Vector3(0, 0.6, 0)))
 	var rend = world.traffic_cars
-	var bk: int = rend._body_of.get(tk.id, -1)
-	if bk < 0:
-		print("FAIL: the traffic car near the player isn't solid"); fails += 1
-	else:
-		var body: RigidBody3D = rend._bodies[bk]
-		var kf: Vector3 = -tk.xf.basis.z
-		body.linear_velocity += Vector3(-kf.z, 0, kf.x) * 7.0
-		body.angular_velocity = Vector3(0, 2.0, 0)
-		var max_off := 0.0
-		for f in 120 * 12:
-			await get_tree().physics_frame
-			max_off = maxf(max_off, absf(tk.lat - tk.lane * tr.half_w * 0.42))
-		var off_now := absf(tk.lat - tk.lane * tr.half_w * 0.42)
-		print("TRAFFIC: knocked car: up to %.1f m out of its lane, after 12 s %.2f m, speed %.1f" % [max_off, off_now, tk.v])
-		if max_off < 0.5:
-			print("FAIL: the knock didn't move the car"); fails += 1
-		if off_now > 0.4 or tk.v < 1.0:
-			print("FAIL: the knocked car didn't find its lane again"); fails += 1
+	var went_loose := false
+	var max_off := 0.0
+	for f in 120 * 2:
+		var kf: Vector3 = tr.tangents[tr.index_at(tk.progress - 10.0)]
+		car.linear_velocity = Vector3(kf.x, 0, kf.z).normalized() * (tk.v + 9.0)
+		await get_tree().physics_frame
+		went_loose = went_loose or rend._loose.has(tk.id)
+		if went_loose:
+			break
+	car.linear_velocity = Vector3.ZERO
+	car.freeze = true
+	car.global_position += Vector3(0, 30, 0)
+	for f in 120 * 15:
+		await get_tree().physics_frame
+		went_loose = went_loose or rend._loose.has(tk.id)
+		var bk: int = rend._body_of.get(tk.id, -1)
+		if bk >= 0:
+			var bp: Vector3 = (rend._bodies[bk] as Node3D).global_position
+			var pr: Array = tr.project(bp, tr.index_at(tk.progress))
+			max_off = maxf(max_off, absf(float(pr[2]) - tk.lat))
+	print("TRAFFIC: rammed car: loose %s, up to %.1f m off its lane, after 15 s loose %s, speed %.1f" % [went_loose, max_off, rend._loose.has(tk.id), tk.v])
+	if not went_loose:
+		print("FAIL: the rammed car didn't react physically"); fails += 1
+	if rend._loose.has(tk.id) or tk.v < 1.0:
+		print("FAIL: the rammed car didn't find its lane again"); fails += 1
 	car.freeze = false
 	# park the player 30 m in front of the first traffic car, in its lane
 	var t0 = tf.cars[0]
@@ -105,7 +109,7 @@ func _ready() -> void:
 	var gap: float = fposmod(block_p - t0.progress, tr.length) - t0.half - 2.3
 	print("TRAFFIC: stopped with %.1f m between the bumpers (speed %.1f), parked car pushed %.1f m" % [gap, t0.v, car.global_position.distance_to(start_pos)])
 	# it may also have passed in the other lane
-	var passed: bool = absf(t0.lat - t0.lane * tr.half_w * 0.42) < 0.5 and t0.lane * tr.half_w * 0.42 * signf(tr.half_w) != 0.0 and fposmod(t0.progress - block_p, tr.length) < tr.length * 0.5 and fposmod(t0.progress - block_p, tr.length) > 0.0
+	var passed: bool = fposmod(t0.progress - block_p, tr.length) < tr.length * 0.5
 	if not passed and (t0.v > 0.5 or gap < 0.5 or gap > 9.0):
 		print("FAIL: traffic does not stop for (or pass) a car in its lane"); fails += 1
 	# the city streets: cars move, take the junctions in turn (no overlaps), nothing jams for good

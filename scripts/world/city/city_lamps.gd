@@ -30,7 +30,22 @@ const KINDS := {
 	"lamp0": [0.14, HEIGHT, BREAK_Y, 110.0], "lamp1": [0.14, HEIGHT, BREAK_Y, 110.0],
 	"upole1": [0.18, POLE_H, POLE_BREAK, 160.0], "upole-1": [0.18, POLE_H, POLE_BREAK, 160.0],
 	"hydrant": [0.24, 1.3, HYD_BREAK * HYD_SCALE, 35.0],
+	"signal": [0.15, 5.8, 0.3, 90.0],
+	"vending": [1.05, 1.85, 0.0, 260.0],
 }
+
+## Signal lamps and the vending machines' fronts: vertex colour, alpha = how bright it glows.
+const GLOW_SHADER := """
+shader_type spatial;
+uniform float night = 0.0;
+varying vec4 vc;
+void vertex() { vc = COLOR; }
+void fragment() {
+	ALBEDO = vc.rgb * 0.4;
+	ROUGHNESS = 0.3;
+	EMISSION = vc.rgb * vc.a * mix(1.4, 3.0, night);
+}
+"""
 
 const LENS_SHADER := """
 shader_type spatial;
@@ -54,6 +69,7 @@ var _meshes := {}
 var _lens_mat: ShaderMaterial
 var _metal: StandardMaterial3D
 var _paint: StandardMaterial3D
+var _glow_mat: ShaderMaterial
 var _body: StaticBody3D
 var _shapes := {}
 var _debris: Array = []
@@ -87,6 +103,20 @@ func add_span(a: int, b: int) -> void:
 	(poles[b]["spans"] as Array).append(spans.size() - 1)
 
 
+## Traffic signal on the kerb: pole, mast arm over the lane (across), the three lamps (one lit),
+## the pedestrian signal. Each one its own mesh (the arm's length varies).
+func add_signal(p: Vector3, face: Vector3, across: Vector3, hw: float, phase: int) -> void:
+	poles.append({"kind": "signal", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": -1, "broken": false, "spans": [],
+		"across": across, "arm": hw * 0.9, "phase": phase})
+
+
+## Two vending machines side by side facing the street, their fronts lit.
+func add_vending(p: Vector3, face: Vector3) -> void:
+	var li := emitters.size()
+	emitters.append([p + face * 1.2 + Vector3(0, 1.4, 0), Color(0.8, 0.9, 1.0), 4.5, 0.8, 0])
+	poles.append({"kind": "vending", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": li, "broken": false, "spans": []})
+
+
 func add_hydrant(p: Vector3, face: Vector3) -> void:
 	poles.append({"kind": "hydrant", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": -1, "broken": false, "spans": []})
 
@@ -100,6 +130,11 @@ func build(p_world) -> void:
 	_body.collision_mask = 0
 	add_child(_body)
 	for kind in KINDS:
+		if kind == "vending":
+			var bx := BoxShape3D.new()
+			bx.size = Vector3(2.1, 1.85, 0.8)
+			_shapes[kind] = bx
+			continue
 		var cyl := CylinderShape3D.new()
 		cyl.radius = float(KINDS[kind][0])
 		cyl.height = float(KINDS[kind][1])
@@ -111,13 +146,21 @@ func build(p_world) -> void:
 		var o: Vector3 = (pl["xf"] as Transform3D).origin
 		var cs := CollisionShape3D.new()
 		cs.shape = _shapes[pl["kind"]]
-		cs.position = o + Vector3(0, float(KINDS[pl["kind"]][1]) * 0.5, 0)
+		cs.transform = Transform3D((pl["xf"] as Transform3D).basis, o + Vector3(0, float(KINDS[pl["kind"]][1]) * 0.5, 0))
 		_body.add_child(cs)
 		pl["shape"] = cs
 		var g := Vector2i(int(floor(o.x / CELL)), int(floor(o.z / CELL)))
 		if not _grid.has(g):
 			_grid[g] = []
 		_grid[g].append(k)
+		if pl["kind"] == "signal":
+			var mi := MeshInstance3D.new()
+			mi.mesh = _signal_mesh(pl)
+			mi.visibility_range_end = 360.0
+			add_child(mi)
+			mi.global_transform = pl["xf"]
+			pl["node"] = mi
+			continue
 		var key := Vector3i(int(floor(o.x / CHUNK)), int(floor(o.z / CHUNK)), kinds.find(pl["kind"]))
 		if not chunks.has(key):
 			chunks[key] = []
@@ -135,7 +178,7 @@ func build(p_world) -> void:
 			mm.set_instance_transform(j, Transform3D(xf.basis, xf.origin - centre))
 			pl["mm"] = mm
 			pl["slot"] = j
-		_chunk_node(mm, centre, "%s_%d_%d" % [kind, key.x, key.y], 200.0 if kind == "hydrant" else RANGE)
+		_chunk_node(mm, centre, "%s_%d_%d" % [kind, key.x, key.y], 200.0 if kind == "hydrant" or kind == "vending" else RANGE)
 	# the wires: one unit span stretched from pole to pole
 	var wchunks := {}
 	for si in spans.size():
@@ -161,7 +204,8 @@ func build(p_world) -> void:
 			sp[3] = j
 		_chunk_node(mm, centre, "wires_%d_%d" % [key.x, key.y], 360.0)
 	for pl in poles:
-		var nm: String = {"lamp0": "streetlights", "lamp1": "streetlights", "upole1": "utility_poles", "upole-1": "utility_poles"}.get(pl["kind"], "hydrants")
+		var nm: String = {"lamp0": "streetlights", "lamp1": "streetlights", "upole1": "utility_poles", "upole-1": "utility_poles",
+			"signal": "signals", "vending": "vending"}.get(pl["kind"], "hydrants")
 		stats[nm] = int(stats.get(nm, 0)) + 1
 	stats["wire_spans"] = spans.size()
 
@@ -188,6 +232,7 @@ func _chunk_node(mm: MultiMesh, centre: Vector3, label: String, range_m: float) 
 func set_night(n: float) -> void:
 	if _lens_mat:
 		_lens_mat.set_shader_parameter("night", n)
+		_glow_mat.set_shader_parameter("night", n)
 
 
 func _physics_process(delta: float) -> void:
@@ -239,7 +284,10 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	pl["broken"] = true
 	# off at once (deferred, the broken post spawned inside its own still solid foot for a step)
 	(pl["shape"] as CollisionShape3D).disabled = true
-	(pl["mm"] as MultiMesh).set_instance_transform(int(pl["slot"]), Transform3D(Basis.IDENTITY, Vector3(0, -500, 0)))
+	if pl.has("node"):
+		(pl["node"] as Node3D).visible = false
+	else:
+		(pl["mm"] as MultiMesh).set_instance_transform(int(pl["slot"]), Transform3D(Basis.IDENTITY, Vector3(0, -500, 0)))
 	if int(pl["light"]) >= 0:
 		(emitters[int(pl["light"])] as Array)[3] = 0.0
 	for si in pl["spans"]:
@@ -249,13 +297,14 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	var xf: Transform3D = pl["xf"]
 	var spec: Array = KINDS[kind]
 	var hydrant := kind == "hydrant"
-	# the stump stays
-	var stub := MeshInstance3D.new()
-	stub.mesh = _meshes["stub_" + kind]
-	add_child(stub)
-	stub.global_transform = xf
-	if hydrant:
-		stub.scale = Vector3.ONE * HYD_SCALE
+	# the stump stays (a vending machine just tips over)
+	if kind != "vending":
+		var stub := MeshInstance3D.new()
+		stub.mesh = _meshes["stub_" + kind]
+		add_child(stub)
+		stub.global_transform = xf
+		if hydrant:
+			stub.scale = Vector3.ONE * HYD_SCALE
 	# the rest snaps off
 	var b := RigidBody3D.new()
 	b.name = "BrokenLamp"
@@ -264,9 +313,16 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	b.add_collision_exception_with(_body)
 	b.continuous_cd = true
 	var mi := MeshInstance3D.new()
-	mi.mesh = _meshes["upper_" + kind]
+	mi.mesh = (pl["node"] as MeshInstance3D).mesh if kind == "signal" else _meshes["upper_" + kind]
 	b.add_child(mi)
-	if hydrant:
+	if kind == "vending":
+		var cs := CollisionShape3D.new()
+		var bx := BoxShape3D.new()
+		bx.size = Vector3(2.1, 1.85, 0.8)
+		cs.shape = bx
+		cs.position = Vector3(0, 0.93, 0)
+		b.add_child(cs)
+	elif hydrant:
 		mi.scale = Vector3.ONE * HYD_SCALE
 		var cs := CollisionShape3D.new()
 		var cyl := CylinderShape3D.new()
@@ -292,6 +348,12 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 			var arm: float = ARMS[int(kind.substr(4))]
 			tb.size = Vector3(0.5, 0.25, arm + 0.5)
 			top.position = Vector3(0, HEIGHT - 0.15, -arm * 0.5)
+		elif kind == "signal":
+			var across_l: Vector3 = xf.basis.inverse() * (pl["across"] as Vector3)
+			var arm2: float = pl["arm"]
+			tb.size = Vector3(0.3, 0.45, arm2 + 0.6)
+			top = CollisionShape3D.new()
+			top.transform = Transform3D(Basis.looking_at(across_l, Vector3.UP), Vector3(0, 5.4, 0) + across_l * arm2 * 0.5)
 		else:
 			tb.size = Vector3(1.8, 1.1, 0.2)
 			top.position = Vector3(0, 9.05, 0)
@@ -304,7 +366,11 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	var spd := minf(Vector2(v.x, v.z).length(), 30.0)
 	# the motion set directly: an impulse on a body created this very step used the engine's
 	# default mass (1 kg, no inertia) – the post flew off at 900 m/s and took the car with it
-	if hydrant:
+	if kind == "vending":
+		b.linear_velocity = dir * spd * 0.35 + Vector3.UP * 1.0
+		b.angular_velocity = Vector3(-dir.z, 0, dir.x) * clampf(spd * 0.12, 0.5, 2.0)
+		Sfx.play(self, "pole_hit", -3.0, xf.origin + Vector3(0, 1.0, 0), randf_range(0.6, 0.7))
+	elif hydrant:
 		b.linear_velocity = dir * spd * 0.6 + Vector3.UP * (3.0 + spd * 0.2)
 		b.angular_velocity = Vector3(randf_range(-6, 6), randf_range(-3, 3), randf_range(-6, 6))
 		_fountain(xf.origin + Vector3(0, float(spec[2]) + 0.05, 0))
@@ -413,6 +479,50 @@ func _make_meshes() -> void:
 	Props._cyl(st, Vector3(0, HYD_BREAK, 0), Vector3(0, HYD_BREAK + 0.04, 0), 0.07, 0.07, Color(0.2, 0.2, 0.22), 8)
 	_meshes["stub_hydrant"] = MeshKit.commit(st, _paint)
 	_meshes["wires"] = _wire_mesh()
+	_glow_mat = ShaderMaterial.new()
+	_glow_mat.shader = Shader.new()
+	_glow_mat.shader.code = GLOW_SHADER
+	_meshes["stub_signal"] = _stub(0.3, 0.18, Color(0.6, 0.6, 0.62), _metal)
+	_meshes["full_vending"] = _vending_mesh()
+	_meshes["upper_vending"] = _meshes["full_vending"]
+
+
+## A signal: pole, mast arm, the lamp head (one lamp lit), the pedestrian signal.
+func _signal_mesh(pl: Dictionary) -> ArrayMesh:
+	var xf: Transform3D = pl["xf"]
+	var across: Vector3 = xf.basis.inverse() * (pl["across"] as Vector3)
+	var arm: float = pl["arm"]
+	var phase: int = pl["phase"]
+	var st := MeshKit.new_st()
+	var col := Color(0.6, 0.6, 0.62)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 2.9, 0)), Vector3(0.18, 5.8, 0.18), col)
+	MeshKit.box(st, Transform3D(Basis.looking_at(across, Vector3.UP), Vector3(0, 5.5, 0) + across * arm * 0.5), Vector3(0.12, 0.12, arm), col)
+	var head := Vector3(0, 5.3, 0) + across * arm
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, head), Vector3(1.3, 0.42, 0.28), Color(0.12, 0.12, 0.13))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 2.7, -0.15)), Vector3(0.35, 0.7, 0.2), Color(0.12, 0.12, 0.13))
+	var mesh := MeshKit.commit(st, _metal)
+	var gl := MeshKit.new_st()
+	for kk in 3:
+		var lc: Color = [Color(0.1, 1.0, 0.55), Color(1.0, 0.8, 0.1), Color(1.0, 0.12, 0.06)][kk]
+		lc.a = 0.9 if kk == phase else 0.0
+		if kk != phase:
+			lc = Color(lc.r * 0.2, lc.g * 0.2, lc.b * 0.2, 0.0)
+		MeshKit.box(gl, Transform3D(Basis.IDENTITY, head + Vector3(-0.42 + kk * 0.42, 0, -0.15)), Vector3(0.3, 0.3, 0.04), lc)
+	var walk := Color(0.2, 0.7, 1.0, 0.8) if phase == 2 else Color(1.0, 0.15, 0.08, 0.8)
+	MeshKit.box(gl, Transform3D(Basis.IDENTITY, Vector3(0, 2.85 if phase == 2 else 2.55, -0.26)), Vector3(0.25, 0.25, 0.02), walk)
+	return MeshKit.commit(gl, _glow_mat, mesh)
+
+
+## Two vending machines (red and blue) side by side, fronts towards -Z, lit panels.
+func _vending_mesh() -> ArrayMesh:
+	var st := MeshKit.new_st()
+	for k in 2:
+		Props._b(st, Vector3(-0.55 + k * 1.1, 0.92, 0), Vector3(1.0, 1.85, 0.8), [Color(0.85, 0.1, 0.1), Color(0.15, 0.35, 0.85)][k])
+		Props._b(st, Vector3(-0.55 + k * 1.1, 0.35, -0.41), Vector3(0.6, 0.2, 0.04), Color(0.1, 0.1, 0.1))
+	var mesh := MeshKit.commit(st, _paint)
+	var gl := MeshKit.new_st()
+	MeshKit.box(gl, Transform3D(Basis.IDENTITY, Vector3(0, 1.3, -0.41)), Vector3(1.9, 0.95, 0.03), Color(0.85, 0.93, 1.0, 0.6))
+	return MeshKit.commit(gl, _glow_mat, mesh)
 
 
 ## The stump: a short piece of the post with a torn edge.

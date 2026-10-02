@@ -199,7 +199,7 @@ func _header(text: String) -> void:
 # Main
 # ---------------------------------------------------------------------------
 func _build_main() -> void:
-	var tut := UiKit.button("Tutorial" if bool(Game.settings.get("tutorial_done", false)) else "★  Tutorial", func(): main.start_tutorial(), 360)
+	var tut := UiKit.button("Tutorial" if bool(Game.settings.get("tutorial_done", false)) else "★  Tutorial", _ask_tutorial, 360)
 	tut.tooltip_text = "Mitternacht, Regen, eine Nachricht auf dem Handy … die Steuerung auf einer Fahrt über die Grüne Hölle.\nJederzeit überspringbar."
 	_add(tut)
 	_add(UiKit.button("Einzelspieler", func(): show_screen("single"), 360))
@@ -217,6 +217,24 @@ func _build_main() -> void:
 	_add(UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT))
 	_add(UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM))
 	_add(UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD))
+
+
+## Played it already? Ask before starting it again.
+func _ask_tutorial() -> void:
+	if not bool(Game.settings.get("tutorial_done", false)):
+		main.start_tutorial()
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Tutorial"
+	dlg.dialog_text = "Du hast das Tutorial schon gespielt.\nNochmal starten?"
+	dlg.ok_button_text = "Nochmal spielen"
+	dlg.cancel_button_text = "Abbrechen"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		main.start_tutorial())
+	dlg.canceled.connect(dlg.queue_free)
+	dlg.popup_centered()
 
 
 # ---------------------------------------------------------------------------
