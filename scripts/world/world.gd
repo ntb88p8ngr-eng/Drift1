@@ -75,6 +75,10 @@ var finish_time := 0.0
 var progress := 0.0
 var _last_prog := -1.0
 var _sector_mask := 0
+## Driving the wrong way: metres covered backwards along the lap (a spin's wiggle doesn't count),
+## and whether that has spoilt this lap (only past 25 % of it, or within 10 % of start/finish).
+var _rev_m := 0.0
+var _lap_spoilt := false
 var _net_timer := 0.0
 var _wait_timeout := 15.0
 var _last_count_step := -1
@@ -456,15 +460,33 @@ func _update_progress() -> void:
 		if _last_prog > length * 0.8 and prog < length * 0.2:
 			_on_cross_forward()
 		elif _last_prog < length * 0.2 and prog > length * 0.8:
-			_sector_mask = 0
+			# backwards over the line: that's within 10 % of it
+			_spoil_lap()
+		var dp := wrapf(prog - _last_prog, -length * 0.5, length * 0.5)
+		if dp < 0.0:
+			_rev_m -= dp
+		elif dp > 0.3:
+			_rev_m = maxf(_rev_m - dp, 0.0)
+		# backwards for real: the lap only counts as spoilt once a quarter of it is done, or near
+		# start/finish (turning round early in the lap after a spin costs nothing)
+		var frac := prog / length
+		if _rev_m > 15.0 and (frac > 0.25 or frac < 0.1):
+			_spoil_lap()
 	_sector_mask |= 1 << clampi(int(prog / length * SECTORS), 0, SECTORS - 1)
 	_last_prog = prog
+
+
+func _spoil_lap() -> void:
+	if _lap_spoilt or not crossed_start or finished:
+		return
+	_lap_spoilt = true
+	hud.show_message("RUNDE UNGÜLTIG", "Falsche Richtung gefahren", UiKit.BAD, 2.0)
 
 
 func _on_cross_forward() -> void:
 	if finished:
 		return
-	var valid := _popcount(_sector_mask) >= SECTORS - 2
+	var valid := _popcount(_sector_mask) >= SECTORS - 2 and not _lap_spoilt
 	if not crossed_start:
 		crossed_start = true
 		lap_start = race_time
@@ -474,8 +496,10 @@ func _on_cross_forward() -> void:
 		_complete_lap()
 	else:
 		lap_start = race_time
-		hud.show_message("RUNDE UNGÜLTIG", "Abkürzung oder falsche Richtung", UiKit.BAD, 2.0)
+		hud.show_message("RUNDE UNGÜLTIG", "Falsche Richtung gefahren" if _lap_spoilt else "Abkürzung", UiKit.BAD, 2.0)
 	_sector_mask = 1
+	_lap_spoilt = false
+	_rev_m = 0.0
 
 
 func _popcount(v: int) -> int:

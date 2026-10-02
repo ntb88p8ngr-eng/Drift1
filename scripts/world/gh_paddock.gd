@@ -203,6 +203,7 @@ func _pit_lane() -> void:
 	pts.append(_at(PIT_TO + 25.0, lerpf(edge, _lat, 0.55)))
 	pts.append(_at(PIT_TO + 48.0, edge))
 	scenery.add_path(pts, LANE_W, "asphalt", false)
+	_pave(pts)
 	# white lines: the lane's edge and the fast lane / working lane split
 	for lat_l in [_lat - LANE_W * 0.5 + 0.3, _lat + 0.5]:
 		p = PIT_FROM
@@ -230,6 +231,27 @@ func _pit_lane() -> void:
 	# and the strip between the barrier and the lane (the pit wall): no spectators standing there
 	for q in range(int(PIT_FROM) - 60, int(PIT_TO) + 60, 5):
 		scenery.occupy(_at(q, (_wall_off + _lat) * 0.5), 4.5)
+
+
+## The whole pit area is concrete underfoot (the terrain's paved ground, no grass): the lane with
+## its entry and exit curves to their edges, and from the pit wall to behind the garages – no
+## meadow showing (or growing) between the lane, the wall and the boxes.
+func _pave(lane_pts: Array) -> void:
+	var paved := Color(1, 0, 0, 0)
+	for k in lane_pts.size() - 1:
+		var a: Vector3 = lane_pts[k]
+		var b: Vector3 = lane_pts[k + 1]
+		var n := maxi(int(a.distance_to(b) / 2.5), 1)
+		for j in n:
+			scenery._ground_paints.append([a.lerp(b, float(j) / n), LANE_W * 0.5 + 1.0, paved, true])
+	var lat1 := _lat + LANE_W * 0.5 + 1.0 + GARAGE_D + 10.0
+	var p := PIT_FROM - 20.0
+	while p <= PIT_TO + 20.0:
+		var lat := _wall_off + 0.5
+		while lat <= lat1:
+			scenery._ground_paints.append([_at(p, lat), 3.2, paved, true])
+			lat += 3.0
+		p += 3.0
 
 
 # ---------------------------------------------------------------------------

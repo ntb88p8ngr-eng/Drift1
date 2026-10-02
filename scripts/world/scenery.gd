@@ -1645,7 +1645,7 @@ func _finish_ground() -> void:
 				var k := (1.0 - smoothstep(maxf(radius - cell, 0.0), radius, d)) if hard else (1.0 - smoothstep(radius * 0.5, radius + cell * 0.5, d))
 				if k > 0.0:
 					var idx: int = iz * terrain.nx + ix
-					sp[idx] = sp[idx].lerp(col, k * 0.85)
+					sp[idx] = sp[idx].lerp(col, k * (1.0 if hard else 0.85))
 	terrain.splat = sp
 	_ground_paints.clear()
 
