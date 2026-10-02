@@ -36,5 +36,13 @@ func _ready() -> void:
 	print("BOT AUDIO: %d of %d synthesized, %d skips on them in 2 s, %.1f dB at 30 m" % [active, world.race_ai.bots.size(), new_skips, db30])
 	if active < 1 or active > 4 or db30 < -10.0:
 		fails += 1
+	# every opponent is heard where its car is (not at the start)
+	var off := 0.0
+	for b in world.race_ai.bots:
+		var pl: AudioStreamPlayer3D = b["car"].audio.player
+		off = maxf(off, pl.global_position.distance_to(b["car"].global_position))
+	print("BOT AUDIO: sound source at most %.2f m from its car" % off)
+	if off > 1.0:
+		print("FAIL: an engine sound is not at its car"); fails += 1
 	print("BOT AUDIO TEST: %s" % ("PASS" if fails == 0 else "FAIL"))
 	get_tree().quit(1 if fails else 0)

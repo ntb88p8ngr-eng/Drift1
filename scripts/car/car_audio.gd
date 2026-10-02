@@ -632,6 +632,10 @@ func _on_hit(strength: float) -> void:
 func _process(_delta: float) -> void:
 	if playback == null or car == null:
 		return
+	if positional and is_instance_valid(car):
+		# this node is a plain Node: its 3D player doesn't inherit the car's transform and stayed at
+		# the world origin (the start) – every other car was heard there, all layered
+		(player as Node3D).global_position = (car as Node3D).global_position
 	if positional and not _audible():
 		# far away or not among the nearest cars: no synthesis (the GDScript synth costs ~1.5 ms
 		# per car and frame – with 7 bots the buffers ran dry and the opponents went silent)
