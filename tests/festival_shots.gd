@@ -12,7 +12,7 @@ func _ready() -> void:
 		if a.begins_with("--") and a.contains("="):
 			args[a.substr(2, a.find("=") - 2)] = a.substr(a.find("=") + 1)
 	var world := World.new()
-	world.setup({"track": args["track"], "mode": "free", "laps": 1, "time_of_day": args["tod"], "weather": "dry",
+	world.setup({"track": args["track"], "mode": "free", "laps": 1, "time_of_day": args["tod"], "weather": args.get("weather", "dry"),
 		"day_cycle": 0, "weather_seed": 7, "online": false})
 	add_child(world)
 	for f in 30:
@@ -30,8 +30,8 @@ func _ready() -> void:
 		var pd = fest.paddock
 		var s0: int = tr.start_index
 		var pc: Vector3 = pd._at(-50.0, pd._lat + 8.0)
-		var gs: Vector3 = pd._at(70.0, pd._lat, -pd.pit_side)
-		views_pd = [["aerial", pd._at(-50.0, 70.0, -pd.pit_side) + Vector3(0, 70, 0) - tr.tangents[s0] * 120.0, pc],
+		var gs: Vector3 = pd._at(70.0, pd._lat, -pd.fair_side)
+		views_pd = [["aerial", pd._at(-50.0, 70.0, -pd.fair_side) + Vector3(0, 70, 0) - tr.tangents[s0] * 120.0, pc],
 			["stand", gs + Vector3(0, 9, 0) + tr.tangents[s0] * 10.0, pd._at(40.0, pd._lat + 8.0) + Vector3(0, 3, 0)]]
 	var views := views_pd if not views_pd.is_empty() else [["fence", road.lerp(c, 0.35) + Vector3(0, 2.2, 0) - tr.tangents[i] * 10.0, c + Vector3(0, 1.0, 0)],
 		["above", c + (road - c).normalized() * 18.0 + Vector3(0, 16, 0) + tr.tangents[i] * 10.0, c]]
