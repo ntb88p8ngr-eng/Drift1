@@ -8,6 +8,9 @@ extends Node3D
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
 
 const CELL := 8.0
+## The blocks have a layer of their own that no car scans: the car knocks them about, they never
+## push the car (a body only takes a collision response from layers in its own mask).
+const LAYER_DEBRIS := 16
 const MAX_PIECES := 360
 const PIECE_LIFE := 24.0
 ## The person mesh's blocks (crowd.gd person_mesh): [centre, size, part] – part: 0 pants,
@@ -108,8 +111,8 @@ func _burst(e: Array, v: Vector3) -> void:
 		var size: Vector3 = part[1]
 		var b := RigidBody3D.new()
 		b.mass = maxf(size.x * size.y * size.z * 900.0, 0.4)
-		b.collision_layer = 8
-		b.collision_mask = 1 | 8
+		b.collision_layer = LAYER_DEBRIS
+		b.collision_mask = 1 | 2 | 4 | 8 | LAYER_DEBRIS
 		b.continuous_cd = true
 		var mi := MeshInstance3D.new()
 		mi.mesh = _box(size)

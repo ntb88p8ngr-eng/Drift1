@@ -53,6 +53,9 @@ func build(p_track, p_terrain, p_scenery, p_festival) -> void:
 	await Game.load_tick()
 	_garages()
 	await Game.load_tick()
+	# the grandstand side too: one smooth surface from the track's edge to behind the stands (they
+	# stand on it, section by section)
+	_level_corridor(-pit_side, -230.0, 175.0, float(track.half_w) + 48.0)
 	_grandstand(70.0, 64.0)
 	_grandstand(-120.0, 56.0)
 	await Game.load_tick()
@@ -106,46 +109,73 @@ func _road_y(progress: float) -> float:
 	return float(track.samples[track.index_at(progress)].y)
 
 
-## The ground from the track's edge to behind the garages, from well before the pit entry to well
-## after the exit: one smooth surface at the height of the road's edge right beside each point
-## (spots levelled one by one left humps in between – a hill at the entry), blending into the
-## hills around it.
-func _level_corridor() -> void:
+## The ground beside the track on `side`, from its edge out to `far` metres, between progress p0
+## and p1: one smooth surface at the height of the road's edge nearest to each spot (spots
+## levelled one by one left humps in between – a hill at the pit entry), blending into the hills
+## around it. Defaults: the pit side, from before the entry to after the exit, behind the garages.
+func _level_corridor(side := 0.0, p0 := PIT_FROM - 75.0, p1 := PIT_TO + 75.0, far := -1.0) -> void:
 	var cell: float = terrain.CELL
 	var o: Vector2 = terrain.origin
 	var L: float = track.length
-	var p0 := PIT_FROM - 75.0
-	var p1 := PIT_TO + 75.0
-	var far := _lat + LANE_W * 0.5 + GARAGE_D + 16.0
-	var lo := Vector2(1e9, 1e9)
-	var hi := Vector2(-1e9, -1e9)
-	var p := p0
-	while p <= p1:
-		for lat: float in [float(track.half_w), far + 14.0]:
-			var q := _at(p, lat)
-			lo = Vector2(minf(lo.x, q.x), minf(lo.y, q.z))
-			hi = Vector2(maxf(hi.x, q.x), maxf(hi.y, q.z))
-		p += 5.0
+	if side == 0.0:
+		side = pit_side
+	if far < 0.0:
+		far = _lat + LANE_W * 0.5 + GARAGE_D + 16.0
 	var hs: PackedFloat32Array = terrain.heights
 	var nx: int = terrain.nx
 	var nz: int = terrain.nz
-	var hint := -1
-	for iz in range(maxi(int(floor((lo.y - o.y) / cell)), 0), mini(int(ceil((hi.y - o.y) / cell)) + 1, nz)):
-		for ix in range(maxi(int(floor((lo.x - o.x) / cell)), 0), mini(int(ceil((hi.x - o.x) / cell)) + 1, nx)):
-			var wp := Vector3(o.x + ix * cell, 0.0, o.y + iz * cell)
-			var pr: Array = track.project(wp, hint)
-			hint = pr[0]
-			var rel := fposmod(float(pr[1]) + L * 0.5, L) - L * 0.5
-			var lat := float(pr[2]) * pit_side
-			if lat < float(track.half_w) + 0.3:
-				continue          # the road itself, or the other side
-			var k := smoothstep(p0, p0 + 22.0, rel) * (1.0 - smoothstep(p1 - 22.0, p1, rel)) * (1.0 - smoothstep(far, far + 14.0, lat))
-			if k <= 0.0:
-				continue
-			var edge: Vector3 = track.edge_point(int(pr[0]), pit_side * float(track.half_w))
+	var hw: float = track.half_w
+	# walk along the track and out from its edge to find the vertices (no projecting cells onto
+	# the whole track: near the chicane they caught the wrong leg and kept their hill); each takes
+	# the height of the road's edge nearest to it – not the walk's point: inside the chicane the
+	# walk's lines cross, and the road climbs there
+	var best := {}            # vertex index -> [height, weight]
+	var pp := p0
+	while pp <= p1:
+		var i: int = track.index_at(pp)
+		var lat := hw + 0.3
+		while lat <= far + 14.0:
+			var q: Vector3 = track.samples[i] + track.rights[i] * side * lat
+			var ix := int(round((q.x - o.x) / cell))
+			var iz := int(round((q.z - o.y) / cell))
 			var idx := iz * nx + ix
-			hs[idx] = lerpf(hs[idx], edge.y - 0.02, k)
+			if ix >= 0 and iz >= 0 and ix < nx and iz < nz and not best.has(idx):
+				var wx := o.x + ix * cell
+				var wz := o.y + iz * cell
+				# leave every road's own corridor alone (another leg of the track nearby)
+				if float(terrain.distance_to_road(wx, wz)) >= hw + 0.3:
+					var e := _nearest_edge(wx, wz, i, 30)
+					var pe := fposmod((e.z - float(track.start_index)) * float(track.SPACING) + L * 0.5, L) - L * 0.5
+					var k := smoothstep(p0, p0 + 22.0, pe) * (1.0 - smoothstep(p1 - 22.0, p1, pe)) \
+						* (1.0 - smoothstep(far - hw, far - hw + 14.0, e.x))
+					best[idx] = [e.y - 0.02, k]
+			lat += cell * 0.5
+		pp += cell * 0.5
+	for idx in best:
+		var b: Array = best[idx]
+		hs[idx] = lerpf(hs[idx], float(b[0]), float(b[1]))
 	terrain.heights = hs
+
+
+## The road's edge nearest to (x, z) on the stretch around sample i (either side): distance to it,
+## its height there, the sample index.
+func _nearest_edge(x: float, z: float, i: int, span: int) -> Vector3:
+	var n: int = track.sample_count()
+	var hw: float = track.half_w
+	var best := Vector3(1e9, 0.0, float(i))
+	for j in range(i - span, i + span):
+		var j0 := (j + n) % n
+		var j1 := (j + 1 + n) % n
+		for s: float in [-1.0, 1.0]:
+			var a: Vector3 = track.edge_point(j0, s * hw)
+			var b: Vector3 = track.edge_point(j1, s * hw)
+			var ab := Vector2(b.x - a.x, b.z - a.z)
+			var ap := Vector2(x - a.x, z - a.z)
+			var u := clampf(ap.dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+			var d := (ap - ab * u).length()
+			if d < best.x:
+				best = Vector3(d, lerpf(a.y, b.y, u), float(j0))
+	return best
 
 
 # ---------------------------------------------------------------------------
@@ -351,32 +381,56 @@ func _grandstand(centre_p: float, length: float) -> void:
 	base.y = _road_y(centre_p)
 	var rows := 16
 	var depth := rows * 0.85 + 2.0
-	for q in range(-int(length * 0.5) - 4, int(length * 0.5) + 5, 8):
-		terrain.level_to(base + along * q + out * depth * 0.5, depth * 0.5 + 3.0, 6.0, base.y - 0.05)
 	var fr := Basis(along, Vector3.UP, out)
-	var xf := Transform3D(fr, base)
 	var st := MeshKit.new_st()
 	var conc := Color(0.62, 0.62, 0.6)
 	var seat_cols := [Color(0.1, 0.25, 0.65), Color(0.85, 0.1, 0.1), Color(0.95, 0.95, 0.95)]
 	var people_xf: Array = []
-	for r in rows:
-		var z := 1.5 + r * 0.85
-		var y := 0.6 + r * 0.55
-		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, y * 0.5, z)), Vector3(length, y, 0.85), conc)
-		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, y + 0.2, z + 0.15)), Vector3(length, 0.4, 0.4), seat_cols[(r / 4) % seat_cols.size()])
-		var x := -length * 0.5 + 0.5
-		while x < length * 0.5 - 0.5:
-			if rng.randf() < 0.82:
-				people_xf.append(xf * Vector3(x + rng.randf_range(-0.1, 0.1), y, z - 0.05))
-			x += rng.randf_range(0.6, 0.75)
-	# back wall, roof on columns, a front fence and team banners
-	MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, 6.0, depth)), Vector3(length, 12.0, 0.4), conc)
-	for x in range(-int(length * 0.5), int(length * 0.5) + 1, 12):
-		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(x, 7.5, depth - 0.4)), Vector3(0.5, 15.0, 0.5), Color(0.3, 0.3, 0.33, 0.5))
-	MeshKit.box(st, xf * Transform3D(Basis.from_euler(Vector3(0.12, 0, 0)), Vector3(0, 14.5, depth * 0.55)), Vector3(length + 2.0, 0.35, depth + 3.0), Color(0.88, 0.88, 0.9))
-	MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.6, 0.5)), Vector3(length, 1.2, 0.2), Color(0.3, 0.3, 0.33))
-	for k in int(length / 8.0):
-		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(-length * 0.5 + 4.0 + k * 8.0, 0.65, 0.38)), Vector3(6.5, 0.9, 0.04), TEAMS[k % TEAMS.size()])
+	# built in sections of about 8 m, each at the height of the road's edge beside it: the stand
+	# steps down with the road (one flat stand at the middle's height left a 3 m hill in front of
+	# its low end)
+	var n_sec := maxi(int(round(length / 8.0)), 1)
+	var sec := length / n_sec
+	# a straight stand beside a bend comes closer to the road at its ends (or its middle): push it
+	# back until no part of its front is nearer than the barrier plus 5 m
+	var shift := 0.0
+	for k in n_sec + 1:
+		var fp := base + along * (-length * 0.5 + k * sec)
+		var pr0: Array = track.project(fp, i0)
+		var oi := int(pr0[0])
+		var off_k: float = float(track.off_left[oi] if side < 0.0 else track.off_right[oi])
+		shift = maxf(shift, off_k + 5.0 - absf(float(pr0[2])))
+	base += out * shift
+	for k in n_sec:
+		var x_c := -length * 0.5 + (k + 0.5) * sec
+		var base_k := base + along * x_c
+		# the road's edge right beside this section (the stand is straight, the track curves: its
+		# end sections stand beside other parts of the track than the progress would suggest)
+		var pr: Array = track.project(base_k, i0)
+		var y_k: float = (track.edge_point(int(pr[0]), side * float(track.half_w)) as Vector3).y
+		base_k.y = y_k
+		var xf := Transform3D(fr, base_k)
+		for r in rows:
+			var z := 1.5 + r * 0.85
+			var y := 0.6 + r * 0.55
+			MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, y * 0.5, z)), Vector3(sec + 0.02, y, 0.85), conc)
+			MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, y + 0.2, z + 0.15)), Vector3(sec + 0.02, 0.4, 0.4), seat_cols[(r / 4) % seat_cols.size()])
+			var x := -sec * 0.5 + 0.35
+			while x < sec * 0.5 - 0.35:
+				if rng.randf() < 0.82:
+					people_xf.append(xf * Vector3(x + rng.randf_range(-0.1, 0.1), y, z - 0.05))
+				x += rng.randf_range(0.6, 0.75)
+		# back wall, a column at the section's start, the roof, the front fence and a team banner
+		# (the ground follows the road's slope along the stand: walls and fence reach 1.2 m down)
+		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, 5.4, depth)), Vector3(sec + 0.02, 13.2, 0.4), conc)
+		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(-sec * 0.5, 7.5, depth - 0.4)), Vector3(0.5, 15.0, 0.5), Color(0.3, 0.3, 0.33, 0.5))
+		if k == n_sec - 1:
+			MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(sec * 0.5, 7.5, depth - 0.4)), Vector3(0.5, 15.0, 0.5), Color(0.3, 0.3, 0.33, 0.5))
+		MeshKit.box(st, xf * Transform3D(Basis.from_euler(Vector3(0.12, 0, 0)), Vector3(0, 14.5, depth * 0.55)), Vector3(sec + 0.3, 0.35, depth + 3.0), Color(0.88, 0.88, 0.9))
+		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.0, 0.5)), Vector3(sec + 0.02, 2.4, 0.2), Color(0.3, 0.3, 0.33))
+		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, -0.6, 0.5 + depth * 0.5)), Vector3(sec + 0.02, 1.2, depth), conc)
+		MeshKit.box(st, xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.65, 0.38)), Vector3(sec - 1.5, 0.9, 0.04), TEAMS[k % TEAMS.size()])
+		scenery.occupy(base_k + out * depth * 0.5, 9.5)
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshKit.commit(st, _vc())
 	mi.name = "Grandstand"
@@ -384,8 +438,6 @@ func _grandstand(centre_p: float, length: float) -> void:
 	Colliders.add_trimesh(mi)
 	for pp in people_xf:
 		festival._person_raw(pp, base - out * 30.0 + along * rng.randf_range(-20.0, 20.0))
-	for q in range(-int(length * 0.5), int(length * 0.5) + 1, 9):
-		scenery.occupy(base + along * q + out * depth * 0.5, 9.5)
 	_stand_backs.append(base + out * (depth + 6.0))
 
 

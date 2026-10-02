@@ -29,13 +29,21 @@ func _ready() -> void:
 	var car = world.local_car
 	var dir := Vector3(1, 0, 0)
 	car.place(Transform3D(Basis.looking_at(dir, Vector3.UP), o - dir * 10.0 + Vector3(0, 0.7, 0)))
-	await get_tree().physics_frame
+	for f in 90:
+		await get_tree().physics_frame        # settle on its wheels first
 	car.linear_velocity = dir * 14.0
+	# the blocks must never push the car: no jump, no extra speed
+	var max_up := 0.0
+	var max_speed := 0.0
 	for f in 120:
 		await get_tree().physics_frame
+		max_up = maxf(max_up, car.linear_velocity.y)
+		max_speed = maxf(max_speed, car.linear_velocity.length())
 	var pieces: int = people._pieces.size()
-	print("PEOPLE: %s, pieces flying %d" % [str(people.stats), pieces])
+	print("PEOPLE: %s, pieces flying %d, car: max upward %.2f m/s, max speed %.1f m/s" % [str(people.stats), pieces, max_up, max_speed])
 	if bool(target[4]) or pieces < 10:
 		print("FAIL: the pedestrian wasn't knocked over"); fails += 1
+	if max_up > 1.5 or max_speed > 14.5:
+		print("FAIL: the blocks threw the car about"); fails += 1
 	print("PEOPLE TEST: %s" % ("PASS" if fails == 0 else "FAIL"))
 	get_tree().quit(1 if fails else 0)

@@ -10,6 +10,8 @@ const IsoCompass = preload("res://scripts/ui/iso_compass.gd")
 const MISSION_COL := Color(0.3, 0.95, 0.9)
 const NAV_ORANGE := Color(1.0, 0.55, 0.1)
 const NAV_RED := Color(1.0, 0.12, 0.08)
+## The arrow only comes up once its reason (a bend, the wrong way, off the road) has lasted this long.
+const NAV_DELAY := 3.0
 
 var world   # world.gd
 
@@ -46,7 +48,8 @@ var _fps_label: Label
 var _nav: Control               # the 3D direction arrow (iso_arrow.gd)
 var _nav_caption: Label
 var _nav_alpha := 0.0
-var _nav_on := false
+var _nav_on := false             # the reason for the arrow holds (before the delay)
+var _nav_hold := 0.0            # ... for this long
 var _forced_nav = null          # [yaw, caption, colour] while something (the tutorial) shows its own way
 var _compass: Control           # the mission compass (iso_compass.gd)
 var _compass_label: Label
@@ -314,7 +317,8 @@ func _update_compass(delta: float) -> void:
 
 
 ## The arrow: where the road goes 40+ m ahead when that's a real bend, the way round when driving
-## the wrong way, the way back when off the road. Fades in and out.
+## the wrong way, the way back when off the road – each only after it has held for NAV_DELAY
+## seconds (the tutorial's own arrows come up at once). Fades in and out.
 func _update_nav(delta: float) -> void:
 	var car = world.local_car
 	var want := false
@@ -352,7 +356,12 @@ func _update_nav(delta: float) -> void:
 			# a real bend coming (a little hysteresis so it doesn't flicker)
 			var lim := 0.3 if _nav_on else 0.42
 			want = absf(yaw) > lim and car.speed > 2.0
-	_nav_on = want
+		_nav_on = want
+		_nav_hold = _nav_hold + delta if want else 0.0
+		want = want and _nav_hold >= NAV_DELAY
+	else:
+		_nav_on = false
+		_nav_hold = 0.0
 	_nav_alpha = move_toward(_nav_alpha, 1.0 if want else 0.0, delta * (5.0 if want else 2.5))
 	_nav.visible = _nav_alpha > 0.01
 	_nav.modulate.a = _nav_alpha
