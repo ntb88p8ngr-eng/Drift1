@@ -1478,7 +1478,9 @@ func _ground_y(p: Vector3, lift: float) -> float:
 
 
 ## A path through world points (resampled every metre, following the ground).
-func add_path(pts: Array, width: float, kind: String) -> void:
+## paint = false: the ground colour only under the middle of the path, not around it (the coarse splat
+## grid paints ragged edges – fine for a gravel track, ugly beside a clean asphalt lane).
+func add_path(pts: Array, width: float, kind: String, paint := true) -> void:
 	var dense: Array = []
 	for k in pts.size() - 1:
 		var a: Vector3 = pts[k]
@@ -1506,13 +1508,15 @@ func add_path(pts: Array, width: float, kind: String) -> void:
 			q[m] = qv
 		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(0, u), Vector2(width * 0.5, u), Vector2(width * 0.5, u + l * 0.5), Vector2(0, u + l * 0.5))
 		u += l * 0.5
-		_ground_paints.append([a, width * 0.5 + 1.0, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
+		# without paint the ground is still marked under the path (no grass through it), but only
+		# well inside its edges
+		_ground_paints.append([a, width * 0.5 + 1.0 if paint else maxf(width * 0.5 - 1.5, 0.5), GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
 		if k % 3 == 0:
 			occupy(a, width * 0.5 + 0.8)
 
 
 ## A flat rectangle on the ground (car parks), size = (x, z) in the frame xf.
-func add_ground_patch(xf: Transform3D, size: Vector2, kind: String) -> void:
+func add_ground_patch(xf: Transform3D, size: Vector2, kind: String, paint := true, lift := 0.04) -> void:
 	var st := _ground_st(kind)
 	var nx := maxi(int(size.x / 1.5), 1)
 	var nz := maxi(int(size.y / 1.5), 1)
@@ -1525,10 +1529,10 @@ func add_ground_patch(xf: Transform3D, size: Vector2, kind: String) -> void:
 			var q := [xf * Vector3(x0, 0, z0), xf * Vector3(x1, 0, z0), xf * Vector3(x1, 0, z1), xf * Vector3(x0, 0, z1)]
 			for m in 4:
 				var qv: Vector3 = q[m]
-				qv.y = _ground_y(qv, 0.04)
+				qv.y = _ground_y(qv, lift)
 				q[m] = qv
 			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(x0, z0) * 0.5, Vector2(x1, z0) * 0.5, Vector2(x1, z1) * 0.5, Vector2(x0, z1) * 0.5)
-			_ground_paints.append([(q[0] + q[2]) * 0.5, 2.0, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
+			_ground_paints.append([(q[0] + q[2]) * 0.5, 2.0 if paint else 0.6, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0))])
 
 
 ## A painted line on the ground along the frame's z axis.

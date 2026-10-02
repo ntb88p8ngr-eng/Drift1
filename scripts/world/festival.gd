@@ -85,7 +85,7 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	var n: int = track.sample_count()
 	var sp: float = track.SPACING
 	# camps: every ~110 m on the long track (a festival), every ~190 m elsewhere (fewer in the docks)
-	var step_m: float = 105.0 if big else (300.0 if track.track_id == "harbor" else 180.0)
+	var step_m: float = 70.0 if big else (260.0 if track.track_id == "harbor" else 140.0)
 	if track.track_id == "tokyo":
 		step_m = 1e9      # no camping in the city – only the spectators
 	step_m *= [1.6, 1.25, 1.0, 0.85][clampi(quality, 0, 3)]
@@ -103,6 +103,9 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 		i += int(step * rng.randf_range(0.75, 1.25))
 		guard += step
 	_paths_between_camps()
+	_access_points()
+	if paddock:
+		paddock.link_paths(self)
 	# spectators: small groups all round the lap, right behind the barrier
 	var sstep := maxi(int((38.0 if big else 30.0) * [1.8, 1.4, 1.0, 0.8][clampi(quality, 0, 3)] / sp), 4)
 	for j in range(0, n, sstep):
@@ -161,78 +164,89 @@ func _person_raw(p: Vector3, look_at: Vector3) -> void:
 # ---------------------------------------------------------------------------
 # Camps
 # ---------------------------------------------------------------------------
-## One camp behind the barrier at sample i on `side`. False when there's no room.
+## One camp behind the barrier at sample i on `side`. False when there's no room. Every element gets
+## its own space (caravan + awning + car, tents, pavilion, fire, grill, toilets): nothing overlaps.
 func _camp(i: int, side: float) -> bool:
 	var big := bool(track.elevated)
-	var r := rng.randf_range(10.0, 16.0) if big else rng.randf_range(8.0, 12.0)
-	var extra := r + rng.randf_range(5.0, 12.0)
+	var r := rng.randf_range(15.0, 22.0) if big else rng.randf_range(11.0, 15.0)
+	var extra := r + rng.randf_range(6.0, 14.0)
 	var c: Vector3 = scenery._roadside(i, extra, side)
 	if not scenery.free_at(c, r, 4.0) or not _ok(c, 6.0):
 		return false
 	# the whole camp area must be fairly flat
-	for k in 6:
-		var a := TAU * k / 6.0
-		var q := c + Vector3(cos(a), 0, sin(a)) * r * 0.8
-		if not _ok(q, 3.0) or absf(terrain.height_at(q.x, q.z) - terrain.height_at(c.x, c.z)) > 1.6:
+	for k in 8:
+		var a := TAU * k / 8.0
+		var q := c + Vector3(cos(a), 0, sin(a)) * r * 0.85
+		if not _ok(q, 3.0) or absf(terrain.height_at(q.x, q.z) - terrain.height_at(c.x, c.z)) > 1.8:
 			return false
 	c = _ground(c)
 	var to_road: Vector3 = -track.rights[i] * side   # from the camp towards the track
 	var fz := Vector3(-to_road.x, 0.0, -to_road.z).normalized()
 	var frame := Basis(Vector3.UP.cross(fz), Vector3.UP, fz)
 	# frame: -Z looks at the track, X along it
-	var lp := func(x: float, z: float) -> Vector3:
-		return _ground(c + frame.x * x + frame.z * z)
 	var yaw_to_road := atan2(-to_road.x, -to_road.z)
-	# caravans in a loose row at the back, a car next to each
-	var nc := rng.randi_range(2, 4) if big else rng.randi_range(1, 3)
+	var taken: Array = []        # [Vector2 local x/z, radius]
+	# a free spot for something of radius `rad` in the local box x0..x1, z0..z1 (null: none)
+	var spot := func(rad: float, x0: float, x1: float, z0: float, z1: float):
+		for tries in 24:
+			var lx := rng.randf_range(x0, x1)
+			var lz := rng.randf_range(z0, z1)
+			if Vector2(lx, lz).length() > r - rad * 0.6:
+				continue
+			var ok := true
+			for t in taken:
+				if (t[0] as Vector2).distance_to(Vector2(lx, lz)) < float(t[1]) + rad + 0.8:
+					ok = false
+					break
+			if not ok:
+				continue
+			var wp := _ground(c + frame.x * lx + frame.z * lz)
+			if not _ok(wp, 3.0):
+				continue
+			taken.append([Vector2(lx, lz), rad])
+			return wp
+		return null
+	# caravans (each with its awning and a car beside it) towards the back
+	var nc := rng.randi_range(4, 7) if big else rng.randi_range(2, 4)
+	var first_caravan = null
 	for k in nc:
-		var x := clampf((k - (nc - 1) * 0.5) * 7.5, -r * 0.8, r * 0.8) + rng.randf_range(-0.8, 0.8)
-		var p: Vector3 = lp.call(x, r * 0.55)
-		if not _ok(p, 3.0):
+		var p = spot.call(5.0, -r, r, -r * 0.1, r)
+		if p == null:
 			continue
-		var yaw := yaw_to_road + PI * 0.5 + rng.randf_range(-0.25, 0.25)
-		var xf := Transform3D(Basis(Vector3.UP, yaw), p)
+		var yaw := yaw_to_road + PI * 0.5 + rng.randf_range(-0.35, 0.35) + (PI if rng.randf() < 0.5 else 0.0)
+		var cb := Basis(Vector3.UP, yaw)
+		var xf := Transform3D(cb, p)
 		var tint := Color(1, 1, 1).darkened(rng.randf_range(0.0, 0.15))
 		_add("caravan", xf, Color(tint.r, tint.g, tint.b * rng.randf_range(0.9, 1.0), 1))
 		Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.4, 0)), Vector3(2.3, 2.6, 5.8))
 		if rng.randf() < 0.7:
 			var awn: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
 			_add("awning", xf, Color(awn.r, awn.g, awn.b, 1))
-		var cp: Vector3 = lp.call(x + 3.6, r * 0.55 + rng.randf_range(-1.0, 1.0))
+		# the car on the side away from the awning
+		var cp: Vector3 = _ground(p - cb.x * 3.4 + cb.z * rng.randf_range(-0.8, 0.8))
 		if _ok(cp, 3.0) and scenery.details:
-			scenery.details.add_parked_car(Transform3D(Basis(Vector3.UP, yaw + rng.randf_range(-0.2, 0.2)), cp))
-	# dome / tunnel tents scattered around
-	var nt := rng.randi_range(8, 16) if big else rng.randi_range(4, 9)
-	for k in nt:
-		var a := rng.randf_range(0.0, TAU)
-		var d := rng.randf_range(r * 0.35, r * 0.9)
-		var p: Vector3 = lp.call(cos(a) * d, sin(a) * d * 0.6 + r * 0.1)
-		if not _ok(p, 3.0):
-			continue
-		var col: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
-		var s := rng.randf_range(0.85, 1.3)
-		var long := rng.randf_range(1.0, 1.7)
-		_add("tent", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.05), s * long)), p),
-			Color(col.r, col.g, col.b, 1))
+			scenery.details.add_parked_car(Transform3D(Basis(Vector3.UP, yaw + rng.randf_range(-0.15, 0.15)), cp))
+		if first_caravan == null:
+			first_caravan = p
 	# a pavilion with beer benches, string lights from it to the first caravan
-	var gp: Vector3 = lp.call(rng.randf_range(-2.0, 2.0), -r * 0.15)
-	var gcol: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
-	if _ok(gp, 3.0):
+	var gp = spot.call(2.8, -r * 0.5, r * 0.5, -r * 0.6, r * 0.2)
+	if gp != null:
+		var gcol: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
 		_add("gazebo", Transform3D(Basis(Vector3.UP, yaw_to_road + PI * 0.25), gp), Color(gcol.r, gcol.g, gcol.b, 1))
 		_add("beer_set", Transform3D(Basis(Vector3.UP, yaw_to_road + PI * 0.5), gp))
 		for k in 4:
 			_person(gp + frame.z * (0.75 if k % 2 == 0 else -0.75) + frame.x * (k / 2 - 0.5) * 1.2, gp)
-		_string_lights(gp + Vector3(0, 2.3, 0), _ground(c + frame.z * r * 0.55) + Vector3(0, 2.5, 0))
-		_string_lights(gp + Vector3(0, 2.3, 0), lp.call(-r * 0.6, -r * 0.4) + Vector3(0, 2.0, 0))
-	# the campfire with chairs and people round it
-	var fp: Vector3 = lp.call(rng.randf_range(-r * 0.5, r * 0.5), -r * 0.55)
-	if _ok(fp, 3.0):
+		if first_caravan != null:
+			_string_lights(gp + Vector3(0, 2.3, 0), (first_caravan as Vector3) + Vector3(0, 2.5, 0))
+	# the campfire with chairs and people round it (towards the track: the view)
+	var fp = spot.call(3.0, -r * 0.6, r * 0.6, -r, -r * 0.2)
+	if fp != null:
 		_add("campfire", Transform3D(Basis(Vector3.UP, rng.randf() * TAU), fp))
 		_add("fire", Transform3D(Basis.IDENTITY, fp + Vector3(0, 0.05, 0)), Color(1, 1, 1, rng.randf()))
 		var np := rng.randi_range(3, 7)
 		for k in np:
 			var a := TAU * k / np + rng.randf_range(-0.2, 0.2)
-			var pp := fp + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.6, 2.1)
+			var pp: Vector3 = fp + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.6, 2.1)
 			if rng.randf() < 0.5:
 				_add("chair", Transform3D(Basis.looking_at(Vector3(fp.x - pp.x, 0, fp.z - pp.z).normalized(), Vector3.UP), _ground(pp)),
 					Color(TENT_COLS[rng.randi() % TENT_COLS.size()]))
@@ -251,28 +265,36 @@ func _camp(i: int, side: float) -> bool:
 			l.visible = false
 			_lights.append(l)
 	# grill: everybody's grilling
-	var bp: Vector3 = lp.call(rng.randf_range(-r * 0.6, r * 0.6), r * 0.05)
-	if _ok(bp, 3.0):
+	var bp = spot.call(2.0, -r, r, -r, r)
+	if bp != null:
 		_add("grill", Transform3D(Basis(Vector3.UP, rng.randf() * TAU), bp))
 		_add("fire", Transform3D(Basis.IDENTITY.scaled(Vector3(0.45, 0.25, 0.45)), bp + Vector3(0, 0.82, 0)), Color(1, 1, 1, rng.randf()))
 		for k in rng.randi_range(2, 5):
 			var a := rng.randf_range(0.0, TAU)
-			_person(bp + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.9, 1.6), bp)
-	# portable toilets and a few people walking about
+			_person(bp + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.9, 1.5), bp)
+	# portable toilets at the edge
 	if rng.randf() < 0.6:
-		var tp: Vector3 = lp.call(r * 0.85, rng.randf_range(-r * 0.3, r * 0.3))
-		if _ok(tp, 3.0):
+		var tp = spot.call(2.2, r * 0.5, r, -r * 0.5, r * 0.5)
+		if tp != null:
 			for k in rng.randi_range(1, 3):
-				_add("toilet", Transform3D(Basis(Vector3.UP, yaw_to_road), tp + frame.x * k * 1.25))
+				_add("toilet", Transform3D(Basis(Vector3.UP, yaw_to_road), (tp as Vector3) + frame.x * (k - 1) * 1.25))
+	# dome / tunnel tents in the space that's left
+	var nt := rng.randi_range(14, 24) if big else rng.randi_range(6, 12)
+	for k in nt:
+		var s := rng.randf_range(0.85, 1.3)
+		var long := rng.randf_range(1.0, 1.7)
+		var p = spot.call(1.2 * s * long, -r, r, -r, r)
+		if p == null:
+			continue
+		var col: Color = TENT_COLS[rng.randi() % TENT_COLS.size()]
+		_add("tent", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.05), s * long)), p),
+			Color(col.r, col.g, col.b, 1))
+	# people walking about
 	var walkers := rng.randi_range(5, 12) if big else rng.randi_range(2, 6)
 	for k in walkers:
-		var a := rng.randf_range(0.0, TAU)
-		var pp: Vector3 = c + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, r)
-		if _ok(pp, 3.0):
-			_person(pp, pp + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)))
-	# gravel path down to the fence
-	var gate: Vector3 = scenery._roadside(i, 2.2, side)
-	scenery.add_path([c + to_road * r * 0.4, gate], 2.6, "gravel")
+		var wp = spot.call(0.4, -r, r, -r, r)
+		if wp != null:
+			_person(wp, (wp as Vector3) + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)))
 	# a clearing: the camp plus a margin, and open meadow down to the fence (no trees in between)
 	scenery.occupy(c, r + 5.0)
 	var front: Vector3 = scenery._roadside(i, 3.0, side)
@@ -281,6 +303,52 @@ func _camp(i: int, side: float) -> bool:
 		scenery.occupy(q, minf(r + 2.0, SMALL_CLEAR))
 	_camps.append([c, side, i])
 	return true
+
+
+## A few access points per side: an asphalt apron behind the barrier, a gravel path from it to the
+## nearest camp (from there the camp-to-camp paths go on). Every ~1.5 km on the long track.
+func _access_points() -> void:
+	var n: int = track.sample_count()
+	var every := int((1500.0 if bool(track.elevated) else 700.0) / float(track.SPACING))
+	for side: float in [-1.0, 1.0]:
+		var last := -100000
+		for camp in _camps:
+			if float(camp[1]) != side:
+				continue
+			var i: int = camp[2]
+			if i - last < every:
+				continue
+			# the apron: 30 m along the barrier, 8 m deep, right behind it
+			var ap: Vector3 = scenery._roadside(i, 5.0, side)
+			if not _ok(ap, 2.0):
+				continue
+			ap = _ground(ap)
+			var t: Vector3 = Vector3(track.tangents[i].x, 0, track.tangents[i].z).normalized()
+			scenery.add_ground_patch(Transform3D(Basis.looking_at(t, Vector3.UP), ap), Vector2(8.0, 30.0), "asphalt")
+			scenery.add_path([ap - track.rights[i] * side * -3.0, camp[0]], 3.0, "gravel")
+			last = i
+			_stats["access"] = int(_stats.get("access", 0)) + 1
+
+
+## Links the camp network to a place (the fair, the grandstands): a path from the nearest camp.
+func link_to_camps(p: Vector3) -> void:
+	var best = null
+	var bd := 1e9
+	for camp in _camps:
+		var d := (camp[0] as Vector3).distance_to(p)
+		if d < bd:
+			bd = d
+			best = camp
+	if best == null or bd > 400.0:
+		return
+	var pts: Array = []
+	var nseg := maxi(int(bd / 12.0), 2)
+	for j in nseg + 1:
+		var q := (best[0] as Vector3).lerp(p, float(j) / nseg)
+		if terrain.distance_to_road(q.x, q.z) < float(track.wall_base) + 4.0:
+			return        # would cross the track: no link
+		pts.append(q)
+	scenery.add_path(pts, 3.0, "gravel")
 
 
 ## Bulbs hanging in a sagging line between a and b.
