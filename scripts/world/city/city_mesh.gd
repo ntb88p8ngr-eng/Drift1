@@ -23,9 +23,17 @@ uniform float night = 0.0;
 uniform vec3 sky_top : source_color = vec3(0.33, 0.52, 0.85);
 uniform vec3 sky_horizon : source_color = vec3(0.8, 0.86, 0.93);
 uniform vec3 city : source_color = vec3(0.2, 0.21, 0.24);
-varying vec4 vcol;
+// flat: the building's codes are the same at every corner of a pane – interpolated, they wobbled
+// by a hair from pixel to pixel, and the hash below turned that into a different window state
+// for every pixel (black and white noise crawling over the facades)
+varying flat vec4 vcol;
 
-float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// hash without sin(): stable for the large cell numbers along a facade
+float h(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 
 void vertex() {
 	vcol = COLOR;
@@ -41,7 +49,7 @@ void fragment() {
 	// windows only a few pixels big: fade the per-window detail to its average (no sparkling)
 	vec2 fw = fwidth(g);
 	float detail = 1.0 - smoothstep(0.12, 0.45, max(fw.x, fw.y));
-	float seed = vcol.r * 113.0;
+	float seed = floor(vcol.r * 255.0 + 0.5) * 0.7;
 	float r = h(cell + seed);
 	// lit rooms: the building's share at night, fewer by day (offices with the lights on)
 	float share = mix(vcol.g * 0.35, vcol.g, night);

@@ -213,11 +213,18 @@ uniform sampler2D gravel_nrm : hint_normal, filter_linear_mipmap_anisotropic, re
 uniform sampler2D asphalt_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D asphalt_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float photo_tex = 0.0;   // 1 when the photo textures are set
-uniform int paved_mode = 0;      // paved ground: 0 concrete slabs, 1 gravel, 2 asphalt
+uniform int paved_mode = 0;      // paved ground: 0 concrete slabs, 1 gravel, 2 asphalt, 3 city pavers
 
 varying vec3 wpos;
 varying vec4 splat;
 varying vec3 wnrm;
+
+// hash without sin(): stable for large cell numbers
+float hash_s(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -273,6 +280,23 @@ void fragment() {
 			float a2 = dot(texture(asphalt_tex, rot_p / 4.8).rgb, vec3(0.3333)) / 0.35;
 			c = concrete * mix(1.0, a1, 0.9) * mix(1.0, a2, 0.3) * (0.88 + 0.24 * n3);
 			pnrm = texture(asphalt_nrm, p / 0.9, fine_b).xyz;
+		} else if (paved_mode == 3) {
+			// city pavement: small pavers (40 x 20 cm) in a running bond, every stone a shade
+			// different, a darker band of stones every 2.4 m; joints and shades fade to their
+			// average where the stones get small on screen (no shimmer)
+			vec2 bp = p / vec2(0.4, 0.2);
+			bp.x += 0.5 * mod(floor(bp.y), 2.0);
+			vec2 cid = floor(bp);
+			vec2 f = fract(bp);
+			vec2 fw = max(fwidth(bp), vec2(1e-4));
+			float near_k = 1.0 - smoothstep(0.18, 0.55, max(fw.x, fw.y));
+			vec2 jw = vec2(0.03, 0.06);
+			vec2 jj = 1.0 - smoothstep(jw - fw, jw + fw, min(f, 1.0 - f));
+			float joint = mix(0.16, max(jj.x, jj.y), near_k);
+			float shade = mix(1.0, 0.84 + 0.3 * hash_s(cid), near_k);
+			float band = step(10.0, mod(floor(p.y / 0.2), 12.0));
+			c = concrete * vec3(1.06, 1.02, 0.96) * (0.86 + 0.24 * n3) * shade * mix(1.0, 0.8, band);
+			c *= 1.0 - 0.45 * joint;
 		} else {
 			vec2 gg = abs(fract(p / 6.0) - 0.5);
 			float joint = smoothstep(0.486, 0.496, max(gg.x, gg.y));
@@ -971,7 +995,7 @@ static func terrain_material(track_id: String) -> ShaderMaterial:
 		m.set_shader_parameter("asphalt_tex", photo_texture("asphalt_albedo.jpg"))
 		m.set_shader_parameter("asphalt_nrm", photo_texture("asphalt_normal.png"))
 		m.set_shader_parameter("photo_tex", 1.0)
-		m.set_shader_parameter("paved_mode", {"harbor": 1, "playground": 2}.get(track_id, 0))
+	m.set_shader_parameter("paved_mode", {"harbor": 1, "playground": 2, "tokyo": 3}.get(track_id, 0))
 	if track_id == "playground":
 		m.set_shader_parameter("concrete", Color(0.12, 0.12, 0.13))
 		m.set_shader_parameter("joints", 0.0)

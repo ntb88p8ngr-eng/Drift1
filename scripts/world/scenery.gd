@@ -5,6 +5,7 @@ extends Node3D
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
+const Debris = preload("res://scripts/util/debris.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
@@ -43,6 +44,7 @@ var tutorial_site = null          # tutorial mode: its set is built here (before
 var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
 var _ground_paints: Array = []    # [pos, radius, splat colour]: no grass under them
 var lamp_lights: Array = []
+var _debris: Array = []         # snapped lamp posts (debris.gd)
 var _village := -1              # sample index the village clusters around
 
 var _occupied: Array = []   # large objects: [Vector2 pos, radius]
@@ -1446,6 +1448,11 @@ func make_breakable_lamp(parent: Node, xf: Transform3D, pole_mat: Material, head
 	return lamp
 
 
+func _physics_process(_delta: float) -> void:
+	if not _debris.is_empty():
+		Debris.calm(_debris)
+
+
 func _on_lamp_hit(body: Node3D, lamp: RigidBody3D) -> void:
 	if not is_instance_valid(lamp) or not lamp.freeze or not (body is RigidBody3D):
 		return
@@ -1462,10 +1469,17 @@ func _on_lamp_hit(body: Node3D, lamp: RigidBody3D) -> void:
 	stub.global_transform = foot * Transform3D(Basis.IDENTITY, Vector3(0, 0.175, 0))
 	lamp.global_position += foot.basis.y * 0.36
 	lamp.set_deferred("freeze", false)
+	# from now on debris: the car knocks it about, it never throws the car
+	lamp.set_deferred("collision_layer", Debris.LAYER)
+	lamp.set_deferred("collision_mask", Debris.MASK)
+	lamp.linear_damp = 0.05
+	lamp.angular_damp = 0.4
+	_debris.append(lamp)
 	var dir := Vector3(v.x, 0, v.z).normalized()
 	var spd := minf(Vector2(v.x, v.z).length(), 30.0)
-	lamp.call_deferred("apply_impulse", dir * lamp.mass * spd * 0.5 + Vector3(0, lamp.mass * 2.0, 0), lamp.global_basis * Vector3(0, 0.5, 0))
-	lamp.call_deferred("apply_torque_impulse", Vector3(-dir.z, 0, dir.x) * lamp.mass * spd * 0.8)
+	# the motion set directly (an impulse right as it wakes can use stale mass properties)
+	lamp.set_deferred("linear_velocity", dir * spd * 0.5 + Vector3.UP * 2.0)
+	lamp.set_deferred("angular_velocity", Vector3(-dir.z, 0, dir.x) * clampf(spd * 0.2, 0.8, 3.0))
 	Sfx.play(self, "pole_hit", 0.0, foot.origin + Vector3(0, 1.0, 0), randf_range(0.9, 1.1))
 	for l in lamp.find_children("*", "Light3D", true, false):
 		(l as Light3D).visible = false

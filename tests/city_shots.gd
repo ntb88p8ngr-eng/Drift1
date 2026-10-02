@@ -36,6 +36,15 @@ func _ready() -> void:
 		"aerial": [Vector3(250, 230, 380), Vector3(380, 0, -200)],
 		"station": [tr.samples[tr.nearest_index(Vector3(130, 0, 235))] + Vector3(0, 3.0, 0) - tr.rights[tr.nearest_index(Vector3(130, 0, 235))] * 6.0, Vector3(130, 2.0, 262)],
 	}
+	# a side street meeting the race route (at the foot of the expressway ramp)
+	var best_j: Dictionary = {}
+	for j in city.net.junctions:
+		if best_j.is_empty() or absf(float(j["progress"]) - 720.0) < absf(float(best_j["progress"]) - 720.0):
+			best_j = j
+	if not best_j.is_empty():
+		var jp: Vector2 = best_j["pos"]
+		var ji: int = tr.index_at(float(best_j["progress"]) - 28.0)
+		views["junction"] = [tr.samples[ji] + Vector3(0, 7.0, 0), Vector3(jp.x, 0.0, jp.y)]
 	# a side street, the special places, a park
 	var st: Dictionary = city.net.streets[city.net.streets.size() / 3]
 	var sp: PackedVector2Array = st["pts"]

@@ -6,6 +6,7 @@ extends Node3D
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
+const Debris = preload("res://scripts/util/debris.gd")
 
 const CHUNK := 96.0
 const HEIGHT := 8.4
@@ -36,6 +37,7 @@ var _lens_mat: ShaderMaterial
 var _metal: StandardMaterial3D
 var _body: StaticBody3D
 var _shape: CylinderShape3D
+var _debris: Array = []
 
 
 ## A streetlight at p, its arm reaching out over the road (towards `face`).
@@ -108,6 +110,7 @@ func set_night(n: float) -> void:
 func _physics_process(delta: float) -> void:
 	if world == null or poles.is_empty():
 		return
+	Debris.calm(_debris)
 	for car in world.cars.values():
 		if not is_instance_valid(car) or not car.visible or not (car is RigidBody3D):
 			continue
@@ -134,7 +137,8 @@ func _physics_process(delta: float) -> void:
 func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	var pl: Dictionary = poles[k]
 	pl["broken"] = true
-	(pl["shape"] as CollisionShape3D).set_deferred("disabled", true)
+	# off at once (deferred, the broken post spawned inside its own still solid foot for a step)
+	(pl["shape"] as CollisionShape3D).disabled = true
 	(pl["mm"] as MultiMesh).set_instance_transform(int(pl["slot"]), Transform3D(Basis.IDENTITY, Vector3(0, -500, 0)))
 	(emitters[int(pl["light"])] as Array)[3] = 0.0
 	var xf: Transform3D = pl["xf"]
@@ -148,8 +152,8 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	var b := RigidBody3D.new()
 	b.name = "BrokenLamp"
 	b.mass = 110.0
-	b.collision_layer = 8
-	b.collision_mask = 1 | 2 | 4 | 8
+	Debris.make(b)
+	b.add_collision_exception_with(_body)
 	b.continuous_cd = true
 	b.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	b.center_of_mass = Vector3(0, 3.6, -0.4)
@@ -171,10 +175,13 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	b.add_child(top)
 	add_child(b)
 	b.global_transform = xf
+	_debris.append(b)
 	var dir := Vector3(v.x, 0, v.z).normalized()
 	var spd := minf(Vector2(v.x, v.z).length(), 30.0)
-	b.call_deferred("apply_impulse", dir * b.mass * spd * 0.55 + Vector3.UP * b.mass * 2.5, xf.basis * Vector3(0, 0.6, 0))
-	b.call_deferred("apply_torque_impulse", Vector3(-dir.z, 0, dir.x) * b.mass * spd * 0.9)
+	# set the motion directly: an impulse on a body created this very step used the engine's default
+	# mass (1 kg, no inertia) – the post flew off at 900 m/s and took the car with it
+	b.linear_velocity = dir * spd * 0.5 + Vector3.UP * 2.0
+	b.angular_velocity = Vector3(-dir.z, 0, dir.x) * clampf(spd * 0.2, 0.8, 3.0)
 	# the car feels it
 	car.apply_central_impulse(-dir * car.mass * spd * 0.05)
 	Sfx.play(self, "pole_hit", 0.0, xf.origin + Vector3(0, 1.0, 0), randf_range(0.9, 1.1))

@@ -24,6 +24,7 @@ var rng := RandomNumberGenerator.new()
 var emitters: Array = []        # [position, colour, range, energy, kind (0 omni, 1 spot down)]
 var far: Array = []             # [Transform3D of the far-LOD box, tint]
 var stats := {}
+var _crown := 0.0
 
 
 func _init(p_cm) -> void:
@@ -44,6 +45,7 @@ func building(b: Dictionary) -> void:
 	var seed := rng.randf()
 	var faces := _faces(b)
 	var blind: Array = b.get("blind", [false, false, false, false])
+	_crown = 0.0
 	match style:
 		"tower":
 			var col: Color = FRAME_TOWER[rng.randi() % FRAME_TOWER.size()]
@@ -51,6 +53,7 @@ func building(b: Dictionary) -> void:
 			var crown := 0.0
 			if h > 70.0:
 				crown = rng.randf_range(10.0, 22.0)
+			_crown = crown
 			for f in faces:
 				_curtain(f, gh, h - crown, col, bay, seed, 0.0)
 			if gh > 0.0:
@@ -104,8 +107,22 @@ func building(b: Dictionary) -> void:
 			if gh > 0.0:
 				_shop_front(b, faces[0], gh, wall)
 			_pitched_roof(b, h)
-	far.append([Transform3D(Basis(b["ax"], Vector3.UP, b["az"]) * Basis.from_scale(Vector3(b["w"], h, b["d"])), (b["c"] as Vector3) + Vector3(0, h * 0.5, 0)), style])
+	if style == "tower" and h > 70.0 and _crown > 0.0:
+		_far(b, 0.0, h - _crown, 1.0, style)
+		_far(b, h - _crown, h, 0.7, style)
+	else:
+		_far(b, 0.0, h, 1.0, style)
 	stats[style] = int(stats.get(style, 0)) + 1
+
+
+## The far-LOD box (city.gd draws it beyond the detailed meshes; near their range end both show for
+## a while): kept 0.8 m inside every facade and under the roof, so it never pokes through the glass
+## or fights with the walls and the roof while both are drawn.
+func _far(b: Dictionary, y0: float, y1: float, scale: float, style: String) -> void:
+	var w := maxf(float(b["w"]) * scale - 1.6, 1.0) / 0.94
+	var d := maxf(float(b["d"]) * scale - 1.6, 1.0) / 0.94
+	var hh := maxf(y1 - y0 - 0.4, 0.5)
+	far.append([Transform3D(Basis(b["ax"], Vector3.UP, b["az"]) * Basis.from_scale(Vector3(w, hh, d)), (b["c"] as Vector3) + Vector3(0, y0 + hh * 0.5, 0)), style])
 
 
 ## The four facades: [ground centre of the face, outward normal, width] – the front (towards the

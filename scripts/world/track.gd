@@ -251,10 +251,26 @@ func _spline_centerline() -> void:
 		var p: Vector2 = def["points"][k]
 		pts.append(Vector3(p.x, float(hs[k]) if k < hs.size() else 0.0, p.y))
 	var n := pts.size()
+	# the heights follow a monotone curve between the points (Catmull-Rom overshoots at the foot of
+	# a ramp: the road dipped up to 0.44 m into the flat ground of the city, which then covered it)
+	var slopes := PackedFloat32Array()
+	slopes.resize(n)
+	for i in n:
+		var d0: float = pts[i].y - pts[(i - 1 + n) % n].y
+		var d1: float = pts[(i + 1) % n].y - pts[i].y
+		slopes[i] = 0.0 if d0 * d1 <= 0.0 else signf(d1) * minf(minf(absf(d0), absf(d1)) * 3.0, absf(d0 + d1) * 0.5)
 	var dense: Array = []
 	for i in n:
+		var y0: float = pts[i].y
+		var y1: float = pts[(i + 1) % n].y
 		for k in 40:
-			dense.append(_catmull(pts[(i - 1 + n) % n], pts[i], pts[(i + 1) % n], pts[(i + 2) % n], float(k) / 40.0))
+			var t := float(k) / 40.0
+			var p: Vector3 = _catmull(pts[(i - 1 + n) % n], pts[i], pts[(i + 1) % n], pts[(i + 2) % n], t)
+			var t2 := t * t
+			var t3 := t2 * t
+			p.y = (2.0 * t3 - 3.0 * t2 + 1.0) * y0 + (t3 - 2.0 * t2 + t) * slopes[i] \
+				+ (-2.0 * t3 + 3.0 * t2) * y1 + (t3 - t2) * slopes[(i + 1) % n]
+			dense.append(p)
 	# arc-length resample
 	var cum: Array = [0.0]
 	for i in range(1, dense.size() + 1):
@@ -657,6 +673,9 @@ func _build_curbs() -> void:
 			continue
 		var col := Color(0.85, 0.08, 0.06) if (i / 2) % 2 == 0 else Color(0.95, 0.95, 0.95)
 		for side: float in [-1.0, 1.0]:
+			# no kerb across an opening in the barrier (a street or the pit lane joins there)
+			if in_wall_gap(i, side):
+				continue
 			var r0: Vector3 = rights[i] * side
 			var r1: Vector3 = rights[i2] * side
 			var y := Vector3(0, ROAD_Y + 0.012, 0)
@@ -770,14 +789,16 @@ func _build_walls() -> void:
 	add_child(body)
 
 
-## Builds the barriers again (after openings were added to wall_gaps once the track was built).
+## Builds the barriers (and the kerbs) again after openings were added to wall_gaps once the track
+## was built.
 func rebuild_walls() -> void:
-	for nm in ["Walls", "WallBody", "Posts"]:
+	for nm in ["Walls", "WallBody", "Posts", "Curbs"]:
 		var old := get_node_or_null(nm)
 		if old:
 			remove_child(old)
 			old.free()
 	_build_walls()
+	_build_curbs()
 
 
 ## True when the barrier segment from sample i to i + 1 on this side is left open.
@@ -1033,7 +1054,7 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 		if pd > 0.0:
 			g *= 1.0 - 0.5 * pd
 		return [g, "asphalt"]
-	if curb_mask[idx] == 1 and lat <= hw_i + 1.4:
+	if curb_mask[idx] == 1 and lat <= hw_i + 1.4 and not in_wall_gap(idx, side_d):
 		return [0.97 * (1.0 - 0.3 * wetness), "curb"]
 	if trap.size() > idx and trap[idx] * side_d > 0.0 and absf(trap[idx]) > 0.4 and lat < hw_i + trap_w:
 		return [0.5 * (1.0 - 0.1 * wetness), "gravel"]

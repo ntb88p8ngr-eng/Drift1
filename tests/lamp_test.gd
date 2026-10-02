@@ -31,8 +31,22 @@ func _ready() -> void:
 	car.place(Transform3D(Basis.looking_at(-along, Vector3.UP), start))
 	await get_tree().physics_frame
 	car.linear_velocity = -along * 15.0
-	for f in 120 * 2:
+	# the car must never be thrown: no faster than it came, never up in the air (the post spawned
+	# in its solid foot and shot the car off at thousands of km/h); the post never faster than a car
+	var top_speed := 0.0
+	var top_y := 0.0
+	var top_post := 0.0
+	for f in 120 * 4:
 		await get_tree().physics_frame
+		top_speed = maxf(top_speed, (car as RigidBody3D).linear_velocity.length())
+		top_y = maxf(top_y, car.global_position.y)
+		for b in lamps.find_children("BrokenLamp*", "RigidBody3D", false, false):
+			top_post = maxf(top_post, (b as RigidBody3D).linear_velocity.length())
+	print("LAMP: car top speed %.1f m/s, highest %.2f m; post top speed %.1f m/s" % [top_speed, top_y, top_post])
+	if top_speed > 16.0 or top_y > 2.0:
+		print("FAIL: the car was thrown"); fails += 1
+	if top_post > 27.0:
+		print("FAIL: the post was shot off"); fails += 1
 	var broken: bool = pl["broken"]
 	var light_off: bool = float((lamps.emitters[int(pl["light"])] as Array)[3]) <= 0.0
 	var bodies: int = lamps.find_children("BrokenLamp*", "RigidBody3D", false, false).size()

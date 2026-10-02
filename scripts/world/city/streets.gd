@@ -50,6 +50,7 @@ func build(p_net, p_cm, p_track, p_scenery, p_add: Callable, p_light: Callable, 
 		_kerbs(k)
 	for p in plates:
 		_plate(p[0], p[1])
+	_route_mouths()
 	for k in net.streets.size():
 		_furniture(k)
 	_closures(parent)
@@ -148,6 +149,96 @@ func _ribbon(k: int) -> void:
 		cm.quad("road", pa - Vector3(na.x, 0, na.y) * hw, pa + Vector3(na.x, 0, na.y) * hw, pb + Vector3(nb.x, 0, nb.y) * hw, pb - Vector3(nb.x, 0, nb.y) * hw,
 			Vector3.UP, Color(1, 1, 1), Vector2(0.2, v - l), Vector2(0.8, v - l), Vector2(0.8, v), Vector2(0.2, v))
 	stats["street_m"] = int(stats.get("street_m", 0)) + int(v)
+
+
+## Where a street meets the race route it starts at the barrier line – on the outside of a bend
+## that is metres away from the road, and the pavement showed in between. Asphalt from the street's
+## end right under the edge of the route's road, the mouth flared like a real junction and following
+## the curve of the road's edge.
+func _route_mouths() -> void:
+	const FLARE := 3.0
+	var n: int = track.sample_count()
+	for j in net.junctions:
+		var k: int = j["street"]
+		var s: Dictionary = net.streets[k]
+		var pts: PackedVector2Array = s["pts"]
+		if pts.size() < 2:
+			continue
+		var pos: Vector2 = j["pos"]
+		var first := pts[0].distance_to(pos) <= pts[pts.size() - 1].distance_to(pos)
+		var e := pts[0] if first else pts[pts.size() - 1]
+		var e1 := pts[1] if first else pts[pts.size() - 2]
+		var into := (e1 - e).normalized()
+		var nrm := _normal(pts, 0 if first else pts.size() - 1)
+		var hw: float = float(s["w"]) * 0.5
+		var i: int = j["index"]
+		var side: float = j["side"]
+		# both corners of the street's end, back along the street onto the road's edge
+		var hit := []
+		for c: Vector2 in [e + nrm * hw, e - nrm * hw]:
+			var f := _edge_hit(c, -into, i, side)
+			if f < 0.0:
+				break
+			hit.append(f)
+		if hit.size() < 2:
+			continue
+		var fa: float = hit[0]
+		var fb: float = hit[1]
+		var fl := FLARE / float(track.SPACING)
+		if fa < fb:
+			fa -= fl
+			fb += fl
+		else:
+			fa += fl
+			fb -= fl
+		var steps := maxi(int(ceil(absf(fb - fa))), 2)
+		var y := Y_STREET - 0.002
+		var prev_r := Vector3.ZERO
+		var prev_s := Vector3.ZERO
+		for t in steps + 1:
+			var u := float(t) / steps
+			var r := _edge_at(lerpf(fa, fb, u), side, n)
+			var st2: Vector2 = (e + nrm * hw).lerp(e - nrm * hw, u)
+			var rp := Vector3(r.x, y, r.y)
+			var sp := Vector3(st2.x, y, st2.y)
+			if t > 0:
+				cm.quad("road", prev_r, rp, sp, prev_s, Vector3.UP, Color(1, 1, 1),
+					Vector2(0.2 + 0.6 * (u - 1.0 / steps), 0.0), Vector2(0.2 + 0.6 * u, 0.0), Vector2(0.2 + 0.6 * u, 3.0), Vector2(0.2 + 0.6 * (u - 1.0 / steps), 3.0))
+			prev_r = rp
+			prev_s = sp
+		stats["route_mouths"] = int(stats.get("route_mouths", 0)) + 1
+
+
+## Point (x, z) on the route's road edge (0.4 m in under the road) at fractional sample index f.
+func _edge_at(f: float, side: float, n: int) -> Vector2:
+	var i0 := int(floor(f))
+	var a: Vector3 = track.edge_point((i0 % n + n) % n, side * (float(track.hws[(i0 % n + n) % n]) - 0.4))
+	var b: Vector3 = track.edge_point(((i0 + 1) % n + n) % n, side * (float(track.hws[((i0 + 1) % n + n) % n]) - 0.4))
+	var t := f - float(i0)
+	return Vector2(lerpf(a.x, b.x, t), lerpf(a.z, b.z, t))
+
+
+## Where the line through p along dir meets the route's road edge on `side` near sample i, the
+## crossing nearest to p (behind it too: a street meeting the route at a slant pokes one corner in
+## past the edge): the fractional sample index (-1 if none within 60 m).
+func _edge_hit(p: Vector2, dir: Vector2, i: int, side: float) -> float:
+	var n: int = track.sample_count()
+	var best_t := 1e9
+	var best_f := -1.0
+	for m in range(i - 30, i + 30):
+		var a := _edge_at(float(m), side, n)
+		var b := _edge_at(float(m + 1), side, n)
+		var ab := b - a
+		var den := dir.x * ab.y - dir.y * ab.x
+		if absf(den) < 1e-6:
+			continue
+		var ap := a - p
+		var t := (ap.x * ab.y - ap.y * ab.x) / den
+		var u := (ap.x * dir.y - ap.y * dir.x) / den
+		if u >= 0.0 and u <= 1.0 and absf(t) < best_t and absf(t) < 60.0:
+			best_t = absf(t)
+			best_f = float(m) + u
+	return best_f
 
 
 static func _normal(pts: PackedVector2Array, j: int) -> Vector2:

@@ -6,11 +6,10 @@ extends Node3D
 ## away (a cap on how many there are at once keeps the physics cheap).
 
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
+const Debris = preload("res://scripts/util/debris.gd")
 
 const CELL := 8.0
-## The blocks have a layer of their own that no car scans: the car knocks them about, they never
-## push the car (a body only takes a collision response from layers in its own mask).
-const LAYER_DEBRIS := 16
+## The blocks are debris (debris.gd): the car knocks them about, they never push the car.
 const MAX_PIECES := 360
 const PIECE_LIFE := 24.0
 ## The person mesh's blocks (crowd.gd person_mesh): [centre, size, part] – part: 0 pants,
@@ -70,7 +69,7 @@ func _physics_process(delta: float) -> void:
 					var lp: Vector3 = inv * (e[2] as Transform3D).origin
 					if absf(lp.x) < 1.15 and absf(lp.z) < 2.45 + reach and lp.y > -2.2 and lp.y < 1.2:
 						_burst(e, v)
-	# the old pieces shrink away
+	# the old pieces shrink away (and none ever flies off faster than a car throws it)
 	for k in range(_pieces.size() - 1, -1, -1):
 		var pc: Array = _pieces[k]
 		pc[1] = float(pc[1]) + delta
@@ -78,6 +77,8 @@ func _physics_process(delta: float) -> void:
 		if not is_instance_valid(body):
 			_pieces.remove_at(k)
 			continue
+		if body.linear_velocity.length_squared() > Debris.MAX_V * Debris.MAX_V:
+			body.linear_velocity = body.linear_velocity.normalized() * Debris.MAX_V
 		if float(pc[1]) > PIECE_LIFE:
 			var s := 1.0 - (float(pc[1]) - PIECE_LIFE) / 1.5
 			if s <= 0.0:
@@ -111,8 +112,7 @@ func _burst(e: Array, v: Vector3) -> void:
 		var size: Vector3 = part[1]
 		var b := RigidBody3D.new()
 		b.mass = maxf(size.x * size.y * size.z * 900.0, 0.4)
-		b.collision_layer = LAYER_DEBRIS
-		b.collision_mask = 1 | 2 | 4 | 8 | LAYER_DEBRIS
+		Debris.make(b)
 		b.continuous_cd = true
 		var mi := MeshInstance3D.new()
 		mi.mesh = _box(size)
