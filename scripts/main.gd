@@ -76,6 +76,7 @@ static func offline_config() -> Dictionary:
 		"weather_seed": randi() % 100000,
 		"online": false,
 		"collisions": true,
+		"traffic": bool(Game.settings.get("traffic", false)),
 	}
 	# bots also race with party mode on (they wait out the minigames, see world._park_bots)
 	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0:

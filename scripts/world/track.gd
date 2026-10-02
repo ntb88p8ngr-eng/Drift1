@@ -37,6 +37,19 @@ const DEFS := {
 		"width": 18.0, "runoff": 3.0, "start_dist": 60.0,
 		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.085, 0.085, 0.095),
 	},
+	# Japanese city: avenues with the Shibuya-style scramble crossing, tight 90° corners between the
+	# blocks and an elevated expressway loop (up to 10 m, ramps of 5 %) – points [x, z, height]
+	"tokyo": {
+		"points": [Vector2(0, 0), Vector2(0, -120), Vector2(0, -230), Vector2(10, -275), Vector2(55, -290), Vector2(200, -290),
+			Vector2(245, -300), Vector2(260, -340), Vector2(260, -420), Vector2(275, -460), Vector2(320, -475), Vector2(420, -475),
+			Vector2(540, -470), Vector2(640, -440), Vector2(710, -370), Vector2(740, -270), Vector2(735, -160), Vector2(700, -70),
+			Vector2(630, -10), Vector2(540, 20), Vector2(440, 30), Vector2(360, 35), Vector2(300, 40), Vector2(255, 60),
+			Vector2(240, 100), Vector2(240, 180), Vector2(225, 220), Vector2(185, 235), Vector2(80, 235), Vector2(40, 220),
+			Vector2(25, 185), Vector2(25, 120), Vector2(15, 70), Vector2(0, 30)],
+		"heights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 9, 10, 10, 10, 10, 9, 6, 2.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+		"width": 16.0, "runoff": 1.5, "start_dist": 60.0,
+		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.07, 0.07, 0.08),
+	},
 	# Nordschleife replica: course and heights from real data (tools/make_gruene_hoelle.py)
 	"gruene_hoelle": {
 		"data": "res://assets/tracks/gruene_hoelle",
@@ -87,6 +100,9 @@ var stand_x := 0.0
 ## tracks built from data (Grüne Hölle) have real heights: samples carry y, the road has its own
 ## collision and the terrain follows the road instead of the other way round
 var elevated := false
+## Spline tracks with a height profile (the city's expressway): the road has its own collision, out
+## to the walls (a bridge deck), the terrain stays flat underneath.
+var raised := false
 var meta: Dictionary = {}       # data tracks: meta.json (grid layout, sections, attribution)
 var sections: Array = []        # [name, distance from the start line] in driving order
 var min_y := 0.0
@@ -113,6 +129,7 @@ func build(id: String) -> void:
 	wall_base = half_w + float(def["runoff"])
 	trap_w = minf(4.6, float(def["runoff"]) - 0.4)
 	elevated = def.has("data")
+	raised = def.has("heights")
 	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
 	_setup_profile()
@@ -122,7 +139,7 @@ func build(id: String) -> void:
 	_build_ground()
 	await Game.load_tick(0.35)
 	_build_road()
-	if elevated:
+	if elevated or raised:
 		_build_road_collision()
 	await Game.load_tick(0.55)
 	_build_puddles()
@@ -229,8 +246,10 @@ func _smooth_sections() -> void:
 
 func _spline_centerline() -> void:
 	var pts: Array = []
-	for p in def["points"]:
-		pts.append(Vector3(p.x, 0.0, p.y))
+	var hs: Array = def.get("heights", [])
+	for k in def["points"].size():
+		var p: Vector2 = def["points"][k]
+		pts.append(Vector3(p.x, float(hs[k]) if k < hs.size() else 0.0, p.y))
 	var n := pts.size()
 	var dense: Array = []
 	for i in n:
@@ -493,7 +512,7 @@ func _build_road() -> void:
 		var b := edge_point(i, hws[i]) + y0
 		var c := edge_point(i2, hws[i2]) + y1
 		var d := edge_point(i2, -hws[i2]) + y1
-		var nrm := (b - a).normalized().cross(tangents[i]).normalized() if elevated else Vector3.UP
+		var nrm := (b - a).normalized().cross(tangents[i]).normalized() if elevated or raised else Vector3.UP
 		MeshKit.quad(st, a, b, c, d, nrm, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
 	road_material = mat
@@ -511,10 +530,15 @@ func _build_road_collision() -> void:
 	var y := Vector3(0, ROAD_Y, 0)
 	for i in n:
 		var i2 := (i + 1) % n
-		var a := edge_point(i, -hws[i]) + y
-		var b := edge_point(i, hws[i]) + y
-		var c := edge_point(i2, hws[i2]) + y
-		var d := edge_point(i2, -hws[i2]) + y
+		# a raised spline track drives on a deck that reaches to the walls (no gap at the edge)
+		var wl0 := off_left[i] + 0.3 if raised else hws[i]
+		var wr0 := off_right[i] + 0.3 if raised else hws[i]
+		var wl1 := off_left[i2] + 0.3 if raised else hws[i2]
+		var wr1 := off_right[i2] + 0.3 if raised else hws[i2]
+		var a := edge_point(i, -wl0) + y
+		var b := edge_point(i, wr0) + y
+		var c := edge_point(i2, wr1) + y
+		var d := edge_point(i2, -wl1) + y
 		# clockwise seen from above = Godot's front face (the other order made the road collision
 		# face downwards, so the cars ran on the terrain under it)
 		faces.append_array(PackedVector3Array([a, c, b, a, d, c]))

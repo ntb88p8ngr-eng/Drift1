@@ -86,6 +86,8 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	var sp: float = track.SPACING
 	# camps: every ~110 m on the long track (a festival), every ~190 m elsewhere (fewer in the docks)
 	var step_m: float = 105.0 if big else (300.0 if track.track_id == "harbor" else 180.0)
+	if track.track_id == "tokyo":
+		step_m = 1e9      # no camping in the city – only the spectators
 	step_m *= [1.6, 1.25, 1.0, 0.85][clampi(quality, 0, 3)]
 	var step := maxi(int(step_m / sp), 8)
 	var i := int(track.start_index) + int(60.0 / sp)
@@ -340,6 +342,8 @@ func _spectators(i: int, side: float) -> void:
 	var rows := rng.randi_range(1, 3)
 	var width := rng.randf_range(4.0, 14.0)
 	var base: Vector3 = scenery._roadside(i, 2.6, side)
+	if track.samples[i].y > 0.15:
+		return        # on the expressway: nobody stands up there
 	if not _ok(base, 1.5) or not scenery.free_at(base, 1.0, 1.5):
 		return
 	var along: Vector3 = track.tangents[i]

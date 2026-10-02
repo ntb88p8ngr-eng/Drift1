@@ -4,6 +4,7 @@ extends Node3D
 
 signal exit_requested(target: String)   # "menu", "lobby", "restart", "leave"
 
+const Traffic = preload("res://scripts/world/traffic.gd")
 const Track = preload("res://scripts/world/track.gd")
 const Scenery = preload("res://scripts/world/scenery.gd")
 const Terrain = preload("res://scripts/world/terrain.gd")
@@ -40,6 +41,7 @@ var grass: Grass
 var flares: LensFlare
 var skidmarks: Skidmarks
 var local_car: Car
+var traffic: Node3D          # optional NPC traffic (traffic.gd)
 var cars := {}              # peer_id -> Car
 var camera: CameraRig
 var hud: Hud
@@ -245,6 +247,12 @@ func _spawn_cars() -> void:
 		cars[1] = local_car
 		local_car.place(track.grid_transform(0))
 	_spawn_bots(night)
+	# optional NPC traffic (offline; not on the open playground pad or the 20 km Nordschleife)
+	if bool(config.get("traffic", false)) and not online and track.track_id != "playground" and not track.elevated:
+		traffic = Traffic.new()
+		traffic.name = "Traffic"
+		add_child(traffic)
+		traffic.setup(self, clampi(int(track.length / 150.0), 6, 24))
 	local_car.transmission = str(Game.settings.get("transmission", "auto"))
 	local_car.headlights = night >= 0.4
 	_auto_lights = local_car.headlights

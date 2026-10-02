@@ -12,6 +12,7 @@ const TRACKS := [
 	{"id": "ridge", "name": "Kurohana Ridge", "desc": "Fließende Bergstrecke im Wald – lange Sweeper, eine Haarnadel, perfekt für Übergänge."},
 	{"id": "harbor", "name": "Harbor Drift Yard", "desc": "Breiter Industriekurs am Hafen – enge Kehren zwischen Containern und Lagerhallen."},
 	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
+	{"id": "tokyo", "name": "Neo Tokyo", "desc": "Japanische Großstadt: Scramble-Kreuzung mit Riesen-Bildschirmen, enge 90°-Ecken zwischen Hochhäusern, eine Stadtautobahn-Schleife auf Stelzen, Kirschblüten, Neonschilder – nachts am schönsten."},
 	{"id": "gruene_hoelle", "name": "Grüne Hölle", "desc": "Nachbau der Nordschleife aus echten Karten- und Höhendaten – 20,5 km durch die Eifel, fast 300 m Höhenunterschied, von Hatzenbach über Karussell bis Döttinger Höhe."},
 ]
 
@@ -167,6 +168,7 @@ var settings := {
 	"bots": 0,
 	"bot_level": 1,
 	"party": false,
+	"traffic": false,
 	"party_games": 3,
 	"party_coins": 5,
 	"time_of_day": "dusk",

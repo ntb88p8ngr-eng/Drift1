@@ -8,6 +8,7 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
 const Festival = preload("res://scripts/world/festival.gd")
+const City = preload("res://scripts/world/city.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const Playground = preload("res://scripts/world/playground.gd")
@@ -33,6 +34,7 @@ var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
 var festival: Node3D
+var city: Node3D
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
 var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
@@ -92,6 +94,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		_build_water_and_quay()
 		_build_harbor_props()
 		await _build_houses(6, ["office", "jp", "shop", "jp", "office", "jp"])
+	elif id == "tokyo":
+		city = City.new()
+		city.name = "City"
+		add_child(city)
+		await city.build(track, terrain, self, quality)
 	elif id == "playground":
 		var pg := Playground.new()
 		pg.name = "Playground"
@@ -108,7 +115,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 			details.add_bus_stop(_village + 12, -1.0)
 	await Game.load_tick()
 	_car_parks(id)
-	if id != "playground":
+	if id != "playground" and id != "tokyo":
 		var tp := Playground.new()
 		tp.name = "TracksideProps"
 		add_child(tp)
@@ -124,17 +131,19 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	add_child(festival)
 	await festival.build(track, terrain, self, quality)
 	await Game.load_tick()
-	details.build(quality)
-	await Game.load_tick()
-	Game.load_begin("Wald", 0.36, 0.68)
-	await _build_forest(id)
-	Game.load_begin("Büsche & Farne", 0.68, 0.76)
-	await _build_undergrowth(id)
-	Game.load_begin("Felsen", 0.76, 0.82)
-	await _build_rocks(id)
+	if id != "tokyo":
+		# (the city has its own signs, trees and street furniture)
+		details.build(quality)
+		await Game.load_tick()
+		Game.load_begin("Wald", 0.36, 0.68)
+		await _build_forest(id)
+		Game.load_begin("Büsche & Farne", 0.68, 0.76)
+		await _build_undergrowth(id)
+		Game.load_begin("Felsen", 0.76, 0.82)
+		await _build_rocks(id)
 	_finish_ground()
 	details.finish()
-	if id == "harbor":
+	if id == "harbor" or id == "tokyo":
 		_build_skyline()
 	set_night(night)
 	apply_view_distance()
@@ -982,6 +991,8 @@ func set_night(n: float) -> void:
 		details.set_night(n)
 	if festival:
 		festival.set_night(n)
+	if city:
+		city.set_night(n)
 
 
 # ---------------------------------------------------------------------------
@@ -1239,9 +1250,14 @@ func _build_skyline() -> void:
 		mat.metallic = 0.25
 		_glow_mats.append([mat, 0.0, 1.4])
 		mats.append(mat)
-	for k in 70:
+	var tokyo: bool = track.track_id == "tokyo"
+	for k in (220 if tokyo else 70):
 		var a := rng.randf_range(-PI * 0.95, -PI * 0.05)  # north side (away from the water)
 		var r := rng.randf_range(750.0, 1050.0)
+		if tokyo:
+			# the city goes on in every direction, the towers start right behind the built-up blocks
+			a = rng.randf_range(-PI, PI)
+			r = rng.randf_range(560.0, 1200.0)
 		var h := rng.randf_range(30.0, 130.0)
 		var w := rng.randf_range(25.0, 60.0)
 		var bx := c.x + cos(a) * r
@@ -1296,8 +1312,12 @@ func _build_lamps() -> void:
 	if track.track_id == "playground":
 		_playground_lamps(pole_mat, head_mat)
 		return
+	if track.track_id == "tokyo":
+		every = 18      # street lamps all along the city streets (the expressway has its own)
 	var k := 0
 	for i in range(0, n, every):
+		if track.samples[i].y > 0.15:
+			continue
 		if big:
 			var ds := absi(i - int(track.start_index))
 			if mini(ds, n - ds) > 200:
@@ -1601,7 +1621,7 @@ func _house_paths(builder, xf: Transform3D, style: String) -> void:
 
 
 func _car_parks(id: String) -> void:
-	if details == null or id == "playground":
+	if details == null or id == "playground" or id == "tokyo":
 		return
 	var n: int = track.sample_count()
 	var want: int = {"harbor": 3, "ridge": 2}.get(id, 4)

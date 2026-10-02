@@ -134,6 +134,8 @@ func _corner_indices(count: int) -> Array:
 			if mini(d, n - d) < 70:
 				ok = false
 				break
+		if track.samples[i].y > 0.15:
+			ok = false        # raised road (the city expressway)
 		# keep the start/finish area free (the grandstand is there)
 		var ds := absi(i - int(track.start_index))
 		if mini(ds, n - ds) < 25:
