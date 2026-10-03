@@ -444,7 +444,23 @@ func on_drift_event(ev: Array) -> void:
 			show_message("REVERSE ENTRY!", "+%s" % Game.format_points(float(ev[1])), UiKit.GOLD, 1.6)
 
 
+## Held M: the minimap grows to twice its size towards the bottom left (its top right corner stays).
+var _map_zoom := 0.0
+
+
+func _update_map_zoom(delta: float) -> void:
+	var want := 1.0 if Input.is_action_pressed("map_zoom") else 0.0
+	_map_zoom = move_toward(_map_zoom, want, delta * 6.0)
+	var k := _map_zoom * _map_zoom * (3.0 - 2.0 * _map_zoom)
+	var sz := 240.0 * (1.0 + k)
+	_minimap.offset_left = -20.0 - sz
+	_minimap.offset_right = -20.0
+	_minimap.offset_bottom = 20.0 + sz
+
+
 func _process(delta: float) -> void:
+	if _minimap:
+		_update_map_zoom(delta)
 	_update_fps(delta)
 	if world == null or world.local_car == null:
 		return

@@ -57,8 +57,17 @@ func _draw() -> void:
 		var fwd: Vector3 = -c.global_transform.basis.z
 		var f2 := Vector2(fwd.x, fwd.z).normalized()
 		var side := Vector2(-f2.y, f2.x)
-		var tri := PackedVector2Array([mp + f2 * 8.0, mp - f2 * 5.0 + side * 5.0, mp - f2 * 5.0 - side * 5.0])
-		draw_colored_polygon(tri, col)
+		if local:
+			# your own car: big, outlined and pulsing so it is found at a glance
+			var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006)
+			draw_circle(mp, 13.0 + pulse * 5.0, Color(0.75, 0.4, 1.0, 0.18 + 0.12 * (1.0 - pulse)))
+			var big := PackedVector2Array([mp + f2 * 14.0, mp - f2 * 8.0 + side * 9.0, mp - f2 * 4.0, mp - f2 * 8.0 - side * 9.0])
+			draw_colored_polygon(big, Color(1, 1, 1))
+			var inner := PackedVector2Array([mp + f2 * 10.5, mp - f2 * 5.5 + side * 6.2, mp - f2 * 3.0, mp - f2 * 5.5 - side * 6.2])
+			draw_colored_polygon(inner, Color(0.85, 0.3, 1.0))
+		else:
+			var tri := PackedVector2Array([mp + f2 * 8.0, mp - f2 * 5.0 + side * 5.0, mp - f2 * 5.0 - side * 5.0])
+			draw_colored_polygon(tri, col)
 		if not local:
 			draw_string(ThemeDB.fallback_font, mp + Vector2(7, -5), str(c.player_name), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
 

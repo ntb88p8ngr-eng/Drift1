@@ -41,7 +41,7 @@ const PAINTS := [
 ]
 
 ## Car catalogue. Torque in Nm, masses in kg. All cars start with automatic gearboxes – manual can be
-## switched on in the garage or while driving with [M]. Models: see assets/cars (Blend Swap, credits in README).
+## switched on in the garage or while driving with [T]. Models: see assets/cars (Blend Swap, credits in README).
 const CARS := {
 	"r34": {
 		"name": "Nissan Skyline GT-R R34", "mass": 1540.0, "torque": 440.0, "tach": 9000.0,
@@ -312,7 +312,8 @@ func _setup_input() -> void:
 	_add_action("shift_up", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [])
 	_add_action("nitro", [KEY_SHIFT], [JOY_BUTTON_B], [])
 	_add_action("shift_down", [KEY_Q, KEY_CTRL], [JOY_BUTTON_LEFT_SHOULDER], [])
-	_add_action("toggle_transmission", [KEY_M], [], [])
+	_add_action("toggle_transmission", [KEY_T], [], [])
+	_add_action("map_zoom", [KEY_M], [], [])
 	_add_action("camera_next", [KEY_C], [JOY_BUTTON_Y], [])
 	# (Y) held = free camera, see camera_rig.gd – the right stick click switches the ABS
 	_add_action("camera_free", [KEY_V], [], [])
@@ -365,7 +366,7 @@ const REBINDABLE := [
 	["fire", "Feuer (Party)"], ["camera_next", "Kamera wechseln"], ["camera_free", "Freie Kamera"],
 	["look_back", "Nach hinten schauen"], ["reset_car", "Auto zurücksetzen"], ["lights", "Licht"],
 	["neon_flash", "Neon blitzen"], ["toggle_abs", "ABS an/aus"], ["toggle_esp", "ESP an/aus"],
-	["scoreboard", "Leaderboard"], ["pause", "Pause"],
+	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["pause", "Pause"],
 ]
 
 
