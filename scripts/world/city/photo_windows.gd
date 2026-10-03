@@ -31,7 +31,7 @@ void fragment() {
 var _mats: Array = []
 
 
-## The pictures there are: [[day texture, night texture], …] (empty if none were uploaded).
+## The pictures there are: [[day texture, night texture, aspect w/h], …] (empty if none were uploaded).
 static func pictures() -> Array:
 	var files := {}
 	var dir := DirAccess.open(DIR)
@@ -69,7 +69,7 @@ static func pictures() -> Array:
 		var dt = load(day if day != null else night)
 		var nt = load(night if night != null else day)
 		if dt is Texture2D and nt is Texture2D:
-			out.append([dt, nt])
+			out.append([dt, nt, float((dt as Texture2D).get_width()) / maxf((dt as Texture2D).get_height(), 1.0)])
 	return out
 
 
@@ -104,7 +104,9 @@ func build(spots: Array) -> void:
 		for k in list.size():
 			var xf: Transform3D = list[k][0]
 			var size: Vector2 = list[k][1]
-			mm.set_instance_transform(k, Transform3D(xf.basis.scaled(Vector3(size.x, size.y, 1.0)), xf.origin))
+			# the picture's own proportions: as wide as the bay, centred in the floor's height
+			size.y = minf(size.y, size.x / float(pics[i][2]))
+			mm.set_instance_transform(k, Transform3D(xf.basis * Basis.from_scale(Vector3(size.x, size.y, 1.0)), xf.origin))
 			mm.set_instance_custom_data(k, Color(float(list[k][3]), 0, 0, 1))
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
