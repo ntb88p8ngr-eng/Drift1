@@ -74,7 +74,7 @@ const SPECIALS := [
 	["ramen", 8.0, 12.0, 3, true], ["sushi", 11.0, 14.0, 1, true], ["izakaya", 11.0, 14.0, 2, true],
 	["konbini", 17.0, 14.0, 3, true], ["karaoke", 20.0, 16.0, 1, true], ["pachinko", 22.0, 18.0, 1, true],
 	["bowling", 40.0, 26.0, 1, true], ["police", 38.0, 36.0, 1, true], ["gas", 32.0, 26.0, 1, true],
-	["supermarket", 60.0, 76.0, 2, false], ["garage", 34.0, 46.0, 2, false], ["coin_parking", 20.0, 18.0, 5, false],
+	["supermarket", 60.0, 76.0, 2, false], ["garage", 54.0, 44.0, 2, false], ["coin_parking", 20.0, 18.0, 5, false],
 ]
 
 var track

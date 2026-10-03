@@ -12,6 +12,13 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 const CityAtlas = preload("res://scripts/world/city/city_atlas.gd")
 const Colliders = preload("res://scripts/util/colliders.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
+const MeshMerge = preload("res://scripts/util/mesh_merge.gd")
+
+## The Japanese multi-storey car park (uploaded model): ground floor, two basements, two upper decks,
+## ramps along its +x side, the barrier gate and booth on +z.
+const GARAGE_GLB := "res://assets/props/parking_garage/parking_garage.glb"
+const GARAGE_LOT := Vector2(54.0, 44.0)   # lot size it needs (along the street, depth)
+static var _garage_parts: Array = []      # [ArrayMesh, Transform3D, Shape3D] – merged once, shared
 
 var cm
 var parent: Node3D
@@ -43,7 +50,7 @@ func build(kind: String, lot: Dictionary) -> void:
 		"iapfel": _iapfel(lot)
 		"konbini": _konbini(lot)
 		"supermarket": _supermarket(lot)
-		"garage": _garage(lot)
+		"garage": _garage_model(lot) if _garage_fits(lot) else _garage(lot)
 		"coin_parking": _coin_parking(lot)
 		"gas": _gas(lot)
 		"bowling": _bowling(lot)
@@ -451,6 +458,64 @@ func _supermarket(lot: Dictionary) -> void:
 # ---------------------------------------------------------------------------
 ## A multi-storey car park: four decks on columns, ramps up the side (all drivable), parapets,
 ## parked cars on every deck, lights under the decks, the big blue P.
+func _garage_fits(lot: Dictionary) -> bool:
+	return ResourceLoader.exists(GARAGE_GLB) and float(lot["w"]) >= GARAGE_LOT.x and float(lot["d"]) >= GARAGE_LOT.y
+
+
+## The uploaded car park: turned so its gate faces the street, the ground dug out under the building
+## and the ramp pit (its two basements go 7 m down), solid, lit at night on every level.
+func _garage_model(lot: Dictionary) -> void:
+	if _garage_parts.is_empty():
+		var g := (load(GARAGE_GLB) as PackedScene).instantiate() as Node3D
+		parent.add_child(g)
+		MeshMerge.merge(g, func(_mi: MeshInstance3D) -> bool: return false)
+		for c in g.get_children():
+			if c is MeshInstance3D and (c as MeshInstance3D).mesh != null and str(c.name).begins_with("Merged"):
+				var mesh: ArrayMesh = (c as MeshInstance3D).mesh
+				var shape := mesh.create_trimesh_shape()
+				if shape:
+					shape.backface_collision = true      # (the model's faces may wind either way)
+				_garage_parts.append([mesh, (c as Node3D).transform, shape])
+		parent.remove_child(g)
+		g.queue_free()
+	# model x -> along the street reversed, model z -> towards the street (a 180° turn); the model
+	# spans x -22..28 (building and ramps), z -14..18 (building to the booth)
+	var ax: Vector3 = lot["ax"]
+	var az: Vector3 = lot["az"]
+	var basis := Basis(-ax, Vector3.UP, -az)
+	var origin: Vector3 = (lot["c"] as Vector3) + ax * 3.0 - az * 2.0
+	var root := Node3D.new()
+	root.name = "ParkingGarage"
+	parent.add_child(root)
+	root.global_transform = Transform3D(basis, origin)
+	var body := StaticBody3D.new()
+	body.collision_layer = Colliders.LAYER_WORLD
+	body.collision_mask = 0
+	root.add_child(body)
+	for part in _garage_parts:
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0]
+		mi.transform = part[1]
+		mi.visibility_range_end = 700.0
+		root.add_child(mi)
+		if part[2]:
+			var cs := CollisionShape3D.new()
+			cs.shape = part[2]
+			cs.transform = part[1]
+			body.add_child(cs)
+	# dig out the ground under the building (x -22..22, z -14..14) and the ramp pit (x 22..28)
+	var terrain = scenery.terrain
+	for mx in range(-18, 27, 6):
+		for mz in [-8.0, 0.0, 8.0]:
+			terrain.level_to(root.global_transform * Vector3(mx, 0, mz), 5.0, 3.0, -8.0)
+	# lights on every level (ground, two basements, the decks above)
+	for y: float in [-6.6, -3.2, 0.2, 3.6]:
+		for mx: float in [-14.0, 0.0, 14.0]:
+			for mz: float in [-7.0, 7.0]:
+				light.call(root.global_transform * Vector3(mx, y + 2.6, mz), Color(0.9, 0.95, 1.0), 11.0, 1.4, 1)
+	stats["garage_model"] = int(stats.get("garage_model", 0)) + 1
+
+
 func _garage(lot: Dictionary) -> void:
 	var w: float = minf(lot["w"], 34.0)
 	var d: float = minf(lot["d"], 46.0)
