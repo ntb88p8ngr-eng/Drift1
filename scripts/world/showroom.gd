@@ -19,11 +19,13 @@ var _t := 0.0
 const GARAGE_SCENE := "res://assets/env/garage.glb"
 const POSTER_DIR := "res://assets/env/posters/"
 const GARAGE_INFO := "res://assets/env/garage.json"
-const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed/Midnight_Drift_Garage.glb"
-const WORKSHOP_SKY := "res://assets/main_menu/Midnight_Drift_Garage_Detailed/skybox/Midnight_City_Panorama.png"
+const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed.glb"
+const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City_Skybox/Midnight_City_Panorama.png"
+## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
+const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning"]
 const DECK_Y := 0.465            # top of the turntable deck
 ## glTF light intensities come in far too strong for Godot: energy per light name prefix
-const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Workbench": 0.7, "Neon": 1.4}
+const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Honeycomb": 0.6, "Booth": 0.5, "Office": 0.5, "Workbench": 0.7, "Neon": 1.4}
 
 var _workshop := false
 var _anim: AnimationPlayer
@@ -185,13 +187,18 @@ func _load_workshop() -> bool:
 	_workshop = true
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
 	var t0 := Time.get_ticks_msec()
-	var n := MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool: return str(mi.get_path()).contains("Turntable_ROTATE"))
+	var n := MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool:
+		var path := str(mi.get_path())
+		for part in STORM_PARTS:
+			if path.contains(part):
+				return true
+		return false)
 	print("SHOWROOM: merged %d workshop meshes in %d ms" % [n, Time.get_ticks_msec() - t0])
 	var env := Environment.new()
 	if ResourceLoader.exists(WORKSHOP_SKY):
 		var sky_mat := PanoramaSkyMaterial.new()
 		sky_mat.panorama = load(WORKSHOP_SKY)
-		sky_mat.energy_multiplier = 0.9
+		sky_mat.energy_multiplier = 0.62
 		var sky := Sky.new()
 		sky.sky_material = sky_mat
 		env.background_mode = Environment.BG_SKY
@@ -218,13 +225,20 @@ func _load_workshop() -> bool:
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+	# a cloudburst outside: heavy rain round the workshop, splashes on the street, lightning and
+	# thunder (the room: x ±6.9, z ±6.5)
+	var storm_fx := MenuStorm.new()
+	storm_fx.name = "Storm"
+	add_child(storm_fx)
+	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0))
 	for l in g.find_children("*", "Light3D", true, false):
 		var light := l as Light3D
 		for pre in WORKSHOP_LIGHTS:
 			if str(light.name).begins_with(pre):
 				light.light_energy = float(WORKSHOP_LIGHTS[pre])
 		# only the ceiling lights cast shadows (a dozen shadowed omnis is plenty)
-		light.shadow_enabled = str(light.name).begins_with("Overhead") and absf(light.global_position.x) < 0.5 and Game.quality() >= 2
+		light.shadow_enabled = (str(light.name).begins_with("Overhead") or str(light.name).begins_with("Honeycomb")) \
+			and Vector2(light.global_position.x, light.global_position.z).length() < 4.5 and Game.quality() >= 2
 	for c in g.find_children("*", "Camera3D", true, false):
 		(c as Camera3D).current = false
 	# the car is not parented to the deck (its node carries a mirroring axis swap, which would turn
@@ -238,6 +252,17 @@ func _load_workshop() -> bool:
 	_anim = g.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim:
 		_anim.stop()
+		# the model's storm (rain sheets, lightning bolt) keeps running – without its turntable track
+		if _anim.has_animation("Garage_Storm_20s"):
+			var storm := (_anim.get_animation("Garage_Storm_20s") as Animation).duplicate() as Animation
+			for t in range(storm.get_track_count() - 1, -1, -1):
+				if str(storm.track_get_path(t)).ends_with("Turntable_ROTATE"):
+					storm.remove_track(t)
+			storm.loop_mode = Animation.LOOP_LINEAR
+			var lib := AnimationLibrary.new()
+			lib.add_animation("storm", storm)
+			_anim.add_animation_library("menu", lib)
+			_anim.play("menu/storm")
 	if _deck:
 		_deck_base = _deck.global_transform
 	# a key light from the front for the paint, a red rim from the shutter side
