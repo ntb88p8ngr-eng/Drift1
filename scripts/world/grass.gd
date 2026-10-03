@@ -179,6 +179,9 @@ func _on_settings_changed() -> void:
 
 func _build_textures() -> void:
 	_height_tex = ImageTexture.create_from_image(terrain.height_image())
+	# the world editor reshapes the ground: the grass follows
+	if not terrain.heights_changed.is_connected(_on_heights_changed):
+		terrain.heights_changed.connect(_on_heights_changed)
 	# density mask from the terrain ground types (one texel per terrain vertex)
 	var nx: int = terrain.nx
 	var nz: int = terrain.nz
@@ -359,3 +362,8 @@ func _process(_delta: float) -> void:
 		mat.set_shader_parameter("car_pos", car_p)
 		mat.set_shader_parameter("wetness", wetness)
 		mat.set_shader_parameter("wind", wind)
+
+
+func _on_heights_changed(_x0: int, _z0: int, _x1: int, _z1: int) -> void:
+	if _height_tex:
+		_height_tex.update(terrain.height_image())

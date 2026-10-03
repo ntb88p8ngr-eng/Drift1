@@ -863,6 +863,7 @@ func _build_chunk(x0: int, z0: int, w: int, h: int, stride := 1, range_begin := 
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.name = "TerrainChunk"
+	mi.set_meta("chunk", [x0, z0, w, h, stride, range_begin, range_end])
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	if range_begin > 0.0 or range_end > 0.0:
 		mi.visibility_range_begin = range_begin
@@ -933,6 +934,37 @@ static func _on_rect_edge(r: Rect2, x: float, z: float) -> bool:
 	return inside_x and inside_z
 
 
+## The editor changed heights in the vertex rectangle ix0..ix1 x iz0..iz1: rebuild the meshes there.
+func rebuild_region(ix0: int, iz0: int, ix1: int, iz1: int) -> void:
+	for c in get_children():
+		if not (c is MeshInstance3D) or not c.has_meta("chunk"):
+			continue
+		var m: Array = c.get_meta("chunk")
+		var x0: int = m[0]
+		var z0: int = m[1]
+		if x0 > ix1 + 1 or z0 > iz1 + 1 or x0 + int(m[2]) < ix0 - 1 or z0 + int(m[3]) < iz0 - 1:
+			continue
+		remove_child(c)
+		c.queue_free()
+		_build_chunk(x0, z0, m[2], m[3], m[4], m[5], m[6])
+	heights_changed.emit(ix0, iz0, ix1, iz1)
+
+
+## The physics ground after editing (once a stroke is done: it copies the whole grid).
+func refresh_collision() -> void:
+	if _hshape == null:
+		return
+	var data := PackedFloat32Array()
+	data.resize(nx * nz)
+	for i in nx * nz:
+		data[i] = heights[i] / CELL
+	_hshape.map_data = data
+
+
+signal heights_changed(ix0: int, iz0: int, ix1: int, iz1: int)
+var _hshape: HeightMapShape3D
+
+
 func _build_collision() -> void:
 	var body := StaticBody3D.new()
 	body.name = "TerrainBody"
@@ -949,6 +981,7 @@ func _build_collision() -> void:
 			await Game.load_tick()
 		data[i] = heights[i] / CELL
 	shape.map_data = data
+	_hshape = shape
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	# the height map is centred on its node; uniform scale = cell size

@@ -170,6 +170,7 @@ var settings := {
 	"party": false,
 	"traffic": 0,       # NPC traffic density 0 (off) .. 4 (rush hour), see traffic.gd
 	"traffic_speed": 1, # NPC traffic speed: traffic.gd SPEEDS index (30 .. 120 km/h)
+	"custom_map": "",     # world editor map to race on (user://maps/*.dmap), "" = the original track
 	"party_games": 3,
 	"party_coins": 5,
 	"time_of_day": "dusk",
@@ -888,6 +889,8 @@ func track_name(track_id: String) -> String:
 func mode_name(mode_id: String) -> String:
 	if mode_id == "tutorial":
 		return "Tutorial"
+	if mode_id == "editor":
+		return "Welt-Editor"
 	for m in MODES:
 		if m["id"] == mode_id:
 			return m["name"]

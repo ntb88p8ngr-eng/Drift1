@@ -28,6 +28,8 @@ const PartySites = preload("res://scripts/world/party_sites.gd")
 const TutorialSite = preload("res://scripts/world/tutorial_site.gd")
 const Tutorial = preload("res://scripts/world/tutorial.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
+const MapData = preload("res://scripts/editor/map_data.gd")
+const WorldEditor = preload("res://scripts/editor/world_editor.gd")
 
 const SECTORS := 8
 
@@ -60,6 +62,9 @@ var party_sites: PartySites
 var tutorial_site: TutorialSite   # tutorial mode (Grüne Hölle)
 var tutorial: Tutorial
 var race_ai: RaceAI           # AI opponents (race mode), or null
+var custom_map                # map_data.gd: a map from the world editor (config "map"), or null
+var map_content: Node3D       # what that map placed
+var editor: Node3D            # world_editor.gd (mode "editor")
 
 var state := "loading"      # loading, waiting, countdown, running, finished
 var race_time := 0.0
@@ -160,6 +165,18 @@ func _ready() -> void:
 	add_child(grass)
 	Game.load_begin("Gras", 0.94, 1.0)
 	await grass.setup(terrain, track, self)
+	# a map from the world editor: its ground, scenery changes, objects, roads and water
+	var base_heights := PackedFloat32Array()
+	if mode == "editor":
+		base_heights = terrain.heights.duplicate()
+	if str(config.get("map", "")) != "":
+		custom_map = MapData.load_file(str(config["map"]))
+	if custom_map == null and mode == "editor":
+		custom_map = MapData.new()
+		custom_map.base_track = track.track_id
+		custom_map.map_name = "%s (Kopie)" % Game.track_name(track.track_id)
+	if custom_map:
+		map_content = custom_map.apply(self)
 	flares = LensFlare.new()
 	flares.name = "LensFlares"
 	add_child(flares)
@@ -215,6 +232,9 @@ func _ready() -> void:
 		tutorial.name = "Tutorial"
 		tutorial.setup(self, tutorial_site)
 		add_child(tutorial)
+	elif mode == "editor":
+		state = "editor"
+		_enter_editor(str(config.get("map", "")), base_heights)
 	elif mode == "free":
 		state = "running"
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
@@ -224,6 +244,22 @@ func _ready() -> void:
 	Game.load_progress = 1.0
 	is_loaded = true
 	loaded.emit()
+
+
+## World editor: the car parked out of sight, no HUD, the editor's own camera and tools.
+func _enter_editor(path: String, base_heights: PackedFloat32Array) -> void:
+	local_car.freeze = true
+	local_car.visible = false
+	local_car.process_mode = Node.PROCESS_MODE_DISABLED
+	local_car.collision_layer = 0
+	camera.process_mode = Node.PROCESS_MODE_DISABLED
+	hud.visible = false
+	hud.process_mode = Node.PROCESS_MODE_DISABLED
+	pause_menu.process_mode = Node.PROCESS_MODE_DISABLED
+	editor = WorldEditor.new()
+	editor.name = "WorldEditor"
+	editor.setup(self, custom_map, path, map_content, base_heights)
+	add_child(editor)
 
 
 func _spawn_cars() -> void:
@@ -400,7 +436,7 @@ func _start_countdown() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not is_loaded:
+	if not is_loaded or state == "editor":
 		return
 	match state:
 		"waiting":

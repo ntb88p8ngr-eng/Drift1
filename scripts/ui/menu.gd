@@ -9,6 +9,7 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 const CarBody = preload("res://scripts/car/car_body.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
+const MapData = preload("res://scripts/editor/map_data.gd")
 
 var main   # main.gd
 var current := ""
@@ -160,6 +161,8 @@ func show_screen(screen: String) -> void:
 			_build_options()
 		"controls":
 			_build_controls()
+		"editor":
+			_build_editor()
 		_:
 			current = "main"
 			_build_main()
@@ -210,6 +213,7 @@ func _build_main() -> void:
 	_add(UiKit.button("Garage", func():
 		_return_to = "main"
 		show_screen("garage"), 360))
+	_add(UiKit.button("Welt-Editor", func(): show_screen("editor"), 360))
 	_add(UiKit.button("Leaderboard", func(): show_screen("leaderboard"), 360))
 	_add(UiKit.button("Steuerung", func(): show_screen("controls"), 360))
 	_add(UiKit.button("Optionen", func():
@@ -222,6 +226,66 @@ func _build_main() -> void:
 	_add(UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT))
 	_add(UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM))
 	_add(UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD))
+
+
+# ---------------------------------------------------------------------------
+# World editor
+# ---------------------------------------------------------------------------
+func _build_editor() -> void:
+	_header("WELT-EDITOR")
+	var info := UiKit.label("Gelände formen, Wasser, eigene Straßen, Bäume und Objekte verschieben, skalieren, löschen und neue setzen – auch eigene 3D-Modelle (.glb). Gespeicherte Karten sind im Einzelspieler unter „Eigene Karte“ fahrbar.", 16, UiKit.TEXT_DIM)
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.custom_minimum_size = Vector2(640, 0)
+	_add(info)
+	_add(UiKit.label("Neue Karte auf Basis von:", 19, UiKit.GOLD))
+	var names: Array = []
+	for t in Game.TRACKS:
+		names.append(t["name"])
+	var base_idx := [maxi(names.find(Game.track_name(str(Game.settings["track"]))), 0)]
+	_add(UiKit.row([UiKit.option(names, base_idx[0], func(i): base_idx[0] = i, 300),
+		UiKit.button("Neu erstellen", func(): main.start_editor(Game.TRACKS[base_idx[0]]["id"]), 220)]))
+	_add(UiKit.spacer(8))
+	var maps := MapData.list_maps()
+	_add(UiKit.label("Gespeicherte Karten:" if not maps.is_empty() else "Noch keine gespeicherten Karten.", 19, UiKit.GOLD))
+	for m in maps:
+		var path: String = m[0]
+		var del := UiKit.button("Löschen", func():
+			var dlg := ConfirmationDialog.new()
+			dlg.dialog_text = "Karte „%s“ löschen?" % m[1]
+			add_child(dlg)
+			dlg.confirmed.connect(func():
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+				if str(Game.settings.get("custom_map", "")) == path:
+					Game.set_setting("custom_map", "")
+				show_screen("editor"))
+			dlg.canceled.connect(dlg.queue_free)
+			dlg.popup_centered(), 140)
+		_add(UiKit.row([UiKit.label("%s  ·  %s" % [m[1], Game.track_name(m[2])], 18), UiKit.button("Bearbeiten", func(): main.start_editor("", path), 180), del]))
+	_add(UiKit.spacer(8))
+	_add(UiKit.button("Karte importieren …", _import_map, 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
+
+
+## A .dmap file from elsewhere into the saved maps.
+func _import_map() -> void:
+	var dlg := FileDialog.new()
+	dlg.access = FileDialog.ACCESS_FILESYSTEM
+	dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	dlg.use_native_dialog = true
+	dlg.filters = PackedStringArray(["*.dmap ; Drift-Karte"])
+	dlg.size = Vector2i(900, 600)
+	add_child(dlg)
+	dlg.file_selected.connect(func(p: String):
+		var m = MapData.load_file(p)
+		if m == null:
+			show_status("Keine gültige Karte: " + p.get_file(), UiKit.BAD)
+			return
+		DirAccess.make_dir_recursive_absolute(MapData.MAP_DIR)
+		var to := MapData.MAP_DIR.path_join(p.get_file())
+		DirAccess.copy_absolute(p, ProjectSettings.globalize_path(to))
+		show_screen("editor")
+		show_status("Importiert: " + m.map_name))
+	dlg.popup_centered()
 
 
 ## Played it already? Ask before starting it again.
@@ -298,6 +362,19 @@ func _build_single() -> void:
 	_add(UiKit.labeled("Strecke", UiKit.option(track_names, track_idx, func(i):
 		Game.set_setting("track", Game.TRACKS[i]["id"])
 		update_desc.call())))
+	# maps from the world editor (they bring their own base track)
+	var maps := MapData.list_maps()
+	if not maps.is_empty():
+		var map_names: Array = ["Keine (Originalstrecke)"]
+		var map_idx := 0
+		for k in maps.size():
+			map_names.append("%s  (%s)" % [maps[k][1], Game.track_name(maps[k][2])])
+			if maps[k][0] == str(Game.settings.get("custom_map", "")):
+				map_idx = k + 1
+		var map_opt := UiKit.option(map_names, map_idx, func(i):
+			Game.set_setting("custom_map", "" if i == 0 else maps[i - 1][0]))
+		map_opt.tooltip_text = "Im Welt-Editor gebaute Karten: ersetzt die gewählte Strecke durch ihre Basisstrecke mit allen Änderungen."
+		_add(UiKit.labeled("Eigene Karte", map_opt))
 	_add(UiKit.labeled("Modus", UiKit.option(mode_names, mode_idx, func(i):
 		Game.set_setting("mode", Game.MODES[i]["id"])
 		update_desc.call())))

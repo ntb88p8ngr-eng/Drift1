@@ -10,11 +10,13 @@ const Showroom = preload("res://scripts/world/showroom.gd")
 const LoadingScreen = preload("res://scripts/ui/loading_screen.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
+const MapData = preload("res://scripts/editor/map_data.gd")
 
 var world: World
 var menu: Menu
 var showroom: Showroom
 var last_config := {}
+var _editor_return := ""     # test drive from the world editor: back into it afterwards (map path)
 var _loading: CanvasLayer
 
 
@@ -79,6 +81,14 @@ static func offline_config() -> Dictionary:
 		"traffic": int(Game.settings.get("traffic", 0)),
 		"traffic_speed": int(Game.settings.get("traffic_speed", 1)),
 	}
+	# a map from the world editor: its base track with everything changed on it
+	var map_path := str(Game.settings.get("custom_map", ""))
+	if map_path != "" and FileAccess.file_exists(map_path):
+		var m = MapData.load_file(map_path)
+		if m:
+			cfg["track"] = m.base_track
+			cfg["map"] = map_path
+			cfg["party"] = false
 	# bots also race with party mode on (they wait out the minigames, see world._park_bots)
 	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0:
 		cfg["bots"] = RaceAI.make_roster(int(Game.settings["bots"]), int(cfg["weather_seed"]), RaceAI.player_tuning())
@@ -90,6 +100,20 @@ static func offline_config() -> Dictionary:
 func start_tutorial() -> void:
 	_start_world({"track": "gruene_hoelle", "mode": "tutorial", "laps": 1, "time_of_day": "night", "hour": 23.98,
 		"weather": "rain", "storm": true, "day_cycle": 0, "weather_seed": 77, "online": false, "collisions": true})
+
+
+## The world editor on a track (a new copy of it) or on a saved map.
+func start_editor(base_track: String, map_path := "") -> void:
+	var cfg := {"track": base_track, "mode": "editor", "laps": 1, "time_of_day": "day", "weather": "clear",
+		"day_cycle": 0, "weather_seed": 1, "online": false, "collisions": true, "traffic": 0}
+	if map_path != "":
+		var m = MapData.load_file(map_path)
+		if m == null:
+			show_menu("editor", "Karte nicht lesbar: " + map_path, UiKit.BAD)
+			return
+		cfg["track"] = m.base_track
+		cfg["map"] = map_path
+	_start_world(cfg)
 
 
 func _start_world(cfg: Dictionary) -> void:
@@ -150,6 +174,23 @@ func _on_world_exit(target: String) -> void:
 
 
 func _handle_exit(target: String) -> void:
+	if target.begins_with("map_test:"):
+		# a test drive of the map being edited: free driving on it, then back into the editor
+		_editor_return = target.substr(9)
+		var cfg := offline_config()
+		var m = MapData.load_file(_editor_return)
+		cfg["track"] = m.base_track if m else str(last_config.get("track", "ridge"))
+		cfg["map"] = _editor_return
+		cfg["mode"] = "free"
+		cfg["party"] = false
+		cfg.erase("bots")
+		_start_world(cfg)
+		return
+	if _editor_return != "" and target == "menu":
+		var back := _editor_return
+		_editor_return = ""
+		start_editor("", back)
+		return
 	match target:
 		"restart":
 			_start_world(last_config)
