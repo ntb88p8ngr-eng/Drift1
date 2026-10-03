@@ -1,6 +1,7 @@
 extends Node3D
 ## Behind the main-menu workshop: a short driveway from the shutter down to a street that runs past
-## (left to right) – kerbs and pavements (dropped at the driveway), grey-green verges, trees and
+## (left to right) – a kerb and pavement on the near side (dropped at the driveway), beyond the street
+## the asphalt fades into a dark wet verge without a seam, grey-green verges, trees and
 ## bushes well back across the road, a few hydrants and one dim, flickering sodium street lamp;
 ## grey fog swallows the rest. The roadway is the model's own wet forecourt asphalt left uncovered
 ## (so street, driveway and yard are one surface).
@@ -47,10 +48,11 @@ func build(_asphalt: Material) -> void:
 	var near_edge := STREET_Z + HALF + WALK
 	_ground(Rect2(-300.0, near_edge, 300.0 - DRIVE - 0.4, YARD_Z - near_edge), grass_mat)
 	_ground(Rect2(DRIVE + 0.4, near_edge, 300.0 - DRIVE - 0.4, YARD_Z - near_edge), grass_mat)
-	_ground(Rect2(-300.0, -420.0, 600.0, (STREET_Z - HALF - WALK) + 420.0), grass_mat)
+	# beyond the street no pavement: the ground fades from the wet asphalt into dark grass (no seam)
+	_far_ground(STREET_Z - HALF + 0.3)
 	# pavements with their kerbs (the near one dropped and open at the driveway)
 	for sg in [-1.0, 1.0]:
-		var spans: Array = [[0.0, LENGTH]] if sg < 0.0 else [[0.0, mid - DRIVE], [mid + DRIVE, LENGTH]]
+		var spans: Array = [] if sg < 0.0 else [[0.0, mid - DRIVE], [mid + DRIVE, LENGTH]]
 		for sp in spans:
 			_wall(sg * HALF, 0.0, KERB, sp[0], sp[1], walk_mat, false)
 			_strip(sg * HALF, sg * (HALF + WALK), KERB, sp[0], sp[1], walk_mat)
@@ -68,6 +70,49 @@ func build(_asphalt: Material) -> void:
 	_plant()
 	_hydrants()
 	_lamp(mid + 7.0, HALF + 0.55)
+
+
+const FAR_GROUND := """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_disabled;
+uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
+uniform float edge_z = -30.0;     // where the asphalt ends (the ground fades in beyond it)
+uniform float fade = 9.0;
+varying vec3 wpos;
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+void fragment() {
+	float n1 = texture(noise_tex, wpos.xz * 0.05).r;
+	float n2 = texture(noise_tex, wpos.xz * 0.43).r;
+	float d = edge_z - wpos.z;
+	// wet, dark verge: a little moss-grey, puddles that shine
+	vec3 grass = mix(vec3(0.055, 0.06, 0.05), vec3(0.08, 0.085, 0.065), smoothstep(0.3, 0.7, n1)) * (0.8 + 0.4 * n2);
+	ALBEDO = grass;
+	ROUGHNESS = mix(0.35, 0.85, smoothstep(0.35, 0.6, n1));
+	SPECULAR = 0.5;
+	// a ragged edge that fades in over a few metres
+	ALPHA = smoothstep(0.0, fade, d + (n2 - 0.5) * 3.0 + (n1 - 0.5) * 4.0);
+}
+"""
+
+
+func _far_ground(edge_z: float) -> void:
+	var sh := Shader.new()
+	sh.code = FAR_GROUND
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("noise_tex", TexKit.noise_texture(91, 0.03, false, 256))
+	m.set_shader_parameter("edge_z", edge_z)
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(600, 420)
+	var mi := MeshInstance3D.new()
+	mi.mesh = pm
+	mi.material_override = m
+	# its near end lies on the asphalt's edge (fully clear there)
+	mi.position = Vector3(0, 0.015, edge_z - 210.0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
 
 
 func _ground(r: Rect2, mat: Material) -> void:
@@ -185,7 +230,7 @@ func _instances(mesh: Mesh, xfs: Array, rng: RandomNumberGenerator) -> void:
 ## Three hydrants on the pavements (the prop shader takes its tint from the instance data).
 func _hydrants() -> void:
 	var xfs := []
-	for h in [[LENGTH * 0.5 - 12.0, 1.0], [LENGTH * 0.5 + 16.0, -1.0], [LENGTH * 0.5 + 38.0, 1.0]]:
+	for h in [[LENGTH * 0.5 - 12.0, 1.0], [LENGTH * 0.5 + 24.0, 1.0], [LENGTH * 0.5 + 38.0, 1.0]]:
 		var l: float = float(h[1]) * (HALF + 0.5)
 		xfs.append(Transform3D(Basis(Vector3.UP, randf() * TAU), at(float(h[0]), l, KERB)))
 	var mm := MultiMesh.new()
