@@ -239,14 +239,15 @@ func _ready() -> void:
 	_root.add_child(_nav_caption)
 	# --- mission compass (points at the goal whenever there is one) ---
 	_compass = IsoCompass.new()
-	_anchor(_compass, 0.5, 0.0, -66, 112, 132, 96)
+	# (below the tutorial's yellow objective line, 100-150 px from the top)
+	_anchor(_compass, 0.5, 0.0, -66, 176, 132, 96)
 	_compass.modulate.a = 0.0
 	_compass.visible = false
 	_root.add_child(_compass)
 	_compass_label = UiKit.label("", 16, MISSION_COL, HORIZONTAL_ALIGNMENT_CENTER)
 	_compass_label.add_theme_constant_override("outline_size", 8)
 	_compass_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_anchor(_compass_label, 0.5, 0.0, -200, 204, 400, 26)
+	_anchor(_compass_label, 0.5, 0.0, -200, 268, 400, 26)
 	_root.add_child(_compass_label)
 
 	# --- results ---
