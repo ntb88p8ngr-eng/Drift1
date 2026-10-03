@@ -10,6 +10,8 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 const MenuStorm = preload("res://scripts/world/menu_storm.gd")
 const MeshMerge = preload("res://scripts/util/mesh_merge.gd")
 const WorkshopTextures = preload("res://scripts/world/workshop_textures.gd")
+const MenuStreet = preload("res://scripts/world/menu_street.gd")
+const StoryPc = preload("res://scripts/ui/story_pc.gd")
 
 var car: Car
 var turntable: Node3D
@@ -43,6 +45,10 @@ var _fly_from: Array = []
 var _pc_corners: Array = []      # the PC screen (Monitor_pixels) – world corners
 var _pc_normal := Vector3.RIGHT  # the way the screen faces
 var _door := Vector3(-6.75, 1.4, 4.0)   # the office door, out of the hall
+var pc_viewport: SubViewport     # the PC's screen content (the story's chapter select)
+var pc_ui: Control
+var _pc_right := Vector3.BACK    # along the screen, left to right as seen from the front
+var _pc_size := Vector2.ONE      # metres
 var _ceiling_mat: BaseMaterial3D
 var _platform_mat: BaseMaterial3D
 var _ceiling_emission := 1.0
@@ -102,6 +108,10 @@ func _ready() -> void:
 	env.glow_intensity = 0.7
 	env.glow_bloom = 0.04
 	env.ssao_enabled = Game.quality() >= 2
+	env.ssr_enabled = Game.quality() >= 2
+	env.ssr_max_steps = 48
+	env.ssr_fade_in = 0.15
+	env.ssr_fade_out = 2.0
 	env.ssr_enabled = false
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.1, 0.08, 0.07) if garage else Color(0.08, 0.04, 0.14)
@@ -206,9 +216,15 @@ func _load_workshop() -> bool:
 	add_child(g)
 	_workshop = true
 	WorkshopTextures.apply(g)
+	_epoxy_floor(g)
+	# the model's lightning bolt (seen through the gate) stays hidden: the flashes light the hall
+	for node in g.find_children("Storm_lightning*", "Node3D", true, false):
+		(node as Node3D).visible = false
 	_extend_room(g)
 	_find_menu_lights(g)
 	_find_pc(g)
+	var asphalt := _material_named(g, "Wet_forecourt_asphalt")
+	_build_pc_screen()
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
 	var t0 := Time.get_ticks_msec()
 	var n := MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool:
@@ -248,12 +264,23 @@ func _load_workshop() -> bool:
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.08, 0.05, 0.05)
 	env.fog_density = 0.006
-	env.fog_sky_affect = 0.0          # (with the full default the street panorama was fogged to black)
+	# depth fog: the hall stays clear, the street behind the shutter vanishes into the mist
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_depth_begin = 16.0
+	env.fog_depth_end = 85.0
+	env.fog_depth_curve = 1.4
+	env.fog_density = 0.95
+	env.fog_light_color = Color(0.11, 0.12, 0.15)
+	env.fog_sky_affect = 0.35
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	# a cloudburst outside: heavy rain round the workshop, splashes on the street, lightning and
 	# thunder (the room: x ±6.9, z ±6.5)
+	var street := MenuStreet.new()
+	street.name = "Street"
+	add_child(street)
+	street.build(_world_tiled(asphalt, 1.0 / 4.0) if asphalt else null)
 	var storm_fx := MenuStorm.new()
 	storm_fx.name = "Storm"
 	add_child(storm_fx)
@@ -286,7 +313,8 @@ func _load_workshop() -> bool:
 		if _anim.has_animation("Garage_Storm_20s"):
 			var storm := (_anim.get_animation("Garage_Storm_20s") as Animation).duplicate() as Animation
 			for t in range(storm.get_track_count() - 1, -1, -1):
-				if str(storm.track_get_path(t)).ends_with("Turntable_ROTATE"):
+				var tp := str(storm.track_get_path(t))
+				if tp.ends_with("Turntable_ROTATE") or tp.contains("Storm_lightning"):
 					storm.remove_track(t)
 			storm.loop_mode = Animation.LOOP_LINEAR
 			var lib := AnimationLibrary.new()
@@ -356,6 +384,105 @@ func _find_pc(g: Node3D) -> void:
 		return
 
 
+## The hall's floor as a high-gloss epoxy coat: dark grey with fine flakes, a mirror-like clear coat.
+func _epoxy_floor(g: Node3D) -> void:
+	var mat := _part_material(g, "Floor_surface*") as BaseMaterial3D
+	if mat == null:
+		return
+	mat.albedo_texture = _flake_texture()
+	mat.albedo_color = Color(1, 1, 1)
+	mat.uv1_triplanar = true
+	mat.uv1_world_triplanar = true
+	mat.uv1_scale = Vector3.ONE / 1.6
+	mat.roughness = 0.07
+	mat.metallic = 0.0
+	mat.metallic_specular = 0.6
+	mat.roughness_texture = null
+	if mat is ORMMaterial3D:
+		(mat as ORMMaterial3D).orm_texture = null
+	mat.normal_enabled = false
+	mat.clearcoat_enabled = true
+	mat.clearcoat = 1.0
+	mat.clearcoat_roughness = 0.03
+
+
+## 1024² tile of epoxy: an even dark grey with a scatter of tiny light and dark flakes.
+static func _flake_texture() -> ImageTexture:
+	var n := 1024
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.17, 0.175, 0.19))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4711
+	var shades := [Color(0.36, 0.37, 0.4), Color(0.08, 0.08, 0.09), Color(0.26, 0.27, 0.3), Color(0.5, 0.5, 0.52)]
+	for k in 26000:
+		var x := rng.randi_range(0, n - 3)
+		var y := rng.randi_range(0, n - 3)
+		var c: Color = shades[rng.randi_range(0, shades.size() - 1)]
+		img.set_pixel(x, y, c)
+		if rng.randf() < 0.45:
+			img.set_pixel(x + 1, y, c)
+		if rng.randf() < 0.3:
+			img.set_pixel(x, y + 1, c)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## The chapter select lives in a viewport of its own, shown on the monitor as a glowing screen.
+func _build_pc_screen() -> void:
+	if _pc_corners.is_empty():
+		return
+	var lo := Vector3(1e9, 1e9, 1e9)
+	var hi := -lo
+	for p in _pc_corners:
+		lo = lo.min(p)
+		hi = hi.max(p)
+	_pc_right = (-_pc_normal).cross(Vector3.UP).normalized()
+	var ext := hi - lo
+	_pc_size = Vector2(absf(ext.dot(_pc_right)), ext.y)
+	pc_viewport = SubViewport.new()
+	pc_viewport.size = Vector2i(int(StoryPc.W), int(StoryPc.H))
+	pc_viewport.disable_3d = true
+	pc_viewport.gui_embed_subwindows = true
+	pc_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(pc_viewport)
+	pc_ui = StoryPc.new()
+	pc_viewport.add_child(pc_ui)
+	var quad := QuadMesh.new()
+	quad.size = _pc_size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color.BLACK
+	mat.emission_enabled = true
+	mat.emission_texture = pc_viewport.get_texture()
+	mat.emission_energy_multiplier = 1.1
+	mat.roughness = 0.15
+	var mi := MeshInstance3D.new()
+	mi.name = "PcScreen"
+	mi.mesh = quad
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	mi.global_transform = Transform3D(Basis(_pc_right, Vector3.UP, _pc_normal), _pc_centre() + _pc_normal * 0.004)
+
+
+## Where a screen point (mouse) hits the PC's screen, in the screen viewport's pixels (or null).
+func pc_pixel(screen_pos: Vector2):
+	if pc_viewport == null or cam == null:
+		return null
+	var o := cam.project_ray_origin(screen_pos)
+	var d := cam.project_ray_normal(screen_pos)
+	var c := _pc_centre()
+	var den := d.dot(_pc_normal)
+	if absf(den) < 1e-5:
+		return null
+	var t := (c - o).dot(_pc_normal) / den
+	if t < 0.0:
+		return null
+	var p := o + d * t - c
+	var u := p.dot(_pc_right) / _pc_size.x + 0.5
+	var v := 0.5 - p.y / _pc_size.y
+	return Vector2(u * StoryPc.W, v * StoryPc.H)
+
+
 ## The lights the menu can set: the honeycomb ceiling (its LED diffusers and work lights) and the
 ## neon ring round the platform (its strips get a material of their own, the wall neons keep theirs).
 func _find_menu_lights(g: Node3D) -> void:
@@ -414,14 +541,26 @@ func _extend_room(g: Node3D) -> void:
 	var floor_mat := _part_material(g, "Floor_surface*")
 	var wall_mat := _part_material(g, "Front_facade_wing*")
 	if floor_mat:
-		# the epoxy repeats every 2.2 m in the hall; the rear street (z < -6.5) stays the model's
-		_slab(Vector3(-30.0, -0.03, -6.5), Vector3(30.0, -0.01, 30.0), _world_tiled(floor_mat, 1.0 / 2.2))
+		# (the same flake epoxy as the hall; the rear street (z < -6.5) stays the model's)
+		_slab(Vector3(-30.0, -0.03, -6.5), Vector3(30.0, -0.01, 30.0), _world_tiled(floor_mat, 1.0 / 1.6))
 	if wall_mat:
 		var m := _world_tiled(wall_mat, 1.0 / 2.5)
 		for side in [-1.0, 1.0]:
 			_slab(Vector3(6.75 * side, 0.0, 6.3), Vector3(30.0 * side, 5.0, 6.5), m)
 		# and the hall's sides carry on outwards past the front, closing the view to the sides
 		_slab(Vector3(-30.0, 0.0, 6.5), Vector3(-6.75, 5.0, 30.0), m)
+
+
+func _material_named(g: Node3D, mat_name: String) -> Material:
+	for node in g.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for si in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(si)
+			if m and m.resource_name == mat_name:
+				return m
+	return null
 
 
 func _part_material(g: Node3D, pattern: String) -> Material:
@@ -631,11 +770,11 @@ func refresh_paint() -> void:
 		car.set_underglow(Game.get_underglow(car.car_id))
 
 
-## The overview: from the front left, close to the car, turned towards the left wall (the street
-## behind the shutter stays out of the picture). [position, look-at]
+## The overview: from the front, close to the car, looking past it into the back right of the hall
+## and out of the shutter onto the street. [position, look-at]
 func _overview_cam() -> Array:
-	var a := sin(_t * 0.08) * 0.12
-	return [Vector3(sin(a) * 7.5 - 2.05, 2.2 + sin(_t * 0.17) * 0.15, cos(a) * 7.5), Vector3(-4.25, 0.9, -2.26)]
+	var a := 0.2 + sin(_t * 0.08) * 0.12
+	return [Vector3(sin(a) * 7.6 - 1.1, 2.4 + sin(_t * 0.17) * 0.15, cos(a) * 7.6), Vector3(-2.1, 1.0, -1.2)]
 
 
 ## Story mode: the camera flies from the car through the office door to the PC on the desk, until its

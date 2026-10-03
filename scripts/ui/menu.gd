@@ -49,9 +49,10 @@ var _platform_bar: HBoxContainer   # turntable controls (main menu and garage), 
 var _light_panel: Control
 var _platform_picker: ColorPickerButton
 var _view_row: HBoxContainer
+var _player_info: VBoxContainer   # driver / car / credits, top right
 var _side: Control          # the menu column on the left (and its shade)
 var _shade: Control
-var _story_pc: Control      # the office PC's screen (story mode)
+var _at_pc := false         # story mode: the camera is at the office PC, its screen takes the input
 
 
 func _ready() -> void:
@@ -98,6 +99,8 @@ func _ready() -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	# gamepad / keyboard: the list scrolls along with the selected entry
 	scroll.follow_focus = true
+	# (no scrollbar: the wheel and the focus still scroll it)
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	outer.add_child(scroll)
 	_content = VBoxContainer.new()
 	_content.add_theme_constant_override("separation", 10)
@@ -113,6 +116,14 @@ func _ready() -> void:
 	_float_bar.offset_bottom = -36
 	_root.add_child(_float_bar)
 	_build_platform_bar()
+	_player_info = VBoxContainer.new()
+	_player_info.add_theme_constant_override("separation", 4)
+	_player_info.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_player_info.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_player_info.offset_right = -40
+	_player_info.offset_top = 36
+	_player_info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_player_info)
 	_status = UiKit.label("", 17, UiKit.GOLD)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(640, 0)
@@ -329,9 +340,10 @@ func show_screen(screen: String) -> void:
 	current = screen
 	_clear()
 	_side.visible = screen != "story"
+	_player_info.visible = false      # (the main screen shows it again)
 	_shade.visible = screen != "story"
-	if _story_pc and screen != "story":
-		_story_pc.visible = false
+	if screen != "story":
+		_at_pc_off()
 	show_status("")
 	# the turntable controls where the car is in view; the views only in the garage
 	var sr = _showroom()
@@ -420,36 +432,36 @@ func _header(text: String) -> void:
 # Story: the camera flies through the office door to the PC, whose screen is the chapter select
 # ---------------------------------------------------------------------------
 func _build_story() -> void:
-	if _story_pc == null:
-		_story_pc = StoryPc.new()
-		_story_pc.visible = false
-		_root.add_child(_story_pc)
-		_story_pc.back_pressed.connect(_leave_story)
-		_story_pc.part_chosen.connect(func(id: String): show_status("Story-Teil „%s“ folgt." % id))
 	_back_fn = _leave_story
 	var sr = _showroom()
-	if sr and sr.has_method("enter_story") and sr.enter_story():
-		if not sr.story_arrived.is_connected(_on_story_arrived):
-			sr.story_arrived.connect(_on_story_arrived)
-			sr.story_left.connect(_on_story_left)
-	else:
-		_on_story_arrived()      # (no workshop: the PC screen in the middle of the picture)
+	if sr == null or not sr.has_method("enter_story") or sr.pc_ui == null:
+		show_status("Der Computer ist nur in der Werkstatt erreichbar.", UiKit.BAD)
+		show_screen("main")
+		return
+	if not sr.story_arrived.is_connected(_on_story_arrived):
+		sr.story_arrived.connect(_on_story_arrived)
+		sr.story_left.connect(_on_story_left)
+		sr.pc_ui.back_pressed.connect(_leave_story)
+	if not sr.enter_story():
+		show_screen("main")
 
 
+## At the PC: its screen takes the mouse (with its own pointer), the keys and the gamepad.
 func _on_story_arrived() -> void:
 	if current != "story":
 		return
-	_place_story_pc()
-	_story_pc.visible = true
-	_story_pc.power_on()
+	var sr = _showroom()
+	_at_pc = true
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	sr.pc_ui.power_on()
+	_forward_mouse(get_viewport().get_mouse_position())
 
 
 func _leave_story() -> void:
-	if _story_pc:
-		_story_pc.visible = false
 	_back_fn = Callable()
+	_at_pc_off()
 	var sr = _showroom()
-	if sr and sr.has_method("leave_story") and sr.story:
+	if sr and sr.story:
 		sr.leave_story()
 	else:
 		show_screen("main")
@@ -460,28 +472,46 @@ func _on_story_left() -> void:
 		show_screen("main")
 
 
-## Lays the PC's screen exactly over the monitor in the picture (or centred without one).
-func _place_story_pc() -> void:
-	if _story_pc == null:
+func _at_pc_off() -> void:
+	if _at_pc:
+		_at_pc = false
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var sr = _showroom()
+		if sr and sr.pc_ui:
+			sr.pc_ui.set_cursor(Vector2.ZERO, false)
+
+
+func _input(event: InputEvent) -> void:
+	if not _at_pc:
 		return
-	var vp := _root.get_viewport_rect().size
-	var rect := Rect2(vp * 0.15, vp * 0.7)
 	var sr = _showroom()
-	if sr and sr.story and sr.cam and not sr.pc_screen_corners().is_empty():
-		var pts: Array = sr.pc_screen_corners()
-		var r := Rect2(sr.cam.unproject_position(pts[0]), Vector2.ZERO)
-		for p in pts:
-			r = r.expand(sr.cam.unproject_position(p))
-		rect = r
-	# the design size, scaled to the screen's height (and centred along its width)
-	var k := minf(rect.size.x / StoryPc.W, rect.size.y / StoryPc.H)
-	_story_pc.scale = Vector2(k, k)
-	_story_pc.position = rect.position + (rect.size - Vector2(StoryPc.W, StoryPc.H) * k) * 0.5
+	if sr == null or sr.pc_viewport == null:
+		return
+	if event.is_action_pressed("ui_cancel"):
+		return      # (back: _unhandled_input)
+	if event is InputEventMouse:
+		var ev := (event as InputEventMouse).duplicate() as InputEventMouse
+		var px = _forward_mouse(ev.position)
+		if px != null:
+			ev.position = px
+			ev.global_position = px
+			sr.pc_viewport.push_input(ev)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		sr.pc_viewport.push_input(event)
+		get_viewport().set_input_as_handled()
 
 
-func _process(_delta: float) -> void:
-	if _story_pc and _story_pc.visible:
-		_place_story_pc()
+## Moves the PC's pointer to where the mouse is over its screen; the pixel there (or null).
+func _forward_mouse(pos: Vector2):
+	var sr = _showroom()
+	if sr == null:
+		return null
+	var px = sr.pc_pixel(pos)
+	if px != null:
+		px = (px as Vector2).clamp(Vector2.ZERO, Vector2(StoryPc.W - 1, StoryPc.H - 1))
+		sr.pc_ui.set_cursor(px, true)
+	return px
 
 
 # ---------------------------------------------------------------------------
@@ -511,12 +541,21 @@ func _build_main() -> void:
 			load("res://scripts/admin/admin_ui.gd").with_password(self, func(): show_screen("admin")), 360))
 	_add(UiKit.button("Credits", func(): show_screen("credits"), 360))
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
-	_add(UiKit.spacer(18))
+	_fill_player_info()
+
+
+## Driver, car and credits: top right on the main screen.
+func _fill_player_info() -> void:
+	_player_info.visible = true
+	for c in _player_info.get_children():
+		_player_info.remove_child(c)
+		c.queue_free()
 	var car: Dictionary = Game.get_car(Game.settings["car"])
 	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
-	_add(UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT))
-	_add(UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM))
-	_add(UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD))
+	for l in [UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT),
+			UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT),
+			UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)]:
+		_player_info.add_child(l)
 
 
 # ---------------------------------------------------------------------------
