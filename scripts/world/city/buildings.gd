@@ -47,6 +47,10 @@ func building(b: Dictionary) -> void:
 	var blind: Array = b.get("blind", [false, false, false, false])
 	_crown = 0.0
 	match style:
+		"round":
+			_round_tower(b, int(b.get("variant", 0)), seed)
+			stats[style] = int(stats.get(style, 0)) + 1
+			return
 		"tower":
 			var col: Color = FRAME_TOWER[rng.randi() % FRAME_TOWER.size()]
 			var bay := rng.randf_range(2.6, 3.4)
@@ -113,6 +117,160 @@ func building(b: Dictionary) -> void:
 	else:
 		_far(b, 0.0, h, 1.0, style)
 	stats[style] = int(stats.get(style, 0)) + 1
+
+
+# ---------------------------------------------------------------------------
+# Round skyscrapers: a few of the tallest towers, each a different design
+# ---------------------------------------------------------------------------
+const ROUND_DESIGNS := 6
+## glass tint per design (seed channel stays the building's), ring/fin colours
+const ROUND_TRIM := [Color(0.85, 0.87, 0.9, 0.55), Color(0.25, 0.26, 0.3, 0.5), Color(0.62, 0.52, 0.36, 0.5),
+	Color(0.9, 0.9, 0.92, 0.6), Color(0.35, 0.42, 0.5, 0.45), Color(0.75, 0.3, 0.25, 0.5)]
+
+
+## variant: 0 glass cylinder with a spire, 1 twisting ellipse, 2 stepped tiers ("wedding cake"),
+## 3 tapering cone with fins, 4 cylinder with an observation ring crown, 5 bulging barrel.
+func _round_tower(b: Dictionary, variant: int, seed: float) -> void:
+	var c: Vector3 = b["c"]
+	var h: float = b["h"]
+	var r := minf(float(b["w"]), float(b["d"])) * 0.5 - 0.5
+	var trim: Color = ROUND_TRIM[variant % ROUND_TRIM.size()]
+	var seg := 40
+	var ys: Array = []
+	var rad: Array = []            # Vector2(rx, rz) per level
+	var tw: Array = []             # twist angle per level
+	var steps := 24
+	match variant % ROUND_DESIGNS:
+		0:
+			for k in steps + 1:
+				ys.append(h * k / steps); rad.append(Vector2(r, r)); tw.append(0.0)
+			_loft_glass(c, ys, rad, tw, seg, seed, 0.4)
+			_rings(c, ys, rad, tw, seg, 3.8, trim)
+			cm.cyl("metal", c + Vector3(0, h, 0), r * 0.92, 1.2, trim, seg)
+			cm.cyl("metal", c + Vector3(0, h + 1.2, 0), r * 0.12, h * 0.18, trim.lightened(0.2), 10)
+			light(c + Vector3(0, h * 1.18 + 1.5, 0), Color(1, 0.1, 0.05), 30.0, 3.0)
+		1:
+			for k in steps + 1:
+				var t := float(k) / steps
+				ys.append(h * t); rad.append(Vector2(r, r * 0.72)); tw.append(t * PI * 0.5)
+			_loft_glass(c, ys, rad, tw, seg, seed, 0.35)
+			_rings(c, ys, rad, tw, seg, 3.6, trim, 0.45)
+			_disc(c + Vector3(0, h, 0), rad[rad.size() - 1], tw[tw.size() - 1], seg, trim)
+		2:
+			var tiers := [[0.0, 0.5, 1.0], [0.5, 0.8, 0.78], [0.8, 1.0, 0.56]]
+			for tr in tiers:
+				var ys2: Array = []
+				var rd2: Array = []
+				var tw2: Array = []
+				for k in 9:
+					var y := lerpf(float(tr[0]), float(tr[1]), k / 8.0) * h
+					ys2.append(y); rd2.append(Vector2(r, r) * float(tr[2])); tw2.append(0.0)
+				_loft_glass(c, ys2, rd2, tw2, seg, seed, 0.42)
+				_rings(c, ys2, rd2, tw2, seg, 4.0, trim)
+				# the terrace on top of each tier
+				cm.cyl("metal", c + Vector3(0, float(tr[1]) * h, 0), r * float(tr[2]) + 0.6, 0.5, trim, seg)
+			cm.cyl("metal", c + Vector3(0, h + 0.5, 0), r * 0.08, h * 0.12, trim, 8)
+		3:
+			for k in steps + 1:
+				var t := float(k) / steps
+				ys.append(h * t); rad.append(Vector2(r, r) * lerpf(1.0, 0.5, t)); tw.append(0.0)
+			_loft_glass(c, ys, rad, tw, seg, seed, 0.38)
+			# vertical fins up the slope
+			for k in 16:
+				var a := TAU * k / 16.0
+				var d := Vector3(cos(a), 0, sin(a))
+				var p0 := c + d * (r + 0.25)
+				var p1 := c + d * (r * 0.5 + 0.25) + Vector3(0, h, 0)
+				var along := (p1 - p0).normalized()
+				cm.box("metal", Transform3D(Basis(d.cross(along).normalized(), along, d), (p0 + p1) * 0.5), Vector3(0.35, p0.distance_to(p1), 0.7), trim)
+			_disc(c + Vector3(0, h, 0), rad[rad.size() - 1], 0.0, seg, trim)
+		4:
+			for k in steps + 1:
+				ys.append(h * 0.86 * k / steps); rad.append(Vector2(r, r) * 0.85); tw.append(0.0)
+			_loft_glass(c, ys, rad, tw, seg, seed, 0.4)
+			_rings(c, ys, rad, tw, seg, 3.8, trim)
+			# the observation ring: a wide glazed drum with a roof, a slim top above it
+			var ring_y := h * 0.86
+			var ys3: Array = [ring_y, ring_y + 7.0]
+			var rd3: Array = [Vector2(r, r) * 1.25, Vector2(r, r) * 1.25]
+			_loft_glass(c, ys3, rd3, [0.0, 0.0], seg, seed, 0.9)
+			cm.cyl("metal", c + Vector3(0, ring_y - 0.6, 0), r * 1.3, 0.6, trim, seg)
+			cm.cyl("metal", c + Vector3(0, ring_y + 7.0, 0), r * 1.3, 0.6, trim, seg)
+			var ys4: Array = [ring_y + 7.6, h + 6.0]
+			var rd4: Array = [Vector2(r, r) * 0.6, Vector2(r, r) * 0.6]
+			_loft_glass(c, ys4, rd4, [0.0, 0.0], seg, seed, 0.3)
+			cm.cyl("metal", c + Vector3(0, h + 6.0, 0), r * 0.65, 0.8, trim, seg)
+			light(c + Vector3(0, ring_y + 3.5, 0), Color(0.6, 0.85, 1.0), 40.0, 4.0)
+		_:
+			for k in steps + 1:
+				var t := float(k) / steps
+				var bulge := 0.82 + 0.18 * sin(PI * t)
+				ys.append(h * t); rad.append(Vector2(r, r) * bulge); tw.append(0.0)
+			_loft_glass(c, ys, rad, tw, seg, seed, 0.45)
+			_rings(c, ys, rad, tw, seg, 3.6, trim)
+			_disc(c + Vector3(0, h, 0), rad[rad.size() - 1], 0.0, seg, trim)
+			cm.cyl("metal", c + Vector3(0, h, 0), r * 0.3, 5.0, trim, 16)
+	far.append([Transform3D(Basis.from_scale(Vector3(r * 1.9, h, r * 1.9)), c + Vector3(0, h * 0.5, 0)), "round"])
+
+
+## Point on a ring: centre c, radii (rx, rz), turned by tw, at angle a. (The skins below walk the
+## angle downwards, so their faces wind like the flat facades: front side out, roofs up.)
+static func _ring_p(c: Vector3, y: float, rr: Vector2, tw: float, a: float) -> Vector3:
+	var lx := cos(a) * rr.x
+	var lz := sin(a) * rr.y
+	return c + Vector3(lx * cos(tw) - lz * sin(tw), y, lx * sin(tw) + lz * cos(tw))
+
+
+## The glass skin through the rings (UV in metres: the window grid wraps round the tower).
+func _loft_glass(c: Vector3, ys: Array, rad: Array, tw: Array, seg: int, seed: float, lit: float) -> void:
+	var col := Color(seed, lit * rng.randf_range(0.7, 1.2), rng.randf_range(0.1, 0.5), 0.0)
+	for j in ys.size() - 1:
+		var y0: float = ys[j]
+		var y1: float = ys[j + 1]
+		var u := 0.0
+		for k in seg:
+			var a0 := -TAU * k / seg
+			var a1 := -TAU * (k + 1) / seg
+			var p00 := _ring_p(c, y0, rad[j], tw[j], a0)
+			var p10 := _ring_p(c, y0, rad[j], tw[j], a1)
+			var p01 := _ring_p(c, y1, rad[j + 1], tw[j + 1], a0)
+			var p11 := _ring_p(c, y1, rad[j + 1], tw[j + 1], a1)
+			var w := p00.distance_to(p10)
+			var n := (p10 - p00).cross(p01 - p00).normalized()
+			if n.dot(Vector3(p00.x - c.x, 0, p00.z - c.z)) < 0.0:
+				n = -n
+			cm.quad("glass", p00, p10, p11, p01, n, col, Vector2(u, y0), Vector2(u + w, y0), Vector2(u + w, y1), Vector2(u, y1))
+			u += w
+
+
+## Floor bands round the skin every `every` metres (thin rings standing slightly proud).
+func _rings(c: Vector3, ys: Array, rad: Array, tw: Array, seg: int, every: float, col: Color, depth := 0.3) -> void:
+	var y_top: float = ys[ys.size() - 1]
+	var y := float(ys[0]) + every
+	while y < y_top - 0.5:
+		# the ring's radius and twist at y
+		var j := 0
+		while j < ys.size() - 2 and float(ys[j + 1]) < y:
+			j += 1
+		var t := (y - float(ys[j])) / maxf(float(ys[j + 1]) - float(ys[j]), 0.01)
+		var rr: Vector2 = (rad[j] as Vector2).lerp(rad[j + 1], t) + Vector2(depth, depth)
+		var tt: float = lerpf(float(tw[j]), float(tw[j + 1]), t)
+		for k in seg:
+			var a0 := -TAU * k / seg
+			var a1 := -TAU * (k + 1) / seg
+			var p0 := _ring_p(c, y - 0.15, rr, tt, a0)
+			var p1 := _ring_p(c, y - 0.15, rr, tt, a1)
+			var n := Vector3(p0.x + p1.x - 2.0 * c.x, 0, p0.z + p1.z - 2.0 * c.z).normalized()
+			cm.quad("metal", p0, p1, p1 + Vector3(0, 0.3, 0), p0 + Vector3(0, 0.3, 0), n, col)
+		y += every
+
+
+## A flat roof over a ring.
+func _disc(c: Vector3, rr: Vector2, tw: float, seg: int, col: Color) -> void:
+	for k in seg:
+		var a0 := -TAU * k / seg
+		var a1 := -TAU * (k + 1) / seg
+		cm.quad("metal", c, _ring_p(c, 0.0, rr, tw, a1), _ring_p(c, 0.0, rr, tw, a0), c, Vector3.UP, col)
 
 
 ## The far-LOD box (city.gd draws it beyond the detailed meshes; near their range end both show for

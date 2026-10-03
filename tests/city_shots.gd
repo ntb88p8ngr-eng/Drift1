@@ -56,6 +56,15 @@ func _ready() -> void:
 	var m1: Vector2 = sp[mini(sp.size() / 2 + 3, sp.size() - 1)]
 	var sdir := Vector3(m1.x - m0.x, 0, m1.y - m0.y).normalized()
 	views["street"] = [Vector3(m0.x, 1.8, m0.y) - sdir * 12.0, Vector3(m0.x, 3.0, m0.y) + sdir * 30.0]
+	# the round skyscrapers
+	var rk := 0
+	for b in city.builds:
+		if b["style"] == "round":
+			var bc: Vector3 = b["c"]
+			var hh: float = b["h"]
+			views["round%d" % rk] = [bc + Vector3(hh * 0.55, hh * 1.25, hh * 0.55), bc + Vector3(0, hh * 0.55, 0)]
+			rk += 1
+	views["skyline"] = [Vector3(0, 220, 600), Vector3(380, 60, -200)]
 	# street corners (where streets meet), looked at from above
 	for q in 4:
 		var cs: Dictionary = city.net.streets[(city.net.streets.size() * (q + 1)) / 6]

@@ -136,6 +136,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_lap("layout")
 	await Game.load_tick()
 	# geometry
+	_round_towers()
 	_mark_blind_faces()
 	bld = Buildings.new(cm)
 	var body := StaticBody3D.new()
@@ -147,9 +148,15 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 		var b: Dictionary = builds[k]
 		bld.building(b)
 		var cs := CollisionShape3D.new()
-		var bs := BoxShape3D.new()
-		bs.size = Vector3(float(b["w"]), float(b["h"]), float(b["d"]))
-		cs.shape = bs
+		if b["style"] == "round":
+			var cy := CylinderShape3D.new()
+			cy.radius = minf(float(b["w"]), float(b["d"])) * 0.5
+			cy.height = float(b["h"])
+			cs.shape = cy
+		else:
+			var bs := BoxShape3D.new()
+			bs.size = Vector3(float(b["w"]), float(b["h"]), float(b["d"]))
+			cs.shape = bs
 		cs.transform = Transform3D(Basis(b["ax"], Vector3.UP, b["az"]), (b["c"] as Vector3) + Vector3(0, float(b["h"]) * 0.5, 0))
 		body.add_child(cs)
 		if k % 150 == 149:
@@ -182,7 +189,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_lap("extras")
 	await Game.load_tick()
 	for f in bld.far:
-		_add("far_tower" if f[1] == "tower" else "far_block", f[0], Color(1, 1, 1, 1))
+		_add({"tower": "far_tower", "round": "far_round"}.get(f[1], "far_block"), f[0], Color(1, 1, 1, 1))
 	cm.commit(self, {"frame": 620.0, "metal": 360.0, "glass": 620.0, "sign": 460.0, "glow": 620.0, "road": 900.0, "line": 320.0})
 	_lap("commit")
 	for kind in _sets.keys():
@@ -329,6 +336,14 @@ func _make_inst_meshes() -> void:
 	var far_tower := box.duplicate() as BoxMesh
 	far_tower.material = _far_material(0, Color(0.5, 0.62, 0.75))
 	_meshes["far_tower"] = [far_tower, 2400.0, false, 520.0]
+	var far_round := CylinderMesh.new()
+	far_round.top_radius = 0.5
+	far_round.bottom_radius = 0.5
+	far_round.height = 1.0
+	far_round.radial_segments = 24
+	far_round.rings = 1
+	far_round.material = far_tower.material
+	_meshes["far_round"] = [far_round, 2400.0, false, 520.0]
 	var far_block := box.duplicate() as BoxMesh
 	far_block.material = _far_material(1, Color(0.8, 0.78, 0.72))
 	_meshes["far_block"] = [far_block, 2400.0, false, 520.0]
@@ -511,6 +526,25 @@ func _drive_ins() -> void:
 			gaps = true
 	if gaps:
 		track.rebuild_walls()
+
+
+## Some of the tallest towers become round skyscrapers (city/buildings.gd), every one a different
+## design: 8 of the 12 tallest, the designs dealt out in turn.
+func _round_towers() -> void:
+	var towers: Array = []
+	for b in builds:
+		if b["style"] == "tower" and minf(float(b["w"]), float(b["d"])) >= 18.0:
+			towers.append(b)
+	towers.sort_custom(func(x, y): return float(x["h"]) > float(y["h"]))
+	var n := 0
+	for k in mini(towers.size(), 12):
+		if k % 3 == 2:
+			continue
+		var b: Dictionary = towers[k]
+		b["style"] = "round"
+		b["variant"] = n
+		n += 1
+	_stats["round_towers"] = n
 
 
 ## Buildings along every building line: their type, size and height by the area (high-rise district,
