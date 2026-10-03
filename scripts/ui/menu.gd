@@ -11,6 +11,7 @@ const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
 const Replay = preload("res://scripts/replay/replay.gd")
+const StoryPc = preload("res://scripts/ui/story_pc.gd")
 
 var main   # main.gd
 var current := ""
@@ -45,7 +46,12 @@ var _lb_track := 0
 var _lb_cat := 0
 var _lb_list: VBoxContainer
 var _platform_bar: HBoxContainer   # turntable controls (main menu and garage), above the corner buttons
+var _light_panel: Control
+var _platform_picker: ColorPickerButton
 var _view_row: HBoxContainer
+var _side: Control          # the menu column on the left (and its shade)
+var _shade: Control
+var _story_pc: Control      # the office PC's screen (story mode)
 
 
 func _ready() -> void:
@@ -70,6 +76,7 @@ func _ready() -> void:
 	shade.anchor_right = 0.62
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(shade)
+	_shade = shade
 	var margin := MarginContainer.new()
 	margin.anchor_bottom = 1.0
 	margin.anchor_right = 0.0
@@ -78,6 +85,7 @@ func _ready() -> void:
 	margin.add_theme_constant_override("margin_top", 36)
 	margin.add_theme_constant_override("margin_bottom", 36)
 	_root.add_child(margin)
+	_side = margin
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 8)
 	margin.add_child(outer)
@@ -183,8 +191,88 @@ func _build_platform_bar() -> void:
 				if sr:
 					sr.manual_dir = 0.0)
 		_platform_bar.add_child(b)
+	var lb := UiKit.button("💡 Licht", func(): _light_panel.visible = not _light_panel.visible, 110)
+	lb.focus_mode = Control.FOCUS_NONE
+	lb.tooltip_text = "Deckenlicht und Plattform-Beleuchtung einstellen"
+	_platform_bar.add_child(lb)
+	_light_panel = _build_light_panel()
+	_light_panel.visible = false
+	box.add_child(_light_panel)
+	box.move_child(_light_panel, 0)
 	box.add_child(_platform_bar)
 	box.visible = false
+
+
+const PLATFORM_COLORS := [["Rot", "#ff0505"], ["Orange", "#ff6a00"], ["Gelb", "#ffd000"], ["Grün", "#10ff40"],
+	["Cyan", "#00e5ff"], ["Blau", "#1040ff"], ["Lila", "#8a3dff"], ["Pink", "#ff2aa0"], ["Weiß", "#ffffff"]]
+
+
+## Garage lights: the ceiling's brightness, the platform ring's brightness and colour (saved).
+func _build_light_panel() -> Control:
+	var ml: Dictionary = Game.settings["menu_lights"]
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.add_child(UiKit.label("Garagenlicht", 18, UiKit.TEXT))
+	v.add_child(UiKit.labeled("Deckenlicht", UiKit.slider(0.0, 2.0, 0.05, float(ml.get("ceiling", 1.0)),
+		func(x: float): _set_menu_light("ceiling", x), 220.0), 140.0))
+	v.add_child(UiKit.labeled("Plattform-Licht", UiKit.slider(0.0, 2.0, 0.05, float(ml.get("platform", 1.0)),
+		func(x: float): _set_menu_light("platform", x), 220.0), 140.0))
+	var grid := GridContainer.new()
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	for c in PLATFORM_COLORS:
+		var hex: String = c[1]
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(52, 30)
+		b.tooltip_text = str(c[0])
+		b.focus_mode = Control.FOCUS_NONE
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(hex)
+		sb.set_corner_radius_all(4)
+		b.add_theme_stylebox_override("normal", sb)
+		var sh := sb.duplicate() as StyleBoxFlat
+		sh.border_color = Color.WHITE
+		sh.set_border_width_all(2)
+		b.add_theme_stylebox_override("hover", sh)
+		b.add_theme_stylebox_override("pressed", sh)
+		b.pressed.connect(func():
+			_set_menu_light("platform_color", hex)
+			_platform_picker.color = Color(hex))
+		grid.add_child(b)
+	_platform_picker = ColorPickerButton.new()
+	_platform_picker.custom_minimum_size = Vector2(52, 30)
+	_platform_picker.edit_alpha = false
+	_platform_picker.tooltip_text = "Eigene Farbe"
+	_platform_picker.focus_mode = Control.FOCUS_NONE
+	_platform_picker.color = Color(str(ml.get("platform_color", "#ff0505")))
+	_platform_picker.color_changed.connect(func(c: Color): _set_menu_light("platform_color", "#" + c.to_html(false)))
+	grid.add_child(_platform_picker)
+	v.add_child(UiKit.labeled("Plattform-Farbe", grid, 140.0))
+	v.add_child(UiKit.button("Zurücksetzen", func():
+		Game.settings["menu_lights"] = {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"}
+		Game.save_settings()
+		var sr = _showroom()
+		if sr:
+			sr.apply_menu_lights()
+		var open := _light_panel.visible
+		var at := _light_panel.get_index()
+		var parent := _light_panel.get_parent()
+		_light_panel.queue_free()
+		_light_panel = _build_light_panel()
+		parent.add_child(_light_panel)
+		parent.move_child(_light_panel, at)
+		_light_panel.visible = open, 160))
+	return UiKit.panel(v)
+
+
+func _set_menu_light(key: String, value) -> void:
+	var ml: Dictionary = Game.settings["menu_lights"]
+	ml[key] = value
+	Game.save_settings()
+	var sr = _showroom()
+	if sr and sr.has_method("apply_menu_lights"):
+		sr.apply_menu_lights()
 
 
 func _showroom():
@@ -240,6 +328,10 @@ func show_screen(screen: String) -> void:
 		Net.stop_lan_scan()
 	current = screen
 	_clear()
+	_side.visible = screen != "story"
+	_shade.visible = screen != "story"
+	if _story_pc and screen != "story":
+		_story_pc.visible = false
 	show_status("")
 	# the turntable controls where the car is in view; the views only in the garage
 	var sr = _showroom()
@@ -250,6 +342,8 @@ func show_screen(screen: String) -> void:
 		sr.set_view("overview")
 	_sync_platform_buttons()
 	match screen:
+		"story":
+			_build_story()
 		"single":
 			_build_single()
 		"garage":
@@ -323,12 +417,83 @@ func _header(text: String) -> void:
 
 
 # ---------------------------------------------------------------------------
+# Story: the camera flies through the office door to the PC, whose screen is the chapter select
+# ---------------------------------------------------------------------------
+func _build_story() -> void:
+	if _story_pc == null:
+		_story_pc = StoryPc.new()
+		_story_pc.visible = false
+		_root.add_child(_story_pc)
+		_story_pc.back_pressed.connect(_leave_story)
+		_story_pc.part_chosen.connect(func(id: String): show_status("Story-Teil „%s“ folgt." % id))
+	_back_fn = _leave_story
+	var sr = _showroom()
+	if sr and sr.has_method("enter_story") and sr.enter_story():
+		if not sr.story_arrived.is_connected(_on_story_arrived):
+			sr.story_arrived.connect(_on_story_arrived)
+			sr.story_left.connect(_on_story_left)
+	else:
+		_on_story_arrived()      # (no workshop: the PC screen in the middle of the picture)
+
+
+func _on_story_arrived() -> void:
+	if current != "story":
+		return
+	_place_story_pc()
+	_story_pc.visible = true
+	_story_pc.power_on()
+
+
+func _leave_story() -> void:
+	if _story_pc:
+		_story_pc.visible = false
+	_back_fn = Callable()
+	var sr = _showroom()
+	if sr and sr.has_method("leave_story") and sr.story:
+		sr.leave_story()
+	else:
+		show_screen("main")
+
+
+func _on_story_left() -> void:
+	if current == "story":
+		show_screen("main")
+
+
+## Lays the PC's screen exactly over the monitor in the picture (or centred without one).
+func _place_story_pc() -> void:
+	if _story_pc == null:
+		return
+	var vp := _root.get_viewport_rect().size
+	var rect := Rect2(vp * 0.15, vp * 0.7)
+	var sr = _showroom()
+	if sr and sr.story and sr.cam and not sr.pc_screen_corners().is_empty():
+		var pts: Array = sr.pc_screen_corners()
+		var r := Rect2(sr.cam.unproject_position(pts[0]), Vector2.ZERO)
+		for p in pts:
+			r = r.expand(sr.cam.unproject_position(p))
+		rect = r
+	# the design size, scaled to the screen's height (and centred along its width)
+	var k := minf(rect.size.x / StoryPc.W, rect.size.y / StoryPc.H)
+	_story_pc.scale = Vector2(k, k)
+	_story_pc.position = rect.position + (rect.size - Vector2(StoryPc.W, StoryPc.H) * k) * 0.5
+
+
+func _process(_delta: float) -> void:
+	if _story_pc and _story_pc.visible:
+		_place_story_pc()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 func _build_main() -> void:
 	var tut := UiKit.button("Tutorial" if bool(Game.settings.get("tutorial_done", false)) else "★  Tutorial", _ask_tutorial, 360)
 	tut.tooltip_text = "Mitternacht, Regen, eine Nachricht auf dem Handy … die Steuerung auf einer Fahrt über die Grüne Hölle.\nJederzeit überspringbar."
 	_add(tut)
+	var story := UiKit.button("Story", func(): show_screen("story"), 360)
+	story.tooltip_text = "Am Computer im Büro der Werkstatt: die Story-Teile."
+	_add(story)
 	_add(UiKit.button("Einzelspieler", func(): show_screen("single"), 360))
 	_add(UiKit.button("Online-Modus", func(): show_screen("online"), 360))
 	_add(UiKit.button("Garage", func():

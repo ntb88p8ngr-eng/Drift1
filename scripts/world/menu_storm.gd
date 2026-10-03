@@ -207,7 +207,7 @@ var _pulses: Array = []       # [start time, strength]
 var _t := 0.0
 var _heavy := false
 var _rain_alpha := 0.12
-var _pano: PanoramaSkyMaterial     # heavy: the photo sky, brightened by the flashes
+var _pano: ShaderMaterial          # heavy: the photo sky (its "energy"), brightened by the flashes
 var _pano_energy := 1.0
 var _rain_player: AudioStreamPlayer
 var _thunder_at := -1.0
@@ -248,9 +248,9 @@ func setup(env: Environment, hall: Rect2) -> void:
 func setup_heavy(env: Environment, hall: Rect2) -> void:
 	_heavy = true
 	_rain_alpha = 0.2
-	if env.sky and env.sky.sky_material is PanoramaSkyMaterial:
+	if env.sky and env.sky.sky_material is ShaderMaterial:
 		_pano = env.sky.sky_material
-		_pano_energy = _pano.energy_multiplier
+		_pano_energy = float(_pano.get_shader_parameter("energy"))
 	light = DirectionalLight3D.new()
 	light.light_color = Color(0.72, 0.78, 1.0)
 	light.light_energy = 0.0
@@ -470,7 +470,7 @@ func _process(delta: float) -> void:
 		sky_mat.set_shader_parameter("flash", f)
 		sky_mat.set_shader_parameter("bolt", b)
 	if _pano:
-		_pano.energy_multiplier = _pano_energy * (1.0 + f * 3.5)
+		_pano.set_shader_parameter("energy", _pano_energy * (1.0 + f * 3.5))
 	light.visible = f > 0.01
 	light.light_energy = f * 2.2
 	for m in _rain_mats:

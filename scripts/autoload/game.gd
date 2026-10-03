@@ -233,6 +233,7 @@ var settings := {
 	"abs": true,
 	"esp": false,
 	"weather_volume": 0.6,
+	"menu_lights": {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"},
 	"handbrake_strength": 0.75,
 	"slide": 0.5,
 	"camera_mode": 0,
@@ -548,6 +549,8 @@ func load_settings() -> void:
 		settings["response"] = {}
 	settings["traffic"] = (2 if settings["traffic"] else 0) if settings["traffic"] is bool else clampi(int(settings["traffic"]), 0, 4)
 	settings["traffic_speed"] = clampi(int(settings.get("traffic_speed", 1)), 0, 4)
+	if not (settings.get("menu_lights") is Dictionary):
+		settings["menu_lights"] = {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"}
 	if not (settings.get("bindings") is Dictionary):
 		settings["bindings"] = {}
 	apply_bindings()

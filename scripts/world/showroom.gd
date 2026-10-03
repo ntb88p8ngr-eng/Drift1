@@ -9,6 +9,7 @@ const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const MenuStorm = preload("res://scripts/world/menu_storm.gd")
 const MeshMerge = preload("res://scripts/util/mesh_merge.gd")
+const WorkshopTextures = preload("res://scripts/world/workshop_textures.gd")
 
 var car: Car
 var turntable: Node3D
@@ -31,6 +32,24 @@ var _workshop := false
 var _anim: AnimationPlayer
 var _deck: Node3D
 var _deck_base: Transform3D      # the deck as authored (turned about the world Y axis from there)
+signal story_arrived
+signal story_left
+
+const FLY_TIME := 3.4
+var story := false               # the camera is at (or on its way to) the office PC
+var _fly_dir := 0                # 1: flying to the PC, -1: back to the car
+var _fly_t := 0.0
+var _fly_from: Array = []
+var _pc_corners: Array = []      # the PC screen (Monitor_pixels) – world corners
+var _pc_normal := Vector3.RIGHT  # the way the screen faces
+var _door := Vector3(-6.75, 1.4, 4.0)   # the office door, out of the hall
+var _ceiling_mat: BaseMaterial3D
+var _platform_mat: BaseMaterial3D
+var _ceiling_emission := 1.0
+var _platform_emission := 1.0
+var _ceiling_lights: Array = []
+var _platform_lights: Array = []
+var _light_base := {}
 
 ## The platform (menu buttons): it turns slowly on its own, always the same way; held buttons turn it
 ## either way; a view ("overview", "wheels", "front", "rear") swings it (forwards) and the camera to a
@@ -38,6 +57,7 @@ var _deck_base: Transform3D      # the deck as authored (turned about the world 
 const AUTO_SPEED := 0.1          # rad/s – about a minute per turn
 const MANUAL_SPEED := 0.9
 var auto_spin := true
+var headlights := true           # the display car's headlights (L), on whenever the game starts
 var manual_dir := 0.0            # -1 / 0 / 1 while a turn button is held
 var view := "overview"
 var _angle := 0.0
@@ -185,6 +205,10 @@ func _load_workshop() -> bool:
 	var g := scene.instantiate() as Node3D
 	add_child(g)
 	_workshop = true
+	WorkshopTextures.apply(g)
+	_extend_room(g)
+	_find_menu_lights(g)
+	_find_pc(g)
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
 	var t0 := Time.get_ticks_msec()
 	var n := MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool:
@@ -196,9 +220,12 @@ func _load_workshop() -> bool:
 	print("SHOWROOM: merged %d workshop meshes in %d ms" % [n, Time.get_ticks_msec() - t0])
 	var env := Environment.new()
 	if ResourceLoader.exists(WORKSHOP_SKY):
-		var sky_mat := PanoramaSkyMaterial.new()
-		sky_mat.panorama = load(WORKSHOP_SKY)
-		sky_mat.energy_multiplier = 0.62
+		# only the upper half of the photo: its lower half (street and buildings below the horizon)
+		# is now the model's own street
+		var sky_mat := ShaderMaterial.new()
+		sky_mat.shader = _upper_sky_shader()
+		sky_mat.set_shader_parameter("panorama", load(WORKSHOP_SKY))
+		sky_mat.set_shader_parameter("energy", 0.62)
 		var sky := Sky.new()
 		sky.sky_material = sky_mat
 		env.background_mode = Environment.BG_SKY
@@ -239,6 +266,9 @@ func _load_workshop() -> bool:
 		# only the ceiling lights cast shadows (a dozen shadowed omnis is plenty)
 		light.shadow_enabled = (str(light.name).begins_with("Overhead") or str(light.name).begins_with("Honeycomb")) \
 			and Vector2(light.global_position.x, light.global_position.z).length() < 4.5 and Game.quality() >= 2
+	for l in _ceiling_lights + _platform_lights:
+		_light_base[l] = (l as Light3D).light_energy
+	apply_menu_lights()
 	for c in g.find_children("*", "Camera3D", true, false):
 		(c as Camera3D).current = false
 	# the car is not parented to the deck (its node carries a mirroring axis swap, which would turn
@@ -295,6 +325,148 @@ func _load_workshop() -> bool:
 	add_child(cam)
 	rebuild_car()
 	return true
+
+
+## The office PC's screen: its corners in the world and the side it faces (towards the office door).
+func _find_pc(g: Node3D) -> void:
+	for node in g.find_children("Monitor_pixels*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var bb := mi.mesh.get_aabb()
+		var xf := mi.global_transform
+		var lo := Vector3(1e9, 1e9, 1e9)
+		var hi := -lo
+		for k in 8:
+			var p := xf * bb.get_endpoint(k)
+			lo = lo.min(p)
+			hi = hi.max(p)
+		var size := hi - lo
+		# thinnest axis: the screen's normal, towards the door
+		var ax := 0 if size.x <= size.y and size.x <= size.z else (1 if size.y <= size.z else 2)
+		var c := (lo + hi) * 0.5
+		_pc_normal = Vector3.ZERO
+		_pc_normal[ax] = signf(_door[ax] - c[ax]) if absf(_door[ax] - c[ax]) > 0.01 else 1.0
+		_pc_corners = []
+		for k in 8:
+			var p := Vector3(lo.x if k & 1 == 0 else hi.x, lo.y if k & 2 == 0 else hi.y, lo.z if k & 4 == 0 else hi.z)
+			p[ax] = c[ax]
+			if not _pc_corners.has(p):
+				_pc_corners.append(p)
+		return
+
+
+## The lights the menu can set: the honeycomb ceiling (its LED diffusers and work lights) and the
+## neon ring round the platform (its strips get a material of their own, the wall neons keep theirs).
+func _find_menu_lights(g: Node3D) -> void:
+	for node in g.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for si in mi.mesh.get_surface_count():
+			var mat := mi.get_active_material(si) as BaseMaterial3D
+			if mat == null:
+				continue
+			if mat.resource_name == "Honeycomb_LED_diffuser":
+				_ceiling_mat = mat
+			elif str(mi.name).begins_with("Segmented_platform_neon"):
+				if _platform_mat == null:
+					_platform_mat = mat.duplicate() as BaseMaterial3D
+				mi.set_surface_override_material(si, _platform_mat)
+	if _ceiling_mat:
+		_ceiling_emission = _ceiling_mat.emission_energy_multiplier
+	if _platform_mat:
+		_platform_emission = _platform_mat.emission_energy_multiplier
+	for l in g.find_children("*", "Light3D", true, false):
+		if str(l.name).begins_with("Honeycomb"):
+			_ceiling_lights.append(l)
+		elif str(l.name).begins_with("Neon") and str(l.get_path()).contains("Platform_Static"):
+			_platform_lights.append(l)
+
+
+## Ceiling and platform light from the settings ("menu_lights": ceiling / platform 0..2, colour).
+func apply_menu_lights() -> void:
+	var ml: Dictionary = Game.settings.get("menu_lights", {})
+	var ceiling := float(ml.get("ceiling", 1.0))
+	var platform := float(ml.get("platform", 1.0))
+	var col := Color(str(ml.get("platform_color", "#ff0505")))
+	if _ceiling_mat:
+		_ceiling_mat.emission_energy_multiplier = _ceiling_emission * ceiling
+	for l in _ceiling_lights:
+		if is_instance_valid(l):
+			l.light_energy = float(_light_base.get(l, 1.0)) * ceiling
+			l.visible = ceiling > 0.01
+	if _platform_mat:
+		_platform_mat.emission = col
+		_platform_mat.albedo_color = col.darkened(0.2)
+		_platform_mat.emission_energy_multiplier = _platform_emission * platform
+	for l in _platform_lights:
+		if is_instance_valid(l):
+			l.light_color = col
+			l.light_energy = float(_light_base.get(l, 1.0)) * platform
+			l.visible = platform > 0.01
+
+
+## The camera stands in front of the open hall: the floor runs on out of the front and to the sides,
+## and the front wall carries on left and right, so the edges of the view never show the void
+## outside the model (same epoxy floor and concrete as the hall).
+func _extend_room(g: Node3D) -> void:
+	var floor_mat := _part_material(g, "Floor_surface*")
+	var wall_mat := _part_material(g, "Front_facade_wing*")
+	if floor_mat:
+		# the epoxy repeats every 2.2 m in the hall; the rear street (z < -6.5) stays the model's
+		_slab(Vector3(-30.0, -0.03, -6.5), Vector3(30.0, -0.01, 30.0), _world_tiled(floor_mat, 1.0 / 2.2))
+	if wall_mat:
+		var m := _world_tiled(wall_mat, 1.0 / 2.5)
+		for side in [-1.0, 1.0]:
+			_slab(Vector3(6.75 * side, 0.0, 6.3), Vector3(30.0 * side, 5.0, 6.5), m)
+		# and the hall's sides carry on outwards past the front, closing the view to the sides
+		_slab(Vector3(-30.0, 0.0, 6.5), Vector3(-6.75, 5.0, 30.0), m)
+
+
+func _part_material(g: Node3D, pattern: String) -> Material:
+	for node in g.find_children(pattern, "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh:
+			return mi.get_active_material(0)
+	return null
+
+
+static func _world_tiled(mat: Material, per_metre: float) -> Material:
+	if not (mat is BaseMaterial3D):
+		return mat
+	var m := (mat as BaseMaterial3D).duplicate() as BaseMaterial3D
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE * per_metre
+	return m
+
+
+func _slab(a: Vector3, b: Vector3, mat: Material) -> void:
+	var lo := Vector3(minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z))
+	var hi := Vector3(maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z))
+	var box := BoxMesh.new()
+	box.size = hi - lo
+	var mi := MeshInstance3D.new()
+	mi.name = "RoomExtension"
+	mi.mesh = box
+	mi.material_override = mat
+	mi.position = (lo + hi) * 0.5
+	add_child(mi)
+
+
+static func _upper_sky_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = """shader_type sky;
+uniform sampler2D panorama : source_color, filter_linear_mipmap, repeat_enable;
+uniform float energy = 1.0;
+void sky() {
+	// equirectangular, as PanoramaSkyMaterial; below the horizon: night black
+	vec3 c = texture(panorama, SKY_COORDS).rgb * energy;
+	COLOR = EYEDIR.y >= 0.0 ? c : vec3(0.004, 0.004, 0.006);
+}
+"""
+	return sh
 
 
 func _turn_platform(delta: float) -> void:
@@ -440,14 +612,117 @@ func rebuild_car() -> void:
 	car.car_id = Game.settings["car"]
 	car.paint = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
 	turntable.add_child(car)
-	car.headlights = true
-	car.body.set_lights(true, false, false)
+	car.headlights = headlights
+	car.body.set_lights(headlights, false, false)
+
+
+## L (the "lights" key) switches the car's headlights in the menu too – on by default.
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("lights") and not event.is_echo() and car and is_instance_valid(car):
+		headlights = not headlights
+		car.headlights = headlights
+		car.body.set_lights(headlights, false, false)
+		get_viewport().set_input_as_handled()
 
 
 func refresh_paint() -> void:
 	if car:
 		car.set_paint(Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss"))))
 		car.set_underglow(Game.get_underglow(car.car_id))
+
+
+## The overview: from the front left, close to the car, turned towards the left wall (the street
+## behind the shutter stays out of the picture). [position, look-at]
+func _overview_cam() -> Array:
+	var a := sin(_t * 0.08) * 0.12
+	return [Vector3(sin(a) * 7.5 - 2.05, 2.2 + sin(_t * 0.17) * 0.15, cos(a) * 7.5), Vector3(-4.25, 0.9, -2.26)]
+
+
+## Story mode: the camera flies from the car through the office door to the PC on the desk, until its
+## screen fills the view (`story_arrived`); `leave_story` flies back (`story_left`).
+func enter_story() -> bool:
+	if not _workshop or _pc_corners.is_empty():
+		return false
+	story = true
+	_fly_from = [cam.global_position, _cam_at]
+	_fly_dir = 1
+	_fly_t = 0.0
+	return true
+
+
+func leave_story() -> void:
+	if not story:
+		story_left.emit()
+		return
+	_fly_dir = -1
+	_fly_t = 0.0
+
+
+## The PC screen's corners (world), for the menu to lay its computer screen exactly over it.
+func pc_screen_corners() -> Array:
+	return _pc_corners
+
+
+func _pc_centre() -> Vector3:
+	var c := Vector3.ZERO
+	for p in _pc_corners:
+		c += p
+	return c / float(_pc_corners.size())
+
+
+## The screen fills ~85 % of the picture's height, seen square on.
+func _pc_cam() -> Vector3:
+	var lo := 1e9
+	var hi := -1e9
+	for p in _pc_corners:
+		lo = minf(lo, (p as Vector3).y)
+		hi = maxf(hi, (p as Vector3).y)
+	var d := (hi - lo) / 0.85 * 0.5 / tan(deg_to_rad(cam.fov * 0.5))
+	return _pc_centre() + _pc_normal * d
+
+
+func _fly(delta: float) -> void:
+	_fly_t = minf(_fly_t + delta / FLY_TIME, 1.0)
+	var s := _fly_t * _fly_t * (3.0 - 2.0 * _fly_t)     # ease in and out
+	s = s * s * (3.0 - 2.0 * s)                         # (softer still at both ends)
+	var ov := _overview_cam()
+	var start: Vector3 = _fly_from[0] if _fly_dir > 0 else ov[0]
+	var start_at: Vector3 = _fly_from[1] if _fly_dir > 0 else ov[1]
+	var centre := _pc_centre()
+	# in the hall before the door, through the door, in front of the screen
+	var door := Vector3(_door.x, _door.y, _door.z)
+	var pts := [start, door + Vector3(2.4, 0.35, 0.3), door, door + (_pc_cam() - door) * 0.5, _pc_cam()]
+	var u := s if _fly_dir > 0 else 1.0 - s
+	var pos := _spline(pts, u)
+	# the look turns from the car to the screen early, so the door comes up straight ahead
+	var look_k := clampf(u * 1.8, 0.0, 1.0)
+	look_k = look_k * look_k * (3.0 - 2.0 * look_k)
+	var at := start_at.lerp(centre, look_k)
+	cam.global_position = pos
+	cam.look_at(at, Vector3.UP)
+	_cam_pos = pos
+	_cam_at = at
+	if _fly_t >= 1.0:
+		var dir := _fly_dir
+		_fly_dir = 0
+		if dir > 0:
+			story_arrived.emit()
+		else:
+			story = false
+			story_left.emit()
+
+
+## Catmull-Rom through the points, u 0..1 over the whole path.
+static func _spline(pts: Array, u: float) -> Vector3:
+	var n := pts.size() - 1
+	var f := clampf(u, 0.0, 1.0) * n
+	var i := mini(int(f), n - 1)
+	var t := f - i
+	var p0: Vector3 = pts[maxi(i - 1, 0)]
+	var p1: Vector3 = pts[i]
+	var p2: Vector3 = pts[i + 1]
+	var p3: Vector3 = pts[mini(i + 2, n)]
+	return 0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t)
 
 
 func _process(delta: float) -> void:
@@ -462,9 +737,14 @@ func _process(delta: float) -> void:
 			pos = VIEWS[view][1]
 			at = VIEWS[view][2]
 		else:
-			var a := 0.22 + sin(_t * 0.08) * 0.2
-			pos = Vector3(sin(a) * 10.0 - 1.6, 2.6 + sin(_t * 0.17) * 0.2, cos(a) * 10.0)
-			at = Vector3(-2.2, 1.0, -1.2)
+			var o := _overview_cam()
+			pos = o[0]
+			at = o[1]
+		if _fly_dir != 0:
+			_fly(delta)
+			return
+		if story:
+			return
 		var k := 1.0 - exp(-delta * 2.5)
 		_cam_pos = _cam_pos.lerp(pos, k)
 		_cam_at = _cam_at.lerp(at, k)
