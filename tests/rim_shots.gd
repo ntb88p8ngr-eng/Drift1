@@ -26,6 +26,9 @@ func _ready() -> void:
 	add_child(cam)
 	cam.current = true
 	var shots := [["r34", 3, 3, "pearl", "blue"], ["mustang", 2, 1, "matte", "red"], ["m3", 6, 6, "chrome", "silver"]]
+	if "--new" in OS.get_cmdline_user_args():
+		# the newer cars, with the modelled JDM rims
+		shots = [["supra", 7, 0, "gloss", "black"], ["m6gt3", 0, 0, "gloss", "white"], ["yaris", 9, 0, "gloss", "white"], ["r34", 10, 0, "pearl", "blue"]]
 	for sh in shots:
 		Game.settings["rims"] = {str(sh[0]): {"style": sh[1], "color": sh[2]}}
 		var car := Car.new()
