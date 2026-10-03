@@ -145,6 +145,8 @@ var yaw_damp := 0.0            # per car: extra yaw damping while sliding (keeps
 ## The "Bouncing Yaris": springs that never settle (energy fed in on every rebound) and a body that
 ## wobbles like jelly. The wobble is worked out from how the drawn car moves, so remote players see
 ## exactly the same on their screens (their motion comes over the network).
+var _counter := 0.0           # counter-steer amount this step (0 … 1)
+const COUNTER_K := 1.9
 var bounce := 0.0
 var jelly := 0.0
 var _jelly := Vector3.ZERO       # squash (y), lean sideways (x), lean fore/aft (z)
@@ -651,6 +653,11 @@ func _simulate(delta: float) -> void:
 		target += clampf(slip_angle, -steer_lock, steer_lock) * assist * (1.0 - absf(steer_input) * 0.4)
 	target = clampf(target, -steer_lock, steer_lock)
 	steer_angle = move_toward(steer_angle, target, STEER_SPEED * lerpf(1.0, 0.45, smoothstep(15.0, 45.0, absf(forward_speed))) * delta)
+	# how much the driver counter-steers a slide (0 … 1): the front tyres bite again and the car
+	# answers (see "counter-steer" below) – also when all four tyres are already sliding
+	_counter = 0.0
+	if forward_speed > 3.0 and absf(slip_angle) > 0.1:
+		_counter = clampf(steer_input * signf(slip_angle), 0.0, 1.0) * smoothstep(0.1, 0.3, absf(slip_angle))
 
 	# --- launch control state ---
 	if line_lock:
@@ -899,7 +906,7 @@ func _simulate(delta: float) -> void:
 		var peak := PEAK_SLIP if is_front else PEAK_SLIP * lerpf(lerpf(1.0, REAR_SOFT, slide), 1.0, hs * 0.75)
 		var ratio_a := alpha / peak
 		var curve := 0.0
-		var slide_grip := SLIDE_GRIP if is_front else rear_slide_grip
+		var slide_grip := lerpf(SLIDE_GRIP, 1.0, _counter * 0.85) if is_front else rear_slide_grip
 		if absf(ratio_a) <= 1.0:
 			curve = ratio_a
 		else:
@@ -1018,6 +1025,14 @@ func _simulate(delta: float) -> void:
 			var vdir := (vel - up * vel.dot(up)).normalized()
 			var side := vdir.cross(up)
 			apply_central_force(side * steer_input * DRIFT_STEER * mass * slide_s * smoothstep(6.0, 14.0, speed))
+
+	# counter-steer: steering into the slide catches the rotation (the yaw follows the steering back
+	# towards the direction of travel) – on throttle only partly, so a held power-drift stays a drift
+	if _counter > 0.0 and grounded_wheels >= 3 and speed > 4.0 and not hb_straighten:
+		var yaw_c := angular_velocity.dot(up)
+		var want_c := -slip_angle * 2.4 * _counter
+		var k_c := COUNTER_K * _counter * lerpf(1.0, 0.45, smoothstep(0.5, 1.0, throttle))
+		apply_torque(up * (want_c - yaw_c) * mass * k_c)
 
 	# calmer cars: damp the rotation while sliding (not in slow turns or donuts at low speed)
 	if yaw_damp > 0.0 and grounded_wheels >= 3 and speed > 8.0:
