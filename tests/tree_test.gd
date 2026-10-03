@@ -1,6 +1,6 @@
 extends Node
-## Trees can be felled: a car driven into a tree near the road at 15 m/s knocks it over (a falling
-## body, the instances hidden), and a city bench is shoved away.
+## Trees can be felled: a car driven into a tree near the road at 15 m/s knocks it over (it breaks
+## into pieces with a real renderer, one falling body headless; the instances hidden), and a city bench is shoved away.
 ## Run: godot --headless --path . res://tests/tree_test.tscn [-- --track=ridge]
 
 const World = preload("res://scripts/world/world.gd")
@@ -63,9 +63,11 @@ func _ready() -> void:
 	var tilt := 0.0
 	for f in 120:
 		await get_tree().physics_frame
-	if not falling.is_empty():
-		tilt = rad_to_deg((falling[0] as Node3D).global_transform.basis.y.angle_to(Vector3.UP))
-	print("TREE: tree %.1f m off the road at %s, felled %s, falling bodies %d, tilt after 2 s %.0f°, car speed %.1f" % [best, str(o), str(down), falling.size(), tilt, car.linear_velocity.length()])
-	var ok: bool = down and falling.size() == 1 and tilt > 25.0
+	var spread := 0.0
+	for fb in falling:
+		tilt = maxf(tilt, rad_to_deg((fb as Node3D).global_transform.basis.y.angle_to(Vector3.UP)))
+		spread = maxf(spread, Vector2((fb as Node3D).global_position.x - o.x, (fb as Node3D).global_position.z - o.z).length())
+	print("TREE: tree %.1f m off the road at %s, felled %s, pieces %d, tilt after 2 s %.0f°, spread %.1f m, car speed %.1f" % [best, str(o), str(down), falling.size(), tilt, spread, car.linear_velocity.length()])
+	var ok: bool = down and falling.size() >= 1 and tilt > 25.0
 	print("TREE TEST: %s" % ("PASS" if ok else "FAIL"))
 	get_tree().quit(0 if ok else 1)
