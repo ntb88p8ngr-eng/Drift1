@@ -1100,7 +1100,10 @@ func _update_car_info() -> void:
 # ---------------------------------------------------------------------------
 func _build_online() -> void:
 	_header("ONLINE-MODUS")
-	_add(UiKit.button("🌐  Serverliste", func(): show_screen("servers"), 360))
+	var srv := UiKit.button("Serverliste", func(): show_screen("servers"), 360)
+	srv.icon = UiKit.globe_icon()
+	srv.add_theme_constant_override("h_separation", 10)
+	_add(srv)
 	var name_edit := LineEdit.new()
 	name_edit.text = Game.settings["player_name"]
 	name_edit.max_length = 20

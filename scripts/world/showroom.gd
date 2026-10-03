@@ -83,7 +83,7 @@ const VIEWS := {
 
 ## The garage screen (choosing the car): from the front left corner, the lift and the engine on its
 ## stand in the back left, the whole car on its platform in the right half. [position, look at, fov]
-const GARAGE_CAM := [Vector3(-5.8, 1.8, 5.9), Vector3(-4.5, 0.9, -2.2), 66.0]
+const GARAGE_CAM := [Vector3(-2.25, 1.7, 4.0), Vector3(-2.0, 0.9, -1.0), 72.0]
 
 
 func set_view(v: String) -> void:

@@ -139,6 +139,37 @@ static func button(text: String, callback: Callable, min_width := 280.0) -> Butt
 	return b
 
 
+static var _globe: ImageTexture
+
+
+## A small globe (outline, equator, two latitudes, three meridians) drawn in the text colour – the
+## font has no globe emoji (it showed as dots).
+static func globe_icon() -> Texture2D:
+	if _globe:
+		return _globe
+	var n := 24
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var c := Vector2(n, n) * 0.5
+	var r := n * 0.5 - 1.5
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5) - c
+			var d := 1e9
+			d = minf(d, absf(p.length() - r))                       # outline
+			if p.length() < r:
+				d = minf(d, absf(p.y))                                # equator
+				for ly: float in [-r * 0.5, r * 0.5]:
+					d = minf(d, absf(p.y - ly))                       # latitudes
+				d = minf(d, absf(p.x))                                # central meridian
+				# the side meridians: ellipses half as wide as the globe
+				var e := Vector2(p.x / (r * 0.5), p.y / r).length()
+				d = minf(d, absf(e - 1.0) * r * 0.5)
+			var a := clampf(1.3 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(TEXT.r, TEXT.g, TEXT.b, a))
+	_globe = ImageTexture.create_from_image(img)
+	return _globe
+
+
 static func option(items: Array, selected: int, callback: Callable, min_width := 280.0) -> OptionButton:
 	var o := OptionButton.new()
 	for it in items:
