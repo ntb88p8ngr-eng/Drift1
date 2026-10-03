@@ -14,6 +14,7 @@ const TRACKS := [
 	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
 	{"id": "tokyo", "name": "Neo Tokyo", "desc": "Japanische Großstadt: Scramble-Kreuzung mit Riesen-Bildschirmen, enge 90°-Ecken zwischen Hochhäusern, eine Stadtautobahn-Schleife auf Stelzen, Kirschblüten, Neonschilder – nachts am schönsten."},
 	{"id": "old_tokyo", "name": "Old Tokyo", "desc": "Das alte Viertel bei Nacht: ein schneller Stadtkurs mit vier Haarnadel-Bögen um dichte Blocks, Boxengasse am Start, die Stadtautobahn quer durch – und offene Straßen, Car-Meet-Parkplätze und ein Parkhaus zum freien Fahren."},
+	{"id": "red_mesa", "name": "Red Mesa", "desc": "Wüstenkurs zwischen roten Tafelbergen: knapp 4 km Asphalt und Sand, eine Acht mit Kreuzung, Reifenstapel, eine Westernstadt und lange Highways zum freien Fahren."},
 	{"id": "gruene_hoelle", "name": "Grüne Hölle", "desc": "Nachbau der Nordschleife aus echten Karten- und Höhendaten – 20,5 km durch die Eifel, fast 300 m Höhenunterschied, von Hatzenbach über Karussell bis Döttinger Höhe."},
 ]
 
@@ -23,6 +24,14 @@ const CITY_TRACKS := ["tokyo", "old_tokyo"]
 
 static func is_city(id: String) -> bool:
 	return CITY_TRACKS.has(id)
+
+
+## Maps that are imported models (their own ground, roads and walls): no forest, props or lamps.
+const GLB_TRACKS := ["red_mesa"]
+
+
+static func is_glb_map(id: String) -> bool:
+	return GLB_TRACKS.has(id)
 
 
 const MODES := [

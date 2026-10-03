@@ -474,6 +474,7 @@ func _place_garage() -> void:
 		if c is MeshInstance3D and (c as MeshInstance3D).mesh != null and str(c.name).begins_with("Merged"):
 			var shape := ((c as MeshInstance3D).mesh as ArrayMesh).create_trimesh_shape()
 			if shape:
+				shape.backface_collision = true      # (model faces may wind either way)
 				var cs := CollisionShape3D.new()
 				cs.shape = shape
 				cs.transform = (c as Node3D).transform

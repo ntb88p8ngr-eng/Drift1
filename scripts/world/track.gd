@@ -64,6 +64,14 @@ const DEFS := {
 		"width": 15.0, "runoff": 1.5, "start_dist": 90.0,
 		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.075, 0.075, 0.085),
 	},
+	# the uploaded Red Mesa desert map (two GLB halves): the course is the map's own asphalt and sand
+	# road – no road, walls or ground of ours, the lap follows its traced centre line
+	"red_mesa": {
+		"route": "res://assets/maps/red_mesa/route.json",
+		"glb": ["res://assets/world_upload/Red_Mesa/Red_Mesa_Drift_Run_West.glb", "res://assets/world_upload/Red_Mesa/Red_Mesa_Drift_Run_East.glb"],
+		"width": 13.0, "runoff": 6.0, "start_dist": 0.0,
+		"ground": "sand", "offroad_grip": 0.72, "wall": "none", "asphalt": Color(0.1, 0.1, 0.11),
+	},
 	# Nordschleife replica: course and heights from real data (tools/make_gruene_hoelle.py)
 	"gruene_hoelle": {
 		"data": "res://assets/tracks/gruene_hoelle",
@@ -117,6 +125,9 @@ var elevated := false
 ## Spline tracks with a height profile (the city's expressway): the road has its own collision, out
 ## to the walls (a bridge deck), the terrain stays flat underneath.
 var raised := false
+## The map is an imported model (def "glb"): its meshes are road, ground and walls; the track only
+## knows the lap line.
+var glb_world := false
 var meta: Dictionary = {}       # data tracks: meta.json (grid layout, sections, attribution)
 var sections: Array = []        # [name, distance from the start line] in driving order
 var min_y := 0.0
@@ -144,6 +155,7 @@ func build(id: String) -> void:
 	trap_w = minf(4.6, float(def["runoff"]) - 0.4)
 	elevated = def.has("data")
 	raised = def.has("heights")
+	glb_world = def.has("glb")
 	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
 	_setup_profile()
@@ -152,6 +164,12 @@ func build(id: String) -> void:
 	_build_grid()
 	_build_ground()
 	await Game.load_tick(0.35)
+	if glb_world:
+		# no curbs or gravel traps of ours on the model's road
+		curb_mask.fill(0)
+		trap.fill(0.0)
+		await _compute_edge(true)
+		return
 	_build_road()
 	if elevated or raised:
 		_build_road_collision()
@@ -260,8 +278,13 @@ func _smooth_sections() -> void:
 
 func _spline_centerline() -> void:
 	var pts: Array = []
+	if def.has("route"):
+		# [x, z, height] from a traced route file
+		var route = JSON.parse_string(FileAccess.get_file_as_string(str(def["route"])))
+		for q in (route as Dictionary)["points"]:
+			pts.append(Vector3(float(q[0]), float(q[2]), float(q[1])))
 	var hs: Array = def.get("heights", [])
-	for k in def["points"].size():
+	for k in def.get("points", []).size():
 		var p: Vector2 = def["points"][k]
 		pts.append(Vector3(p.x, float(hs[k]) if k < hs.size() else 0.0, p.y))
 	var n := pts.size()

@@ -14,6 +14,7 @@ const TreeHits = preload("res://scripts/world/tree_hits.gd")
 const Festival = preload("res://scripts/world/festival.gd")
 const City = preload("res://scripts/world/city.gd")
 const OldTokyo = preload("res://scripts/world/old_tokyo.gd")
+const GlbMap = preload("res://scripts/world/glb_map.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const Playground = preload("res://scripts/world/playground.gd")
@@ -39,6 +40,7 @@ var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
 var old_city: Node3D           # old_tokyo.gd: the Old Tokyo district
+var glb_map: Node3D            # glb_map.gd: an imported model as the whole map (Red Mesa)
 var people: Node3D             # people_hits.gd: every instanced person can be run over
 var trees: Node3D              # tree_hits.gd: the trees near the roads can be felled
 var festival: Node3D
@@ -99,7 +101,8 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		LOD1_END *= 0.7
 		_build_block_distance()
 	await Game.load_tick()
-	_flatten_start()
+	if not Game.is_glb_map(id):
+		_flatten_start()
 	details = Details.new()
 	details.name = "Details"
 	add_child(details)
@@ -117,6 +120,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		city.name = "City"
 		add_child(city)
 		await city.build(track, terrain, self, quality)
+	elif Game.is_glb_map(id):
+		glb_map = GlbMap.new()
+		glb_map.name = "GlbMap"
+		add_child(glb_map)
+		await glb_map.build(track)
 	elif id == "old_tokyo":
 		old_city = OldTokyo.new()
 		old_city.name = "OldTokyo"
@@ -138,7 +146,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 			details.add_bus_stop(_village + 12, -1.0)
 	await Game.load_tick()
 	_car_parks(id)
-	if id != "playground" and not Game.is_city(id):
+	if id != "playground" and not Game.is_city(id) and not Game.is_glb_map(id):
 		var tp := Playground.new()
 		tp.name = "TracksideProps"
 		add_child(tp)
@@ -154,7 +162,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	add_child(festival)
 	await festival.build(track, terrain, self, quality)
 	await Game.load_tick()
-	if not Game.is_city(id):
+	if not Game.is_city(id) and not Game.is_glb_map(id):
 		# (the city has its own signs, trees and street furniture)
 		details.build(quality)
 		await Game.load_tick()
@@ -1359,7 +1367,7 @@ func _build_lamps() -> void:
 	if track.track_id == "playground":
 		_playground_lamps(pole_mat, head_mat)
 		return
-	if Game.is_city(track.track_id):
+	if Game.is_city(track.track_id) or Game.is_glb_map(track.track_id):
 		return          # the city brings its own streetlights (city/streets.gd, lit by the light pool)
 	var k := 0
 	for i in range(0, n, every):
@@ -1706,7 +1714,7 @@ func _house_paths(builder, xf: Transform3D, style: String) -> void:
 
 
 func _car_parks(id: String) -> void:
-	if details == null or id == "playground" or Game.is_city(id):
+	if details == null or id == "playground" or Game.is_city(id) or Game.is_glb_map(id):
 		return
 	var n: int = track.sample_count()
 	var want: int = {"harbor": 3, "ridge": 2}.get(id, 4)
