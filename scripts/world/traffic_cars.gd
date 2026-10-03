@@ -28,7 +28,7 @@ const TIERS := [[75.0, true, true], [200.0, false, true], [480.0, false, false]]
 const CAPACITY := [120, 380, 700]
 const POOL := 20
 const NEAR_R := 55.0            # solid within this distance of a player
-const MASS := 1300.0
+const MASS := 1100.0
 const MAX_ACC := 8.5            # what the tyres can do (m/s²)
 const MAX_ALPHA := 8.0          # rad/s²
 const BRAKE_FLAG := 5000.0      # custom.a = odometer (wrapped) + this while braking
@@ -113,6 +113,8 @@ var _step := 0
 var _vis := {}                   # car id -> [previous, current body transform] (drawn interpolated)
 var _loose := {}                 # car id -> seconds it has been back on its lane (loose after a hit)
 var _hits := {}                  # car id -> true: just hit (hit() hands it out once)
+var _stun := {}                  # car id -> seconds it still just slides (after a hard hit: no steering, skidding tyres)
+var _prev_v := {}                # car id -> its body's velocity last step (a jump = it was hit)
 var _phys_t := 0.0
 var ok := false
 var _snd: Array = []             # AudioStreamPlayer3D pool
@@ -411,6 +413,8 @@ func _release(k: int) -> void:
 	_vis.erase(id)
 	_err.erase(id)
 	_err_step.erase(id)
+	_stun.erase(id)
+	_prev_v.erase(id)
 	_err_seen.erase(id)
 	_loose.erase(id)
 	_hits.erase(id)
@@ -461,7 +465,29 @@ func _drive_loose(k: int, id: int, delta: float, pcars: Array) -> void:
 	var lv := body.linear_velocity
 	var v_f := lv.dot(bf)
 	var v_s := lv.dot(br)
-	var a_s := clampf(-v_s / 0.15, -MAX_ACC, MAX_ACC)
+	# hit hard: it slides and spins with skidding tyres for a while (longer the harder the hit)
+	var dv: float = (lv - (_prev_v.get(id, lv) as Vector3)).length()
+	_prev_v[id] = lv
+	if dv > 1.5:
+		_stun[id] = maxf(float(_stun.get(id, 0.0)), clampf(dv * 0.4, 1.0, 3.5))
+	var stun: float = float(_stun.get(id, 0.0))
+	if stun > 0.0:
+		_stun[id] = stun - delta
+		var grip := MAX_ACC * 0.3
+		var a_s0 := clampf(-v_s / 0.5, -grip, grip)
+		var a_f0 := clampf(-v_f / 0.8, -3.0, 3.0)
+		body.apply_central_force((bf * a_f0 + br * a_s0) * MASS)
+		# the spin dies down slowly
+		body.apply_torque(Vector3(0, -body.angular_velocity.y * body.inertia.y * 0.6, 0))
+		_loose[id] = 0.0
+		# the traffic system follows where it slides to
+		var rel0 := bxf.origin - txf.origin
+		var yaw0 := wrapf(atan2(-tfwd.x, -tfwd.z) - atan2(-bf.x, -bf.z), -PI, PI)
+		_err[id] = Vector3(rel0.dot(tfwd), rel0.dot(Vector3(-tfwd.z, 0, tfwd.x)), -yaw0)
+		_err_step[id] = _step
+		return
+	_stun.erase(id)
+	var a_s := clampf(-v_s / 0.35, -MAX_ACC, MAX_ACC)
 	var a_f := clampf((spd - v_f) * 1.5, -7.0, 3.0)
 	body.apply_central_force((bf * a_f + br * a_s) * MASS)
 	var look := txf.origin + tfwd * maxf(4.0, absf(v_f) * 0.8 + 3.0)
@@ -490,6 +516,7 @@ func _drive_loose(k: int, id: int, delta: float, pcars: Array) -> void:
 			body.global_transform = txf
 			_loose.erase(id)
 			_vis.erase(id)
+			_prev_v.erase(id)
 	else:
 		_loose[id] = 0.0
 
