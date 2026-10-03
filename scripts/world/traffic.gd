@@ -47,6 +47,8 @@ var speed_kmh := 50.0
 var stats := {}
 var _rng := RandomNumberGenerator.new()
 var _lane_lat := 3.0
+var _count0 := 0              # how many it started with (merging keeps it near that)
+var _next_id := 0
 
 
 ## count: number of cars (spread over the lap, half of them in each lane); speed_level: SPEEDS index
@@ -80,6 +82,43 @@ func setup(p_world, count: int, p_render, speed_level := 1) -> void:
 		t.xf = _xf(t)
 		cars.append(t)
 	stats["cars"] = cars.size()
+	_count0 = cars.size()
+	_next_id = cars.size()
+
+
+## Room for a car merging from a street (keeps the count near what it started with)?
+func can_merge() -> bool:
+	return render != null and cars.size() < int(_count0 * 1.25) + 2
+
+
+## A city car merging at a street mouth: it carries on from where it is, slowly, and steers into
+## the near lane (the lane spring takes it across).
+func merge_in(xf: Transform3D, v: float, model: int, paint: Color, odo: float) -> bool:
+	var L: float = track.length
+	var pr: Array = track.project(xf.origin, -1)
+	var prog := fposmod(float(track.dists[int(pr[0])]) - float(track.start_dist), L)
+	# nobody right there in that lane
+	var side := signf(float(pr[2]))
+	for o: TCar in cars:
+		if signf(o.lat) == side and absf(wrapf(o.progress - prog, -L * 0.5, L * 0.5)) < 18.0:
+			return false
+	var t := TCar.new()
+	t.id = ID_BASE + _next_id
+	_next_id += 1
+	t.progress = prog
+	t.lat = clampf(float(pr[2]), -float(track.half_w) - 6.0, float(track.half_w) + 6.0)
+	t.lane = side if side != 0.0 else 1.0
+	t.v = minf(v, 6.0)
+	t.v_want = speed_kmh / 3.6 * _rng.randf_range(0.96, 1.05)
+	t.think = _rng.randf_range(6.0, 14.0)
+	t.model = model
+	t.paint = paint
+	t.half = render.half_length(model)
+	t.odo = odo
+	t.xf = _xf(t)
+	cars.append(t)
+	stats["merged_in"] = int(stats.get("merged_in", 0)) + 1
+	return true
 
 
 func _process(delta: float) -> void:
@@ -103,9 +142,24 @@ func _process(delta: float) -> void:
 	progs.resize(obstacles.size())
 	for k in obstacles.size():
 		progs[k] = obstacles[k][0]
+	var ct = world.get("city_traffic")
+	var ports: Array = ct.ports if ct != null and is_instance_valid(ct) and str(world.get("mode")) != "race" else []
+	var off: Array = []
 	for t: TCar in cars:
+		var before := t.progress
 		_drive(t, obstacles, progs, delta)
+		# passing a street mouth on its side: now and then it turns off into the city
+		if not ports.is_empty() and cars.size() > int(_count0 * 0.75):
+			for pi in ports.size():
+				var pp: float = ports[pi]["progress"]
+				if wrapf(pp - before, -L * 0.5, L * 0.5) > 0.0 and wrapf(pp - t.progress, -L * 0.5, L * 0.5) <= 0.0 \
+						and signf(t.lat) == float(ports[pi]["side"]) and _rng.randf() < 0.2:
+					if ct.take_from_highway(pi, t.model, t.paint, t.odo, t.v):
+						off.append(t)
+					break
 		render.add(t.model, t.xf, t.paint, t.odo, t.brake, t.v, t.id)
+	for t in off:
+		cars.erase(t)
 
 
 func _drive(t: TCar, obstacles: Array, progs: PackedFloat32Array, delta: float) -> void:

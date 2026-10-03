@@ -3,7 +3,8 @@ extends Node3D
 ## two lanes per street, cars keep left as in Japan; at every junction connector curves join each
 ## incoming lane to the outgoing ones. Cars follow each other, slow down for the turns, wait at a
 ## junction while something crosses their way (whoever waited longest goes first), pick a random
-## way at each junction and turn round where a street ends at the race route (closed in race mode).
+## way at each junction, and where a street ends at the race route (the highway) they turn round or
+## merge onto it (traffic.gd; highway cars come off the same way) – in race mode they turn round.
 ## They brake for the players too, pull away and brake smoothly (the acceleration eases in), drive at
 ## the speed chosen in the menu, and when a player knocks one aside it carries on from where it ended
 ## up and steers back into its lane. Moved every frame (cars beyond drawing range less often) and
@@ -37,6 +38,7 @@ class Path:
 	var reserved = null           # connectors: the car that has committed to it
 	var reverse := -1             # lanes: the same street's other lane
 	var crossings: Array = []     # lanes: [arc length here, other lane, arc length there] where lanes cross outside a junction
+	var port := -1                # lanes: ends where the street meets the highway (race route): ports index
 
 class Car:
 	var path := 0
@@ -56,6 +58,8 @@ class Car:
 	var lat := 0.0                # off the lane after a knock (m, + right)
 	var lat_v := 0.0
 	var shaken := 0.0
+	var decided := -1             # the lane whose end it already decided about (merge or not)
+	var gone := false             # merged onto the highway: taken out after this frame
 
 var world
 var render
@@ -67,6 +71,11 @@ var _time := 0.0
 var _frame := 0
 var _players: Array = []        # [position, velocity]
 var _speed_k := 1.0             # menu speed against BASE_KMH
+## Where streets meet the highway (the race route) and the cars can merge onto it (traffic.gd) or
+## come off it: [{pos: Vector3, progress: m along the lap, side: -1/+1, out: [lanes leaving]}]
+var ports: Array = []
+var _next_id := 0
+var _merged_seen := 0
 
 
 func setup(p_world, net, level: int, p_render, speed_kmh := BASE_KMH) -> void:
@@ -121,6 +130,7 @@ func _build(net) -> float:
 		route_ends.append(j["pos"])
 	var nodes: Array = []         # Vector2
 	var dead := {}                # node id -> true for the turning places at dead ends
+	var route_nodes := {}         # node id -> position: the street ends at the race route
 	var end_node := {}            # Vector2i(street, 0/1) -> node id
 	var splits := {}              # street -> [[arc length, node id]]
 	for a in ends.size():
@@ -173,10 +183,12 @@ func _build(net) -> float:
 					splits[best[0]].append([best[1], id])
 				end_node[key] = id
 				continue
-		# dead end (at the race route: turn round before the barriers)
+		# dead end (at the race route: turn round before the barriers – or merge onto it)
 		nodes.append(p)
-		dead[nodes.size() - 1] = 16.0 if at_route else 6.0
+		dead[nodes.size() - 1] = 7.0 if at_route else 6.0
 		end_node[key] = nodes.size() - 1
+		if at_route:
+			route_nodes[nodes.size() - 1] = p
 	# --- street pieces between junctions
 	var pieces: Array = []        # [centre PackedVector2Array, width, kind, node a, node b]
 	var km := 0.0
@@ -250,6 +262,18 @@ func _build(net) -> float:
 		if ids[0] >= 0 and ids[1] >= 0:
 			(paths[ids[0]] as Path).reverse = ids[1]
 			(paths[ids[1]] as Path).reverse = ids[0]
+	# --- the street ends at the highway: cars may merge there (and come off it there)
+	var tr = world.track
+	for ni in route_nodes:
+		if not lanes_in.has(ni) or not lanes_out.has(ni):
+			continue
+		var p2: Vector2 = route_nodes[ni]
+		var pos := Vector3(p2.x, 0, p2.y)
+		var pr: Array = tr.project(pos, -1)
+		var prog := fposmod(float(tr.dists[int(pr[0])]) - float(tr.start_dist), float(tr.length))
+		ports.append({"pos": pos, "progress": prog, "side": signf(float(pr[2])), "out": lanes_out[ni]})
+		for li in lanes_in[ni]:
+			(paths[li] as Path).port = ports.size() - 1
 	# --- connectors through every junction
 	var n_conn := 0
 	for ni in lanes_in:
@@ -517,7 +541,8 @@ func _spawn(count: int) -> void:
 			continue
 		var c := Car.new()
 		var pick: Array = render.pick(_rng)
-		c.id = cars.size()
+		c.id = _next_id
+		_next_id += 1
 		c.model = pick[0]
 		c.paint = pick[1]
 		c.half = render.half_length(c.model)
@@ -574,6 +599,9 @@ func _process(delta: float) -> void:
 		var dt := c.acc
 		c.acc = 0.0
 		_step(c, dt)
+	if stats.get("merged_out", 0) != _merged_seen:
+		_merged_seen = stats.get("merged_out", 0)
+		cars = cars.filter(func(x): return not (x as Car).gone)
 	for c: Car in cars:
 		render.add(c.model, c.xf, c.paint, c.odo, c.brake, c.v, ID_BASE + c.id)
 
@@ -691,6 +719,9 @@ func _step(c: Car, dt: float) -> void:
 		if absf(c.lat) < 0.01 and absf(c.lat_v) < 0.01:
 			c.lat = 0.0
 			c.lat_v = 0.0
+	# at a street end on the highway: now and then the car merges onto it (traffic.gd takes it on)
+	if c.s >= p.length - 0.5 and p.port >= 0 and not p.conn and _merge(c, p):
+		return
 	# on to the next path
 	while c.s >= p.length:
 		if c.next < 0:
@@ -719,6 +750,60 @@ func _step(c: Car, dt: float) -> void:
 	if c.lat != 0.0:
 		var f := -c.xf.basis.z
 		c.xf.origin += Vector3(-f.z, 0, f.x).normalized() * c.lat
+
+
+## Hands a car at a street end over to the highway traffic (if that one has room for it): it leaves
+## the city's lanes and carries on from where it is, steering into the near lane.
+func _merge(c: Car, p: Path) -> bool:
+	var hw = world.get("traffic")
+	if hw == null or not is_instance_valid(hw) or not hw.has_method("merge_in") or str(world.get("mode")) == "race":
+		return false
+	if c.decided == c.path:
+		return false
+	c.decided = c.path       # (once per arrival: otherwise it turns round)
+	if _rng.randf() > 0.5 or not hw.can_merge():
+		return false
+	if not hw.merge_in(c.xf, maxf(c.v, 3.0), c.model, c.paint, c.odo):
+		return false
+	p.cars.erase(c)
+	if c.next >= 0:
+		var q: Path = paths[c.next]
+		if q.reserved == c:
+			q.reserved = null
+	c.gone = true
+	stats["merged_out"] = int(stats.get("merged_out", 0)) + 1
+	return true
+
+
+## A car coming off the highway at port `pi`: it starts on the street leading away from it.
+## False when there's no room there right now.
+func take_from_highway(pi: int, model: int, paint: Color, odo: float, v: float) -> bool:
+	if pi < 0 or pi >= ports.size():
+		return false
+	var outs: Array = ports[pi]["out"]
+	if outs.is_empty():
+		return false
+	var li: int = outs[_rng.randi() % outs.size()]
+	var lane: Path = paths[li]
+	if not lane.cars.is_empty() and (lane.cars.back() as Car).s < 14.0:
+		return false
+	var c := Car.new()
+	c.id = _next_id
+	_next_id += 1
+	c.model = model
+	c.paint = paint
+	c.half = render.half_length(model)
+	c.path = li
+	c.s = 0.0
+	c.want = lane.vmax * _rng.randf_range(0.97, 1.05)
+	c.v = minf(v, lane.vmax)
+	c.odo = odo
+	c.next = _choose(lane)
+	lane.cars.append(c)
+	c.xf = _xf(lane, 0.0)
+	cars.append(c)
+	stats["merged_in"] = int(stats.get("merged_in", 0)) + 1
+	return true
 
 
 ## May a car take connector q now? Nothing on (or committed to) a crossing connector, nobody there
