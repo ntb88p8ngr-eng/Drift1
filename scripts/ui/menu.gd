@@ -166,7 +166,7 @@ func _build_platform_bar() -> void:
 		var b := UiKit.button(str(v[0]), func():
 			var sr = _showroom()
 			if sr:
-				sr.set_view(key)
+				sr.set_view("garage" if key == "overview" and current == "garage" else key)
 				_sync_platform_buttons(), 110)
 		b.focus_mode = Control.FOCUS_NONE
 		_view_row.add_child(b)
@@ -187,7 +187,7 @@ func _build_platform_bar() -> void:
 				if sr:
 					sr.auto_spin = not sr.auto_spin
 					if sr.auto_spin:
-						sr.set_view("overview")
+						sr.set_view("garage" if current == "garage" else "overview")
 					_sync_platform_buttons())
 		else:
 			b.tooltip_text = "Gedrückt halten: Plattform drehen"
@@ -352,6 +352,9 @@ func show_screen(screen: String) -> void:
 	_view_row.visible = screen == "garage"
 	if sr and screen != "garage" and sr.view != "overview":
 		sr.set_view("overview")
+	# choosing the car: the camera drives over to the front left (lift, engine, the whole car)
+	if sr and screen == "garage" and sr.view == "overview":
+		sr.set_view("garage")
 	_sync_platform_buttons()
 	match screen:
 		"story":

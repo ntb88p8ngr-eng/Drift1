@@ -80,6 +80,11 @@ const VIEWS := {
 }
 
 
+## The garage screen (choosing the car): from the front left corner, the lift and the engine on its
+## stand in the back left, the whole car on its platform in the right half. [position, look at, fov]
+const GARAGE_CAM := [Vector3(-5.8, 1.8, 5.9), Vector3(-4.5, 0.9, -2.2), 66.0]
+
+
 func set_view(v: String) -> void:
 	view = v
 	if VIEWS.has(v):
@@ -984,10 +989,15 @@ func _process(delta: float) -> void:
 		if VIEWS.has(view):
 			pos = VIEWS[view][1]
 			at = VIEWS[view][2]
+		elif view == "garage":
+			pos = GARAGE_CAM[0]
+			at = GARAGE_CAM[1]
 		else:
 			var o := _overview_cam()
 			pos = o[0]
 			at = o[1]
+		# the garage shot is a little wider
+		cam.fov = lerpf(cam.fov, float(GARAGE_CAM[2]) if view == "garage" else 58.0, 1.0 - exp(-delta * 2.5))
 		if _fly_dir != 0:
 			_fly(delta)
 			return
