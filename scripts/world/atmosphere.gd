@@ -38,6 +38,8 @@ const KEYS := [
 signal night_changed(n: float)
 
 var hour := 19.4
+var fog_boost := 1.0          # extra fog (Neo Tokyo's border fog thickens the air near it)
+var _fog_base := 0.001
 var day_minutes := 0
 var weather := "dry"
 var weather_seed := 0
@@ -211,6 +213,12 @@ func _physics_process(delta: float) -> void:
 		track.set_weather(wetness, smoothstep(0.35, 0.85, wetness), rain)
 
 
+func set_fog_boost(b: float) -> void:
+	fog_boost = b
+	if env:
+		env.fog_density = _fog_base * fog_boost
+
+
 func _process(delta: float) -> void:
 	_apply(delta)
 	_update_rain_fx()
@@ -265,7 +273,8 @@ func _apply(_delta: float) -> void:
 	# fog: thicker in rain and in the early morning
 	var mist := exp(-pow((h - 6.8) / 1.3, 2.0)) * (1.0 - rain * 0.5)
 	env.fog_light_color = (k["fog"] as Color).lerp(Color(0.5, 0.52, 0.55) * _day_level(sp.x), dark * 0.85)
-	env.fog_density = float(k["fog_d"]) * (1.0 + rain * 2.2 + mist * 3.5)
+	_fog_base = float(k["fog_d"]) * (1.0 + rain * 2.2 + mist * 3.5)
+	env.fog_density = _fog_base * fog_boost
 	env.ambient_light_energy = float(k["ambient"]) * (1.0 - dark * 0.25)
 	env.tonemap_exposure = float(k["exposure"]) + dark * 0.1
 	# night factor for lamps, windows and headlights
