@@ -189,6 +189,16 @@ func _build_platform_bar() -> void:
 	lb.focus_mode = Control.FOCUS_NONE
 	lb.tooltip_text = "Deckenlicht und Plattform-Beleuchtung einstellen"
 	_platform_bar.add_child(lb)
+	# the roller shutter: down / up (a small button)
+	var gb := UiKit.button("⇕", func():
+		var sr = _showroom()
+		if sr and sr.has_method("toggle_shutter"):
+			sr.toggle_shutter(), 48)
+	gb.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gb.focus_mode = Control.FOCUS_NONE
+	gb.add_theme_font_size_override("font_size", 20)
+	gb.tooltip_text = "Rolltor hoch- / runterfahren"
+	_platform_bar.add_child(gb)
 	_light_panel = _build_light_panel()
 	_light_panel.visible = false
 	box.add_child(_light_panel)

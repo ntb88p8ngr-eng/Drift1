@@ -25,7 +25,7 @@ const GARAGE_INFO := "res://assets/env/garage.json"
 const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed.glb"
 const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City_Skybox/Midnight_City_Panorama.png"
 ## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
-const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning", "Office_door_leaf"]
+const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning", "Office_door_leaf", "Partially_closed_garage_shutter"]
 const DECK_Y := 0.465            # top of the turntable deck (the old garage; the new one measures it)
 const FOG_GREY := Color(0.2, 0.21, 0.23)
 const PLATFORM_SCALE := 0.78     # the workshop's platform, a size smaller
@@ -68,6 +68,15 @@ var _light_base := {}
 var _ceiling_extra: Array = []    # [material, base emission] – the warm fixtures, dimmed with the ceiling
 var _probe: ReflectionProbe       # the floor's mirror image: re-shot whenever the lights change
 var _probe_t := -1.0
+## the roller shutter: its lower edge (m above the floor), where it is going, the model's transform
+const SHUTTER_TOP := 4.53
+const SHUTTER_B0 := 2.91           # its lower edge in the model
+const SHUTTER_DOWN := 0.02
+const SHUTTER_UP := 2.91
+var _shutter: Node3D
+var _shutter_base := Transform3D.IDENTITY
+var _shutter_b := 1.5
+var _shutter_want := 1.5
 
 ## The platform (menu buttons): it turns slowly on its own, always the same way; held buttons turn it
 ## either way; a view ("overview", "wheels", "front", "rear") swings it (forwards) and the camera to a
@@ -116,6 +125,20 @@ func _wheel_frame():
 	var right := (-side).cross(Vector3.UP).normalized()
 	var shift := right * -0.85
 	return [wp + side * 2.7 + Vector3.UP * 0.25 + shift, wp + shift + Vector3.UP * 0.05]
+
+
+## Rolls the shutter right down, or (when it is down) up again.
+func toggle_shutter() -> void:
+	_shutter_want = SHUTTER_UP if _shutter_want <= SHUTTER_DOWN + 0.01 else SHUTTER_DOWN
+
+
+## The shutter with its lower edge at `b`: the slats squeezed up under the roll at the top.
+func _set_shutter(b: float) -> void:
+	_shutter_b = b
+	if _shutter == null:
+		return
+	var k := (SHUTTER_TOP - b) / (SHUTTER_TOP - SHUTTER_B0)
+	_shutter.global_transform = Transform3D(Basis.from_scale(Vector3(1.0, k, 1.0)), Vector3(0, SHUTTER_TOP * (1.0 - k), 0)) * _shutter_base
 
 
 func set_view(v: String) -> void:
@@ -262,12 +285,12 @@ func _load_workshop() -> bool:
 	for pat in ["*Turntable_skirt_segment*", "*Skirt_hex_bolt*"]:
 		for n in g.find_children(pat, "Node3D", true, false):
 			n.queue_free()
-	# the roller shutter comes further down (from 2.9 m to 1.5 m): less of the street shows
-	var shutter := g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
-	if shutter:
-		var top := 4.53
-		var k := (top - 1.5) / (top - 2.91)
-		shutter.global_transform = Transform3D(Basis.from_scale(Vector3(1.0, k, 1.0)), Vector3(0, top * (1.0 - k), 0)) * shutter.global_transform
+	# the roller shutter comes further down (from 2.9 m to 1.5 m): less of the street shows; the
+	# menu's button rolls it right down or up (toggle_shutter)
+	_shutter = g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
+	if _shutter:
+		_shutter_base = _shutter.global_transform
+		_set_shutter(_shutter_b)
 	# a smaller platform (its turning deck and the fixed neon ring round it)
 	for nm in ["Platform_Static", "Turntable_ROTATE"]:
 		var pn := g.find_child(nm, true, false) as Node3D
@@ -558,16 +581,17 @@ func _epoxy_floor(g: Node3D) -> void:
 	mat.uv1_triplanar = true
 	mat.uv1_world_triplanar = true
 	mat.uv1_scale = Vector3.ONE / 1.6
-	mat.roughness = 0.07
+	# satin rather than a mirror: the honeycomb ceiling only shows as a soft, faint sheen in it
+	mat.roughness = 0.32
 	mat.metallic = 0.0
-	mat.metallic_specular = 0.6
+	mat.metallic_specular = 0.3
 	mat.roughness_texture = null
 	if mat is ORMMaterial3D:
 		(mat as ORMMaterial3D).orm_texture = null
 	mat.normal_enabled = false
 	mat.clearcoat_enabled = true
-	mat.clearcoat = 1.0
-	mat.clearcoat_roughness = 0.03
+	mat.clearcoat = 0.25
+	mat.clearcoat_roughness = 0.35
 
 
 ## 1024² tile of epoxy: an even dark grey with a scatter of tiny light and dark flakes.
@@ -1046,6 +1070,10 @@ static func _spline(pts: Array, u: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _shutter and absf(_shutter_b - _shutter_want) > 0.001:
+		# rolling at an even pace, easing in the last few centimetres
+		var d := _shutter_want - _shutter_b
+		_set_shutter(_shutter_b + signf(d) * minf(absf(d), delta * clampf(absf(d) * 3.0, 0.15, 0.7)))
 	if _probe_t >= 0.0:
 		# re-shot every frame while a slider moves, then frozen again
 		_probe.update_mode = ReflectionProbe.UPDATE_ALWAYS
