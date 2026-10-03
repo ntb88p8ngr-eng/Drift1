@@ -27,6 +27,7 @@ const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City
 ## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
 const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning"]
 const DECK_Y := 0.465            # top of the turntable deck (the old garage; the new one measures it)
+const FOG_GREY := Color(0.2, 0.21, 0.23)
 const PLATFORM_SCALE := 0.78     # the workshop's platform, a size smaller
 ## glTF light intensities come in far too strong for Godot: energy per light name prefix
 const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Honeycomb": 0.6, "Booth": 0.5, "Office": 0.5, "Workbench": 0.7, "Neon": 1.4}
@@ -263,6 +264,7 @@ func _load_workshop() -> bool:
 		sky_mat.shader = _upper_sky_shader()
 		sky_mat.set_shader_parameter("panorama", load(WORKSHOP_SKY))
 		sky_mat.set_shader_parameter("energy", 0.62)
+		sky_mat.set_shader_parameter("horizon", FOG_GREY)
 		var sky := Sky.new()
 		sky.sky_material = sky_mat
 		env.background_mode = Environment.BG_SKY
@@ -291,7 +293,7 @@ func _load_workshop() -> bool:
 	env.fog_depth_end = 70.0
 	env.fog_depth_curve = 1.3
 	env.fog_density = 0.97
-	env.fog_light_color = Color(0.2, 0.21, 0.23)      # grey, rainy night
+	env.fog_light_color = FOG_GREY      # grey, rainy night (the sky fades into it at the horizon)
 	env.fog_sky_affect = 0.55
 	var we := WorldEnvironment.new()
 	we.environment = env
@@ -713,10 +715,13 @@ static func _upper_sky_shader() -> Shader:
 	sh.code = """shader_type sky;
 uniform sampler2D panorama : source_color, filter_linear_mipmap, repeat_enable;
 uniform float energy = 1.0;
+uniform vec3 horizon : source_color = vec3(0.2, 0.21, 0.23);   // the fog's colour
 void sky() {
 	// equirectangular, as PanoramaSkyMaterial; below the horizon: night black
 	vec3 c = texture(panorama, SKY_COORDS).rgb * energy;
-	COLOR = EYEDIR.y >= 0.0 ? c : vec3(0.004, 0.004, 0.006);
+	// towards the horizon the photo fades into the fog's grey (the fogged ground ends in it: no
+	// line where the ground stops); below it all fog
+	COLOR = mix(horizon, c, smoothstep(0.02, 0.3, EYEDIR.y));
 }
 """
 	return sh
