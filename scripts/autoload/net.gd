@@ -62,6 +62,7 @@ var _fails := {}           # remote address -> [failed logins, locked until (mse
 var _crypto := Crypto.new()
 
 var _loaded := {}
+var countdown_t0 := -1           # when this race's countdown began here (ticks ms), -1 = not yet
 var _keepalive_last := 0
 var _broadcaster: PacketPeerUDP
 var _listener: PacketPeerUDP
@@ -956,6 +957,7 @@ func _start_race(config: Dictionary) -> void:
 	results.clear()
 	result_list.clear()
 	_loaded.clear()
+	countdown_t0 = -1
 	race_start_requested.emit(config)
 
 
@@ -999,6 +1001,8 @@ func force_countdown() -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _begin_countdown() -> void:
+	# remembered: a world still loading picks it up when it is ready (and catches up)
+	countdown_t0 = Time.get_ticks_msec()
 	countdown_requested.emit()
 
 

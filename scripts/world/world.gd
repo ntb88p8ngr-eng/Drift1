@@ -228,6 +228,9 @@ func _ready() -> void:
 		hud.set_countdown("…")
 		hud.show_message("Warte auf andere Spieler", "", Color.WHITE, 30.0)
 		Net.notify_loaded()
+		if Net.countdown_t0 >= 0:
+			# the host started while this machine was still loading
+			_start_countdown()
 	elif mode == "graffiti" and not online:
 		hud.show_message("GRAFFITI", "Drifte über die Strecke, um sie in deiner Farbe zu markieren", Color.WHITE, 4.0)
 		_start_countdown()
@@ -467,11 +470,25 @@ func all_cars() -> Array:
 # Race flow
 # ---------------------------------------------------------------------------
 func _start_countdown() -> void:
+	if state == "countdown" or state == "running" or state == "finished":
+		return
+	var elapsed := 0.0
+	if online and Net.countdown_t0 >= 0:
+		# online the countdown runs from when the host started it – a machine that loaded late joins
+		# it where it is, or (already over) starts right away without showing a timer
+		elapsed = (Time.get_ticks_msec() - Net.countdown_t0) / 1000.0
+	hud.show_message("", "", Color.WHITE, 0.0)
+	if elapsed >= 3.0:
+		state = "running"
+		race_time = elapsed - 3.0
+		local_car.controls_locked = false
+		hud.set_countdown("")
+		track.set_start_lights(4)
+		return
 	state = "countdown"
-	countdown = 4.0
+	countdown = 4.0 - elapsed
 	_last_count_step = -1
 	local_car.controls_locked = true
-	hud.show_message("", "", Color.WHITE, 0.0)
 	track.set_start_lights(0)
 
 
