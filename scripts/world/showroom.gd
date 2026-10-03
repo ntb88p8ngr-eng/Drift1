@@ -25,7 +25,7 @@ const GARAGE_INFO := "res://assets/env/garage.json"
 const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed.glb"
 const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City_Skybox/Midnight_City_Panorama.png"
 ## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
-const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning"]
+const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning", "Office_door_leaf"]
 const DECK_Y := 0.465            # top of the turntable deck (the old garage; the new one measures it)
 const FOG_GREY := Color(0.2, 0.21, 0.23)
 const PLATFORM_SCALE := 0.78     # the workshop's platform, a size smaller
@@ -47,6 +47,12 @@ var _fly_from: Array = []
 var _pc_corners: Array = []      # the PC screen (Monitor_pixels) – world corners
 var _pc_normal := Vector3.RIGHT  # the way the screen faces
 var _door := Vector3(-6.75, 1.4, 4.0)   # the office door, out of the hall
+var _office_door: Node3D         # its leaf (swings open for the story flight)
+var _office_door_base := Transform3D.IDENTITY
+var _door_open := 0.0
+var _door_want := 0.0
+const DOOR_HINGE := Vector3(-6.75, 0.0, 4.5)
+const DOOR_SWING := 0.96         # from the model's ajar (~40°) to wide open (~95°), radians
 var pc_viewport: SubViewport     # the PC's screen content (the story's chapter select)
 var pc_ui: Control
 var _pc_right := Vector3.BACK    # along the screen, left to right as seen from the front
@@ -245,6 +251,9 @@ func _load_workshop() -> bool:
 	_extend_room(g)
 	_find_menu_lights(g)
 	_find_pc(g)
+	_office_door = g.find_child("*Office_door_leaf*", true, false) as Node3D
+	if _office_door:
+		_office_door_base = _office_door.global_transform
 	var asphalt := _material_named(g, "Wet_forecourt_asphalt")
 	_build_pc_screen()
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
@@ -902,6 +911,7 @@ func enter_story() -> bool:
 	if not _workshop or _pc_corners.is_empty():
 		return false
 	story = true
+	_door_want = 1.0         # the office door swings open while the camera comes
 	_fly_from = [cam.global_position, _cam_at]
 	_fly_dir = 1
 	_fly_t = 0.0
@@ -967,6 +977,7 @@ func _fly(delta: float) -> void:
 			story_arrived.emit()
 		else:
 			story = false
+			_door_want = 0.0     # back out: the door swings to again
 			story_left.emit()
 
 
@@ -985,6 +996,12 @@ static func _spline(pts: Array, u: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _office_door and absf(_door_open - _door_want) > 0.001:
+		# eased: quick at first, settling softly
+		_door_open = move_toward(_door_open, _door_want, delta * (0.25 + 1.6 * absf(_door_want - _door_open)))
+		var e := _door_open * _door_open * (3.0 - 2.0 * _door_open)
+		_office_door.global_transform = Transform3D(Basis.IDENTITY, DOOR_HINGE) * Transform3D(Basis(Vector3.UP, e * DOOR_SWING), Vector3.ZERO) \
+			* Transform3D(Basis.IDENTITY, -DOOR_HINGE) * _office_door_base
 	if _workshop:
 		_turn_platform(delta)
 		# overview: a slow sweep from outside the open front, the whole workshop and the shutter onto

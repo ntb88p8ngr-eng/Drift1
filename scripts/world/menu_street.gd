@@ -7,7 +7,6 @@ extends Node3D
 ## (so street, driveway and yard are one surface).
 
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
-const PropMeshes = preload("res://scripts/world/prop_meshes.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 
 const STREET_Z := -27.0    # the street's centre line (the shutter is at z = -6.5)
@@ -68,8 +67,8 @@ func build(_asphalt: Material) -> void:
 		_strip(-0.07, 0.07, 0.012, s, minf(s + 3.0, LENGTH), line_mat)
 		s += 9.0
 	_plant()
-	_hydrants()
 	_lamp(mid + 7.0, HALF + 0.55)
+	_street_props()
 
 
 const FAR_GROUND := """
@@ -227,23 +226,91 @@ func _instances(mesh: Mesh, xfs: Array, rng: RandomNumberGenerator) -> void:
 	add_child(mmi)
 
 
-## Three hydrants on the pavements (the prop shader takes its tint from the instance data).
-func _hydrants() -> void:
-	var xfs := []
-	for h in [[LENGTH * 0.5 - 12.0, 1.0], [LENGTH * 0.5 + 24.0, 1.0], [LENGTH * 0.5 + 38.0, 1.0]]:
-		var l: float = float(h[1]) * (HALF + 0.5)
-		xfs.append(Transform3D(Basis(Vector3.UP, randf() * TAU), at(float(h[0]), l, KERB)))
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_custom_data = true
-	mm.mesh = PropMeshes.get_mesh("hydrant")
-	mm.instance_count = xfs.size()
-	for i in xfs.size():
-		mm.set_instance_transform(i, xfs[i])
-		mm.set_instance_custom_data(i, Color(1, 1, 1, 1))
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	add_child(mmi)
+const PACK := "res://assets/props/street_pack/"
+## The street prop pack (uploaded): where the garage's opening shows them – the yard, the driveway's
+## mouth and the near pavement. [model, x, z, y (on the pavement or the ground), turn]
+## (signs face +Z: towards the garage, i.e. the cars coming out of the driveway)
+const PROPS := [
+	["sign_stop", 5.3, -21.7, KERB, 0.0],
+	["fire_hydrant_red", 7.4, -21.5, KERB, 0.4],
+	["traffic_light_pole", 9.8, -22.4, KERB, 0.0],
+	["sign_one_way", 14.5, -22.0, KERB, 0.0],
+	["pedestrian_signal", -5.4, -21.9, KERB, 0.0],
+	["sign_pedestrian_crossing", -8.2, -22.0, KERB, 0.0],
+	["sign_street_names", -12.5, -21.8, KERB, 0.25],
+	["traffic_light_overhead", -17.5, -21.8, KERB, PI * 0.5],
+	["sign_speed_30", -22.0, -22.0, KERB, 0.0],
+	["fire_hydrant_yellow", -6.2, -9.4, 0.0, -0.6],
+	["sign_yield", 6.3, -13.0, 0.0, 0.0],
+]
+
+var _signals: Array = []     # [[red, amber, green] materials, light] per traffic light
+var _signal_t := 0.0
+
+
+func _street_props() -> void:
+	for p in PROPS:
+		var path: String = PACK + str(p[0]) + ".glb"
+		if not ResourceLoader.exists(path):
+			continue
+		var scene := load(path) as PackedScene
+		if scene == null:
+			continue
+		var n := scene.instantiate() as Node3D
+		add_child(n)
+		n.global_transform = Transform3D(Basis(Vector3.UP, float(p[4])), Vector3(float(p[1]), float(p[3]), float(p[2])))
+		if str(p[0]).begins_with("traffic_light") or str(p[0]) == "pedestrian_signal":
+			_signal_lenses(n)
+
+
+## A traffic light's lenses get their own materials that light up in turn (red, green, amber), with
+## a little coloured light in front of them.
+func _signal_lenses(n: Node3D) -> void:
+	var mats := {}
+	var lens_pos := Vector3.ZERO
+	for node in n.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for si in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(si)
+			if m == null or not m.resource_name.begins_with("lens_") or m.resource_name == "lens_off":
+				continue
+			var key := m.resource_name.trim_prefix("lens_")
+			if not mats.has(key):
+				var own := (m as BaseMaterial3D).duplicate() as BaseMaterial3D if m is BaseMaterial3D else StandardMaterial3D.new()
+				own.emission_enabled = true
+				mats[key] = own
+			mi.set_surface_override_material(si, mats[key])
+			lens_pos = mi.global_transform * mi.mesh.get_aabb().get_center()
+	if mats.is_empty():
+		return
+	var l := OmniLight3D.new()
+	l.omni_range = 3.5
+	l.light_energy = 0.0
+	add_child(l)
+	l.global_position = lens_pos + Vector3(0, 0, 0.4)
+	_signals.append([mats, l])
+	_cycle_signals(0.0)
+
+
+const SIGNAL_COLS := {"red": Color(1.0, 0.12, 0.08), "amber": Color(1.0, 0.6, 0.05), "green": Color(0.2, 1.0, 0.45)}
+
+
+func _cycle_signals(t: float) -> void:
+	# 9 s red, 7 s green, 2 s amber
+	var ph := fmod(t, 18.0)
+	var on := "red" if ph < 9.0 else ("green" if ph < 16.0 else "amber")
+	for sg in _signals:
+		var mats: Dictionary = sg[0]
+		for key in mats:
+			var m: BaseMaterial3D = mats[key]
+			var lit: bool = key == on
+			m.emission = SIGNAL_COLS.get(key, Color.WHITE)
+			m.emission_energy_multiplier = 3.0 if lit else 0.05
+		var l: OmniLight3D = sg[1]
+		l.light_color = SIGNAL_COLS[on]
+		l.light_energy = 0.6
 
 
 ## One old street lamp: a pole with an arm over the road and a weak orange sodium light.
@@ -306,6 +373,11 @@ func _lamp(s: float, l: float) -> void:
 
 ## The old lamp now and then flickers for a moment.
 func _process(delta: float) -> void:
+	if not _signals.is_empty():
+		var before := _signal_t
+		_signal_t += delta
+		if int(before * 4.0) != int(_signal_t * 4.0):
+			_cycle_signals(_signal_t)
 	if _lamp_light == null:
 		return
 	_flick_t -= delta
