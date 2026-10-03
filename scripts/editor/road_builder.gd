@@ -8,7 +8,7 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 
 const SURFACES := [["asphalt", "Asphalt"], ["concrete", "Beton"], ["gravel", "Schotter"], ["dirt", "Erde"]]
 const STEP := 2.0
-const LIFT := 0.06
+const LIFT := 0.08
 
 static var _mats := {}
 
@@ -57,7 +57,7 @@ static func make_mesh(world, r: Dictionary, flatten_ground: bool) -> ArrayMesh:
 			ys = ys2
 		for i in line.size():
 			line[i] = Vector3(line[i].x, ys[i], line[i].z)
-			terrain.level_to(line[i], w * 0.5 + 1.0, 4.0, ys[i] - 0.03)
+		_level_under(terrain, line, w * 0.5 + 0.8, 5.0)
 	var st := MeshKit.new_st()
 	var v := 0.0
 	for i in line.size() - 1:
@@ -76,6 +76,43 @@ static func make_mesh(world, r: Dictionary, flatten_ground: bool) -> ArrayMesh:
 		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(0.15, v), Vector2(0.85, v), Vector2(0.85, v + l), Vector2(0.15, v + l))
 		v += l
 	return MeshKit.commit(st, material(str(r.get("surface", "asphalt")), world))
+
+
+## Every ground vertex near the road takes the height of the nearest point of it (just under the
+## surface), blending back into the ground over `falloff`.
+static func _level_under(terrain, line: PackedVector3Array, half: float, falloff: float) -> void:
+	var c: float = terrain.CELL
+	var o: Vector2 = terrain.origin
+	var nx: int = terrain.nx
+	var nz: int = terrain.nz
+	var reach := half + falloff
+	var best := {}      # vertex index -> [distance, height]
+	for i in line.size() - 1:
+		var a := Vector2(line[i].x, line[i].z)
+		var b := Vector2(line[i + 1].x, line[i + 1].z)
+		var ix0 := maxi(int(floor((minf(a.x, b.x) - reach - o.x) / c)), 0)
+		var iz0 := maxi(int(floor((minf(a.y, b.y) - reach - o.y) / c)), 0)
+		var ix1 := mini(int(ceil((maxf(a.x, b.x) + reach - o.x) / c)), nx - 1)
+		var iz1 := mini(int(ceil((maxf(a.y, b.y) + reach - o.y) / c)), nz - 1)
+		var ab := b - a
+		var l2 := maxf(ab.length_squared(), 1e-6)
+		for iz in range(iz0, iz1 + 1):
+			for ix in range(ix0, ix1 + 1):
+				var v := Vector2(o.x + ix * c, o.y + iz * c)
+				var t := clampf((v - a).dot(ab) / l2, 0.0, 1.0)
+				var d := v.distance_to(a + ab * t)
+				if d > reach:
+					continue
+				var idx := iz * nx + ix
+				var cur = best.get(idx)
+				if cur == null or d < float(cur[0]):
+					best[idx] = [d, lerpf(line[i].y, line[i + 1].y, t)]
+	var hs: PackedFloat32Array = terrain.heights
+	for idx in best:
+		var e: Array = best[idx]
+		var k := 1.0 - smoothstep(half, half + falloff, float(e[0]))
+		hs[idx] = lerpf(hs[idx], float(e[1]) - 0.2, k)
+	terrain.heights = hs
 
 
 static func material(surface: String, world) -> Material:

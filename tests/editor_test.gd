@@ -9,6 +9,13 @@ const MapData = preload("res://scripts/editor/map_data.gd")
 const PATH := "user://maps/_editor_test.dmap"
 
 
+func holder_road(ed) -> Node:
+	for c in ed.holder.get_children():
+		if c.has_meta("road"):
+			return c
+	return null
+
+
 func _ready() -> void:
 	Game.persist = false
 	var ok := true
@@ -81,6 +88,18 @@ func _ready() -> void:
 	ed.road_flatten = true
 	ed._road_pts = [hill + Vector3(-40, 0, 40), hill + Vector3(0, 0, 60), hill + Vector3(40, 0, 40)]
 	ed._finish_road()
+	var line = load("res://scripts/editor/road_builder.gd").centre_line(world, ed._pts_v3(ed.map.roads[0]["pts"]))
+	var worst := 0.0
+	var rb = holder_road(ed)
+	for i in range(0, line.size(), 4):
+		var p: Vector3 = line[i]
+		var q2 := PhysicsRayQueryParameters3D.create(Vector3(p.x, 500, p.z), Vector3(p.x, -500, p.z), 1)
+		var h2: Dictionary = world.get_world_3d().direct_space_state.intersect_ray(q2)
+		var gy: float = t.height_at(p.x, p.z)
+		worst = maxf(worst, gy - float(h2.get("position", Vector3.ZERO).y))
+		if i % 12 == 0:
+			print("EDITOR: road at %s: ground %.2f, ray hits %s at %.2f" % [p, gy, h2.get("collider"), float(h2.get("position", Vector3.ZERO).y)])
+	print("EDITOR: ground above the road surface by up to %.2f m" % worst)
 	ed._add_water(hill + Vector3(-50, 0, -30))
 	ed.map.map_name = "Editor-Test"
 	ed.map_path = PATH
