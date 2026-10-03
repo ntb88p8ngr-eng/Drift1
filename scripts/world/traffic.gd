@@ -210,8 +210,8 @@ func _drive(t: TCar, obstacles: Array, progs: PackedFloat32Array, delta: float) 
 		for step in range(1, n):
 			var o: Array = obstacles[(j - step + n * 4) % n]
 			var behind := fposmod(t.progress - float(o[0]), L)
-			if behind > 40.0:
-				break
+			if behind > 120.0:
+				break       # (far enough for a racing car closing in at 150 km/h)
 			if absf(float(o[1]) - other) < 2.6 and behind < t.half + float(o[3]) + 4.0 + maxf(float(o[2]) - t.v, 0.0) * 3.0:
 				free_left = false
 				break

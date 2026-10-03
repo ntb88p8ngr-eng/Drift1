@@ -288,6 +288,12 @@ func _drive(b: Dictionary) -> Array:
 		# the saved best lap: its line across the road
 		lat = (default_line["lat"] as PackedFloat32Array)[ti]
 	lat = clampf(lat, -hw + 1.6, hw - 1.6)
+	# the cars in front (traffic, other bots, players): pass them where there is room, else follow
+	var v_cap := 1e9
+	var av: Array = _avoid(b, car, i, lat, v)
+	if not av.is_empty():
+		lat = clampf(float(av[0]), -hw + 1.3, hw - 1.3)
+		v_cap = float(av[1])
 	var target: Vector3 = tr.samples[ti] + tr.rights[ti] * lat
 	# pure pursuit: the wheel angle that drives through the target, divided by what the car's
 	# speed-sensitive steering gives for a full input
@@ -332,6 +338,7 @@ func _drive(b: Dictionary) -> Array:
 		var v_line := dv[(i + int(clampf(v * 0.35, 3.0, 25.0) / sp)) % n] * float(lv.get("pace", 1.0))
 		v_target = minf(v_target * 1.12, v_line + 1.0)
 	v_target *= 1.0 + float(b["err"])
+	v_target = minf(v_target, v_cap)
 	var thr := 0.0
 	var brk := 0.0
 	if v < v_target - 3.0:
@@ -377,6 +384,95 @@ func _drive(b: Dictionary) -> Array:
 		brk = 0.4
 		nitro = false
 	return [thr, brk, steer, false, nitro]
+
+
+## Everything on the road this physics step: [progress from the start line, lateral, speed along
+## the road, half length, the car node or null (traffic)] – gathered once for all bots.
+var _obs: Array = []
+var _obs_frame := -1
+
+
+func _obstacles() -> Array:
+	var f := Engine.get_physics_frames()
+	if f == _obs_frame:
+		return _obs
+	_obs_frame = f
+	_obs = []
+	var tr = world.track
+	for id in world.cars:
+		var c = world.cars[id]
+		if not is_instance_valid(c) or not c.visible:
+			continue
+		var pr: Array = tr.project(c.global_position, int(c.track_hint) if "track_hint" in c else -1)
+		var tv: float = (c as RigidBody3D).linear_velocity.dot(tr.tangents[int(pr[0])]) if c is RigidBody3D else 0.0
+		_obs.append([float(pr[1]), float(pr[2]), tv, 2.3, c])
+	var tf = world.get("traffic")
+	if tf != null and is_instance_valid(tf):
+		for t in tf.cars:
+			_obs.append([float(t.progress), float(t.lat), float(t.v), float(t.half), null])
+	return _obs
+
+
+## Overtaking and following: the nearest car ahead in the way (on the line the bot wants, or where
+## it is now) that it is catching up with. With room beside it, the bot moves over to that side
+## (earlier the faster it closes in) and only slows if it can't get across in time; without room it
+## follows at a safe speed. [lateral to aim for, speed cap] or [] when the road is clear.
+func _avoid(b: Dictionary, car, i: int, want_lat: float, v: float) -> Array:
+	var tr = world.track
+	var L: float = tr.length
+	var hw: float = float(tr.hws[i])
+	var my_prog: float = fposmod(float(tr.dists[i]) - float(tr.start_dist), L)
+	var rel: Vector3 = car.global_position - tr.samples[i]
+	var my_lat: float = rel.dot(tr.rights[i])
+	var look := clampf(v * 2.6 + 15.0, 25.0, 130.0)
+	var best: Array = []
+	var best_gap := 1e9
+	for o in _obstacles():
+		if o[4] == car:
+			continue
+		var ahead := fposmod(float(o[0]) - my_prog, L)
+		if ahead > look or ahead < 0.5:
+			continue
+		var gap: float = ahead - 2.3 - float(o[3])
+		var closing: float = v - float(o[2])
+		if closing <= 0.5 and gap > 5.0:
+			continue          # pulling away or keeping pace at a distance: no matter
+		var ol: float = o[1]
+		if absf(ol - want_lat) > 2.5 and absf(ol - my_lat) > 2.5:
+			continue
+		if gap < best_gap:
+			best_gap = gap
+			best = o
+	if best.is_empty():
+		b.erase("pass_side")
+		return []
+	var ol: float = best[1]
+	var ov: float = best[2]
+	var room_l := (ol - 2.7) - (-hw + 1.3)       # free road on its left (negative lateral side)
+	var room_r := (hw - 1.3) - (ol + 2.7)
+	# keep the side once chosen (no swerving to and fro), unless that side has closed
+	var side: float = b.get("pass_side", 0.0)
+	if side == 0.0 or (side < 0.0 and room_l < 0.0) or (side > 0.0 and room_r < 0.0):
+		side = 1.0 if room_r > room_l else -1.0
+		if (side > 0.0 and room_r < 0.0) or (side < 0.0 and room_l < 0.0):
+			side = 0.0
+	b["pass_side"] = side
+	var lv: Dictionary = b.get("p", LEVELS[clampi(level, 0, LEVELS.size() - 1)])
+	var decel: float = 9.81 * float(car.grip) * 0.85 / float(lv["brake"])
+	# the speed that still stops behind it (with a couple of metres to spare)
+	var v_follow := sqrt(maxf(ov, 0.0) * maxf(ov, 0.0) + 2.0 * decel * maxf(best_gap - 3.0, 0.0))
+	if side == 0.0:
+		return [want_lat, v_follow]
+	var pass_lat := ol + side * 2.9
+	# how urgent: the closer (in time) the more of the way over
+	var t_hit := best_gap / maxf(v - ov, 0.5)
+	var w := clampf(1.6 - t_hit / 2.5, 0.0, 1.0)
+	var lat := lerpf(want_lat, pass_lat, w)
+	# not across yet and close: don't run into it meanwhile
+	var cap := 1e9
+	if absf(my_lat - ol) < 2.3:
+		cap = v_follow + 3.0 * clampf(absf(my_lat - ol) / 2.3, 0.0, 1.0)
+	return [lat, cap]
 
 
 ## Tuning knobs for testing (environment variables), default otherwise.
