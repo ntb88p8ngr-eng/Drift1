@@ -13,7 +13,11 @@ func _ready() -> void:
 	Game.persist = false
 	var ok := true
 	var world := World.new()
-	world.setup({"track": "ridge", "mode": "editor", "laps": 1, "time_of_day": "day", "weather": "dry",
+	var track := "ridge"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--track="):
+			track = a.substr(8)
+	world.setup({"track": track, "mode": "editor", "laps": 1, "time_of_day": "day", "weather": "dry",
 		"day_cycle": 0, "weather_seed": 3, "online": false, "traffic": 0})
 	add_child(world)
 	if not world.is_loaded:
@@ -88,7 +92,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	# race on it
 	var w2 := World.new()
-	w2.setup({"track": "ridge", "map": PATH, "mode": "free", "laps": 1, "time_of_day": "day", "weather": "dry",
+	w2.setup({"track": track, "map": PATH, "mode": "free", "laps": 1, "time_of_day": "day", "weather": "dry",
 		"day_cycle": 0, "weather_seed": 3, "online": false, "traffic": 0})
 	add_child(w2)
 	if not w2.is_loaded:
