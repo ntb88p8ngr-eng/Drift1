@@ -3,7 +3,7 @@ extends Node
 
 signal settings_changed
 
-const VERSION := "1.0.0"
+const VERSION := "0.0.7"
 const SETTINGS_PATH := "user://settings.json"
 const LEADERBOARD_PATH := "user://leaderboard.json"
 const LEADERBOARD_SIZE := 10
@@ -13,6 +13,7 @@ const TRACKS := [
 	{"id": "harbor", "name": "Harbor Drift Yard", "desc": "Breiter Industriekurs am Hafen – enge Kehren zwischen Containern und Lagerhallen."},
 	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
 	{"id": "tokyo", "name": "Neo Tokyo", "desc": "Japanische Großstadt: Scramble-Kreuzung mit Riesen-Bildschirmen, enge 90°-Ecken zwischen Hochhäusern, eine Stadtautobahn-Schleife auf Stelzen, Kirschblüten, Neonschilder – nachts am schönsten."},
+	{"id": "utah", "name": "Utah Desert", "desc": "Offene Wüste in Utah: eine verwinkelte Strecke voller Haarnadeln und S-Kurven, mal Asphalt, mal loser Sand, dazwischen Kakteen, riesige Felsbrocken und Tafelberge – rundherum zieht Nebel auf."},
 	{"id": "gruene_hoelle", "name": "Grüne Hölle", "desc": "Nachbau der Nordschleife aus echten Karten- und Höhendaten – 20,5 km durch die Eifel, fast 300 m Höhenunterschied, von Hatzenbach über Karussell bis Döttinger Höhe."},
 ]
 
@@ -22,6 +23,14 @@ const CITY_TRACKS := ["tokyo"]
 
 static func is_city(id: String) -> bool:
 	return CITY_TRACKS.has(id)
+
+
+## The desert maps: sand instead of grass, cacti and boulders instead of forest, a fog bank round them.
+const DESERT_TRACKS := ["utah"]
+
+
+static func is_desert(id: String) -> bool:
+	return DESERT_TRACKS.has(id)
 
 
 const MODES := [
