@@ -1,0 +1,452 @@
+# Blender 4.2.0 MTL File: 'parking_garage.blend'
+# www.blender.org
+
+newmtl TX_LED_diffuser
+Ns 547.600037
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 0.870000 0.640000
+Ks 0.500000 0.500000 0.500000
+Ke 4.200000 3.276000 1.932000
+Ni 1.500000
+d 1.000000
+illum 2
+
+newmtl TX_black_rubber
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd black_rubber_basecolor.png
+map_Ns black_rubber_roughness.png
+map_Bump -bm 0.620000 black_rubber_normal.png
+
+newmtl TX_blue_paint
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd blue_paint_basecolor.png
+map_Ns blue_paint_roughness.png
+map_Bump -bm 0.350000 blue_paint_normal.png
+
+newmtl TX_booth_plaster
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd booth_plaster_basecolor.png
+map_Ns booth_plaster_roughness.png
+map_Bump -bm 0.620000 booth_plaster_normal.png
+
+newmtl TX_brushed_steel
+Ka 0.860000 0.860000 0.860000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd -s 1.7 1.7 1.7 brushed_steel_basecolor.png
+map_Ns -s 1.7 1.7 1.7 brushed_steel_roughness.png
+map_Bump -s 1.7 1.7 1.7 -bm 0.620000 brushed_steel_normal.png
+
+newmtl TX_ceiling_concrete
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ceiling_concrete_basecolor.png
+map_Ns ceiling_concrete_roughness.png
+map_Bump -bm 0.620000 ceiling_concrete_normal.png
+
+newmtl TX_ceramic_white
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ceramic_white_basecolor.png
+map_Ns ceramic_white_roughness.png
+map_Bump -bm 0.620000 ceramic_white_normal.png
+
+newmtl TX_column_b1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 column_b1_basecolor.png
+map_Ns -s 0.72 0.72 0.72 column_b1_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 column_b1_normal.png
+
+newmtl TX_column_b2
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 column_b2_basecolor.png
+map_Ns -s 0.72 0.72 0.72 column_b2_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 column_b2_normal.png
+
+newmtl TX_column_g
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 column_g_basecolor.png
+map_Ns -s 0.72 0.72 0.72 column_g_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 column_g_normal.png
+
+newmtl TX_column_l1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 column_l1_basecolor.png
+map_Ns -s 0.72 0.72 0.72 column_l1_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 column_l1_normal.png
+
+newmtl TX_column_l2
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 column_l2_basecolor.png
+map_Ns -s 0.72 0.72 0.72 column_l2_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 column_l2_normal.png
+
+newmtl TX_core_tile
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd core_tile_basecolor.png
+map_Ns core_tile_roughness.png
+map_Bump -bm 0.620000 core_tile_normal.png
+
+newmtl TX_dark_steel
+Ka 0.750000 0.750000 0.750000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd -s 1.7 1.7 1.7 dark_steel_basecolor.png
+map_Ns -s 1.7 1.7 1.7 dark_steel_roughness.png
+map_Bump -s 1.7 1.7 1.7 -bm 0.620000 dark_steel_normal.png
+
+newmtl TX_fan_metal
+Ka 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd -s 1.7 1.7 1.7 fan_metal_basecolor.png
+map_Ns -s 1.7 1.7 1.7 fan_metal_roughness.png
+map_Bump -s 1.7 1.7 1.7 -bm 0.620000 fan_metal_normal.png
+
+newmtl TX_floor_b1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 floor_b1_basecolor.png
+map_Ns -s 0.72 0.72 0.72 floor_b1_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 floor_b1_normal.png
+
+newmtl TX_floor_b2
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 floor_b2_basecolor.png
+map_Ns -s 0.72 0.72 0.72 floor_b2_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 floor_b2_normal.png
+
+newmtl TX_floor_g
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 floor_g_basecolor.png
+map_Ns -s 0.72 0.72 0.72 floor_g_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 floor_g_normal.png
+
+newmtl TX_floor_l1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 floor_l1_basecolor.png
+map_Ns -s 0.72 0.72 0.72 floor_l1_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 floor_l1_normal.png
+
+newmtl TX_floor_l2
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 floor_l2_basecolor.png
+map_Ns -s 0.72 0.72 0.72 floor_l2_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 floor_l2_normal.png
+
+newmtl TX_galvanized
+Ka 0.720000 0.720000 0.720000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd -s 1.7 1.7 1.7 galvanized_basecolor.png
+map_Ns -s 1.7 1.7 1.7 galvanized_roughness.png
+map_Bump -s 1.7 1.7 1.7 -bm 0.620000 galvanized_normal.png
+
+newmtl TX_glass
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.460000
+d 1.000000
+illum 2
+map_Kd glass_basecolor.png
+map_Ns glass_roughness.png
+map_Bump -bm 0.350000 glass_normal.png
+
+newmtl TX_green_epoxy
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd green_epoxy_basecolor.png
+map_Ns green_epoxy_roughness.png
+map_Bump -bm 0.620000 green_epoxy_normal.png
+
+newmtl TX_hazard
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd hazard_basecolor.png
+map_Ns hazard_roughness.png
+map_Bump -bm 0.620000 hazard_normal.png
+
+newmtl TX_light_fixture
+Ka 0.700000 0.700000 0.700000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd light_fixture_basecolor.png
+map_Ns light_fixture_roughness.png
+map_Bump -bm 0.620000 light_fixture_normal.png
+
+newmtl TX_paver
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd paver_basecolor.png
+map_Ns paver_roughness.png
+map_Bump -bm 0.620000 paver_normal.png
+
+newmtl TX_perforated_metal
+Ka 0.780000 0.780000 0.780000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd -s 1.7 1.7 1.7 perforated_metal_basecolor.png
+map_Ns -s 1.7 1.7 1.7 perforated_metal_roughness.png
+map_Bump -s 1.7 1.7 1.7 -bm 0.620000 perforated_metal_normal.png
+
+newmtl TX_ramp_asphalt
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ramp_asphalt_basecolor.png
+map_Ns ramp_asphalt_roughness.png
+map_Bump -bm 0.620000 ramp_asphalt_normal.png
+
+newmtl TX_red_paint
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd red_paint_basecolor.png
+map_Ns red_paint_roughness.png
+map_Bump -bm 0.350000 red_paint_normal.png
+
+newmtl TX_road_asphalt
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd road_asphalt_basecolor.png
+map_Ns road_asphalt_roughness.png
+map_Bump -bm 0.620000 road_asphalt_normal.png
+
+newmtl TX_sign_blue
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd sign_blue_basecolor.png
+map_Ns sign_blue_roughness.png
+map_Bump -bm 0.350000 sign_blue_normal.png
+
+newmtl TX_stair_concrete
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd stair_concrete_basecolor.png
+map_Ns stair_concrete_roughness.png
+map_Bump -bm 0.620000 stair_concrete_normal.png
+
+newmtl TX_vending_red
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd vending_red_basecolor.png
+map_Ns vending_red_roughness.png
+map_Bump -bm 0.620000 vending_red_normal.png
+
+newmtl TX_wall_b1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 wall_b1_basecolor.png
+map_Ns -s 0.72 0.72 0.72 wall_b1_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 wall_b1_normal.png
+
+newmtl TX_wall_b2
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 wall_b2_basecolor.png
+map_Ns -s 0.72 0.72 0.72 wall_b2_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 wall_b2_normal.png
+
+newmtl TX_wall_g
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 wall_g_basecolor.png
+map_Ns -s 0.72 0.72 0.72 wall_g_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 wall_g_normal.png
+
+newmtl TX_wall_l1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 wall_l1_basecolor.png
+map_Ns -s 0.72 0.72 0.72 wall_l1_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 wall_l1_normal.png
+
+newmtl TX_wall_l2
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd -s 0.72 0.72 0.72 wall_l2_basecolor.png
+map_Ns -s 0.72 0.72 0.72 wall_l2_roughness.png
+map_Bump -s 0.72 0.72 0.72 -bm 0.620000 wall_l2_normal.png
+
+newmtl TX_white_marking
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.002800 0.002800 0.002400
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd white_marking_basecolor.png
+map_Ns white_marking_roughness.png
+map_Bump -bm 0.350000 white_marking_normal.png
+
+newmtl TX_wood_panel
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd wood_panel_basecolor.png
+map_Ns wood_panel_roughness.png
+map_Bump -bm 0.620000 wood_panel_normal.png
+
+newmtl TX_yellow_paint
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd yellow_paint_basecolor.png
+map_Ns yellow_paint_roughness.png
+map_Bump -bm 0.350000 yellow_paint_normal.png

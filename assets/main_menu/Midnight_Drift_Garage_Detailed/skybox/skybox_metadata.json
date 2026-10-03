@@ -1,0 +1,16 @@
+{
+  "type": "LDR RGB skybox",
+  "viewpoint": "Street level, approximately 1.4 m eye height",
+  "panorama_size": [
+    1774,
+    887
+  ],
+  "face_size": [
+    1024,
+    1024
+  ],
+  "projection": "equirectangular latitude/longitude; six perspective 90 degree faces",
+  "convention": "+Y up, +Z front, +X right",
+  "panorama_sampling_u_offset_for_cube_front": 0.37,
+  "note": "Source panorama is unchanged. Cube faces are rotated toward the street. Cube-face resolution is a technical reprojection, not additional native detail."
+}

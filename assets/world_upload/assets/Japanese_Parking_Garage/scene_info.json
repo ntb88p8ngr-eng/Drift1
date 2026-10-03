@@ -1,0 +1,23 @@
+{
+  "levels": 5,
+  "underground_levels": 2,
+  "parking_spaces": 157,
+  "floor_height_m": 3.4,
+  "main_footprint_m": [
+    44,
+    28
+  ],
+  "ramp_width_m": 6,
+  "ramp_run_m": 26,
+  "ramp_grade_percent": 13.08,
+  "objects": 3615,
+  "vertices": 255812,
+  "units": "meters",
+  "theme": "Japan / Sakura parking garage",
+  "ev_spaces": 8,
+  "pbr_texture_sets": 40,
+  "texture_maps": 120,
+  "floor_markings_cast_shadows": false,
+  "materials": 41,
+  "textured_meshes": 3615
+}

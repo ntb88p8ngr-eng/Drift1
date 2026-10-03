@@ -1,0 +1,37 @@
+{
+  "Neon_Turntable.glb": {
+    "nodes": 180,
+    "triangles": 17714,
+    "materials": 5,
+    "embedded_images": 7,
+    "animation_duration_s": 20,
+    "bytes": 14055528,
+    "status": "passed"
+  },
+  "Midnight_Drift_Garage.glb": {
+    "nodes": 10101,
+    "triangles": 510114,
+    "materials": 28,
+    "embedded_images": 32,
+    "animation_duration_s": 20,
+    "bytes": 58103136,
+    "status": "passed"
+  },
+  "Revision_checks": {
+    "separate_parts": 9847,
+    "object_names_match_glb_obj_csv": true,
+    "hollow_dimensioned_car_tyres": 14,
+    "tyre_sizes": [
+      "205/55 R16",
+      "225/45 R17",
+      "235/40 R18",
+      "275/35 R19"
+    ],
+    "lift_support_pads": 4,
+    "lift_clear_of_platform": true,
+    "lift_height_m": 3.129,
+    "floor_texture_mean_srgb_255": 43.6,
+    "wall_texture_mean_srgb_255": 33.2,
+    "status": "passed"
+  }
+}

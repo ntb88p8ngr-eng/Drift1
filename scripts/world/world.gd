@@ -1040,4 +1040,3 @@ func _warmup() -> void:
 	w.name = "ShaderWarmup"
 	add_child(w)
 	w.run(self, camera, extra)
-
