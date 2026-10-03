@@ -214,6 +214,11 @@ uniform sampler2D asphalt_tex : source_color, filter_linear_mipmap_anisotropic, 
 uniform sampler2D asphalt_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float photo_tex = 0.0;   // 1 when the photo textures are set
 uniform int paved_mode = 0;      // paved ground: 0 concrete slabs, 1 gravel, 2 asphalt, 3 city pavers
+// textures painted in the world editor (terrain_paint.gd): R = id, G = strength, one texel per paint_res m
+uniform sampler2D paint_tex : filter_nearest, repeat_disable;
+uniform vec2 paint_origin = vec2(0.0);
+uniform float paint_res = 1.0;
+uniform int paint_size = 0;
 
 varying vec3 wpos;
 varying vec4 splat;
@@ -235,6 +240,34 @@ void vertex() {
 // wavy outer border of the gravel shoulder (identical in grass.gd)
 float shoulder_w(vec2 p) {
 	return 1.8 + 0.28 * sin(p.x * 0.53 + p.y * 0.21) + 0.2 * sin(p.y * 1.37 - p.x * 0.83) + 0.1 * sin(p.x * 3.1 + p.y * 2.3);
+}
+
+// the painted standard textures (ids as in terrain_paint.gd)
+vec3 paint_color(int id, vec2 p, float n1, float n2, float n3, float n4, float fine_b) {
+	if (id == 1) {
+		return mix(grass_a, grass_b, smoothstep(0.3, 0.7, n1)) * (0.78 + 0.42 * n2);
+	} else if (id == 2) {
+		return mix(vec3(0.36, 0.35, 0.16), vec3(0.47, 0.43, 0.22), smoothstep(0.3, 0.7, n1)) * (0.8 + 0.35 * n2);
+	} else if (id == 3) {
+		return forest_floor * (0.75 + 0.6 * n2) + vec3(0.03, 0.02, 0.0) * n4;
+	} else if (id == 4) {
+		return dirt * (0.72 + 0.55 * n4) * (0.9 + 0.2 * n1);
+	} else if (id == 5) {
+		return vec3(0.15, 0.11, 0.07) * (0.7 + 0.45 * n4) * (0.85 + 0.25 * n2);
+	} else if (id == 6) {
+		return rock * (0.62 + 0.7 * texture(noise_tex, p * 0.21).r) * (0.85 + 0.3 * n4);
+	} else if (id == 7) {
+		if (photo_tex > 0.5) {
+			return texture(gravel_tex, p / 1.7, fine_b).rgb * 0.9 * (0.85 + 0.3 * n1);
+		}
+		return gravel * (0.72 + 0.45 * texture(noise_tex, p * 2.7).r) * (0.85 + 0.3 * n1);
+	} else if (id == 8) {
+		return vec3(0.63, 0.55, 0.4) * (0.86 + 0.22 * n2) * (0.9 + 0.15 * n4);
+	} else if (id == 9) {
+		float a1 = photo_tex > 0.5 ? dot(texture(asphalt_tex, p / 0.9, fine_b).rgb, vec3(0.3333)) / 0.35 : 0.8 + 0.4 * n4;
+		return vec3(0.1, 0.1, 0.105) * mix(1.0, a1, 0.9) * (0.88 + 0.24 * n3);
+	}
+	return concrete * (0.78 + 0.35 * n2) * (0.88 + 0.24 * n3);
 }
 
 void fragment() {
@@ -326,6 +359,34 @@ void fragment() {
 			// tyre-worn, darker gravel next to the asphalt
 			gc *= mix(0.8, 1.0, smoothstep(0.0, 0.9, ed));
 			col = mix(col, gc, gv);
+		}
+	}
+	// painted textures: the four nearest texels, each in its own texture, blended bilinearly
+	if (paint_size > 0) {
+		vec2 pg = (p - paint_origin) / paint_res - 0.5;
+		ivec2 i0 = ivec2(floor(pg));
+		vec2 f = pg - floor(pg);
+		vec3 acc = vec3(0.0);
+		float op = 0.0;
+		for (int k = 0; k < 4; k++) {
+			ivec2 o = ivec2(k & 1, k >> 1);
+			ivec2 ii = i0 + o;
+			if (ii.x < 0 || ii.y < 0 || ii.x >= paint_size || ii.y >= paint_size) {
+				continue;
+			}
+			vec2 t = texelFetch(paint_tex, ii, 0).rg;
+			int id = int(t.r * 255.0 + 0.5);
+			if (id <= 0 || t.g <= 0.0) {
+				continue;
+			}
+			float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y) * t.g;
+			acc += paint_color(id, p, n1, n2, n3, n4, fine_b) * w;
+			op += w;
+		}
+		if (op > 0.001) {
+			// a slightly ragged edge rather than a soft smear
+			float edge = clamp(op * 1.25 + (n2 - 0.5) * 0.35 * (1.0 - op), 0.0, 1.0);
+			col = mix(col, acc / op, edge);
 		}
 	}
 	float wet = wetness * (1.0 - rk * 0.4);

@@ -32,6 +32,7 @@ var _start: Button
 var _sel := 0
 var _mono: SystemFont
 var _boot := 0.0
+var _cursor: Polygon2D
 
 
 func _ready() -> void:
@@ -113,9 +114,29 @@ void fragment() {
 	mat.shader = sh
 	crt.material = mat
 	add_child(crt)
+	# the computer's own mouse pointer (the system cursor is hidden while at the PC)
+	_cursor = Polygon2D.new()
+	_cursor.polygon = PackedVector2Array([Vector2(0, 0), Vector2(0, 26), Vector2(7, 20), Vector2(12, 31),
+		Vector2(17, 29), Vector2(12, 18), Vector2(20, 18)])
+	_cursor.color = GREEN
+	_cursor.z_index = 10
+	_cursor.visible = false
+	var edge := Line2D.new()
+	edge.points = _cursor.polygon
+	edge.closed = true
+	edge.width = 2.0
+	edge.default_color = BG
+	_cursor.add_child(edge)
+	add_child(_cursor)
 	_refresh_list()
 	_select(0, false)
-	modulate.a = 0.0
+
+
+## The in-game pointer at a position on the screen (or hidden).
+func set_cursor(pos: Vector2, show: bool) -> void:
+	if _cursor:
+		_cursor.visible = show
+		_cursor.position = pos.clamp(Vector2.ZERO, Vector2(W - 4, H - 4))
 
 
 ## Switched on: a short boot flicker, then the list takes the focus (gamepad / keyboard).

@@ -20,12 +20,13 @@ func _ready() -> void:
 	Engine.time_scale = 4.0
 	main.menu.show_screen("story")
 	var t := 0.0
-	while not (main.menu._story_pc and main.menu._story_pc.visible) and t < 30.0:
+	while not main.menu._at_pc and t < 30.0:
 		await get_tree().process_frame
 		t += get_process_delta_time()
-	var pc = main.menu._story_pc
-	print("ARRIVED ", pc != null and pc.visible, " cam ", sr.cam.global_position, " ui at ", pc.position if pc else null, " scale ", pc.scale if pc else null)
-	ok = ok and pc != null and pc.visible and pc.scale.x > 0.4
+	var mid: Vector2 = sr.cam.unproject_position(sr._pc_centre())
+	var px = sr.pc_pixel(mid)
+	print("ARRIVED ", main.menu._at_pc, " cam ", sr.cam.global_position, " centre px ", px, " screen at ", mid)
+	ok = ok and main.menu._at_pc and px != null and (px as Vector2).distance_to(Vector2(480, 270)) < 3.0
 	main.menu._leave_story()
 	t = 0.0
 	while main.menu.current == "story" and t < 30.0:

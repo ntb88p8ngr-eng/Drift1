@@ -32,6 +32,15 @@ uniform float wind = 1.0;
 uniform float wetness = 0.0;
 uniform float road_clear = 1.4;
 uniform float trap_w = 4.6;
+// roads drawn in the world editor near the camera: segment a.xy -> b.xy, w = half width
+uniform vec4 clear_seg[64];
+uniform float clear_half[64];
+uniform int clear_n = 0;
+// painted ground textures (terrain_paint.gd): no grass on anything but the two grasses
+uniform sampler2D paint_tex : filter_nearest, repeat_disable;
+uniform vec2 paint_origin = vec2(0.0);
+uniform float paint_res = 1.0;
+uniform int paint_size = 0;
 uniform vec3 color_a : source_color = vec3(0.12, 0.32, 0.06);
 uniform vec3 color_b : source_color = vec3(0.22, 0.46, 0.1);
 uniform vec3 color_dry : source_color = vec3(0.38, 0.42, 0.18);
@@ -88,6 +97,25 @@ void vertex() {
 	// never on the asphalt: hard cut besides the smooth density falloff (a hash of exactly 0 used to
 	// let single clumps through on the road)
 	float keep = step(r3 + 0.002, dens) * fade * step(clear_to, road);
+	if (paint_size > 0) {
+		ivec2 pi = ivec2(floor((p - paint_origin) / paint_res));
+		if (pi.x >= 0 && pi.y >= 0 && pi.x < paint_size && pi.y < paint_size) {
+			vec2 pt = texelFetch(paint_tex, pi, 0).rg;
+			int pid = int(pt.r * 255.0 + 0.5);
+			if (pid > 2 && pt.g > r3 * 0.6 + 0.2) {
+				keep = 0.0;
+			}
+		}
+	}
+	for (int i = 0; i < clear_n; i++) {
+		vec2 sa = clear_seg[i].xy;
+		vec2 ab = clear_seg[i].zw - sa;
+		float t = clamp(dot(p - sa, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+		if (length(p - (sa + ab * t)) < clear_half[i]) {
+			keep = 0.0;
+			break;
+		}
+	}
 	float tall = mask.g * smoothstep(0.35, 0.7, texture(noise_tex, p * 0.09 + vec2(0.3)).r);
 	float hgt = mix(0.16, 0.38, r4) * (1.0 + tall * 1.9) * mix(0.4, 1.0, smoothstep(0.0, 0.25, keep));
 	float is_flower = COLOR.g;
@@ -160,6 +188,9 @@ var wetness := 0.0
 var wind := 1.0
 
 static var _clumps := {}
+var _paint := []           # [texture, origin, res, size] (terrain_paint.gd)
+var _clear_lines := {}     # id -> [[Vector2 a, Vector2 b], …], half width (editor roads)
+var _clear_next := 0
 
 
 func setup(p_terrain, p_track, p_world) -> void:
@@ -169,6 +200,68 @@ func setup(p_terrain, p_track, p_world) -> void:
 	await _build_textures()
 	_rebuild(int(Game.settings.get("grass_quality", 2)))
 	Game.settings_changed.connect(_on_settings_changed)
+
+
+## The world editor's painted textures: grass only where grass is painted (or nothing).
+func set_paint(tex: Texture2D, origin: Vector2, res: float, size: int) -> void:
+	_paint = [tex, origin, res, size]
+	for l in _layers:
+		_apply_paint(l[1])
+
+
+func _apply_paint(mat: ShaderMaterial) -> void:
+	if _paint.is_empty():
+		return
+	mat.set_shader_parameter("paint_tex", _paint[0])
+	mat.set_shader_parameter("paint_origin", _paint[1])
+	mat.set_shader_parameter("paint_res", _paint[2])
+	mat.set_shader_parameter("paint_size", _paint[3])
+
+
+## No grass on a road drawn in the world editor (its centre line, half its width plus a margin).
+## Returns an id for remove_clear_line.
+func add_clear_line(line: PackedVector3Array, half: float) -> int:
+	var segs: Array = []
+	var step := maxi(1, int(4.0 / 2.0))      # (the line has a point every 2 m: segments of ~4 m)
+	var i := 0
+	while i < line.size() - 1:
+		var j := mini(i + step, line.size() - 1)
+		segs.append([Vector2(line[i].x, line[i].z), Vector2(line[j].x, line[j].z)])
+		i = j
+	_clear_next += 1
+	_clear_lines[_clear_next] = [segs, half + 0.4]
+	return _clear_next
+
+
+func remove_clear_line(id: int) -> void:
+	_clear_lines.erase(id)
+
+
+## The editor-road segments closest to the camera (the shader looks at up to 64).
+func _clear_params(cp: Vector3, reach: float) -> Array:
+	var c := Vector2(cp.x, cp.z)
+	var cand: Array = []
+	for id in _clear_lines:
+		var e: Array = _clear_lines[id]
+		var half: float = e[1]
+		for sg in e[0]:
+			var a: Vector2 = sg[0]
+			var b: Vector2 = sg[1]
+			var ab := b - a
+			var t := clampf((c - a).dot(ab) / maxf(ab.length_squared(), 1e-4), 0.0, 1.0)
+			var d := c.distance_to(a + ab * t) - half
+			if d < reach:
+				cand.append([d, Vector4(a.x, a.y, b.x, b.y), half])
+	cand.sort_custom(func(x, y): return x[0] < y[0])
+	var segs: Array = []
+	var halves: Array = []
+	for k in mini(cand.size(), 64):
+		segs.append(cand[k][1])
+		halves.append(cand[k][2])
+	while segs.size() < 64:
+		segs.append(Vector4.ZERO)
+		halves.append(0.0)
+	return [segs, halves, mini(cand.size(), 64)]
 
 
 func _on_settings_changed() -> void:
@@ -259,6 +352,7 @@ func _add_layer(spacing: float, radius: float, fade0: float, fade1: float, inner
 	mat.set_shader_parameter("mask_tex", _mask_tex)
 	mat.set_shader_parameter("road_tex", _road_tex)
 	mat.set_shader_parameter("noise_tex", TexKit.noise_texture(81, 0.02, false, 256))
+	_apply_paint(mat)
 	mat.set_shader_parameter("map_origin", terrain.origin)
 	mat.set_shader_parameter("map_cell", Terrain.CELL)
 	mat.set_shader_parameter("map_size", Vector2i(terrain.nx, terrain.nz))
@@ -353,6 +447,7 @@ func _process(_delta: float) -> void:
 	if world and world.atmosphere:
 		wetness = world.atmosphere.wetness
 		wind = 1.0 + float(world.atmosphere.rain) * 1.2
+	var clear: Array = _clear_params(cp, 40.0) if not _clear_lines.is_empty() else []
 	for l in _layers:
 		var mmi: MultiMeshInstance3D = l[0]
 		var mat: ShaderMaterial = l[1]
@@ -362,6 +457,12 @@ func _process(_delta: float) -> void:
 		mat.set_shader_parameter("car_pos", car_p)
 		mat.set_shader_parameter("wetness", wetness)
 		mat.set_shader_parameter("wind", wind)
+		if clear.is_empty():
+			mat.set_shader_parameter("clear_n", 0)
+		else:
+			mat.set_shader_parameter("clear_seg", clear[0])
+			mat.set_shader_parameter("clear_half", clear[1])
+			mat.set_shader_parameter("clear_n", clear[2])
 
 
 func _on_heights_changed(_x0: int, _z0: int, _x1: int, _z1: int) -> void:
