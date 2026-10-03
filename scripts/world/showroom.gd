@@ -218,7 +218,7 @@ func _load_workshop() -> bool:
 	WorkshopTextures.apply(g)
 	_epoxy_floor(g)
 	# the model's lightning bolt (seen through the gate) stays hidden: the flashes light the hall
-	for node in g.find_children("Storm_lightning*", "Node3D", true, false):
+	for node in g.find_children("*Storm_lightning*", "Node3D", true, false):
 		(node as Node3D).visible = false
 	_extend_room(g)
 	_find_menu_lights(g)
@@ -357,7 +357,7 @@ func _load_workshop() -> bool:
 
 ## The office PC's screen: its corners in the world and the side it faces (towards the office door).
 func _find_pc(g: Node3D) -> void:
-	for node in g.find_children("Monitor_pixels*", "MeshInstance3D", true, false):
+	for node in g.find_children("*Monitor_pixels*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		if mi.mesh == null:
 			continue
@@ -386,7 +386,7 @@ func _find_pc(g: Node3D) -> void:
 
 ## The hall's floor as a high-gloss epoxy coat: dark grey with fine flakes, a mirror-like clear coat.
 func _epoxy_floor(g: Node3D) -> void:
-	var mat := _part_material(g, "Floor_surface*") as BaseMaterial3D
+	var mat := _part_material(g, "*Floor_surface*") as BaseMaterial3D
 	if mat == null:
 		return
 	mat.albedo_texture = _flake_texture()
@@ -496,7 +496,7 @@ func _find_menu_lights(g: Node3D) -> void:
 				continue
 			if mat.resource_name == "Honeycomb_LED_diffuser":
 				_ceiling_mat = mat
-			elif str(mi.name).begins_with("Segmented_platform_neon"):
+			elif str(mi.name).contains("Segmented_platform_neon"):
 				if _platform_mat == null:
 					_platform_mat = mat.duplicate() as BaseMaterial3D
 				mi.set_surface_override_material(si, _platform_mat)
@@ -538,8 +538,8 @@ func apply_menu_lights() -> void:
 ## and the front wall carries on left and right, so the edges of the view never show the void
 ## outside the model (same epoxy floor and concrete as the hall).
 func _extend_room(g: Node3D) -> void:
-	var floor_mat := _part_material(g, "Floor_surface*")
-	var wall_mat := _part_material(g, "Front_facade_wing*")
+	var floor_mat := _part_material(g, "*Floor_surface*")
+	var wall_mat := _part_material(g, "*Front_facade_wing*")
 	if floor_mat:
 		# (the same flake epoxy as the hall; the rear street (z < -6.5) stays the model's)
 		_slab(Vector3(-30.0, -0.03, -6.5), Vector3(30.0, -0.01, 30.0), _world_tiled(floor_mat, 1.0 / 1.6))

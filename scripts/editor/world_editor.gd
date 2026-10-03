@@ -8,6 +8,7 @@ extends Node3D
 const MapData = preload("res://scripts/editor/map_data.gd")
 const AssetLib = preload("res://scripts/editor/asset_lib.gd")
 const RoadBuilder = preload("res://scripts/editor/road_builder.gd")
+const Snap = preload("res://scripts/editor/snap.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const MMUtil = preload("res://scripts/util/mm_util.gd")
 
@@ -61,6 +62,15 @@ var _boxing := false
 var _box_from := Vector2.ZERO
 var _box_rect: ColorRect
 var _sel_box: MeshInstance3D
+var deflicker := true          # placed objects get a few mm of offset each: no flicker where they overlap
+var _df_n := 0
+var snap_objects := true       # G: dock onto other objects (side by side, stacked)
+var snap_grid := false         # Shift+G: 1 m grid
+var _drag_box := AABB()        # the dragged objects' bounds when the drag began
+var _drag_has_box := false
+var _drag_nodes: Array = []
+var _ghost_at = null           # where a click would place the ghost (snapped)
+var _snap_boxes: Array = []    # the checkboxes (kept in step with G / Shift+G)
 var _clip: Array = []          # Ctrl+C: [asset, transform relative to the copied group's middle]
 var _panels: Array = []        # the UI panels (the mouse wheel scrolls them, not the camera)
 
@@ -74,7 +84,9 @@ var _ghost_scale := 1.0
 var road_w := 10.0
 var road_surface := "asphalt"
 var road_flatten := true
+var road_h := 0.0              # height above the ground (bridges) or below it (cuttings)
 var _road_pts: Array = []
+var _road_h_slider: HSlider
 var _road_preview: MeshInstance3D
 var _preview_t := 0.0
 var _preview_dirty := false
@@ -179,6 +191,30 @@ func _build_ui() -> void:
 		_tool_btns[t[0]] = b
 		grid.add_child(b)
 	left.add_child(grid)
+	# snapping
+	for sn in [["An Objekten einrasten (G)", snap_objects, true], ["Raster 1 m (Shift+G)", snap_grid, false]]:
+		var cb := CheckBox.new()
+		cb.text = str(sn[0])
+		cb.button_pressed = bool(sn[1])
+		cb.focus_mode = Control.FOCUS_NONE
+		var is_obj: bool = sn[2]
+		cb.toggled.connect(func(on):
+			if is_obj:
+				snap_objects = on
+			else:
+				snap_grid = on)
+		_snap_boxes.append(cb)
+		left.add_child(cb)
+	var dfc := CheckBox.new()
+	dfc.text = "Deflicker-Modus"
+	dfc.tooltip_text = "Gesetzte Objekte und Straßen bekommen je ein paar Millimeter Versatz,\ndamit ineinander gesetzte Flächen nicht flackern."
+	dfc.button_pressed = deflicker
+	dfc.focus_mode = Control.FOCUS_NONE
+	dfc.toggled.connect(func(on): deflicker = on)
+	left.add_child(dfc)
+	var dfb := UiKit.button("Alle Objekte entflackern", _deflicker_all, 280)
+	dfb.focus_mode = Control.FOCUS_NONE
+	left.add_child(dfb)
 	# brush
 	_brush_box = VBoxContainer.new()
 	var size_l := UiKit.label("Pinsel: %d m" % int(brush_r), 16)
@@ -212,6 +248,14 @@ func _build_ui() -> void:
 	_road_box.add_child(UiKit.option(names, 0, func(i):
 		road_surface = RoadBuilder.SURFACES[i][0]
 		_preview_dirty = true, 280))
+	var h_l := UiKit.label("Höhe: %.1f m" % road_h, 16)
+	_road_box.add_child(h_l)
+	_road_h_slider = UiKit.slider(-6, 25, 0.5, road_h, func(v):
+		road_h = v
+		h_l.text = "Höhe: %.1f m%s" % [v, "  (Brücke)" if v > 0.3 else ("  (vertieft)" if v < -0.3 else "")]
+		_preview_dirty = true, 280)
+	_road_h_slider.tooltip_text = "Höhe über dem Gelände. Eine gewählte Straße: Bild↑ / Bild↓ hebt und senkt sie."
+	_road_box.add_child(_road_h_slider)
 	var flat := CheckBox.new()
 	flat.text = "Gelände anpassen"
 	flat.button_pressed = road_flatten
@@ -368,7 +412,7 @@ func _process(delta: float) -> void:
 	_draw_ring(hit)
 	if hit != null:
 		if _ghost and tool == "place":
-			_ghost.global_transform = Transform3D(Basis(Vector3.UP, _ghost_rot).scaled(Vector3.ONE * _ghost_scale), hit)
+			_ghost.global_transform = Transform3D(Basis(Vector3.UP, _ghost_rot).scaled(Vector3.ONE * _ghost_scale), _snap_ghost(hit))
 		if tool == "road" and _road_pts.size() > 0:
 			_preview_dirty = true
 	if _stroke and hit != null:
@@ -467,6 +511,11 @@ func _key(k: InputEventKey) -> void:
 				handled = false
 		KEY_R:
 			_rotate(-ROT_STEP if k.shift_pressed else ROT_STEP)
+		KEY_G:
+			if k.shift_pressed:
+				_set_snap(snap_objects, not snap_grid)
+			else:
+				_set_snap(not snap_objects, snap_grid)
 		KEY_PLUS, KEY_KP_ADD, KEY_EQUAL:
 			_scale(1.1)
 		KEY_MINUS, KEY_KP_SUBTRACT:
@@ -526,9 +575,10 @@ func _click(double: bool, shift := false) -> void:
 				_drag = true
 				_drag_start = hit
 				_drag_before = _states(_sel)
+				_begin_drag_box()
 		"place":
 			if hit != null:
-				_place(hit)
+				_place(_ghost_at if _ghost_at != null else hit)
 		"raise", "lower", "smooth", "level":
 			if hit != null:
 				_stroke = true
@@ -564,6 +614,10 @@ func _release(shift := false) -> void:
 			if _item_xf(st[0]) != st[1]:
 				moved = true
 		if moved:
+			for st in before:
+				if st[0]["kind"] == "node" and is_instance_valid(st[0]["node"]):
+					_deflicker_node(st[0]["node"])
+			_sync_objects()
 			_undo.append(func():
 				_restore_states(before))
 			_changed = true
@@ -981,16 +1035,160 @@ func _drag_move() -> void:
 		return
 	var d: Vector3 = hit - _drag_start
 	d.y = 0.0
+	var snapped := _snap_move(d)
+	d = snapped[0]
+	var top: float = snapped[1]
 	for st in _drag_before:
 		if st[1] == null:
 			continue
 		var xf: Transform3D = st[1]
 		var to: Vector3 = xf.origin + d
-		# stays as high above the ground as it stood
-		var above: float = xf.origin.y - _ground_y(xf.origin)
-		to.y = _ground_y(to) + above
+		if not is_nan(top):
+			# stacked: the group's bottom sits on the top it was dropped on
+			to.y = xf.origin.y + top - _drag_box.position.y
+		else:
+			# stays as high above the ground as it stood
+			var above: float = xf.origin.y - _ground_y(xf.origin)
+			to.y = _ground_y(to) + above
 		_item_set(st[0], Transform3D(xf.basis, to))
 	_sync_objects()
+
+
+## Where the placing ghost goes for a ground point: on the grid and/or docked onto objects.
+func _snap_ghost(hit: Vector3) -> Vector3:
+	var at := Snap.grid(hit) if snap_grid else hit
+	if snap_grid:
+		at.y = _ground_y(at)
+	if snap_objects and _ghost:
+		_ghost.global_transform = Transform3D(Basis(Vector3.UP, _ghost_rot).scaled(Vector3.ONE * _ghost_scale), at)
+		var b := Snap.node_aabb(_ghost)
+		if b.size != Vector3.ZERO:
+			var res := Snap.dock(b, _snap_targets(at, []))
+			at += res[0]
+			if not is_nan(float(res[1])):
+				at.y += float(res[1]) - b.position.y
+	_ghost_at = at
+	return at
+
+
+## Deflicker: a placed object sits a few millimetres higher and is a hair bigger or smaller than
+## its neighbours, so faces that lie in one plane (objects pushed into each other) never flicker.
+func _deflicker_node(n: Node3D) -> void:
+	if not deflicker or n == null or not is_instance_valid(n) or not n.has_meta("asset"):
+		return
+	var xf := n.global_transform
+	if n.has_meta("df"):
+		var o: Array = n.get_meta("df")
+		xf.origin.y -= float(o[0])
+		xf.basis = xf.basis.scaled(Vector3.ONE / float(o[1]))
+	_df_n += 1
+	var off := float(_df_n % 9 + 1) * 0.003
+	var sc := 1.0 + float(_df_n % 5 + 1) * 0.0012 * (1.0 if _df_n % 2 == 0 else -1.0)
+	xf.origin.y += off
+	xf.basis = xf.basis.scaled(Vector3.ONE * sc)
+	n.global_transform = xf
+	n.set_meta("df", [off, sc])
+
+
+func _deflicker_all() -> void:
+	var was := deflicker
+	deflicker = true
+	var n := 0
+	for c in holder.get_children():
+		if c.has_meta("asset"):
+			_deflicker_node(c)
+			n += 1
+	deflicker = was
+	_sync_objects()
+	_changed = true
+	message("%d Objekte entflackert" % n)
+
+
+## The dragged objects' bounds (their union) at the start of a drag.
+func _begin_drag_box() -> void:
+	_drag_has_box = false
+	_drag_nodes = []
+	for it in _sel:
+		if it["kind"] != "node" or not is_instance_valid(it["node"]):
+			continue
+		_drag_nodes.append(it["node"])
+		var b := Snap.node_aabb(it["node"])
+		if b.size == Vector3.ZERO:
+			continue
+		_drag_box = b if not _drag_has_box else _drag_box.merge(b)
+		_drag_has_box = true
+
+
+## The drag offset with the grid and the docking applied: [offset, top it stands on or NAN].
+func _snap_move(d: Vector3) -> Array:
+	var top := NAN
+	if snap_grid and not _drag_before.is_empty():
+		var c0 := Vector3.ZERO
+		var n := 0
+		for st in _drag_before:
+			if st[1] != null:
+				c0 += (st[1] as Transform3D).origin
+				n += 1
+		c0 /= maxf(n, 1)
+		var c1 := Snap.grid(c0 + d)
+		d = Vector3(c1.x - c0.x, 0, c1.z - c0.z)
+	if snap_objects and _drag_has_box:
+		var moving := _drag_box
+		moving.position += d
+		var res := Snap.dock(moving, _snap_targets(moving.get_center(), _drag_nodes))
+		d += res[0]
+		top = res[1]
+	return [d, top]
+
+
+## Bounds of the placed objects and other movable things near a point (not the excluded ones).
+func _snap_targets(near: Vector3, exclude: Array) -> Array:
+	var out: Array = []
+	for c in holder.get_children():
+		if not (c is Node3D) or exclude.has(c) or c.has_meta("road") or c.has_meta("water"):
+			continue
+		var n := c as Node3D
+		if Vector2(n.global_position.x - near.x, n.global_position.z - near.z).length() > Snap.REACH:
+			continue
+		var b := Snap.node_aabb(n)
+		if b.size != Vector3.ZERO:
+			out.append(b)
+	return out
+
+
+func _set_snap(objects: bool, grid_on: bool) -> void:
+	snap_objects = objects
+	snap_grid = grid_on
+	if _snap_boxes.size() == 2:
+		(_snap_boxes[0] as CheckBox).set_pressed_no_signal(objects)
+		(_snap_boxes[1] as CheckBox).set_pressed_no_signal(grid_on)
+	message("Einrasten an Objekten: %s · Raster 1 m: %s" % ["an" if objects else "aus", "an" if grid_on else "aus"])
+
+
+## A built road a step higher or lower: rebuilt at its new height (undo puts the old one back).
+func _road_height(body: Node3D, dy: float) -> void:
+	var old: Dictionary = body.get_meta("road")
+	var r := old.duplicate(true)
+	r["height"] = clampf(float(old.get("height", 0.0)) + dy, -6.0, 25.0)
+	r["flatten"] = false      # (the ground was levelled when it was first built)
+	var idx := body.get_index()
+	var nb := RoadBuilder.build(holder, world, r)
+	if nb == null:
+		return
+	holder.move_child(nb, idx)
+	holder.remove_child(body)
+	_select({"kind": "node", "node": nb})
+	_undo.append(func():
+		if is_instance_valid(nb):
+			holder.remove_child(nb)
+			nb.queue_free()
+		holder.add_child(body)
+		holder.move_child(body, mini(idx, holder.get_child_count() - 1))
+		_select({})
+		_sync_objects())
+	_sync_objects()
+	_changed = true
+	message("Straße auf %.1f m Höhe" % float(r["height"]))
 
 
 ## Roads stay where they were drawn (delete and redraw them); water only changes level and size.
@@ -1050,6 +1248,10 @@ func _scale(f: float) -> void:
 
 
 func _raise(dy: float) -> void:
+	if _sel.size() == 1 and _sel[0]["kind"] == "node" and is_instance_valid(_sel[0]["node"]) \
+			and (_sel[0]["node"] as Node3D).has_meta("road"):
+		_road_height(_sel[0]["node"], dy)
+		return
 	if _sel.size() == 1 and _sel[0]["kind"] == "water":
 		var w: Node3D = _sel[0]["node"]
 		var before := _states(_sel)
@@ -1174,6 +1376,7 @@ func _paste() -> void:
 		o.y = _ground_y(o) + rel.origin.y
 		var body := MapData.place_object(holder, str(c[0]), Transform3D(rel.basis, o))
 		if body:
+			_deflicker_node(body)
 			placed.append(body)
 	_undo.append(func():
 		for b in placed:
@@ -1198,6 +1401,7 @@ func _place(at: Vector3) -> void:
 	if body == null:
 		message("Kann %s nicht setzen" % AssetLib.name_of(place_asset))
 		return
+	_deflicker_node(body)
 	_undo.append(func():
 		if is_instance_valid(body):
 			body.get_parent().remove_child(body)
@@ -1399,7 +1603,9 @@ func _road_dict(pts: Array) -> Dictionary:
 	var arr: Array = []
 	for p in pts:
 		arr.append([p.x, p.y, p.z])
-	return {"pts": arr, "width": road_w, "surface": road_surface, "flatten": road_flatten}
+	# deflicker: every road a little higher than the last, so crossing roads don't flicker
+	var lift := 0.012 * float(map.roads.size() % 8 + 1) if deflicker else 0.0
+	return {"pts": arr, "width": road_w, "surface": road_surface, "flatten": road_flatten, "height": road_h, "lift": lift}
 
 
 func _update_road_preview(hit) -> void:
