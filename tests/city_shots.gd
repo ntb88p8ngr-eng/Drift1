@@ -56,13 +56,19 @@ func _ready() -> void:
 	var m1: Vector2 = sp[mini(sp.size() / 2 + 3, sp.size() - 1)]
 	var sdir := Vector3(m1.x - m0.x, 0, m1.y - m0.y).normalized()
 	views["street"] = [Vector3(m0.x, 1.8, m0.y) - sdir * 12.0, Vector3(m0.x, 3.0, m0.y) + sdir * 30.0]
+	# street corners (where streets meet), looked at from above
+	for q in 4:
+		var cs: Dictionary = city.net.streets[(city.net.streets.size() * (q + 1)) / 6]
+		var e: Vector2 = (cs["pts"] as PackedVector2Array)[0]
+		views["corner%d" % q] = [Vector3(e.x + 9.0, 14.0, e.y + 9.0), Vector3(e.x, 0.0, e.y)]
 	for l in city.lots:
 		var lot: Dictionary = l[1]
 		var lc: Vector3 = lot["c"]
 		var az: Vector3 = lot["az"]
 		var ax: Vector3 = lot["ax"]
 		if not views.has(l[0]):
-			views[l[0]] = [lc - az * (float(lot["d"]) * 0.5 + 16.0) + ax * 6.0 + Vector3(0, 3.0, 0), lc + Vector3(0, 3.5, 0)]
+			views[l[0]] = [lc - az * (float(lot["d"]) * 0.5 + 6.0) + ax * 6.0 + Vector3(0, 3.0, 0), lc + Vector3(0, 3.5, 0)]
+			views[l[0] + "_top"] = [lc - az * (float(lot["d"]) * 0.5 + 25.0) + Vector3(0, 40.0, 0), lc - az * (float(lot["d"]) * 0.25)]
 	if city.parks.size() > 0:
 		var pc: Vector3 = city.parks[0][0]
 		var pr: float = city.parks[0][1]

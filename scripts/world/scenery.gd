@@ -10,6 +10,7 @@ const TexKit = preload("res://scripts/util/tex_kit.gd")
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
 const PeopleHits = preload("res://scripts/world/people_hits.gd")
+const TreeHits = preload("res://scripts/world/tree_hits.gd")
 const Festival = preload("res://scripts/world/festival.gd")
 const City = preload("res://scripts/world/city.gd")
 const Details = preload("res://scripts/world/details.gd")
@@ -37,6 +38,7 @@ var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
 var people: Node3D             # people_hits.gd: every instanced person can be run over
+var trees: Node3D              # tree_hits.gd: the trees near the roads can be felled
 var festival: Node3D
 var city: Node3D
 var details: Node3D
@@ -80,6 +82,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	people.name = "PeopleHits"
 	add_child(people)
 	people.world = get_parent()
+	trees = TreeHits.new()
+	trees.name = "TreeHits"
+	add_child(trees)
+	trees.world = get_parent()
+	trees.terrain = p_terrain
 	var id: String = track.track_id
 	big = bool(track.elevated)
 	if big:
@@ -342,6 +349,8 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 			buf[j + 15] = c.a
 			j += 16
 		mm.buffer = buf
+		if trees != null:
+			trees.register_set(label, mm, items)
 		# people can be run over: register every one with its slot
 		if people != null and mesh == Crowd.person_mesh():
 			for idx in items.size():
@@ -1283,6 +1292,14 @@ func _build_skyline() -> void:
 		var w := rng.randf_range(25.0, 60.0)
 		var bx := c.x + cos(a) * r
 		var bz := c.y + sin(a) * r
+		if tokyo:
+			# never inside the drivable city or its fog border: push the tower outwards until its
+			# footprint (any rotation) stays clear of the city area by a good margin
+			var keep_out: Rect2 = (track.bounds as Rect2).grow(230.0 + 160.0 + w)
+			while keep_out.has_point(Vector2(bx, bz)):
+				r += 40.0
+				bx = c.x + cos(a) * r
+				bz = c.y + sin(a) * r
 		var gy: float = terrain.outer_height(bx, bz) - 3.0
 		var b := MeshKit.box_node(Vector3(w, h + 3.0, w * rng.randf_range(0.6, 1.2)), mats[k % mats.size()], Vector3(bx, gy + (h + 3.0) * 0.5, bz))
 		b.rotation.y = rng.randf() * TAU

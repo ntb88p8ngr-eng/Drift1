@@ -32,7 +32,26 @@ const KINDS := {
 	"hydrant": [0.24, 1.3, HYD_BREAK * HYD_SCALE, 35.0],
 	"signal": [0.15, 5.8, 0.3, 90.0],
 	"vending": [1.05, 1.85, 0.0, 260.0],
+	"bench": [0.9, 0.9, 0.0, 40.0],
+	"bin": [0.27, 0.95, 0.0, 12.0],
+	"shelter": [1.8, 2.5, 0.0, 180.0],
 }
+## Loose furniture: a car merely pushes it (from walking pace on), it slides and tumbles away.
+const PUSHED := ["bench", "bin"]
+## Box colliders [size, centre] (the rest are cylinders standing on their foot).
+const BOXES := {
+	"vending": [Vector3(2.1, 1.85, 0.8), Vector3(0, 0.925, 0)],
+	"bench": [Vector3(1.8, 0.9, 0.6), Vector3(0, 0.45, 0)],
+	"shelter": [Vector3(3.4, 2.4, 0.4), Vector3(0, 1.2, 0.65)],
+}
+## Bus shelter parts: [name, box size, centre] – drawn as one, they fly apart when it is hit.
+const SHELTER := [
+	["post", Vector3(0.1, 2.4, 0.1), Vector3(-1.6, 1.2, 0.6)],
+	["post", Vector3(0.1, 2.4, 0.1), Vector3(1.6, 1.2, 0.6)],
+	["roof", Vector3(3.6, 0.1, 1.6), Vector3(0, 2.45, 0.2)],
+	["seat", Vector3(2.4, 0.08, 0.4), Vector3(0, 0.45, 0.7)],
+	["glass", Vector3(3.1, 1.7, 0.03), Vector3(0, 1.3, 0.78)],
+]
 
 ## Signal lamps and the vending machines' fronts: vertex colour, alpha = how bright it glows.
 const GLOW_SHADER := """
@@ -117,6 +136,15 @@ func add_vending(p: Vector3, face: Vector3) -> void:
 	poles.append({"kind": "vending", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": li, "broken": false, "spans": []})
 
 
+## A bench, a bin (pushed about) or a bus shelter (smashed apart) at p, its front towards `face`.
+func add_prop(kind: String, p: Vector3, face: Vector3) -> void:
+	var li := -1
+	if kind == "shelter":
+		li = emitters.size()
+		emitters.append([p + Vector3(0, 2.2, 0), Color(0.9, 0.95, 1.0), 6.0, 1.0, 0])
+	poles.append({"kind": kind, "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": li, "broken": false, "spans": []})
+
+
 func add_hydrant(p: Vector3, face: Vector3) -> void:
 	poles.append({"kind": "hydrant", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": -1, "broken": false, "spans": []})
 
@@ -130,9 +158,9 @@ func build(p_world) -> void:
 	_body.collision_mask = 0
 	add_child(_body)
 	for kind in KINDS:
-		if kind == "vending":
+		if BOXES.has(kind):
 			var bx := BoxShape3D.new()
-			bx.size = Vector3(2.1, 1.85, 0.8)
+			bx.size = BOXES[kind][0]
 			_shapes[kind] = bx
 			continue
 		var cyl := CylinderShape3D.new()
@@ -146,7 +174,7 @@ func build(p_world) -> void:
 		var o: Vector3 = (pl["xf"] as Transform3D).origin
 		var cs := CollisionShape3D.new()
 		cs.shape = _shapes[pl["kind"]]
-		cs.transform = Transform3D((pl["xf"] as Transform3D).basis, o + Vector3(0, float(KINDS[pl["kind"]][1]) * 0.5, 0))
+		cs.transform = Transform3D((pl["xf"] as Transform3D).basis, (pl["xf"] as Transform3D) * _centre_of(pl["kind"]))
 		_body.add_child(cs)
 		pl["shape"] = cs
 		var g := Vector2i(int(floor(o.x / CELL)), int(floor(o.z / CELL)))
@@ -178,7 +206,7 @@ func build(p_world) -> void:
 			mm.set_instance_transform(j, Transform3D(xf.basis, xf.origin - centre))
 			pl["mm"] = mm
 			pl["slot"] = j
-		_chunk_node(mm, centre, "%s_%d_%d" % [kind, key.x, key.y], 200.0 if kind == "hydrant" or kind == "vending" else RANGE)
+		_chunk_node(mm, centre, "%s_%d_%d" % [kind, key.x, key.y], {"hydrant": 200.0, "vending": 200.0, "bench": 160.0, "bin": 160.0, "shelter": 300.0}.get(kind, RANGE))
 	# the wires: one unit span stretched from pole to pole
 	var wchunks := {}
 	for si in spans.size():
@@ -205,9 +233,16 @@ func build(p_world) -> void:
 		_chunk_node(mm, centre, "wires_%d_%d" % [key.x, key.y], 360.0)
 	for pl in poles:
 		var nm: String = {"lamp0": "streetlights", "lamp1": "streetlights", "upole1": "utility_poles", "upole-1": "utility_poles",
-			"signal": "signals", "vending": "vending"}.get(pl["kind"], "hydrants")
+			"signal": "signals", "vending": "vending", "bench": "benches", "bin": "bins", "shelter": "bus_shelters"}.get(pl["kind"], "hydrants")
 		stats[nm] = int(stats.get(nm, 0)) + 1
 	stats["wire_spans"] = spans.size()
+
+
+## Centre of a kind's collider, local to its foot.
+static func _centre_of(kind: String) -> Vector3:
+	if BOXES.has(kind):
+		return BOXES[kind][1]
+	return Vector3(0, float(KINDS[kind][1]) * 0.5, 0)
 
 
 func _multimesh(mesh: Mesh, count: int) -> MultiMesh:
@@ -245,7 +280,7 @@ func _physics_process(delta: float) -> void:
 		var rb := car as RigidBody3D
 		var v := rb.linear_velocity
 		var sp := Vector2(v.x, v.z).length()
-		if sp < 3.0:
+		if sp < 1.0:
 			continue          # parking against it doesn't knock it over
 		var cp := rb.global_position
 		var inv := rb.global_transform.affine_inverse()
@@ -255,9 +290,9 @@ func _physics_process(delta: float) -> void:
 			for dx in range(-1, 2):
 				for k in _grid.get(c + Vector2i(dx, dz), []):
 					var pl: Dictionary = poles[k]
-					if pl["broken"]:
+					if pl["broken"] or (sp < 3.0 and not PUSHED.has(pl["kind"])):
 						continue
-					var lp: Vector3 = inv * (pl["xf"] as Transform3D).origin
+					var lp: Vector3 = inv * ((pl["xf"] as Transform3D) * Vector3(0, 0, _centre_of(pl["kind"]).z))
 					var r: float = KINDS[pl["kind"]][0]
 					if absf(lp.x) < 1.0 + r and absf(lp.z) < 2.3 + r + reach and absf(lp.y) < 3.0:
 						_break(k, rb, v)
@@ -297,8 +332,14 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	var xf: Transform3D = pl["xf"]
 	var spec: Array = KINDS[kind]
 	var hydrant := kind == "hydrant"
-	# the stump stays (a vending machine just tips over)
-	if kind != "vending":
+	var dir := Vector3(v.x, 0, v.z).normalized()
+	var spd := minf(Vector2(v.x, v.z).length(), 30.0)
+	if kind == "shelter":
+		_smash_shelter(xf, dir, spd)
+		car.apply_central_impulse(-dir * car.mass * spd * 0.04)
+		return
+	# the stump stays (a vending machine just tips over, furniture is pushed away whole)
+	if kind != "vending" and not PUSHED.has(kind):
 		var stub := MeshInstance3D.new()
 		stub.mesh = _meshes["stub_" + kind]
 		add_child(stub)
@@ -315,12 +356,10 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = (pl["node"] as MeshInstance3D).mesh if kind == "signal" else _meshes["upper_" + kind]
 	b.add_child(mi)
-	if kind == "vending":
+	if BOXES.has(kind) or kind == "bin":
 		var cs := CollisionShape3D.new()
-		var bx := BoxShape3D.new()
-		bx.size = Vector3(2.1, 1.85, 0.8)
-		cs.shape = bx
-		cs.position = Vector3(0, 0.93, 0)
+		cs.shape = _shapes[kind]
+		cs.position = _centre_of(kind)
 		b.add_child(cs)
 	elif hydrant:
 		mi.scale = Vector3.ONE * HYD_SCALE
@@ -362,11 +401,17 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 	add_child(b)
 	b.global_transform = xf
 	_debris.append(b)
-	var dir := Vector3(v.x, 0, v.z).normalized()
-	var spd := minf(Vector2(v.x, v.z).length(), 30.0)
 	# the motion set directly: an impulse on a body created this very step used the engine's
 	# default mass (1 kg, no inertia) – the post flew off at 900 m/s and took the car with it
-	if kind == "vending":
+	if PUSHED.has(kind):
+		# shoved ahead of the bumper (a little faster than the car, so it comes free of it)
+		b.linear_velocity = dir * spd * 1.05 + Vector3.UP * minf(spd * 0.1, 2.5)
+		b.angular_velocity = Vector3(-dir.z, randf_range(-1.0, 1.0), dir.x) * clampf(spd * 0.15, 0.2, 4.0)
+		if spd > 4.0:
+			Sfx.play(self, "pole_hit", -12.0, xf.origin + Vector3(0, 0.5, 0), randf_range(1.6, 1.9))
+		stats["pushed"] = int(stats.get("pushed", 0)) + 1
+		return
+	elif kind == "vending":
 		b.linear_velocity = dir * spd * 0.35 + Vector3.UP * 1.0
 		b.angular_velocity = Vector3(-dir.z, 0, dir.x) * clampf(spd * 0.12, 0.5, 2.0)
 		Sfx.play(self, "pole_hit", -3.0, xf.origin + Vector3(0, 1.0, 0), randf_range(0.6, 0.7))
@@ -382,6 +427,34 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 		Sfx.play(self, "pole_hit", 0.0, xf.origin + Vector3(0, 1.0, 0), randf_range(0.8, 0.95) if kind.begins_with("upole") else randf_range(0.9, 1.1))
 	# the car feels it
 	car.apply_central_impulse(-dir * car.mass * spd * (0.02 if hydrant else 0.05))
+	stats["broken"] = int(stats.get("broken", 0)) + 1
+
+
+## The shelter flies apart: posts, roof, seat and the glass panel each their own piece.
+func _smash_shelter(xf: Transform3D, dir: Vector3, spd: float) -> void:
+	for part in SHELTER:
+		var b := RigidBody3D.new()
+		b.name = "ShelterPart"
+		var size: Vector3 = part[1]
+		b.mass = clampf(size.x * size.y * size.z * 400.0, 6.0, 60.0)
+		Debris.make(b)
+		b.add_collision_exception_with(_body)
+		b.continuous_cd = true
+		var mi := MeshInstance3D.new()
+		mi.mesh = _meshes["sh_" + str(part[0])]
+		b.add_child(mi)
+		var cs := CollisionShape3D.new()
+		var bx := BoxShape3D.new()
+		bx.size = Vector3(maxf(size.x, 0.08), maxf(size.y, 0.08), maxf(size.z, 0.08))
+		cs.shape = bx
+		b.add_child(cs)
+		add_child(b)
+		b.global_transform = Transform3D(xf.basis, xf * (part[2] as Vector3))
+		_debris.append(b)
+		b.linear_velocity = dir * spd * randf_range(0.35, 0.75) + Vector3.UP * randf_range(1.0, 2.5 + spd * 0.15)
+		b.angular_velocity = Vector3(randf_range(-3, 3), randf_range(-2, 2), randf_range(-3, 3)) * clampf(spd * 0.1, 0.3, 1.5)
+	Sfx.play(self, "pole_hit", 0.0, xf.origin + Vector3(0, 1.2, 0), randf_range(0.7, 0.8))
+	Sfx.play(self, "pole_hit", -4.0, xf.origin + Vector3(0, 1.5, 0), randf_range(1.5, 1.8))
 	stats["broken"] = int(stats.get("broken", 0)) + 1
 
 
@@ -485,6 +558,31 @@ func _make_meshes() -> void:
 	_meshes["stub_signal"] = _stub(0.3, 0.18, Color(0.6, 0.6, 0.62), _metal)
 	_meshes["full_vending"] = _vending_mesh()
 	_meshes["upper_vending"] = _meshes["full_vending"]
+	for k in PUSHED:
+		_meshes["full_" + k] = Props.get_mesh(k)
+		_meshes["upper_" + k] = _meshes["full_" + k]
+	# the bus shelter: one mesh drawn, a mesh per part for the pieces
+	var glass := StandardMaterial3D.new()
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.albedo_color = Color(0.75, 0.85, 0.9, 0.35)
+	glass.roughness = 0.1
+	glass.metallic = 0.3
+	var whole := MeshKit.new_st()
+	var whole_glass := MeshKit.new_st()
+	var cols := {"post": Color(0.45, 0.47, 0.5), "roof": Color(0.45, 0.47, 0.5), "seat": Color(0.5, 0.35, 0.2)}
+	for part in SHELTER:
+		var nm: String = part[0]
+		var one := MeshKit.new_st()
+		var size: Vector3 = part[1]
+		if nm == "glass":
+			MeshKit.box(one, Transform3D.IDENTITY, size, Color(1, 1, 1))
+			MeshKit.box(whole_glass, Transform3D(Basis.IDENTITY, part[2]), size, Color(1, 1, 1))
+			_meshes["sh_glass"] = MeshKit.commit(one, glass)
+		else:
+			MeshKit.box(one, Transform3D.IDENTITY, size, cols[nm])
+			MeshKit.box(whole, Transform3D(Basis.IDENTITY, part[2]), size, cols[nm])
+			_meshes["sh_" + nm] = MeshKit.commit(one, _metal)
+	_meshes["full_shelter"] = MeshKit.commit(whole_glass, glass, MeshKit.commit(whole, _metal))
 
 
 ## A signal: pole, mast arm, the lamp head (one lamp lit), the pedestrian signal.

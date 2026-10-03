@@ -21,6 +21,7 @@ var track
 var scenery
 var add_inst: Callable          # (kind, Transform3D, custom Color)
 var lamps                       # city_lamps.gd: the breakable streetlights
+var keep_clear: Array = []      # entrances of the car parks: [front centre, along, half width]
 var light: Callable             # (pos, colour, range, energy, kind)
 var rng := RandomNumberGenerator.new()
 var plates: Array = []          # [Vector2 centre, radius, Array of the street directions leaving it]
@@ -49,7 +50,7 @@ func build(p_net, p_cm, p_track, p_scenery, p_add: Callable, p_light: Callable, 
 		_markings(k)
 		_kerbs(k)
 	for p in plates:
-		_plate(p[0], p[1])
+		_plate(p)
 	_route_mouths()
 	for k in net.streets.size():
 		_furniture(k)
@@ -76,12 +77,14 @@ func _find_plates() -> void:
 		var r: float = float(ends[a][1]) * 0.5
 		var members := 1
 		var dirs: Array = [ends[a][2]]
+		var hws: Array = [float(ends[a][1]) * 0.5]
 		for b in range(a + 1, ends.size()):
 			if not used.has(b) and (ends[b][0] as Vector2).distance_to(c) < 4.0:
 				used[b] = true
 				r = maxf(r, float(ends[b][1]) * 0.5)
 				members += 1
 				dirs.append(ends[b][2])
+				hws.append(float(ends[b][1]) * 0.5)
 		if net.owner_at(c) == -3 or _near_track(c, 6.0):
 			continue
 		# where two streets meet at a sharp angle their ribbons overlap far out: cover all of it
@@ -90,7 +93,7 @@ func _find_plates() -> void:
 			for y in range(x + 1, dirs.size()):
 				var ang := acos(clampf((dirs[x] as Vector2).dot(dirs[y]), -1.0, 1.0))
 				need = maxf(need, r / maxf(tan(ang * 0.5), 0.25) + 1.5)
-		plates.append([c, minf(need, 26.0), dirs])
+		plates.append([c, minf(need, 26.0), dirs, hws])
 	for pl in plates:
 		var c: Vector2 = pl[0]
 		var key := Vector2i(int(floor(c.x / PLATE_CELL)), int(floor(c.y / PLATE_CELL)))
@@ -131,7 +134,8 @@ func _ribbon(k: int) -> void:
 	var s: Dictionary = net.streets[k]
 	var pts: PackedVector2Array = s["pts"]
 	var hw: float = float(s["w"]) * 0.5
-	var y := Y_STREET + (0.004 if s["kind"] == "ring" else 0.0) + 0.0006 * (k % 4)
+	# overlapping streets a clear step apart (no flicker where they meet), all under the plates
+	var y := Y_STREET + (0.003 if s["kind"] == "ring" else 0.0) + 0.0015 * (k % 4)
 	var v := 0.0
 	for j in pts.size() - 1:
 		var a := pts[j]
@@ -248,7 +252,74 @@ static func _normal(pts: PackedVector2Array, j: int) -> Vector2:
 	return Vector2(-t.y, t.x)
 
 
-func _plate(c: Vector2, r: float) -> void:
+## The junction's asphalt: out along every street to the plate radius, and between two neighbouring
+## streets exactly to where their kerb lines meet (an arc on the outside of a bend) – nothing pokes
+## into the pavement corners. Kerb stones follow the corners.
+func _plate(pl: Array) -> void:
+	var c: Vector2 = pl[0]
+	var r: float = pl[1]
+	var dirs: Array = pl[2]
+	var hws: Array = pl[3]
+	if dirs.size() < 2:
+		_plate_disc(c, minf(r, float(hws[0]) + 0.5))
+		return
+	var order: Array = range(dirs.size())
+	order.sort_custom(func(x, y): return (dirs[x] as Vector2).angle() < (dirs[y] as Vector2).angle())
+	var poly: Array = []           # [point, kerb along the edge to the next point?]
+	for oi in order.size():
+		var i: int = order[oi]
+		var j: int = order[(oi + 1) % order.size()]
+		var di: Vector2 = dirs[i]
+		var dj: Vector2 = dirs[j]
+		var hi: float = hws[i]
+		var hj: float = hws[j]
+		var ccw_i := Vector2(-di.y, di.x)          # i's edge towards j
+		var cw_j := Vector2(dj.y, -dj.x)           # j's edge towards i
+		poly.append([c + di * r - ccw_i * hi, false])
+		poly.append([c + di * r + ccw_i * hi, true])
+		var gap := wrapf(dj.angle() - di.angle(), 0.0, TAU)
+		if gap < PI - 0.15:
+			# the kerb lines meet: c + ccw_i*hi + s*di = c + cw_j*hj + u*dj
+			var den := di.x * (-dj.y) - di.y * (-dj.x)
+			var rhs := cw_j * hj - ccw_i * hi
+			var sv := (rhs.x * (-dj.y) - rhs.y * (-dj.x)) / den
+			sv = clampf(sv, 0.0, r)
+			poly.append([c + ccw_i * hi + di * sv, true])
+		else:
+			# the outside of a bend (or the far side of a T): round it off at the street's half-width
+			var h := maxf(hi, hj)
+			var a0 := ccw_i.angle()
+			var a1 := a0 + wrapf(cw_j.angle() - a0, 0.0, TAU)
+			var nseg := maxi(int((a1 - a0) / 0.35), 1)
+			for q in nseg + 1:
+				var a := lerpf(a0, a1, float(q) / nseg)
+				poly.append([c + Vector2(cos(a), sin(a)) * h, true])
+	var pc := Vector3(c.x, Y_PLATE, c.y)
+	var col := Color(0.66, 0.66, 0.64)
+	for q in poly.size():
+		var p0: Vector2 = poly[q][0]
+		var p1: Vector2 = poly[(q + 1) % poly.size()][0]
+		var a3 := Vector3(p0.x, Y_PLATE, p0.y)
+		var b3 := Vector3(p1.x, Y_PLATE, p1.y)
+		if (p1 - c).cross(p0 - c) > 0.0:
+			cm.quad("road", pc, b3, a3, pc, Vector3.UP, Color(1, 1, 1),
+				Vector2(0.5, c.y), Vector2(0.5, b3.z), Vector2(0.5, a3.z), Vector2(0.5, c.y))
+		else:
+			cm.quad("road", pc, a3, b3, pc, Vector3.UP, Color(1, 1, 1),
+				Vector2(0.5, c.y), Vector2(0.5, a3.z), Vector2(0.5, b3.z), Vector2(0.5, c.y))
+		# kerb stones along the corner edges (just outside the asphalt)
+		if poly[q][1] and p0.distance_to(p1) > 0.1:
+			var mid := (p0 + p1) * 0.5
+			var out := (mid - c).normalized()
+			var e := p1 - p0
+			var nrm := Vector2(-e.y, e.x).normalized()
+			if nrm.dot(out) < 0.0:
+				nrm = -nrm
+			var m3 := mid + nrm * 0.15
+			cm.box("frame", Transform3D(Basis.looking_at(Vector3(e.x, 0, e.y).normalized(), Vector3.UP), Vector3(m3.x, 0.07, m3.y)), Vector3(0.3, 0.14, e.length() + 0.05), col)
+
+
+func _plate_disc(c: Vector2, r: float) -> void:
 	var seg := 20
 	for k in seg:
 		var a0 := TAU * k / seg
@@ -322,9 +393,10 @@ func _markings(k: int) -> void:
 		if off == 0.0:
 			off = 3.0
 		var zc := e0 + dir * (off + 2.5)
-		# the lane coming in (keep left): arrows for the ways on, diamonds announcing the crossing
-		var lane_c := zc + nrm * hw * 0.5
+		# the lane coming in (keep left): arrows for the ways on, diamonds announcing the crossing –
+		# placed along the street's own curve, sized to the lane
 		var d_in := -dir
+		var lane_w := hw - 0.5
 		var ways := {}
 		for od in plate_dirs:
 			var o: Vector2 = od
@@ -337,17 +409,35 @@ func _markings(k: int) -> void:
 			else:
 				ways["right"] = true
 		if not ways.is_empty() and total > 24.0:
-			_arrow(lane_c + dir * 9.0, d_in, ways.keys(), y, white)
-		if total > 60.0:
-			_diamond(lane_c + dir * 22.0, d_in, y, white)
-		if total > 90.0:
-			_diamond(lane_c + dir * 40.0, d_in, y, white)
+			var at := _along(pts, end, off + 2.5 + 9.0)
+			_arrow(at[0] + (at[2] as Vector2) * lane_w * 0.5, -(at[1] as Vector2), ways.keys(), y, white, clampf((lane_w * 0.5 - 0.2) / 2.0, 0.4, 1.0))
+		for dd: float in ([22.0] if total > 60.0 else []) + ([40.0] if total > 90.0 else []):
+			var at := _along(pts, end, off + 2.5 + dd)
+			if not _in_plate(at[0], 3.0):
+				_diamond(at[0] + (at[2] as Vector2) * lane_w * 0.5, -(at[1] as Vector2), y, white, clampf((lane_w * 0.5 - 0.2) / 0.75, 0.5, 1.0))
 		var n := int(w / 0.9)
 		for z in n:
 			var p := zc + nrm * (-hw + 0.45 + z * 0.9)
 			_bar(p, dir, 0.45, 3.2, y, white)
 		_bar_across(zc + dir * 2.5, nrm, hw * 0.95, 0.35, y, white)
 		people_spots.append([Vector3(zc.x + nrm.x * (hw + 2.5), 0, zc.y + nrm.y * (hw + 2.5)), Vector3(-nrm.x, 0, -nrm.y)])
+
+
+## The point `d` metres along the street from its start (end 0) or its end (end 1), following the
+## curve: [point, direction into the street, left normal of that direction].
+func _along(pts: PackedVector2Array, end: int, d: float) -> Array:
+	var n := pts.size()
+	var left := d
+	for j in n - 1:
+		var a := pts[j] if end == 0 else pts[n - 1 - j]
+		var b := pts[j + 1] if end == 0 else pts[n - 2 - j]
+		var l := a.distance_to(b)
+		var t := (b - a) / maxf(l, 0.001)
+		if left <= l or j == n - 2:
+			return [a + t * minf(left, l), t, Vector2(-t.y, t.x)]
+		left -= l
+	var t0 := (pts[1] - pts[0]).normalized()
+	return [pts[0], t0, Vector2(-t0.y, t0.x)]
 
 
 func _line(a: Vector2, b: Vector2, lat: float, width: float, y: float, col: Color) -> void:
@@ -377,8 +467,8 @@ func _tri2(a: Vector2, b: Vector2, c: Vector2, y: float, col: Color) -> void:
 
 ## A lane arrow pointing along `dir` (the way the traffic goes): a shaft, and a head for each of the
 ## ways on ("straight", "left", "right").
-func _arrow(p: Vector2, dir: Vector2, ways: Array, y: float, col: Color) -> void:
-	var left := Vector2(dir.y, -dir.x)
+func _arrow(p: Vector2, dir: Vector2, ways: Array, y: float, col: Color, sc := 1.0) -> void:
+	var left := Vector2(dir.y, -dir.x) * sc
 	var base := p - dir * 2.8
 	var top := p + dir * 1.2
 	_seg(base, top, 0.22, y, col)
@@ -392,14 +482,14 @@ func _arrow(p: Vector2, dir: Vector2, ways: Array, y: float, col: Color) -> void
 		var knee := p - dir * 0.2
 		var out := knee + sd * 1.0 + dir * 0.5
 		_seg(knee, out, 0.22, y, col)
-		var fw := (sd * 0.85 + dir * 0.5).normalized()
+		var fw := (sd * 0.85 + dir * 0.5 * sc).normalized()
 		var nb := Vector2(fw.y, -fw.x)
-		_tri2(out - nb * 0.45, out + nb * 0.45, out + fw * 1.1, y, col)
+		_tri2(out - nb * 0.45 * sc, out + nb * 0.45 * sc, out + fw * 1.1 * sc, y, col)
 
 
 ## ◇ – a pedestrian crossing ahead (Japanese road marking), 5 m long.
-func _diamond(p: Vector2, dir: Vector2, y: float, col: Color) -> void:
-	var left := Vector2(dir.y, -dir.x)
+func _diamond(p: Vector2, dir: Vector2, y: float, col: Color, sc := 1.0) -> void:
+	var left := Vector2(dir.y, -dir.x) * sc
 	var f := p + dir * 2.5
 	var b := p - dir * 2.5
 	var l := p + left * 0.75
@@ -462,6 +552,16 @@ func _disc(c: Vector2, r: float, y: float, col: Color) -> void:
 		cm.quad("line", pc, pc + Vector3(cos(a0) * r, 0, sin(a0) * r), pc + Vector3(cos(a1) * r, 0, sin(a1) * r), pc, Vector3.UP, col)
 
 
+## In front of a car park's entrance (nothing may stand there)?
+func _at_entrance(p: Vector2) -> bool:
+	for e in keep_clear:
+		var rel: Vector2 = p - (e[0] as Vector2)
+		var along: Vector2 = e[1]
+		if absf(rel.dot(along)) < float(e[2]) + 1.5 and absf(rel.dot(Vector2(-along.y, along.x))) < 14.0:
+			return true
+	return false
+
+
 ## Kerb stones along both edges (visual; the pavement behind them is level with the road).
 func _kerbs(k: int) -> void:
 	var s: Dictionary = net.streets[k]
@@ -519,6 +619,8 @@ func _furniture(k: int) -> void:
 			if _in_plate(p, 3.0) or _near_track(p, 4.0):
 				continue
 			for si in 2:
+				if _at_entrance(p + nrm * (-1.0 if si == 0 else 1.0) * (hw + 2.0)):
+					continue
 				var side := -1.0 if si == 0 else 1.0
 				var kerb := p + nrm * side * (hw + 0.6)
 				var walk := p + nrm * side * (hw + 2.2)
@@ -691,12 +793,13 @@ func _misc(p: Vector3, face: Vector3, along: Vector2) -> void:
 		for k in rng.randi_range(2, 5):
 			add_inst.call("bicycle", Transform3D(Basis.looking_at(face, Vector3.UP).rotated(Vector3.UP, PI * 0.5 + rng.randf_range(-0.1, 0.1)), p + Vector3(along.x, 0, along.y) * (k * 0.7)), Color(1, 1, 1, 1))
 	elif r < 0.65:
-		add_inst.call("bench", Transform3D(basis.rotated(Vector3.UP, PI), p), Color(1, 1, 1, 1))
-		add_inst.call("bin", Transform3D(basis, p + Vector3(along.x, 0, along.y) * 1.5), Color(1, 1, 1, 1))
+		# pushed about by the cars (city_lamps.gd)
+		lamps.add_prop("bench", p, -face)
+		lamps.add_prop("bin", p + Vector3(along.x, 0, along.y) * 1.5, face)
 	elif r < 0.75:
 		add_inst.call("postbox", Transform3D(basis, p), Color(1, 1, 1, 1))
 	elif r < 0.85:
-		add_inst.call("bin", Transform3D(basis, p), Color(1, 1, 1, 1))
+		lamps.add_prop("bin", p, face)
 	else:
 		_bus_stop(p, face, along)
 
@@ -704,16 +807,14 @@ func _misc(p: Vector3, face: Vector3, along: Vector2) -> void:
 func _bus_stop(p: Vector3, face: Vector3, along: Vector2) -> void:
 	var basis := Basis.looking_at(face, Vector3.UP)
 	var col := Color(0.45, 0.47, 0.5, 0.5)
-	for x: float in [-1.6, 1.6]:
-		cm.box("metal", Transform3D(basis, p + basis.x * x + Vector3(0, 1.2, 0) - face * 0.6), Vector3(0.1, 2.4, 0.1), col)
-	cm.box("metal", Transform3D(basis, p + Vector3(0, 2.45, 0) - face * 0.2), Vector3(3.6, 0.1, 1.6), col)
-	cm.box("frame", Transform3D(basis, p + Vector3(0, 0.45, 0) - face * 0.7), Vector3(2.4, 0.08, 0.4), Color(0.5, 0.35, 0.2))
+	# posts, roof, seat and glass: smashed apart by a car (city_lamps.gd); the ad panel and the
+	# stop sign stay
+	lamps.add_prop("shelter", p, face)
 	# the lit ad panel at one end, the stop sign at the kerb
 	var ad_basis := Basis.looking_at(Vector3(along.x, 0, along.y), Vector3.UP)
 	cm.sign_box(Transform3D(ad_basis, p + basis.x * 1.75 + Vector3(0, 1.25, 0) - face * 0.2), Vector3(1.2, 1.8, 0.12), CityAtlas.ad(rng.randi()), 1.0, true)
 	cm.box("metal", Transform3D(basis, p + face * 1.2 + Vector3(0, 1.3, 0)), Vector3(0.08, 2.6, 0.08), col)
 	cm.sign_box(Transform3D(basis.rotated(Vector3.UP, PI), p + face * 1.2 + Vector3(0, 2.5, 0)), Vector3(0.5, 0.5, 0.05), CityAtlas.misc(6), 0.6, true)
-	light.call(p + Vector3(0, 2.2, 0), Color(0.9, 0.95, 1.0), 6.0, 1.0, 0)
 	stats["bus_stops"] = int(stats.get("bus_stops", 0)) + 1
 
 

@@ -149,6 +149,24 @@ class Buf:
 	var c := PackedColorArray()
 	var uv := PackedVector2Array()
 
+## Paint on the road: drawn a hair towards the camera (0.15 % of the distance), so the markings never
+## flicker against the asphalt, the junction plates or each other, near or far.
+const LINE_SHADER := """
+shader_type spatial;
+render_mode cull_disabled;
+varying vec4 vc;
+void vertex() {
+	vc = COLOR;
+	vec4 vp = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vp.xyz *= 0.9985;
+	POSITION = PROJECTION_MATRIX * vp;
+}
+void fragment() {
+	ALBEDO = vc.rgb;
+	ROUGHNESS = 0.6;
+}
+"""
+
 # a unit box (corners at ±0.5) as 36 vertices with normals; the mirrored variant for bases with a
 # negative determinant (winding reversed)
 static var _box_v: PackedVector3Array
@@ -176,9 +194,9 @@ func _init(p_road_material: Material) -> void:
 	gl.shader.code = GLOW_SHADER
 	mats["glow"] = gl
 	mats["sign"] = CityAtlas.material()
-	var line := StandardMaterial3D.new()
-	line.vertex_color_use_as_albedo = true
-	line.roughness = 0.6
+	var line := ShaderMaterial.new()
+	line.shader = Shader.new()
+	line.shader.code = LINE_SHADER
 	mats["line"] = line
 	mats["road"] = road_material
 	if _box_v.is_empty():

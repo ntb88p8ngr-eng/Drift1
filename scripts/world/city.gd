@@ -128,6 +128,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_crossing_plazas()
 	var runs := _slots()
 	_layout_specials(runs)
+	_drive_ins()
 	await Game.load_tick()
 	_layout_frontage(runs)
 	await Game.load_tick()
@@ -166,6 +167,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	lamps.emitters = emitters
 	add_child(lamps)
 	streets.lamps = lamps
+	streets.keep_clear = drive_ins
 	cm.ground = func(x: float, z: float) -> float: return maxf(float(terrain.height_at(x, z)), 0.0)
 	streets.build(net, cm, track, scenery, _add, _light, self)
 	cm.ground = Callable()
@@ -480,6 +482,35 @@ func _shuffle(a: Array) -> void:
 		var tmp = a[i]
 		a[i] = a[j]
 		a[j] = tmp
+
+
+## The lots a car drives into (car parks, the gas station): the entrance in front of each is kept
+## free of street furniture and parking bays, and the race route's barrier opens in front of it.
+const DRIVE_IN := ["supermarket", "garage", "coin_parking", "gas"]
+var drive_ins: Array = []      # [front centre: Vector2, along: Vector2, half width]
+
+
+func _drive_ins() -> void:
+	var gaps := false
+	for l in lots:
+		if not DRIVE_IN.has(l[0]):
+			continue
+		var lot: Dictionary = l[1]
+		var c: Vector3 = lot["c"]
+		var az: Vector3 = lot["az"]
+		var ax: Vector3 = lot["ax"]
+		var front := c - az * float(lot["d"]) * 0.5
+		var half := clampf(float(lot["w"]) * 0.3, 4.0, 9.0)
+		drive_ins.append([Vector2(front.x, front.z), Vector2(ax.x, ax.z).normalized(), half])
+		# on the race route: an opening in its barrier
+		var pr: Array = track.project(front - az * 1.0, -1)
+		var i: int = pr[0]
+		var off: float = maxf(float(track.off_left[i]), float(track.off_right[i]))
+		if absf(float(pr[2])) < off + StreetNet.SIDEWALK + 6.0 and float(track.samples[i].y) < 0.15:
+			track.wall_gaps.append([fposmod(float(pr[1]) - half - 2.0, track.length), fposmod(float(pr[1]) + half + 2.0, track.length), signf(float(pr[2]))])
+			gaps = true
+	if gaps:
+		track.rebuild_walls()
 
 
 ## Buildings along every building line: their type, size and height by the area (high-rise district,
