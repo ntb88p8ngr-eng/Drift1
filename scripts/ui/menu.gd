@@ -37,6 +37,7 @@ var _start_btn: Button
 var _lan_list: VBoxContainer
 var _color_picker: ColorPickerButton
 var _car_desc: Label
+var _buy_row: HBoxContainer
 var _car_stats: VBoxContainer
 var _tuning_box: VBoxContainer
 var _lb_track := 0
@@ -442,16 +443,38 @@ func _build_garage() -> void:
 	name_edit.custom_minimum_size = Vector2(300, 42)
 	name_edit.text_changed.connect(func(t): Game.set_setting("player_name", t.strip_edges() if t.strip_edges() != "" else "Driver"))
 	_add(UiKit.labeled("Fahrername", name_edit))
+	# the cars: owned ones, the shop (with prices) and the unlocked easter eggs
+	var cars: Array = Game.garage_cars()
 	var car_names: Array = []
 	var car_idx := 0
-	for i in Game.CAR_ORDER.size():
-		car_names.append(Game.CARS[Game.CAR_ORDER[i]]["name"])
-		if Game.CAR_ORDER[i] == Game.settings["car"]:
+	for i in cars.size():
+		var id: String = cars[i]
+		var label: String = Game.CARS[id]["name"]
+		if not Game.owns_car(id):
+			label = "🔒 %s – %s Cr" % [label, Game.format_points(Game.car_price(id))]
+		elif bool(Game.CARS[id].get("egg", false)):
+			label = "★ " + label
+		car_names.append(label)
+		if id == Game.settings["car"]:
 			car_idx = i
+	_buy_row = HBoxContainer.new()
 	_add(UiKit.labeled("Auto", UiKit.option(car_names, car_idx, func(i):
-		Game.set_setting("car", Game.CAR_ORDER[i])
+		Game.set_setting("car", cars[i])
 		_update_car_info()
 		main.refresh_showroom(true))))
+	_add(_buy_row)
+	# action codes (easter eggs, gifts from the admin)
+	var code_edit := LineEdit.new()
+	code_edit.placeholder_text = "Code eingeben"
+	code_edit.custom_minimum_size = Vector2(200, 40)
+	var redeem := func():
+		var r: Array = Game.redeem_code(code_edit.text)
+		code_edit.text = ""
+		show_status(str(r[1]), UiKit.GOOD if bool(r[0]) else UiKit.BAD)
+		if bool(r[0]):
+			_build_garage_again.call_deferred()
+	code_edit.text_submitted.connect(func(_t): redeem.call())
+	_add(UiKit.labeled("Aktionscode", UiKit.row([code_edit, UiKit.button("Einlösen", redeem, 140)])))
 	var paint_names: Array = []
 	var paint_idx := 0
 	for i in Game.PAINTS.size():
@@ -529,9 +552,39 @@ func _build_garage() -> void:
 		show_screen(_return_to))
 
 
+func _build_garage_again() -> void:
+	var msg := _status_text()
+	show_screen("garage")
+	show_status(msg, UiKit.GOOD)
+
+
+func _status_text() -> String:
+	return _status.text if _status else ""
+
+
+## Buy button for a car not owned yet.
+func _update_buy_row(car_id: String) -> void:
+	if _buy_row == null:
+		return
+	for c in _buy_row.get_children():
+		c.queue_free()
+	if Game.owns_car(car_id):
+		return
+	var price := Game.car_price(car_id)
+	_buy_row.add_child(UiKit.label("Noch nicht gekauft – du hast %s Cr" % Game.format_points(int(Game.settings["credits"])), 17, UiKit.TEXT_DIM))
+	_buy_row.add_child(UiKit.button("Kaufen für %s Cr" % Game.format_points(price), func():
+		var err := Game.buy_car(car_id)
+		if err != "":
+			show_status(err, UiKit.BAD)
+			return
+		show_screen("garage")
+		show_status("%s gekauft!" % Game.CARS[car_id]["name"], UiKit.GOOD), 300))
+
+
 func _update_car_info() -> void:
 	var car_id: String = Game.settings["car"]
 	var car: Dictionary = Game.get_car(car_id)
+	_update_buy_row(car_id)
 	_car_desc.text = str(car["desc"])
 	for c in _car_stats.get_children():
 		c.queue_free()

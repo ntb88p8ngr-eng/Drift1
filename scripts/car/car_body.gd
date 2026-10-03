@@ -108,6 +108,24 @@ const MODELS := {
 		"head": [[-0.636, 0.582, -2.051], [0.636, 0.582, -2.051]], "tail": [[-0.677, 0.767, 2.048], [0.677, 0.767, 2.048]],
 		"exhaust": [[-0.13, 0.36, 2.26], [0.0, 0.33, 2.27], [0.13, 0.36, 2.26]], "exhaust_r": 0.05,
 	},
+	"supra": {
+		"path": "res://assets/cars/supra.glb", "wheel_r": 0.308, "wheel_w": 0.266, "track": 0.788,
+		"axle_f": -1.277, "axle_r": 1.277, "length": 4.515, "half_width": 0.92, "base": 0.064, "roof": 1.195,
+		"head": [[-0.531, 0.531, -1.936], [0.532, 0.531, -1.935]], "tail": [[-0.383, 0.739, 2.126], [0.383, 0.739, 2.126]],
+		"exhaust": [[-0.522, 0.265, 2.2]], "exhaust_r": 0.05,
+	},
+	"yaris": {
+		"path": "res://assets/cars/yaris.glb", "wheel_r": 0.307, "wheel_w": 0.212, "track": 0.731,
+		"axle_f": -1.194, "axle_r": 1.194, "length": 3.66, "half_width": 0.86, "base": 0.187, "roof": 1.5,
+		"head": [[-0.656, 0.694, -1.658], [0.656, 0.694, -1.658]], "tail": [[-0.673, 0.86, 1.531], [0.673, 0.86, 1.531]],
+		"exhaust": [[-0.42, 0.22, 1.8]], "exhaust_r": 0.025,
+	},
+	"m6gt3": {
+		"path": "res://assets/cars/m6gt3.glb", "wheel_r": 0.367, "wheel_w": 0.33, "track": 0.865,
+		"axle_f": -1.419, "axle_r": 1.419, "length": 4.94, "half_width": 1.03, "base": 0.042, "roof": 1.336,
+		"head": [[-0.668, 0.564, -1.93], [0.666, 0.566, -1.929]], "tail": [[-0.562, 0.737, 2.293], [0.568, 0.735, 2.291]],
+		"exhaust": [[-0.98, 0.2, 0.8], [0.98, 0.2, 0.8]], "exhaust_r": 0.045,
+	},
 	"m4f82": {
 		"path": "res://assets/cars/m4f82.glb", "wheel_r": 0.302, "wheel_w": 0.23, "track": 0.725,
 		"axle_f": -1.427, "axle_r": 1.427, "length": 4.67, "half_width": 0.935, "base": 0.141, "roof": 1.318,
@@ -903,13 +921,18 @@ func _build_interior() -> void:
 # ---------------------------------------------------------------------------
 ## Rim tuning: [name, spokes, twin spokes]; 0 = the car's own wheels.
 const RIM_STYLES := [["Original", 0, false], ["5 Speichen", 5, false], ["Doppelspeichen", 5, true], ["10 Speichen", 10, false],
-	["Y-Speichen", 6, true], ["8 Speichen", 8, false], ["Turbofan", 20, false]]
+	["Y-Speichen", 6, true], ["8 Speichen", 8, false], ["Turbofan", 20, false],
+	["JDM Mesh", -1, false], ["JDM Sechsspeichen", -2, false], ["JDM Gold", -3, false], ["JDM Tiefbett", -4, false]]
+## The modelled wheels of the JDM rim pack (tools/convert_rims.py): style spokes -n -> jdm_<n>.glb
+const RIM_GLB := "res://assets/cars/rims/jdm_%d.glb"
+static var _rim_scenes := {}
 ## [name, colour, roughness]
 const RIM_COLORS := [["Silber", Color(0.75, 0.76, 0.78), 0.28], ["Schwarz", Color(0.04, 0.04, 0.045), 0.35],
 	["Gunmetal", Color(0.22, 0.23, 0.25), 0.3], ["Gold", Color(0.78, 0.57, 0.2), 0.25], ["Bronze", Color(0.45, 0.28, 0.14), 0.3],
 	["Weiß", Color(0.9, 0.9, 0.9), 0.35], ["Chrom", Color(0.95, 0.95, 0.97), 0.04]]
 var wheel_r := 0.33
 var wheel_w := 0.24
+var model_root: Node3D         # the imported body (the wheels are separate): squashed by the "jelly" cars
 
 
 ## Puts the chosen rims on all four wheels (style 0: the car's own again).
@@ -917,10 +940,22 @@ func apply_rims(cfg: Dictionary) -> void:
 	var style := clampi(int(cfg.get("style", 0)), 0, RIM_STYLES.size() - 1)
 	var ci := clampi(int(cfg.get("color", 0)), 0, RIM_COLORS.size() - 1)
 	var mesh: ArrayMesh = null
+	var model: PackedScene = null
+	var model_size := Vector2.ONE       # its tyre radius, width
 	if style > 0:
 		var st: Array = RIM_STYLES[style]
 		var cl: Array = RIM_COLORS[ci]
-		mesh = _make_wheel(wheel_r, wheel_w, int(st[1]), bool(st[2]), cl[1], float(cl[2]), "%d_%d" % [style, ci])
+		if int(st[1]) < 0:
+			var n := -int(st[1])
+			if not _rim_scenes.has(n):
+				var path := RIM_GLB % n
+				var info = JSON.parse_string(FileAccess.get_file_as_string(path.get_basename() + ".json"))
+				_rim_scenes[n] = [load(path) if ResourceLoader.exists(path) else null,
+					Vector2(float(info["radius"]), float(info["width"])) if info is Dictionary else Vector2(0.29, 0.5)]
+			model = _rim_scenes[n][0]
+			model_size = _rim_scenes[n][1]
+		else:
+			mesh = _make_wheel(wheel_r, wheel_w, int(st[1]), bool(st[2]), cl[1], float(cl[2]), "%d_%d" % [style, ci])
 	for i in wheel_nodes.size():
 		var spin: Node3D = wheel_nodes[i][1]
 		var old := spin.get_node_or_null("CustomRim")
@@ -928,8 +963,17 @@ func apply_rims(cfg: Dictionary) -> void:
 			spin.remove_child(old)
 			old.free()
 		for c in spin.get_children():
-			(c as Node3D).visible = mesh == null
-		if mesh:
+			(c as Node3D).visible = mesh == null and model == null
+		if model:
+			var w := model.instantiate() as Node3D
+			w.name = "CustomRim"
+			# the pack's wheel scaled to this car's tyre size (its face looks along +X)
+			var k := wheel_r / model_size.x
+			w.scale = Vector3(wheel_w / model_size.y, k, k)
+			if i % 2 == 0:
+				w.rotation.y = PI
+			spin.add_child(w)
+		elif mesh:
 			var mi := MeshKit.mesh_instance(mesh)
 			mi.name = "CustomRim"
 			if i % 2 == 0:
@@ -1090,6 +1134,7 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 	var packed: PackedScene = load(m["path"])
 	var inst := packed.instantiate()
 	add_child(inst)
+	model_root = inst
 	var replace := {
 		"md_paint": paint_mat, "md_glass": glass_mat, "md_head_lens": head_mat, "md_tail": tail_mat,
 		"md_indicator": indicator_mat, "md_chrome": TexKit.chrome(), "md_mirror": TexKit.chrome(),

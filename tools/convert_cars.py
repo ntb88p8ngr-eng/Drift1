@@ -193,6 +193,39 @@ CARS = {
     },
 }
 
+# Easter-egg cars (unlocked with action codes)
+CARS["m6gt3"] = {
+    # BMW M6 GT3 in its own livery (one texture atlas: kept, never repainted)
+    "length": 4.94, "subsurf": 0, "body_tris": 110000, "wheel_tris": 6000, "textured": True, "unsteer": True,
+    "exclude": ["Object_5.006", "Cube.001"],
+    "materials": {
+        "A-Body": "keep", "A-Glass": "glass", "headlightsglass": "head_lens", "HEADLIGHT": "head_inner",
+        "rEDlIGHT": "tail", "yELOWlIGHT": "tail", "BACKLIGHTGLASS": "tail", "DETAILS": "black",
+        "BLACKCHROME": "black", "CHROME": "chrome", "material_18": "rim", "tire": "keep", "BRAKEDISC": "keep",
+        "SUPORT1": "keep", "BLUERED": "keep", None: "black",
+    },
+    "object_class": {},
+    "wheel_parts": ["Object_5.002", "Object_5.004", "Object_5.005"],
+    "caliper_parts": [],
+    "split_x": ["Object_5.002"],
+}
+
+CARS["supra"] = {
+    # Toyota Supra A80 from Wangan Midnight (low poly, own plate texture)
+    "length": 4.515, "subsurf": 0, "body_tris": 40000, "wheel_tris": 3000, "textured": True,
+    "exclude": [],
+    "materials": {
+        "paint1": "paint", "dark1": "black", "dark2": "trim", "dark3": "black", "brakelight": "tail",
+        "tailights": "tail", "blinker": "indicator", "reverse": "white", "headlight": "head_lens",
+        "foglight": "head_lens", "glass": "glass", "Material.001": "keep", "metal1": "chrome", "metal2": "metal",
+        "disc2": "disc", "caliper1": "caliper", "tyre1": "tyre", None: "black",
+    },
+    "object_materials": {n: {"metal1": "rim"} for n in ("wheel.001", "wheel.002", "wheel.003", "wheel.004")},
+    "object_class": {},
+    "wheel_parts": ["FL", "FR", "RL", "RR"],
+    "caliper_parts": [],
+}
+
 # NPC traffic cars (city streets): a detailed model for close up and a light one for the distance
 TRAFFIC = {
     "camry": {
@@ -274,7 +307,51 @@ TRAFFIC = {
                           "Stop_lights_inside": 3000, "Headlights_Inside": 3000, "Side_Mirrors": 2000,
                           "Front_Wipers": 800, "Rear_Wiper": 400, "Exhaust": 800, "Fog_lights": 1200},
     },
+    "s13": {
+        "length": 4.52, "subsurf": 0, "body_tris": 14000, "wheel_tris": 900, "front_pos_y": True,
+        "exclude": ["Object_10"],
+        "materials": {
+            "Paint": "paint", "Black": "black", "Disk": "disc", "Exhaust": "metal", "Interior": "black",
+            "Licence_Plate": "white", "Mirrors": "mirror", "Orange_Lights": "indicator", "Red_Lights": "tail",
+            "Rims": "rim", "Tire": "tyre", "White_Lights": "head_lens", "Windows": "glass", None: "black",
+        },
+        "object_class": {},
+        "wheel_parts": ["Front Left Wheel_0", "Front Right Wheel_1", "Rear Wheels_2"],
+        "caliper_parts": [],
+        "split_x": ["Object_23", "Object_24", "Object_25"],
+    },
+    "yaris": {
+        "length": 3.66, "subsurf": 0, "body_tris": 14000, "wheel_tris": 900,
+        # the interior, engine and suspension are not seen from outside
+        "exclude": ["Object_10", "Object_11", "Object_12", "Object_19", "Object_29", "Object_30", "Object_31", "Object_32",
+                    "Object_35", "Object_36", "Object_37", "Object_38", "Object_39", "Object_40", "Object_42", "Object_43",
+                    "Object_45", "Object_46"],
+        "materials": {
+            "WCCARBODY": "paint", "11234531453DFGD": "black", "VEHICLEGENERIC256": "black", "01_-_Default": "head_inner",
+            "FF000000": "black", "ext_g": "glass", "Material_1490": "chrome", "GRILL": "grille", "farol": "indicator",
+            "faroler": "tail", "FOCOSDELYAR": "head_lens", "43434": "tail", "Material_1449": "tail", "Material_25": "black",
+            "13_-_Defaultd": "black", "VITZ_FR": "trim", "VITZ_PLASTIC": "black", "misc": "black", "Material_25bb": "black",
+            "fh_tire": "tyre", "fh_rim3": "rim", "fh_blacktrim": "black", "fh_chrome": "chrome", "fh_lettering": "white",
+            None: "black",
+        },
+        "object_class": {},
+        "wheel_parts": ["fh_blacktrim-material.005_0", "fh_blacktrim-material.001_2", "fh_blacktrim-material.002_3",
+                        "fh_blacktrim-material.003_4"],
+        "caliper_parts": [],
+    },
+    "ktruck": {
+        # the "Moo Moo Dairy" kei box truck: one textured atlas; its wheels are part of the body mesh
+        "length": 3.39, "subsurf": 0, "body_tris": 14000, "wheel_tris": 900, "textured": True,
+        "exclude": ["Object_4", "Object_5", "Object_6"],
+        "materials": {"K_truk_b": "keep", None: "black"},
+        "object_class": {},
+        "wheel_parts": [],
+        "caliper_parts": [],
+        "wheel_islands": {"zmax": 135.0, "maxsize": 190.0},
+    },
 }
+# the "Bouncing Yaris" as a car to drive (easter egg): the traffic model in full detail
+CARS["yaris_hi"] = dict(TRAFFIC["yaris"], body_tris=60000, wheel_tris=5000)
 for _k, _cfg in list(TRAFFIC.items()):
     CARS[_k] = _cfg
     CARS[_k] = dict(_cfg, wheel_tris=_cfg.get("wheel_tris_hi", _cfg["wheel_tris"]))
@@ -407,7 +484,11 @@ def proc_wheel(R, W, class_mats, seg=32, spokes=5):
 def main():
     car_id, src, out = sys.argv[-3], sys.argv[-2], sys.argv[-1]
     cfg = CARS[car_id]
-    bpy.ops.wm.open_mainfile(filepath=src)
+    if src.lower().endswith((".glb", ".gltf")):
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        bpy.ops.import_scene.gltf(filepath=src)
+    else:
+        bpy.ops.wm.open_mainfile(filepath=src)
     scene = bpy.context.scene
     for ob in scene.objects:
         for m in getattr(ob, "modifiers", []):
@@ -476,18 +557,68 @@ def main():
         # materials.clear() resets the per-face indices, so keep and restore them
         face_idx = [0] * len(me.polygons)
         me.polygons.foreach_get("material_index", face_idx)
+        src_mats = list(me.materials)
         me.materials.clear()
-        for c in classes:
-            me.materials.append(class_mats[c])
+        for c, sm in zip(classes, src_mats + [None] * (len(classes) - len(src_mats))):
+            if c == "keep" and sm is not None:
+                # textured: the source material with its image, renamed so the game knows to keep it
+                if not sm.name.startswith("md_keep_"):
+                    sm.name = "md_keep_" + "".join(ch if ch.isalnum() else "_" for ch in sm.name)
+                me.materials.append(sm)
+            else:
+                me.materials.append(class_mats["black" if c == "keep" else c])
         face_idx = [min(i, len(classes) - 1) for i in face_idx]
         me.polygons.foreach_set("material_index", face_idx)
         for pref, cap in cfg.get("part_max_tris", {}).items():
             if matches(ob.name, [pref]):
                 me = decimate_mesh(me, cap)
         parts.append({"name": ob.name, "kind": kind, "mesh": me})
+    # wheels modelled into the body: its loose parts that are low and small enough to be a wheel
+    wi = cfg.get("wheel_islands")
+    if wi:
+        for p in list(parts):
+            if p["kind"] != "body":
+                continue
+            bm = bmesh.new()
+            bm.from_mesh(p["mesh"])
+            seen = set()
+            wheel_faces = set()
+            for f in bm.faces:
+                if f.index in seen:
+                    continue
+                comp, stack = [], [f]
+                seen.add(f.index)
+                while stack:
+                    g = stack.pop()
+                    comp.append(g)
+                    for e in g.edges:
+                        for h in e.link_faces:
+                            if h.index not in seen:
+                                seen.add(h.index)
+                                stack.append(h)
+                vs = [v.co for g in comp for v in g.verts]
+                mn = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
+                mx = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
+                if mx.z < wi["zmax"] and (mx - mn).length < wi["maxsize"] and (mx.z - mn.z) > wi["zmax"] * 0.4:
+                    wheel_faces.update(g.index for g in comp)
+            bm.free()
+            if wheel_faces:
+                idx = {i for i in wheel_faces}
+                counter = {"i": -1}
+                me = p["mesh"]
+                centres = [poly.center.copy() for poly in me.polygons]
+                keep = {tuple(round(c, 5) for c in centres[i]) for i in idx}
+                body, wheels = split_mesh(me, lambda c: tuple(round(x, 5) for x in c) not in keep)
+                p["mesh"] = body
+                parts.append({"name": p["name"] + "_wheels", "kind": "wheel", "mesh": wheels})
+                log("wheel islands", len(idx), "faces from", p["name"])
+        # all four in one mesh: cut into corners (below)
+        cfg.setdefault("split_quad", [])
+        cfg["split_quad"] = list(cfg["split_quad"]) + [p["name"] for p in parts if p["name"].endswith("_wheels")]
     # objects that hold the wheels of both sides (split at the car's centre line)
     for p in list(parts):
-        if p["kind"] == "wheel" and matches(p["name"], cfg.get("split_x", [])):
+        sx = cfg.get("split_x", [])
+        if p["kind"] == "wheel" and (matches(p["name"], sx) or any(p["name"].startswith(x + "_") for x in sx)):
             a, b = split_mesh(p["mesh"], lambda c: c.x < 0.0)
             p["mesh"] = a
             parts.append({"name": p["name"] + "_r", "kind": "wheel", "mesh": b})
@@ -730,7 +861,7 @@ def main():
     for o in finals:
         o.select_set(True)
     bpy.ops.export_scene.gltf(filepath=out, export_format="GLB", use_selection=True, export_yup=True,
-                              export_apply=False, export_texcoords=False, export_normals=True,
+                              export_apply=False, export_texcoords=bool(cfg.get("textured")), export_normals=True,
                               export_materials="EXPORT", export_cameras=False, export_lights=False,
                               export_extras=False, export_animations=False)
     with open(out + ".json", "w") as f:

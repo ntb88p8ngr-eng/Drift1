@@ -142,6 +142,16 @@ var esp_on := false
 var abs_active := false
 var esp_active := false
 var yaw_damp := 0.0            # per car: extra yaw damping while sliding (keeps light, powerful cars calmer)
+## The "Bouncing Yaris": springs that never settle (energy fed in on every rebound) and a body that
+## wobbles like jelly. The wobble is worked out from how the drawn car moves, so remote players see
+## exactly the same on their screens (their motion comes over the network).
+var bounce := 0.0
+var jelly := 0.0
+var _jelly := Vector3.ZERO       # squash (y), lean sideways (x), lean fore/aft (z)
+var _jelly_v := Vector3.ZERO
+var _jelly_vel := Vector3.ZERO   # last drawn velocity
+var _jelly_pos := Vector3.ZERO
+var _jelly_init := false
 var braking_visual := false
 var track_hint := -1
 var surface_name := "asphalt"
@@ -198,9 +208,14 @@ func _ready() -> void:
 	steer_lock = deg_to_rad(float(spec["steer_lock"]))
 	spin_hold = float(spec.get("spin_hold", SPIN_HOLD))
 	yaw_damp = float(spec.get("yaw_damp", 0.0))
+	bounce = float(spec.get("bounce", 0.0))
+	jelly = float(spec.get("jelly", 0.0))
 	var static_load := mass * 9.8 / 4.0
 	spring_k = static_load / SAG
 	damper_c = 2.0 * 0.38 * sqrt(spring_k * mass / 4.0)
+	if bounce > 0.0:
+		spring_k *= 0.7
+		damper_c *= 0.05
 	antiroll_k = spring_k * 0.35
 	if not is_display:
 		_apply_tuning(tuning_override if not tuning_override.is_empty() else Game.get_tuning(car_id))
@@ -438,6 +453,8 @@ func _process(delta: float) -> void:
 		return
 	# the body mesh is drawn at an interpolated transform so it moves smoothly at any frame rate
 	body.global_transform = visual_transform()
+	if jelly > 0.0:
+		_update_jelly(delta)
 	_update_wheel_visuals(delta)
 	_update_lights()
 
@@ -805,6 +822,9 @@ func _simulate(delta: float) -> void:
 		var compression := SUSP_TRAVEL + lift - spring_len
 		var comp_vel := (compression - float(w["prev_compression"])) / delta
 		var f_susp := spring_k * compression + damper_c * comp_vel
+		if bounce > 0.0 and absf(linear_velocity.dot(up)) < 1.4:
+			# negative damping: every rebound gets a little more push – it bounces and hops for ever
+			f_susp -= comp_vel * spring_k * 0.018 * bounce
 		if spring_len < 0.03:
 			f_susp += spring_k * 3.0 * (0.03 - spring_len)
 		f_susp = maxf(f_susp, 0.0)
@@ -1069,6 +1089,35 @@ func _check_flip(delta: float) -> void:
 
 
 ## Car transform interpolated between the last two physics steps (smooth at any frame rate).
+## Squash and stretch of the body from the drawn car's acceleration (a damped wobble).
+func _update_jelly(delta: float) -> void:
+	if body.model_root == null or delta <= 0.0:
+		return
+	var xf := body.global_transform
+	if not _jelly_init:
+		_jelly_init = true
+		_jelly_pos = xf.origin
+		return
+	var vel := (xf.origin - _jelly_pos) / delta
+	_jelly_pos = xf.origin
+	var acc := (vel - _jelly_vel) / delta
+	_jelly_vel = vel
+	acc = acc.limit_length(60.0)
+	var local := xf.basis.inverse() * acc
+	# a stiff, barely damped spring: the body keeps wobbling after every bump
+	var k := 180.0
+	var c := 3.2
+	var force := Vector3(-local.x * 0.0022, -local.y * 0.003, -local.z * 0.0016) * k * jelly
+	var a := force - _jelly * k - _jelly_v * c
+	_jelly_v += a * delta
+	_jelly += _jelly_v * delta
+	_jelly = _jelly.clamp(Vector3(-0.12, -0.16, -0.1), Vector3(0.12, 0.16, 0.1))
+	var sy := 1.0 + _jelly.y
+	var sxz := 1.0 / sqrt(maxf(sy, 0.5))   # keeps its volume: squashed flat, it bulges out
+	var shear := Basis(Vector3(1, 0, 0), Vector3(_jelly.x, 1, _jelly.z), Vector3(0, 0, 1))
+	body.model_root.transform = Transform3D(shear * Basis.from_scale(Vector3(sxz, sy, sxz)), Vector3.ZERO)
+
+
 func visual_transform() -> Transform3D:
 	if is_display:
 		return global_transform

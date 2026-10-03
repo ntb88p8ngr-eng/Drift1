@@ -93,8 +93,31 @@ const CARS := {
 		"final": 2.87, "rear_split": 0.72, "turbo": 0.0, "grip": 1.14, "steer_lock": 40.0, "engine": "v12",
 		"burble": 3, "transmission": "auto", "desc": "6.5-Liter-V12 mit 700 PS und Allrad – brutal schnell, Flammen beim Gaswegnehmen.",
 	},
+	"supra": {
+		"name": "Toyota Supra (Wangan Midnight)", "mass": 1460.0, "torque": 650.0, "tach": 9000.0,
+		"redline": 8000.0, "idle": 850.0, "gears": [3.83, 2.36, 1.69, 1.31, 1.0, 0.79], "reverse": 3.28,
+		"final": 3.27, "rear_split": 1.0, "turbo": 0.6, "grip": 1.06, "steer_lock": 46.0, "engine": "i6tt",
+		"burble": 2, "transmission": "auto", "desc": "2JZ-Biturbo-Reihensechser, auf 600 PS gebracht – gebaut für die Wangan bei Nacht.",
+	},
+	# easter eggs: only through an action code (see EGG_CODES), never in the shop
+	"yaris": {
+		"name": "Toyota Yaris (Bouncing)", "mass": 960.0, "torque": 124.0, "tach": 8000.0,
+		"redline": 6500.0, "idle": 800.0, "gears": [3.55, 1.9, 1.31, 1.03, 0.82], "reverse": 3.25,
+		"final": 4.31, "rear_split": 0.0, "turbo": 0.0, "grip": 1.0, "steer_lock": 42.0, "engine": "i6na",
+		"burble": 0, "transmission": "auto", "egg": true,
+		# the suspension never settles and the body wobbles like jelly (the "Bouncing Yaris" meme)
+		"bounce": 1.0, "jelly": 1.0,
+		"desc": "1.3 VVT-i, 87 PS – und eine Federung, die nie zur Ruhe kommt.",
+	},
+	"m6gt3": {
+		"name": "BMW M6 GT3", "mass": 1300.0, "torque": 700.0, "tach": 8000.0,
+		"redline": 7200.0, "idle": 950.0, "gears": [3.0, 2.2, 1.73, 1.42, 1.2, 1.03], "reverse": 3.2,
+		"final": 3.4, "rear_split": 1.0, "turbo": 0.5, "grip": 1.17, "steer_lock": 42.0, "engine": "v8deep",
+		"spin_hold": 0.9, "yaw_damp": 1.5, "burble": 3, "transmission": "auto", "egg": true, "fixed_livery": true,
+		"desc": "4.4-Liter-Biturbo-V8 im Motorsport-Trimm – nur in der originalen Lackierung.",
+	},
 }
-const CAR_ORDER := ["r34", "mustang", "m3gt3", "m3e46", "m4f82", "gt3rsr", "gallardo", "aventador"]
+const CAR_ORDER := ["r34", "mustang", "m3gt3", "m3e46", "m4f82", "supra", "gt3rsr", "gallardo", "aventador", "yaris", "m6gt3"]
 
 ## Tuning shop: every category has 4 levels (0 = stock). Costs in credits per level.
 const TUNING := [
@@ -219,6 +242,9 @@ var settings := {
 	"max_players": 8,
 	"use_upnp": true,
 	"credits": 12000,
+	"owned_cars": [],      # bought (and unlocked) cars; the first FREE_CARS of CAR_ORDER are always owned
+	"redeemed_codes": [],  # action codes used already (each only once)
+	"admin_codes": {},     # action codes made in the admin menu: CODE -> {credits, car}
 	"tuning": {},
 	"burble": {},
 	"response": {},
@@ -490,6 +516,15 @@ func load_settings() -> void:
 	settings["max_players"] = int(settings["max_players"])
 	settings["camera_mode"] = int(settings["camera_mode"])
 	settings["credits"] = int(settings["credits"])
+	if not (settings.get("owned_cars") is Array):
+		settings["owned_cars"] = []
+	if not (settings.get("redeemed_codes") is Array):
+		settings["redeemed_codes"] = []
+	if not (settings.get("admin_codes") is Dictionary):
+		settings["admin_codes"] = {}
+	# from before cars cost money: the car in use stays owned
+	if CARS.has(str(settings["car"])) and not bool(CARS[str(settings["car"])].get("egg", false)) and not settings["owned_cars"].has(settings["car"]):
+		settings["owned_cars"].append(settings["car"])
 	for key in ["window_mode", "aa", "upscaler", "vsync", "max_fps", "shadow_quality", "grass_quality", "day_cycle", "view_distance"]:
 		settings[key] = int(settings[key])
 	settings["resolution"] = str(settings["resolution"])
@@ -790,6 +825,8 @@ func tuning_cost(car_id: String, category: String) -> int:
 
 ## Buys the next level; returns "" on success or an error text.
 func buy_tuning(car_id: String, category: String) -> String:
+	if not owns_car(car_id):
+		return "Erst das Auto kaufen."
 	var cost := tuning_cost(car_id, category)
 	if cost < 0:
 		return "Maximale Stufe erreicht."
@@ -872,6 +909,94 @@ func set_underglow(car_id: String, cfg: Dictionary) -> void:
 	settings_changed.emit()
 
 
+# ---------------------------------------------------------------------------
+# Buying cars, action codes
+# ---------------------------------------------------------------------------
+const FREE_CARS := 3
+## Price of the n-th car after the free ones (rising slowly).
+const CAR_PRICES := [15000, 25000, 40000, 60000, 85000, 120000, 160000, 210000]
+## Built-in codes (the easter eggs). Admin codes come on top (settings "admin_codes", or the server's).
+const BUILTIN_CODES := {
+	"BMWM": {"car": "m6gt3"},
+	"BOUNCE": {"car": "yaris"},
+}
+var server_codes := {}           # codes the online server hands out (set by Net)
+
+
+func car_price(car_id: String) -> int:
+	var n := 0
+	for id in CAR_ORDER:
+		if bool(CARS[id].get("egg", false)):
+			continue
+		if id == car_id:
+			return 0 if n < FREE_CARS else int(CAR_PRICES[mini(n - FREE_CARS, CAR_PRICES.size() - 1)])
+		n += 1
+	return -1        # not for sale (easter egg)
+
+
+func owns_car(car_id: String) -> bool:
+	return car_price(car_id) == 0 or (settings["owned_cars"] as Array).has(car_id)
+
+
+## Cars shown in the garage: everything for sale plus the unlocked easter eggs.
+func garage_cars() -> Array:
+	var out: Array = []
+	for id in CAR_ORDER:
+		if not bool(CARS[id].get("egg", false)) or owns_car(id):
+			out.append(id)
+	return out
+
+
+## Buys a car: "" when done, else why not.
+func buy_car(car_id: String) -> String:
+	if owns_car(car_id):
+		return ""
+	var price := car_price(car_id)
+	if price < 0:
+		return "Nicht käuflich"
+	if int(settings["credits"]) < price:
+		return "Nicht genug Credits (%s fehlen)" % format_points(price - int(settings["credits"]))
+	settings["credits"] = int(settings["credits"]) - price
+	settings["owned_cars"].append(car_id)
+	save_settings()
+	return ""
+
+
+## The car to drive: the chosen one if owned, else the first owned one.
+func driven_car() -> String:
+	var c := str(settings["car"])
+	if CARS.has(c) and owns_car(c):
+		return c
+	for id in CAR_ORDER:
+		if owns_car(id):
+			return id
+	return "r34"
+
+
+## Redeems an action code: [ok, message].
+func redeem_code(raw: String) -> Array:
+	var code := raw.strip_edges().to_upper().replace(" ", "")
+	if code == "":
+		return [false, "Bitte einen Code eingeben"]
+	var e = BUILTIN_CODES.get(code, server_codes.get(code, (settings["admin_codes"] as Dictionary).get(code)))
+	if not (e is Dictionary):
+		return [false, "Unbekannter Code"]
+	if (settings["redeemed_codes"] as Array).has(code):
+		return [false, "Code wurde schon eingelöst"]
+	var got: Array = []
+	var cr := int(e.get("credits", 0))
+	if cr > 0:
+		settings["credits"] = int(settings["credits"]) + cr
+		got.append("%s Credits" % format_points(cr))
+	var car := str(e.get("car", ""))
+	if CARS.has(car) and not (settings["owned_cars"] as Array).has(car):
+		settings["owned_cars"].append(car)
+		got.append(str(CARS[car]["name"]))
+	settings["redeemed_codes"].append(code)
+	save_settings()
+	return [true, "Eingelöst: " + (", ".join(got) if not got.is_empty() else "nichts Neues")]
+
+
 func add_credits(amount: int) -> void:
 	if amount <= 0:
 		return
@@ -916,16 +1041,17 @@ func time_name(tod_id: String) -> String:
 
 
 func local_player_info() -> Dictionary:
+	var car := driven_car()
 	return {
 		"name": str(settings["player_name"]).substr(0, 20),
-		"car": settings["car"],
+		"car": car,
 		"paint": settings["paint"],
 		"custom_color": settings["custom_color"],
 		"paint_finish": str(settings.get("paint_finish", "gloss")),
-		"rims": get_rims(str(settings["car"])),
+		"rims": get_rims(car),
 		"transmission": settings["transmission"],
-		"burble": get_burble(str(settings["car"])),
-		"underglow": get_underglow(str(settings["car"])),
+		"burble": get_burble(car),
+		"underglow": get_underglow(car),
 		"ready": false,
 		"version": VERSION,
 	}

@@ -13,14 +13,16 @@ extends Node3D
 
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
 
-const MODELS := ["camry", "impreza", "civic"]
-const WEIGHTS := [4, 3, 3]
+const MODELS := ["camry", "impreza", "civic", "s13", "yaris", "ktruck"]
+const WEIGHTS := [4, 3, 3, 2, 3, 1]
 ## Paints: lots of white, silver and black like real Japanese traffic, some colour.
 const PAINTS := [Color(0.93, 0.93, 0.91), Color(0.93, 0.93, 0.91), Color(0.95, 0.95, 0.96), Color(0.62, 0.63, 0.66),
 	Color(0.62, 0.63, 0.66), Color(0.05, 0.05, 0.06), Color(0.05, 0.05, 0.06), Color(0.32, 0.33, 0.35),
 	Color(0.06, 0.14, 0.42), Color(0.55, 0.04, 0.04), Color(0.1, 0.22, 0.14), Color(0.72, 0.66, 0.55)]
 const STI_BLUE := Color(0.02, 0.12, 0.48)
 const CIVIC_RED := Color(0.72, 0.03, 0.03)
+## The Silvia in the 80s two-tone-era colours as often as not.
+const S13_PAINTS := [Color(0.85, 0.55, 0.22), Color(0.12, 0.12, 0.14), Color(0.88, 0.88, 0.86), Color(0.5, 0.06, 0.07), Color(0.15, 0.3, 0.2)]
 ## Tiers: [up to (m), detailed model, shadows]
 const TIERS := [[75.0, true, true], [200.0, false, true], [480.0, false, false]]
 const CAPACITY := [120, 380, 700]
@@ -47,6 +49,8 @@ uniform float hub_y = 0.3;
 uniform float front_z = -1.3;
 uniform float rear_z = 1.3;
 uniform float wheel_r = 0.3;
+uniform sampler2D tex : source_color, filter_linear_mipmap, hint_default_white;
+uniform float textured = 0.0;     // 1: the source model's own texture (keep_* classes)
 
 varying vec4 inst;
 
@@ -67,6 +71,9 @@ void vertex() {
 
 void fragment() {
 	vec3 base = paint > 0.5 ? inst.rgb : albedo;
+	if (textured > 0.5) {
+		base *= texture(tex, UV).rgb;
+	}
 	ALBEDO = base;
 	METALLIC = metallic;
 	ROUGHNESS = roughness;
@@ -205,6 +212,8 @@ func pick(rng: RandomNumberGenerator) -> Array:
 		paint = STI_BLUE
 	elif name == "civic" and rng.randf() < 0.3:
 		paint = CIVIC_RED
+	elif name == "s13" and rng.randf() < 0.6:
+		paint = S13_PAINTS[rng.randi() % S13_PAINTS.size()]
 	return [mi, paint]
 
 
@@ -545,6 +554,9 @@ func _material(cls: String, base: Array, hub_y: float, front_z: float, rear_z: f
 	m.set_shader_parameter("metallic", base[1])
 	m.set_shader_parameter("roughness", base[2])
 	m.set_shader_parameter("paint", 1.0 if cls == "paint" else 0.0)
+	if base.size() > 3 and base[3] != null:
+		m.set_shader_parameter("tex", base[3])
+		m.set_shader_parameter("textured", 1.0)
 	var lamp := 0.0
 	if cls == "head_lens" or cls == "head_inner":
 		lamp = 1.0
@@ -598,14 +610,14 @@ static func _merge(path: String) -> Dictionary:
 			if mi.get_surface_override_material(s) != null:
 				mat = mi.get_surface_override_material(s)
 			var cls := "black"
-			var base := [Color(0.05, 0.05, 0.05), 0.0, 0.6]
+			var base := [Color(0.05, 0.05, 0.05), 0.0, 0.6, null]
 			if mat != null:
 				cls = str(mat.resource_name).trim_prefix("md_")
 				if mat is BaseMaterial3D:
 					var bm := mat as BaseMaterial3D
-					base = [bm.albedo_color, bm.metallic, bm.roughness]
+					base = [bm.albedo_color, bm.metallic, bm.roughness, bm.albedo_texture if cls.begins_with("keep_") else null]
 			if not by_class.has(cls):
-				by_class[cls] = [PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedInt32Array(), base]
+				by_class[cls] = [PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedInt32Array(), base, PackedVector2Array()]
 			var b: Array = by_class[cls]
 			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 			var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
@@ -623,6 +635,15 @@ static func _merge(path: String) -> Dictionary:
 			b[0] = vv
 			b[1] = nn
 			b[2] = cc
+			var uv: PackedVector2Array = b[5]
+			var src_uv = arr[Mesh.ARRAY_TEX_UV]
+			if src_uv is PackedVector2Array and (src_uv as PackedVector2Array).size() == verts.size():
+				uv.append_array(src_uv)
+			else:
+				var zeros := PackedVector2Array()
+				zeros.resize(verts.size())
+				uv.append_array(zeros)
+			b[5] = uv
 			var idx = arr[Mesh.ARRAY_INDEX]
 			var out: PackedInt32Array = b[3]
 			if idx == null or (idx as PackedInt32Array).is_empty():
@@ -647,6 +668,7 @@ static func _merge(path: String) -> Dictionary:
 		arr[Mesh.ARRAY_VERTEX] = b[0]
 		arr[Mesh.ARRAY_NORMAL] = b[1]
 		arr[Mesh.ARRAY_COLOR] = b[2]
+		arr[Mesh.ARRAY_TEX_UV] = b[5]
 		arr[Mesh.ARRAY_INDEX] = b[3]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 		classes.append(cls)
