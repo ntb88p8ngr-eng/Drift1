@@ -28,6 +28,39 @@ const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Workbench": 0.7, "Neon": 1.4}
 var _workshop := false
 var _anim: AnimationPlayer
 var _deck: Node3D
+var _deck_base: Transform3D      # the deck as authored (turned about the world Y axis from there)
+
+## The platform (menu buttons): it turns slowly on its own, always the same way; held buttons turn it
+## either way; a view ("overview", "wheels", "front", "rear") swings it (forwards) and the camera to a
+## preset – "wheels" shows the side of the car with the front rim close up.
+const AUTO_SPEED := 0.1          # rad/s – about a minute per turn
+const MANUAL_SPEED := 0.9
+var auto_spin := true
+var manual_dir := 0.0            # -1 / 0 / 1 while a turn button is held
+var view := "overview"
+var _angle := 0.0
+var _target := NAN               # platform angle a view turns to
+var _cam_pos := Vector3(0, 2.6, 9.8)
+var _cam_at := Vector3(-2.2, 1.0, -1.2)
+const VIEWS := {
+	# [platform angle, camera position, look at]
+	# (the menu covers the left half of the screen: the car is framed in the right half)
+	"wheels": [PI * 0.5, Vector3(-2.0, 0.8, 3.6), Vector3(-3.2, 0.45, 0.8)],
+	"front": [PI, Vector3(-0.6, 1.3, 6.4), Vector3(-2.0, 0.6, 0.0)],
+	"rear": [0.0, Vector3(-0.6, 1.3, 6.4), Vector3(-2.0, 0.6, 0.0)],
+}
+
+
+func set_view(v: String) -> void:
+	view = v
+	if VIEWS.has(v):
+		auto_spin = false
+		var want: float = VIEWS[v][0]
+		# always forwards: the next time the platform reaches that angle
+		_target = _angle + fposmod(want - _angle, TAU)
+	else:
+		_target = NAN
+		auto_spin = true
 
 
 func _ready() -> void:
@@ -181,6 +214,7 @@ func _load_workshop() -> bool:
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.08, 0.05, 0.05)
 	env.fog_density = 0.006
+	env.fog_sky_affect = 0.0          # (with the full default the street panorama was fogged to black)
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -200,10 +234,12 @@ func _load_workshop() -> bool:
 	turntable.name = "CarOnDeck"
 	turntable.position = Vector3(0, DECK_Y, 0)
 	add_child(turntable)
+	# the platform is turned here (not by the model's 20 s animation): slower, one way, by the buttons
 	_anim = g.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	if _anim and _anim.has_animation("Turntable_360_20s"):
-		_anim.get_animation("Turntable_360_20s").loop_mode = Animation.LOOP_LINEAR
-		_anim.play("Turntable_360_20s")
+	if _anim:
+		_anim.stop()
+	if _deck:
+		_deck_base = _deck.global_transform
 	# a key light from the front for the paint, a red rim from the shutter side
 	var key := SpotLight3D.new()
 	key.position = Vector3(3.2, 4.0, 4.5)
@@ -229,11 +265,27 @@ func _load_workshop() -> bool:
 	probe.interior = true
 	add_child(probe)
 	cam = Camera3D.new()
-	cam.fov = 60.0
+	cam.fov = 58.0
 	cam.current = true
 	add_child(cam)
 	rebuild_car()
 	return true
+
+
+func _turn_platform(delta: float) -> void:
+	if manual_dir != 0.0:
+		_target = NAN
+		_angle += manual_dir * MANUAL_SPEED * delta
+	elif not is_nan(_target):
+		var left := _target - _angle
+		_angle += minf(left, maxf(left * 2.5, 0.25) * delta)
+		if left < 0.002:
+			_angle = _target
+	elif auto_spin:
+		_angle += AUTO_SPEED * delta
+	turntable.rotation.y = _angle
+	if _deck:
+		_deck.global_transform = Transform3D(Basis(Vector3.UP, _angle), Vector3.ZERO) * _deck_base
 
 
 ## Floor rectangle (x, z) of the hall in showroom coordinates.
@@ -376,13 +428,23 @@ func refresh_paint() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	if _workshop:
-		if _deck:
-			var x := _deck.global_transform.basis.x
-			turntable.rotation.y = atan2(-x.z, x.x)
-		# a slow sweep in front of the platform, the shutter and the night street behind the car
-		var a := 0.5 + sin(_t * 0.1) * 0.32
-		cam.position = Vector3(sin(a) * 7.6 - 1.0, 2.3 + sin(_t * 0.17) * 0.25, minf(cos(a) * 7.6, 6.1))
-		cam.look_at(Vector3(-2.5, 0.9, -0.8), Vector3.UP)
+		_turn_platform(delta)
+		# overview: a slow sweep from outside the open front, the whole workshop and the shutter onto
+		# the night street behind the car; the views come in close
+		var pos := Vector3.ZERO
+		var at := Vector3.ZERO
+		if VIEWS.has(view):
+			pos = VIEWS[view][1]
+			at = VIEWS[view][2]
+		else:
+			var a := 0.22 + sin(_t * 0.08) * 0.2
+			pos = Vector3(sin(a) * 10.0 - 1.6, 2.6 + sin(_t * 0.17) * 0.2, cos(a) * 10.0)
+			at = Vector3(-2.2, 1.0, -1.2)
+		var k := 1.0 - exp(-delta * 2.5)
+		_cam_pos = _cam_pos.lerp(pos, k)
+		_cam_at = _cam_at.lerp(at, k)
+		cam.position = _cam_pos
+		cam.look_at(_cam_at, Vector3.UP)
 		return
 	turntable.rotation.y = _t * 0.25
 	var a := 0.6 + sin(_t * 0.12) * 0.25

@@ -22,6 +22,22 @@ func _ready() -> void:
 		await get_tree().process_frame
 	var storm = main.find_child("Storm", true, false)
 	await _shot(out.path_join("menu_calm.png"))
+	# the shutter and the street behind it
+	var sr = main.showroom
+	if sr and sr.cam:
+		sr.set_process(false)
+		sr.cam.global_position = Vector3(0, 1.8, 4.0)
+		sr.cam.look_at(Vector3(0, 1.6, -14.0), Vector3.UP)
+		for f in 3:
+			await get_tree().process_frame
+		await _shot(out.path_join("menu_shutter.png"))
+		sr.set_process(true)
+		# the garage with the rims view
+		main.menu.show_screen("garage")
+		sr.set_view("wheels")
+		for f in 150:
+			await get_tree().process_frame
+		await _shot(out.path_join("menu_wheels.png"))
 	if storm:
 		storm._next = 0.0
 		for f in 2:

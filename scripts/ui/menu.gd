@@ -44,6 +44,8 @@ var _tuning_box: VBoxContainer
 var _lb_track := 0
 var _lb_cat := 0
 var _lb_list: VBoxContainer
+var _platform_bar: HBoxContainer   # turntable controls (main menu and garage), above the corner buttons
+var _view_row: HBoxContainer
 
 
 func _ready() -> void:
@@ -102,6 +104,7 @@ func _ready() -> void:
 	_float_bar.offset_right = -40
 	_float_bar.offset_bottom = -36
 	_root.add_child(_float_bar)
+	_build_platform_bar()
 	_status = UiKit.label("", 17, UiKit.GOLD)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(640, 0)
@@ -114,6 +117,87 @@ func _ready() -> void:
 	Net.join_status.connect(func(text): show_status(text))
 	Net.lan_lobbies_changed.connect(_refresh_lan)
 	Net.upnp_finished.connect(func(_ok, _msg): _on_lobby_changed())
+
+
+## Rims changed: the platform swings the car round to show them.
+func _show_wheels() -> void:
+	var sr = _showroom()
+	if sr and sr.view != "wheels":
+		sr.set_view("wheels")
+		_sync_platform_buttons()
+
+
+## The showroom's turntable: turn it left / right while held, pause or resume its slow turn; in the
+## garage also the views (overview, rims, front, rear).
+func _build_platform_bar() -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	box.offset_right = -40
+	box.offset_bottom = -112
+	box.alignment = BoxContainer.ALIGNMENT_END
+	_root.add_child(box)
+	_view_row = HBoxContainer.new()
+	_view_row.add_theme_constant_override("separation", 8)
+	_view_row.alignment = BoxContainer.ALIGNMENT_END
+	for v in [["Übersicht", "overview"], ["Felgen", "wheels"], ["Front", "front"], ["Heck", "rear"]]:
+		var key: String = v[1]
+		var b := UiKit.button(str(v[0]), func():
+			var sr = _showroom()
+			if sr:
+				sr.set_view(key)
+				_sync_platform_buttons(), 110)
+		b.focus_mode = Control.FOCUS_NONE
+		_view_row.add_child(b)
+	box.add_child(_view_row)
+	_platform_bar = HBoxContainer.new()
+	_platform_bar.add_theme_constant_override("separation", 8)
+	_platform_bar.alignment = BoxContainer.ALIGNMENT_END
+	_platform_bar.add_child(UiKit.label("Plattform", 16, UiKit.TEXT_DIM))
+	for d: float in [-1.0, 0.0, 1.0]:
+		var b := UiKit.button("⟲" if d < 0.0 else ("⏸" if d == 0.0 else "⟳"), func(): pass, 64)
+		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 22)
+		if d == 0.0:
+			b.name = "Pause"
+			b.pressed.connect(func():
+				var sr = _showroom()
+				if sr:
+					sr.auto_spin = not sr.auto_spin
+					if sr.auto_spin:
+						sr.set_view("overview")
+					_sync_platform_buttons())
+		else:
+			b.tooltip_text = "Gedrückt halten: Plattform drehen"
+			b.button_down.connect(func():
+				var sr = _showroom()
+				if sr:
+					sr.manual_dir = d
+					sr.auto_spin = false
+					_sync_platform_buttons())
+			b.button_up.connect(func():
+				var sr = _showroom()
+				if sr:
+					sr.manual_dir = 0.0)
+		_platform_bar.add_child(b)
+	box.add_child(_platform_bar)
+	box.visible = false
+
+
+func _showroom():
+	if main and is_instance_valid(main.showroom) and main.showroom.get("auto_spin") != null:
+		return main.showroom
+	return null
+
+
+func _sync_platform_buttons() -> void:
+	var sr = _showroom()
+	var pause := _platform_bar.get_node_or_null("Pause") as Button
+	if sr and pause:
+		pause.text = "⏸" if sr.auto_spin else "▶"
 
 
 func show_status(text: String, color := UiKit.GOLD) -> void:
@@ -157,6 +241,14 @@ func show_screen(screen: String) -> void:
 	current = screen
 	_clear()
 	show_status("")
+	# the turntable controls where the car is in view; the views only in the garage
+	var sr = _showroom()
+	var show_bar: bool = sr != null and (screen == "main" or screen == "garage")
+	_platform_bar.get_parent().visible = show_bar
+	_view_row.visible = screen == "garage"
+	if sr and screen != "garage" and sr.view != "overview":
+		sr.set_view("overview")
+	_sync_platform_buttons()
 	match screen:
 		"single":
 			_build_single()
@@ -694,14 +786,16 @@ func _build_garage() -> void:
 		var r2 := Game.get_rims(str(Game.settings["car"]))
 		r2["color"] = i
 		Game.set_rims(str(Game.settings["car"]), r2)
-		main.refresh_showroom(true), 180)
+		main.refresh_showroom(true)
+		_show_wheels(), 180)
 	rim_col.disabled = int(rims["style"]) == 0
 	_add(UiKit.labeled("Felgen", UiKit.row([UiKit.option(style_names, int(rims["style"]), func(i):
 		var r2 := Game.get_rims(str(Game.settings["car"]))
 		r2["style"] = i
 		rim_col.disabled = i == 0
 		Game.set_rims(str(Game.settings["car"]), r2)
-		main.refresh_showroom(true), 280), rim_col])))
+		main.refresh_showroom(true)
+		_show_wheels(), 280), rim_col])))
 	_add(UiKit.labeled("Getriebe", UiKit.option(["Automatik (Standard)", "Manuell (E/Q schalten)"], 0 if Game.settings["transmission"] == "auto" else 1, func(i):
 		Game.set_setting("transmission", "auto" if i == 0 else "manual"))))
 	_car_desc = UiKit.label("", 16, UiKit.TEXT_DIM)
