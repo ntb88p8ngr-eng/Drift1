@@ -320,8 +320,8 @@ func _rebuild(level: int) -> void:
 		(l[0] as Node).queue_free()
 	_layers.clear()
 	var spec: Array = LEVELS[_level]
-	if spec.is_empty():
-		return
+	if spec.is_empty() or Game.is_desert(str(track.track_id)):
+		return      # (no grass in the desert)
 	var near_r: float = spec[1]
 	_add_layer(spec[0], near_r, near_r - 4.0, near_r, 0.0, 0.0, 10)
 	if float(spec[2]) > 0.0:

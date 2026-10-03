@@ -87,6 +87,10 @@ uniform float asphalt_mean = 0.35;    // average brightness of the texture (0 = 
 // graffiti mode: owner colour per track cell (x = distance along the track / graffiti_len)
 uniform sampler2D graffiti_tex : hint_default_transparent, filter_nearest, repeat_enable;
 uniform float graffiti_len = 0.0;
+// loose-sand stretches (desert): weight along the lap (x = distance / sand_len)
+uniform sampler2D sand_tex : hint_default_black, filter_linear, repeat_enable;
+uniform float sand_len = 0.0;
+uniform vec3 sand_col : source_color = vec3(0.72, 0.5, 0.33);
 
 varying vec3 wpos;
 
@@ -115,6 +119,21 @@ void fragment() {
 	col *= 1.0 - rubber * 0.55;
 	float edge = step(UV.x, edge_line) + step(1.0 - edge_line, UV.x);
 	col = mix(col, line_color * (0.8 + 0.2 * n), clamp(edge, 0.0, 1.0));
+	float sandy = 0.0;
+	if (sand_len > 0.0) {
+		// packed sand: ripples, wheel ruts along the racing line, a ragged edge where the asphalt
+		// breaks up into it
+		float sw = texture(sand_tex, vec2(UV.y / sand_len, 0.5)).r;
+		float rag = texture(noise_tex, wpos.xz * 0.11).r;
+		sandy = smoothstep(0.35, 0.65, sw + (rag - 0.5) * 0.6);
+		if (sandy > 0.001) {
+			float rip = 0.5 + 0.5 * sin(wpos.x * 2.1 + wpos.z * 1.3 + texture(noise_tex, wpos.xz * 0.05).r * 9.0);
+			vec3 sc = sand_col * (0.8 + 0.3 * n) * (0.88 + 0.2 * n2) * (0.93 + 0.07 * rip);
+			float rut = smoothstep(0.12, 0.0, abs(abs(UV.x - 0.5 + line_off) - 0.11)) * (0.5 + 0.5 * n2);
+			sc *= 1.0 - rut * 0.22;
+			col = mix(col, sc, sandy);
+		}
+	}
 	vec3 tag_glow = vec3(0.0);
 	if (graffiti_len > 0.0) {
 		vec4 g = texture(graffiti_tex, vec2(UV.y / graffiti_len, 0.5));
@@ -135,9 +154,10 @@ void fragment() {
 	ROUGHNESS = mix(mix(0.86 - rubber * 0.25 - clamp(grain - 1.0, 0.0, 0.5) * 0.2, 0.16 + n * 0.1, wetness), 0.02, puddle);
 	SPECULAR = mix(0.45, 0.7, max(wetness, puddle)) * mix(1.0, 0.35, night * (1.0 - puddle));
 	ROUGHNESS = mix(ROUGHNESS, max(ROUGHNESS, 0.93), night * (1.0 - max(wetness, puddle)));
+	ROUGHNESS = mix(ROUGHNESS, 0.97, sandy);
 	vec3 nm = texture(noise_nrm, wpos.xz * 0.23).xyz;
 	if (asphalt_mean > 0.0) {
-		nm = mix(nm, texture(asphalt_nrm, tp, road_b).xyz, 0.75);
+		nm = mix(nm, texture(asphalt_nrm, tp, road_b).xyz, 0.75 * (1.0 - sandy));
 	}
 	vec3 ripple = texture(noise_nrm, wpos.xz * 1.7 + vec2(TIME * 0.9, -TIME * 0.6)).xyz;
 	NORMAL_MAP = mix(nm, mix(vec3(0.5, 0.5, 1.0), ripple, 0.25 * rain), puddle);
@@ -1099,6 +1119,14 @@ static func terrain_material(track_id: String) -> ShaderMaterial:
 	if track_id == "playground":
 		m.set_shader_parameter("concrete", Color(0.12, 0.12, 0.13))
 		m.set_shader_parameter("joints", 0.0)
+	if track_id == "utah":
+		# desert: orange sand in place of the grass, pale dry patches, red sandstone on the slopes
+		m.set_shader_parameter("grass_a", Color(0.62, 0.4, 0.24))
+		m.set_shader_parameter("grass_b", Color(0.7, 0.48, 0.3))
+		m.set_shader_parameter("grass_dry", Color(0.76, 0.62, 0.45))
+		m.set_shader_parameter("forest_floor", Color(0.42, 0.24, 0.14))
+		m.set_shader_parameter("dirt", Color(0.5, 0.3, 0.18))
+		m.set_shader_parameter("rock", Color(0.56, 0.3, 0.18))
 	if track_id == "harbor":
 		m.set_shader_parameter("grass_a", Color(0.12, 0.26, 0.06))
 		m.set_shader_parameter("grass_b", Color(0.2, 0.36, 0.09))

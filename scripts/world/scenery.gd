@@ -14,6 +14,7 @@ const TreeHits = preload("res://scripts/world/tree_hits.gd")
 const SignHits = preload("res://scripts/world/sign_hits.gd")
 const Festival = preload("res://scripts/world/festival.gd")
 const City = preload("res://scripts/world/city.gd")
+const Desert = preload("res://scripts/world/desert.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const Playground = preload("res://scripts/world/playground.gd")
@@ -43,6 +44,7 @@ var trees: Node3D              # tree_hits.gd: the trees near the roads can be f
 var signs: Node3D              # sign_hits.gd: road signs can be knocked down
 var festival: Node3D
 var city: Node3D
+var desert: Node3D            # desert.gd on the desert maps
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
 var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
@@ -126,6 +128,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		pg.name = "Playground"
 		add_child(pg)
 		pg.build(track, terrain, self, quality)
+	elif Game.is_desert(id):
+		desert = Desert.new()
+		desert.name = "Desert"
+		add_child(desert)
+		await desert.build(track, terrain, self, quality)
 	elif big:
 		# a few Eifel farmsteads where the track runs through Breidscheid
 		await _build_houses(8, ["barn", "barn", "office", "barn", "shop", "barn", "barn", "office"], _section_index("Breidscheid"))
@@ -157,6 +164,8 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		# (the city has its own signs, trees and street furniture)
 		details.build(quality)
 		await Game.load_tick()
+	if not Game.is_city(id) and not Game.is_desert(id):
+		# (the desert has its own cacti, scrub and boulders)
 		Game.load_begin("Wald", 0.36, 0.68)
 		await _build_forest(id)
 		Game.load_begin("Büsche & Farne", 0.68, 0.76)
@@ -1031,6 +1040,8 @@ func set_night(n: float) -> void:
 		festival.set_night(n)
 	if city:
 		city.set_night(n)
+	if desert:
+		desert.set_night(n)
 
 
 # ---------------------------------------------------------------------------

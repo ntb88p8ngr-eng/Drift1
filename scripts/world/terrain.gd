@@ -70,7 +70,7 @@ var _near_h := PackedFloat32Array()
 func generate(p_track: Node3D) -> void:
 	track = p_track
 	track_id = track.track_id
-	var seed_base: int = {"ridge": 1234, "harbor": 5678}.get(track_id, 9012)
+	var seed_base: int = {"ridge": 1234, "harbor": 5678, "utah": 4321}.get(track_id, 9012)
 	_setup_noise(_n_large, seed_base, 1.0 / 260.0, 4)
 	_setup_noise(_n_mid, seed_base + 1, 1.0 / 85.0, 3)
 	_setup_noise(_n_small, seed_base + 2, 1.0 / 14.0, 2)
@@ -514,6 +514,8 @@ func _base_height(x: float, z: float) -> float:
 		var hills := _n_large.get_noise_2d(x, z) * 12.0 + 8.0 + _n_mid.get_noise_2d(x, z) * 5.0
 		hills += smoothstep(550.0, 1100.0, r) * (50.0 + 110.0 * (_n_large.get_noise_2d(x * 0.35, z * 0.35) * 0.5 + 0.5))
 		return maxf(hills, 0.0)
+	if Game.is_desert(track_id):
+		return _desert_height(x, z, r)
 	if track_id == "harbor":
 		if z > _quay_z - 1.0:
 			return -4.5
@@ -532,6 +534,32 @@ func _base_height(x: float, z: float) -> float:
 	var m := smoothstep(420.0, 1050.0, r)
 	h += m * (70.0 + 170.0 * (_n_large.get_noise_2d(x * 0.35 + 900.0, z * 0.35) * 0.5 + 0.5))
 	return h
+
+
+## Desert: a wide sand plain with low dunes inside the fog bank (DESERT_PAD round the track), then
+## flat-topped mesas with steep sandstone cliffs and buttes standing out of the plain beyond it.
+const DESERT_PAD := 130.0
+
+
+func desert_rect() -> Rect2:
+	return (track.bounds as Rect2).grow(DESERT_PAD)
+
+
+func _desert_height(x: float, z: float, _r: float) -> float:
+	var dunes := (_n_mid.get_noise_2d(x, z) * 0.5 + 0.5) * 2.2 + _n_large.get_noise_2d(x, z) * 1.5
+	var rc := desert_rect()
+	var out := maxf(maxf(rc.position.x - x, x - rc.end.x), maxf(rc.position.y - z, z - rc.end.y))
+	var far := smoothstep(70.0, 200.0, out)
+	if far <= 0.0:
+		return dunes
+	# mesas: noise cut off flat at a plateau, cliffs where it crosses the threshold
+	var m := _n_large.get_noise_2d(x * 0.55 + 300.0, z * 0.55) * 0.5 + 0.5
+	m += _n_ridge.get_noise_2d(x * 0.4, z * 0.4) * 0.25
+	var mesa := smoothstep(0.5, 0.56, m) * (55.0 + 50.0 * (_n_blend.get_noise_2d(x * 0.3, z * 0.3) * 0.5 + 0.5))
+	# a lower terrace below some of the cliffs
+	mesa += smoothstep(0.42, 0.46, m) * 14.0
+	var rise := smoothstep(300.0, 900.0, out) * 45.0
+	return dunes + (mesa + rise) * far
 
 
 ## Ground colour weights: R = concrete, G = dirt, B = forest floor, A = meadow (dry grass / flowers).
@@ -576,8 +604,8 @@ func forest_density(x: float, z: float, d := -1.0) -> float:
 		var cv := cover_at(x, z)
 		f = smoothstep(0.3, 0.62, cv.x * lerpf(1.0, 0.7 + 0.6 * n, _far_fade(d)) - cv.z * 0.8)
 		return f * smoothstep(float(track.wall_base) + 1.5, float(track.wall_base) + 4.0, d)
-	if Game.is_city(track_id):
-		return 0.0       # streets and buildings; the city places its own street trees
+	if Game.is_city(track_id) or Game.is_desert(track_id):
+		return 0.0       # streets and buildings (the city places its own street trees) / open sand
 	if track_id == "playground":
 		return f * smoothstep(14.0, 40.0, pad_sd(x, z))
 	if track_id == "harbor":
@@ -721,7 +749,8 @@ func build_meshes(wet_capable := true) -> void:
 		material.set_shader_parameter("edge_origin", ed["origin"])
 		material.set_shader_parameter("edge_inv_size", ed["inv_size"])
 		material.set_shader_parameter("trap_w", float(track.trap_w))
-		material.set_shader_parameter("shoulder", 1.0)
+		# (the desert has no gravel shoulder: the sand runs right up to the asphalt)
+		material.set_shader_parameter("shoulder", 0.0 if Game.is_desert(track_id) else 1.0)
 	outer_material = material
 	var cx_count := int(ceil(float(nx - 1) / CHUNK))
 	var cz_count := int(ceil(float(nz - 1) / CHUNK))

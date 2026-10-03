@@ -15,7 +15,7 @@ const FELL_SPEED := 6.0        # m/s: slower than this the trunk just stops the 
 const MAX_FALLEN := 30
 const CUT := 0.6              # above the tree's origin (which sits 0.3 m in the ground): the stump         # older fallen trees freeze where they lie
 ## Labels of the instanced sets that draw trees (all LODs of the forest, the city's street trees).
-const MAIN := ["Trees_hi", "City_tree", "City_sakura"]
+const MAIN := ["Trees_hi", "City_tree", "City_sakura", "Desert_cactus"]
 const OTHER := ["Trees_shadow", "Trees_mid", "Trees_far", "Trees_2d"]
 
 var world
@@ -51,7 +51,8 @@ func register_set(label: String, mm: MultiMesh, items: Array) -> void:
 				continue
 			var sx := Vector2(xf.basis.x.x, xf.basis.x.z).length()
 			t = {"xf": xf, "sets": [], "mesh": mm.mesh, "custom": items[idx][1],
-				"r": clampf(0.28 * sx, 0.15, 0.6), "h": maxf(aabb.end.y * xf.basis.y.length(), 2.0), "down": false}
+				"r": clampf(0.28 * sx, 0.15, 0.6), "h": maxf(aabb.end.y * xf.basis.y.length(), 2.0), "down": false,
+				"cactus": label.begins_with("Desert")}
 			_trees[k] = t
 			var g := Vector2i(int(floor(xf.origin.x / CELL)), int(floor(xf.origin.z / CELL)))
 			if not _grid.has(g):
@@ -156,7 +157,7 @@ func _fell(t: Dictionary, car: RigidBody3D, v: Vector3) -> void:
 			if is_instance_valid(old):
 				(old as RigidBody3D).freeze = true
 		stats["pieces"] = int(stats.get("pieces", 0)) + pieces.size()
-	_stump(xf, r)
+	_stump(xf, r, t.get("cactus", false))
 	# the car takes the blow
 	car.apply_central_impulse(-dir * car.mass * spd * clampf(0.12 + r * 0.25, 0.12, 0.3))
 	Sfx.play(self, "pole_hit", 2.0, xf.origin + Vector3(0, 1.0, 0), randf_range(0.5, 0.6))
@@ -164,14 +165,16 @@ func _fell(t: Dictionary, car: RigidBody3D, v: Vector3) -> void:
 	stats["felled"] = int(stats.get("felled", 0)) + 1
 
 
-func _stump(xf: Transform3D, r: float) -> void:
+func _stump(xf: Transform3D, r: float, cactus := false) -> void:
 	if _stump_mat == null:
 		_stump_mat = StandardMaterial3D.new()
 		_stump_mat.albedo_color = Color(0.32, 0.24, 0.17)
 		_stump_mat.roughness = 0.95
-	var stump := MeshKit.cyl_node(r * 1.05, r * 1.15, CUT, _stump_mat, xf.origin + Vector3(0, CUT * 0.5, 0), Vector3.ZERO, 10)
+	var mat: Material = _stump_mat if not cactus else TexKit.std(Color(0.24, 0.38, 0.17), 0.7)
+	var stump := MeshKit.cyl_node(r * 1.05, r * 1.15, CUT, mat, xf.origin + Vector3(0, CUT * 0.5, 0), Vector3.ZERO, 10)
 	add_child(stump)
-	var top := MeshKit.cyl_node(r * 0.95, r * 0.95, 0.02, TexKit.std(Color(0.78, 0.66, 0.48), 0.9), xf.origin + Vector3(0, CUT + 0.01, 0), Vector3.ZERO, 10)
+	var cut_col := Color(0.78, 0.66, 0.48) if not cactus else Color(0.62, 0.7, 0.42)
+	var top := MeshKit.cyl_node(r * 0.95, r * 0.95, 0.02, TexKit.std(cut_col, 0.9), xf.origin + Vector3(0, CUT + 0.01, 0), Vector3.ZERO, 10)
 	add_child(top)
 
 

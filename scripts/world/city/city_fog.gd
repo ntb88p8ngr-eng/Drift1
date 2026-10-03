@@ -27,14 +27,16 @@ uniform float night = 0.0;
 uniform float layer = 0.0;        // 0 inner … 1 outer
 uniform float height = 22.0;
 varying vec3 wp;
-void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+varying float base;
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; base = UV.x; }
 void fragment() {
+	float hy = wp.y - base;      // above the ground under the sheet
 	// thick low down, thinning out upwards, ragged top; slowly rolling wisps
 	float along = wp.x + wp.z + layer * 37.0;
-	vec2 uv = vec2(along * 0.018 + TIME * 0.01, wp.y * 0.04 - TIME * 0.006);
+	vec2 uv = vec2(along * 0.018 + TIME * 0.01, hy * 0.04 - TIME * 0.006);
 	float n = texture(noise_tex, uv).r * 0.55 + texture(noise_tex, uv * 2.7 + vec2(-TIME * 0.017, 0.31)).r * 0.45;
 	float top = height * (0.55 + 0.45 * n);
-	float hf = 1.0 - smoothstep(top * 0.25, top, wp.y);
+	float hf = 1.0 - smoothstep(top * 0.25, top, hy);
 	ALBEDO = mix(fog_col, fog_col * 0.12 + vec3(0.02, 0.025, 0.04), night);
 	float dens = mix(0.18, 0.62, layer);
 	ALPHA = clamp(hf * (0.3 + 0.7 * n) * dens, 0.0, 0.92);
@@ -83,11 +85,21 @@ var _ground_mats: Array = []
 var _cool := 0.0
 var _trail: Array = []          # [Vector3, age]
 var _trail_t := 0.0
+## ground height under a point (x, z) – flat (0) in the city, the dunes in the desert
+var ground_fn: Callable
+var turn_msg := "Hier draußen ist nichts – zurück in die Stadt"
 
 
-func setup(p_world, p_rect: Rect2) -> void:
+func _ground(x: float, z: float) -> float:
+	return float(ground_fn.call(x, z)) if ground_fn.is_valid() else 0.0
+
+
+func setup(p_world, p_rect: Rect2, p_ground := Callable(), p_msg := "") -> void:
 	world = p_world
 	rect = p_rect
+	ground_fn = p_ground
+	if p_msg != "":
+		turn_msg = p_msg
 	mist_rect = rect.grow(-DEPTH)
 	var noise: Texture2D = TexKit.noise_texture(733, 0.02)
 	# the mist wall: sheets from DEPTH inside out to OUTER beyond the border
@@ -130,9 +142,13 @@ func _add_ring(r: Rect2, m: Material, label: String) -> void:
 		for j in n:
 			var p0 := a.lerp(b, float(j) / n)
 			var p1 := a.lerp(b, float(j + 1) / n)
-			var v := [Vector3(p0.x, -0.5, p0.y), Vector3(p1.x, -0.5, p1.y), Vector3(p1.x, HEIGHT, p1.y), Vector3(p0.x, HEIGHT, p0.y)]
+			var h0 := _ground(p0.x, p0.y)
+			var h1 := _ground(p1.x, p1.y)
+			var v := [Vector3(p0.x, h0 - 0.5, p0.y), Vector3(p1.x, h1 - 0.5, p1.y), Vector3(p1.x, h1 + HEIGHT, p1.y), Vector3(p0.x, h0 + HEIGHT, p0.y)]
+			var hs := [h0, h1, h1, h0]
 			for t in [[0, 1, 2], [0, 2, 3]]:
 				for q in t:
+					st.set_uv(Vector2(hs[q], 0.0))
 					st.add_vertex(v[q])
 	_add_mesh(st.commit(), m, label)
 
@@ -149,8 +165,9 @@ func _add_band(a: Rect2, b: Rect2, y: float, m: Material, label: String) -> void
 	]
 	for q in quads:
 		# split into a grid so the sheets follow the (flat) city ground evenly and sort well
-		var nx := maxi(int((q[1] as Vector2).distance_to(q[0]) / 40.0), 1)
-		var nz := maxi(int((q[3] as Vector2).distance_to(q[0]) / 40.0), 1)
+		var cell := 40.0 if not ground_fn.is_valid() else 8.0     # (fine enough to follow dunes)
+		var nx := maxi(int((q[1] as Vector2).distance_to(q[0]) / cell), 1)
+		var nz := maxi(int((q[3] as Vector2).distance_to(q[0]) / cell), 1)
 		for ix in nx:
 			for iz in nz:
 				var p := []
@@ -160,7 +177,7 @@ func _add_band(a: Rect2, b: Rect2, y: float, m: Material, label: String) -> void
 					var top: Vector2 = (q[0] as Vector2).lerp(q[1], u)
 					var bot: Vector2 = (q[3] as Vector2).lerp(q[2], u)
 					var xz := top.lerp(bot, w)
-					p.append(Vector3(xz.x, y, xz.y))
+					p.append(Vector3(xz.x, y + _ground(xz.x, xz.y), xz.y))
 				for t in [[0, 1, 2], [0, 2, 3]]:
 					for k in t:
 						st.add_vertex(p[k])
@@ -262,4 +279,4 @@ func _physics_process(delta: float) -> void:
 	rb.linear_velocity = dir * spd
 	_cool = 1.0
 	if world.hud:
-		world.hud.show_message("NEBEL", "Hier draußen ist nichts – zurück in die Stadt", Color(0.8, 0.85, 0.95), 2.0)
+		world.hud.show_message("NEBEL", turn_msg, Color(0.8, 0.85, 0.95), 2.0)

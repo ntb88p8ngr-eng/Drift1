@@ -28,6 +28,7 @@ const DEFS := {
 			Vector2(-118, 0), Vector2(-109, 44), Vector2(-83, 62), Vector2(-45, 44)],
 		"width": 16.0, "runoff": 6.0, "start_dist": 40.0,
 		"ground": "asphalt", "offroad_grip": 0.97, "wall": "none", "asphalt": Color(0.075, 0.075, 0.085),
+		"crossing": true,
 	},
 	"harbor": {
 		"points": [Vector2(0, 0), Vector2(0, -120), Vector2(30, -170), Vector2(90, -175), Vector2(120, -130),
@@ -49,6 +50,24 @@ const DEFS := {
 		"heights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 9, 10, 10, 10, 10, 9, 6, 2.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		"width": 16.0, "runoff": 1.5, "start_dist": 60.0,
 		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.07, 0.07, 0.08),
+	},
+	# Utah desert: an open sand plain, no barriers; a crooked lap of hairpins and S-bends that keeps
+	# folding back into the middle. "sand": [from point, to point] – there the road is loose sand
+	"utah": {
+		"points": [Vector2(0, 0), Vector2(-5, -90), Vector2(-25, -140), Vector2(-15, -185), Vector2(25, -195),
+			Vector2(50, -165), Vector2(45, -120), Vector2(75, -95), Vector2(120, -110), Vector2(135, -170),
+			Vector2(120, -240), Vector2(150, -290), Vector2(215, -300), Vector2(300, -280), Vector2(330, -240),
+			Vector2(300, -205), Vector2(250, -195), Vector2(225, -160), Vector2(245, -120), Vector2(300, -110),
+			Vector2(340, -140), Vector2(390, -200), Vector2(450, -215), Vector2(480, -170), Vector2(460, -120),
+			Vector2(420, -90), Vector2(415, -50), Vector2(455, -20), Vector2(510, -10), Vector2(530, 30),
+			Vector2(500, 65), Vector2(440, 60), Vector2(395, 30), Vector2(350, 25), Vector2(300, 55),
+			Vector2(285, 95), Vector2(320, 130), Vector2(380, 150), Vector2(400, 190), Vector2(370, 225),
+			Vector2(300, 230), Vector2(245, 200), Vector2(215, 150), Vector2(180, 115), Vector2(150, 135),
+			Vector2(140, 180), Vector2(105, 210), Vector2(55, 195), Vector2(45, 150), Vector2(80, 110),
+			Vector2(80, 60), Vector2(45, 55), Vector2(10, 40)],
+		"sand": [[9, 16], [33, 41], [45, 48]],
+		"width": 14.0, "runoff": 6.0, "start_dist": 50.0,
+		"ground": "sand", "offroad_grip": 0.74, "wall": "none", "asphalt": Color(0.1, 0.095, 0.09),
 	},
 	# Nordschleife replica: course and heights from real data (tools/make_gruene_hoelle.py)
 	"gruene_hoelle": {
@@ -80,6 +99,9 @@ var curvature := PackedFloat32Array()
 var hws := PackedFloat32Array()
 ## cross slope per sample: height change per metre towards +rights (banked corners, see "banked")
 var bank := PackedFloat32Array()
+## loose sand instead of asphalt on the road (0..1 per sample, see "sand")
+var sand := PackedFloat32Array()
+var _point_d: Array = []        # spline tracks: distance of each control point along the lap
 var off_left := PackedFloat32Array()
 var off_right := PackedFloat32Array()
 var curb_mask := PackedByteArray()
@@ -133,6 +155,7 @@ func build(id: String) -> void:
 	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
 	_setup_profile()
+	_setup_sand()
 	await Game.load_tick(0.2)
 	_compute_offsets()
 	_build_grid()
@@ -148,7 +171,7 @@ func build(id: String) -> void:
 	_build_walls()
 	await Game.load_tick(0.9)
 	_build_start()
-	if str(def.get("wall", "")) != "none" or track_id != "playground":
+	if track_id != "playground":
 		await _compute_edge(true)
 
 
@@ -278,6 +301,9 @@ func _spline_centerline() -> void:
 		var b: Vector3 = dense[i % dense.size()]
 		cum.append(float(cum[i - 1]) + a.distance_to(b))
 	length = cum[cum.size() - 1]
+	_point_d.clear()
+	for k in n:
+		_point_d.append(float(cum[k * 40]))
 	var count := int(floor(length / SPACING))
 	var step := length / float(count)
 	samples.resize(count)
@@ -359,6 +385,36 @@ func _setup_profile() -> void:
 			elif d > hi:
 				k = _smootherstep(float(hi + ramp - d) / ramp)
 			bank[(c + d + n) % n] = slope * k
+
+
+## Sand stretches ("sand": [from point, to point]): 1 on them, fading in and out over 15 m.
+func _setup_sand() -> void:
+	var n := samples.size()
+	sand.resize(n)
+	sand.fill(0.0)
+	for sd in def.get("sand", []):
+		if _point_d.size() <= maxi(int(sd[0]), int(sd[1])):
+			continue
+		var d0: float = _point_d[int(sd[0])]
+		var d1: float = _point_d[int(sd[1])]
+		for i in n:
+			var d := dists[i]
+			sand[i] = maxf(sand[i], smoothstep(d0 - 15.0, d0 + 15.0, d) * (1.0 - smoothstep(d1 - 15.0, d1 + 15.0, d)))
+
+
+## The sand along the lap as a texture for the road shader (x = distance / length).
+func sand_texture() -> ImageTexture:
+	var img := Image.create(sand.size(), 1, false, Image.FORMAT_R8)
+	for i in sand.size():
+		img.set_pixel(i, 0, Color(sand[i], 0, 0))
+	return ImageTexture.create_from_image(img)
+
+
+func has_sand() -> bool:
+	for v in sand:
+		if v > 0.0:
+			return true
+	return false
 
 
 static func _smootherstep(x: float) -> float:
@@ -504,7 +560,7 @@ func _build_road() -> void:
 	var lift := PackedFloat32Array()
 	lift.resize(n)
 	lift.fill(0.0)
-	for i in (n if str(def.get("wall", "")) == "none" else 0):
+	for i in (n if def.get("crossing", false) else 0):
 		for j in range(i + n / 4, i + n * 3 / 4):
 			var k := j % n
 			if Vector2(samples[i].x - samples[k].x, samples[i].z - samples[k].z).length() < width * 1.6:
@@ -531,6 +587,9 @@ func _build_road() -> void:
 		var nrm := (b - a).normalized().cross(tangents[i]).normalized() if elevated or raised else Vector3.UP
 		MeshKit.quad(st, a, b, c, d, nrm, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
+	if has_sand():
+		mat.set_shader_parameter("sand_tex", sand_texture())
+		mat.set_shader_parameter("sand_len", length)
 	road_material = mat
 	var mesh := MeshKit.commit(st, mat, null, true)
 	var mi := MeshKit.mesh_instance(mesh, null, false)
@@ -1048,6 +1107,8 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 	var side_d := rel.dot(rights[idx])
 	var lat := absf(side_d)
 	var hw_i: float = hws[idx] if idx < hws.size() else half_w
+	if lat <= hw_i and sand.size() > idx and sand[idx] > 0.5:
+		return [0.76 * (1.0 - 0.1 * wetness), "sand"]
 	if lat <= hw_i:
 		var g := 1.0 - 0.18 * wetness
 		var pd := puddle_at(pos, idx)
