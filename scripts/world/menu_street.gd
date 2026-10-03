@@ -1,18 +1,22 @@
 extends Node3D
-## The street behind the main-menu workshop: from the shutter a two-lane road runs away and bends
-## gently off into the fog – kerbs and pavements, grass verges with trees and bushes, a few fire
-## hydrants and one dim, slightly flickering sodium street lamp. Seen through the open shutter.
+## Behind the main-menu workshop: a short driveway from the shutter down to a street that runs past
+## (left to right) – kerbs and pavements (dropped at the driveway), grey-green verges, trees and
+## bushes well back across the road, a few hydrants and one dim, flickering sodium street lamp;
+## grey fog swallows the rest. The roadway is the model's own wet forecourt asphalt left uncovered
+## (so street, driveway and yard are one surface).
 
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const PropMeshes = preload("res://scripts/world/prop_meshes.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 
-const START_Z := -9.0      # where the road leaves the forecourt (the shutter is at z = -6.5)
-const LENGTH := 200.0
+const STREET_Z := -27.0    # the street's centre line (the shutter is at z = -6.5)
+const LENGTH := 260.0      # along x, centred on the driveway
 const HALF := 3.6          # half the carriageway
 const WALK := 2.2          # pavement width
 const KERB := 0.14
-const STEP := 2.0
+const STEP := 4.0
+const DRIVE := 4.4         # half width of the driveway (and the dropped kerb)
+const YARD_Z := -12.0      # the yard in front of the shutter ends here
 
 var _lamp_light: SpotLight3D
 var _lamp_glow: OmniLight3D
@@ -21,45 +25,61 @@ var _flick := 0.0
 var _flick_t := 0.0
 
 
-## Centre line: straight out of the yard, then a slow bend to the right.
+## The street: s runs along it from its left end; lateral + is the near side (towards the garage).
 static func centre(s: float) -> Vector3:
-	var b := maxf(0.0, s - 30.0)
-	return Vector3(0.0009 * b * b, 0.0, START_Z - s)
+	return Vector3(s - LENGTH * 0.5, 0.0, STREET_Z)
 
 
-static func side(s: float) -> Vector3:
-	var b := maxf(0.0, s - 30.0)
-	var t := Vector3(0.0018 * b, 0.0, -1.0).normalized()
-	return Vector3(-t.z, 0.0, t.x)      # +x at the start: the right-hand side looking out
+static func side(_s: float) -> Vector3:
+	return Vector3(0, 0, 1)
 
 
 func at(s: float, lateral: float, y := 0.0) -> Vector3:
 	return centre(s) + side(s) * lateral + Vector3(0, y, 0)
 
 
-func build(asphalt: Material) -> void:
-	var road_mat := asphalt
-	if road_mat == null:
-		road_mat = TexKit.std(Color(0.05, 0.05, 0.055), 0.35)
-	var walk_mat := TexKit.ground_material(Color(0.3, 0.3, 0.31), Color(0.36, 0.36, 0.37), Color(0.26, 0.26, 0.27), 0.6, 1.25)
-	var grass_mat := TexKit.ground_material(Color(0.05, 0.08, 0.035), Color(0.07, 0.1, 0.04), Color(0.09, 0.08, 0.05), 0.85)
-	var line_mat := TexKit.std(Color(0.78, 0.76, 0.66), 0.45)
-	# the ground beyond the forecourt: verges, fields – fog swallows the far end
-	_quad_ground(grass_mat)
-	_strip(-HALF, HALF, 0.03, 0.0, LENGTH, road_mat)
+func build(_asphalt: Material) -> void:
+	var walk_mat := TexKit.ground_material(Color(0.16, 0.16, 0.17), Color(0.19, 0.19, 0.2), Color(0.14, 0.14, 0.15), 0.45, 1.25)
+	var grass_mat := TexKit.ground_material(Color(0.07, 0.08, 0.07), Color(0.085, 0.09, 0.075), Color(0.09, 0.085, 0.07), 0.9)
+	var line_mat := TexKit.std(Color(0.62, 0.61, 0.56), 0.5)
+	var mid := LENGTH * 0.5
+	# grass: either side of the driveway between yard and pavement, and all beyond the far pavement
+	var near_edge := STREET_Z + HALF + WALK
+	_ground(Rect2(-300.0, near_edge, 300.0 - DRIVE - 0.4, YARD_Z - near_edge), grass_mat)
+	_ground(Rect2(DRIVE + 0.4, near_edge, 300.0 - DRIVE - 0.4, YARD_Z - near_edge), grass_mat)
+	_ground(Rect2(-300.0, -420.0, 600.0, (STREET_Z - HALF - WALK) + 420.0), grass_mat)
+	# pavements with their kerbs (the near one dropped and open at the driveway)
 	for sg in [-1.0, 1.0]:
-		# edge line, kerb face, pavement, the pavement's outer edge
-		_strip(sg * (HALF - 0.32), sg * (HALF - 0.2), 0.034, 0.0, LENGTH, line_mat)
-		_wall(sg * HALF, 0.03, KERB, 2.0, LENGTH, walk_mat, false)
-		_strip(sg * HALF, sg * (HALF + WALK), KERB, 2.0, LENGTH, walk_mat)
-		_wall(sg * (HALF + WALK), 0.02, KERB, 2.0, LENGTH, walk_mat, true)
-	var s := 4.0
+		var spans: Array = [[0.0, LENGTH]] if sg < 0.0 else [[0.0, mid - DRIVE], [mid + DRIVE, LENGTH]]
+		for sp in spans:
+			_wall(sg * HALF, 0.0, KERB, sp[0], sp[1], walk_mat, false)
+			_strip(sg * HALF, sg * (HALF + WALK), KERB, sp[0], sp[1], walk_mat)
+			_wall(sg * (HALF + WALK), 0.0, KERB, sp[0], sp[1], walk_mat, true)
+		# edge lines
+		var lines: Array = [[0.0, LENGTH]] if sg < 0.0 else [[0.0, mid - DRIVE - 1.0], [mid + DRIVE + 1.0, LENGTH]]
+		for ln in lines:
+			_strip(sg * (HALF - 0.32), sg * (HALF - 0.2), 0.012, ln[0], ln[1], line_mat)
+	# the dropped kerb: a low ramp of pavement across the driveway mouth
+	_strip(HALF, HALF + WALK, 0.03, mid - DRIVE, mid + DRIVE, walk_mat)
+	var s := 3.0
 	while s < LENGTH:
-		_strip(-0.07, 0.07, 0.034, s, minf(s + 3.0, LENGTH), line_mat)
+		_strip(-0.07, 0.07, 0.012, s, minf(s + 3.0, LENGTH), line_mat)
 		s += 9.0
 	_plant()
 	_hydrants()
-	_lamp(22.0, -(HALF + 0.55))
+	_lamp(mid + 7.0, HALF + 0.55)
+
+
+func _ground(r: Rect2, mat: Material) -> void:
+	var pm := PlaneMesh.new()
+	pm.size = r.size.abs()
+	var mi := MeshInstance3D.new()
+	mi.mesh = pm
+	mi.material_override = mat
+	var c := r.abs().get_center()
+	mi.position = Vector3(c.x, 0.02, c.y)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
 
 
 ## A flat strip between two lateral offsets, from s0 to s1 (UVs in metres, world-aligned).
@@ -102,18 +122,6 @@ func _wall(l: float, y0: float, y1: float, s0: float, s1: float, mat: Material, 
 	_add_mesh(st, mat)
 
 
-## Grass from the end of the yard outwards, under everything (the road and pavements lie on it).
-func _quad_ground(mat: Material) -> void:
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(600, 400)
-	var mi := MeshInstance3D.new()
-	mi.mesh = pm
-	mi.material_override = mat
-	mi.position = Vector3(0, 0.02, START_Z - 3.0 - 200.0)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-
-
 func _add_mesh(st: SurfaceTool, mat: Material) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
@@ -122,40 +130,38 @@ func _add_mesh(st: SurfaceTool, mat: Material) -> void:
 	add_child(mi)
 
 
-## Two loose rows of broadleaf trees on the verges, bushes and shrubs between them.
+## Trees well back across the street (and some far off to the sides on the near side), bushes
+## along the far verge – dark and grey-green in the rain, the fog takes most of their colour.
 func _plant() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2207
-	var near_trees := [TreeFactory.deciduous(11, 0.55), TreeFactory.deciduous(23, 0.55), TreeFactory.oak(5, 0.55)]
+	var trees := [TreeFactory.deciduous(11, 0.45), TreeFactory.deciduous(23, 0.45), TreeFactory.oak(5, 0.45)]
 	var far_trees := [TreeFactory.deciduous(41, 0.3), TreeFactory.oak(17, 0.3)]
-	var bushes := [TreeFactory.bush(3), TreeFactory.bush(8), TreeFactory.shrub(4), TreeFactory.shrub(9)]
+	var bushes := [TreeFactory.bush(3), TreeFactory.bush(8), TreeFactory.shrub(4)]
 	var items := {}
-	for m in near_trees + far_trees + bushes:
+	for m in trees + far_trees + bushes:
 		items[m] = []
+	var x := -LENGTH * 0.5 + rng.randf_range(0.0, 6.0)
+	while x < LENGTH * 0.5:
+		# a loose row 9-16 m behind the far pavement, a second one further back
+		items[trees[rng.randi() % trees.size()]].append(_xf_at(Vector3(x, 0.02, STREET_Z - HALF - WALK - rng.randf_range(9.0, 16.0)), rng, 0.9, 1.2))
+		items[far_trees[rng.randi() % far_trees.size()]].append(_xf_at(Vector3(x + rng.randf_range(-4, 4), 0.02, STREET_Z - HALF - WALK - rng.randf_range(24.0, 45.0)), rng, 1.0, 1.4))
+		if rng.randf() < 0.6:
+			items[bushes[rng.randi() % bushes.size()]].append(_xf_at(Vector3(x + rng.randf_range(-3, 3), 0.02, STREET_Z - HALF - WALK - rng.randf_range(2.0, 6.0)), rng, 0.7, 1.2))
+		x += rng.randf_range(8.0, 13.0)
+	# near side: only far out to the left and right of the yard
 	for sg in [-1.0, 1.0]:
-		var s := 9.0 + rng.randf_range(0.0, 4.0)
-		while s < LENGTH:
-			if absf(s - 22.0) > 4.0 or sg > 0.0:     # (a gap round the lamp)
-				var l: float = sg * (HALF + WALK + rng.randf_range(2.5, 5.5))
-				items[near_trees[rng.randi_range(0, near_trees.size() - 1)]].append(_xf(s, l, rng, 0.85, 1.15))
-			s += rng.randf_range(7.0, 11.0)
-		s = 14.0 + rng.randf_range(0.0, 6.0)
-		while s < LENGTH:
-			var l2: float = sg * (HALF + WALK + rng.randf_range(10.0, 22.0))
-			items[far_trees[rng.randi_range(0, far_trees.size() - 1)]].append(_xf(s, l2, rng, 0.9, 1.3))
-			s += rng.randf_range(6.0, 12.0)
-		s = 6.0
-		while s < LENGTH:
-			var l3: float = sg * (HALF + WALK + rng.randf_range(0.8, 9.0))
-			items[bushes[rng.randi_range(0, bushes.size() - 1)]].append(_xf(s, l3, rng, 0.7, 1.4))
-			s += rng.randf_range(2.5, 6.0)
+		var nx := 22.0
+		while nx < 90.0:
+			items[trees[rng.randi() % trees.size()]].append(_xf_at(Vector3(sg * nx, 0.02, rng.randf_range(STREET_Z + HALF + WALK + 4.0, YARD_Z - 3.0)), rng, 0.85, 1.15))
+			nx += rng.randf_range(10.0, 16.0)
 	for m in items:
 		_instances(m, items[m], rng)
 
 
-func _xf(s: float, l: float, rng: RandomNumberGenerator, k0: float, k1: float) -> Transform3D:
+func _xf_at(p: Vector3, rng: RandomNumberGenerator, k0: float, k1: float) -> Transform3D:
 	var k := rng.randf_range(k0, k1)
-	return Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(k, k, k)), at(s, l, 0.02))
+	return Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(k, k, k)), p)
 
 
 func _instances(mesh: Mesh, xfs: Array, rng: RandomNumberGenerator) -> void:
@@ -168,8 +174,9 @@ func _instances(mesh: Mesh, xfs: Array, rng: RandomNumberGenerator) -> void:
 	mm.instance_count = xfs.size()
 	for i in xfs.size():
 		mm.set_instance_transform(i, xfs[i])
-		var g := rng.randf_range(0.75, 1.0)
-		mm.set_instance_custom_data(i, Color(g * rng.randf_range(0.85, 1.0), g, g * rng.randf_range(0.8, 1.0), 1.0))
+		# dark and grey-green: night, rain, fog
+		var g := rng.randf_range(0.38, 0.5)
+		mm.set_instance_custom_data(i, Color(g * rng.randf_range(0.95, 1.05), g, g * rng.randf_range(0.95, 1.05), 1.0))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	add_child(mmi)
@@ -178,7 +185,7 @@ func _instances(mesh: Mesh, xfs: Array, rng: RandomNumberGenerator) -> void:
 ## Three hydrants on the pavements (the prop shader takes its tint from the instance data).
 func _hydrants() -> void:
 	var xfs := []
-	for h in [[14.0, 1.0], [41.0, -1.0], [78.0, 1.0]]:
+	for h in [[LENGTH * 0.5 - 12.0, 1.0], [LENGTH * 0.5 + 16.0, -1.0], [LENGTH * 0.5 + 38.0, 1.0]]:
 		var l: float = float(h[1]) * (HALF + 0.5)
 		xfs.append(Transform3D(Basis(Vector3.UP, randf() * TAU), at(float(h[0]), l, KERB)))
 	var mm := MultiMesh.new()

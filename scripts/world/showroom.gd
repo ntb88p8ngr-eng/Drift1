@@ -26,7 +26,8 @@ const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed.glb"
 const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City_Skybox/Midnight_City_Panorama.png"
 ## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
 const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning"]
-const DECK_Y := 0.465            # top of the turntable deck
+const DECK_Y := 0.465            # top of the turntable deck (the old garage; the new one measures it)
+const PLATFORM_SCALE := 0.78     # the workshop's platform, a size smaller
 ## glTF light intensities come in far too strong for Godot: energy per light name prefix
 const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Honeycomb": 0.6, "Booth": 0.5, "Office": 0.5, "Workbench": 0.7, "Neon": 1.4}
 
@@ -217,6 +218,21 @@ func _load_workshop() -> bool:
 	_workshop = true
 	WorkshopTextures.apply(g)
 	_epoxy_floor(g)
+	_open_spanners(g)
+	# the roller shutter comes further down (from 2.9 m to 1.5 m): less of the street shows
+	var shutter := g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
+	if shutter:
+		var top := 4.53
+		var k := (top - 1.5) / (top - 2.91)
+		shutter.global_transform = Transform3D(Basis.from_scale(Vector3(1.0, k, 1.0)), Vector3(0, top * (1.0 - k), 0)) * shutter.global_transform
+	# a smaller platform (its turning deck and the fixed neon ring round it)
+	for nm in ["Platform_Static", "Turntable_ROTATE"]:
+		var pn := g.find_child(nm, true, false) as Node3D
+		if pn:
+			pn.global_transform = Transform3D(Basis.from_scale(Vector3(PLATFORM_SCALE, 1.0, PLATFORM_SCALE)), Vector3.ZERO) * pn.global_transform
+	# the little suspension rods under the honeycomb panels (they read as spikes in the ceiling)
+	for node in g.find_children("*LED_susp*", "MeshInstance3D", true, false):
+		(node as MeshInstance3D).mesh = null
 	# the model's lightning bolt (seen through the gate) stays hidden: the flashes light the hall
 	for node in g.find_children("*Storm_lightning*", "Node3D", true, false):
 		(node as Node3D).visible = false
@@ -267,11 +283,11 @@ func _load_workshop() -> bool:
 	# depth fog: the hall stays clear, the street behind the shutter vanishes into the mist
 	env.fog_mode = Environment.FOG_MODE_DEPTH
 	env.fog_depth_begin = 16.0
-	env.fog_depth_end = 85.0
-	env.fog_depth_curve = 1.4
-	env.fog_density = 0.95
-	env.fog_light_color = Color(0.11, 0.12, 0.15)
-	env.fog_sky_affect = 0.35
+	env.fog_depth_end = 70.0
+	env.fog_depth_curve = 1.3
+	env.fog_density = 0.97
+	env.fog_light_color = Color(0.2, 0.21, 0.23)      # grey, rainy night
+	env.fog_sky_affect = 0.55
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -303,7 +319,7 @@ func _load_workshop() -> bool:
 	_deck = g.find_child("Turntable_ROTATE", true, false) as Node3D
 	turntable = Node3D.new()
 	turntable.name = "CarOnDeck"
-	turntable.position = Vector3(0, DECK_Y, 0)
+	turntable.position = Vector3(0, _deck_top(_deck) if _deck else DECK_Y, 0)
 	add_child(turntable)
 	# the platform is turned here (not by the model's 20 s animation): slower, one way, by the buttons
 	_anim = g.find_child("AnimationPlayer", true, false) as AnimationPlayer
@@ -382,6 +398,99 @@ func _find_pc(g: Node3D) -> void:
 			if not _pc_corners.has(p):
 				_pc_corners.append(p)
 		return
+
+
+## The wrenches on the walls are ring spanners at both ends: the lower ring of each becomes an open
+## jaw (a combination spanner) – the ring and its teeth go, a C-shaped jaw takes their place.
+func _open_spanners(g: Node3D) -> void:
+	var by_parent := {}
+	for node in g.find_children("*Ring_spanner_head*", "MeshInstance3D", true, false):
+		var p := node.get_parent()
+		if not by_parent.has(p):
+			by_parent[p] = []
+		by_parent[p].append(node)
+	for p in by_parent:
+		var heads: Array = by_parent[p]
+		if heads.size() < 2:
+			continue
+		heads.sort_custom(func(a, b): return _gaabb(a).get_center().y < _gaabb(b).get_center().y)
+		var low: MeshInstance3D = heads[0]
+		var high: MeshInstance3D = heads[heads.size() - 1]
+		var lb := _gaabb(low)
+		var hb := _gaabb(high)
+		var mat := low.get_active_material(0)
+		# its teeth: the ones nearer the lower head
+		for t in (p as Node).find_children("*Ring_internal_tooth*", "MeshInstance3D", true, false):
+			var tc := _gaabb(t).get_center()
+			if tc.distance_to(lb.get_center()) < tc.distance_to(hb.get_center()):
+				(t as MeshInstance3D).mesh = null
+		low.mesh = null
+		# the jaw: in the spanner's plane (its thinnest axis is the normal), open away from the shaft
+		var size := lb.size
+		var ax := 0 if size.x <= size.y and size.x <= size.z else (1 if size.y <= size.z else 2)
+		var n := Vector3.ZERO
+		n[ax] = 1.0
+		var down := (lb.get_center() - hb.get_center()).normalized()
+		var r := maxf(maxf(size.x, size.y), size.z) * 0.5
+		var mi := MeshInstance3D.new()
+		mi.mesh = _jaw_mesh(r, r * 0.55, maxf(size[ax], 0.004))
+		mi.material_override = mat
+		g.add_child(mi)
+		var side := down.cross(n).normalized()
+		mi.global_transform = Transform3D(Basis(side, -down, n), lb.get_center())
+
+
+## Where the car stands: the top of the turning deck's surface.
+static func _deck_top(deck: Node3D) -> float:
+	var top := -1e9
+	for node in deck.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var b := _gaabb(mi)
+		# only what lies in the middle (the deck), not something standing on its rim
+		if Vector2(b.get_center().x, b.get_center().z).length() < 2.0 and b.end.y < 0.6:
+			top = maxf(top, b.end.y)
+	return top if top > -1e8 else DECK_Y
+
+
+static func _gaabb(mi: MeshInstance3D) -> AABB:
+	return mi.global_transform * mi.mesh.get_aabb() if mi.mesh else AABB(mi.global_position, Vector3.ZERO)
+
+
+## An open-end jaw: a thick ring with a 80° gap towards -Y (local), `t` thick along Z.
+static func _jaw_mesh(r_out: float, r_in: float, t: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seg := 20
+	var a0 := deg_to_rad(-90.0 + 40.0)
+	var a1 := deg_to_rad(270.0 - 40.0)
+	for k in seg:
+		var ta := lerpf(a0, a1, float(k) / seg)
+		var tb := lerpf(a0, a1, float(k + 1) / seg)
+		var oa := Vector3(cos(ta), sin(ta), 0)
+		var ob := Vector3(cos(tb), sin(tb), 0)
+		for z: float in [-t * 0.5, t * 0.5]:
+			var zz := Vector3(0, 0, z)
+			var nz := Vector3(0, 0, signf(z))
+			var q := [oa * r_in + zz, oa * r_out + zz, ob * r_out + zz, ob * r_in + zz]
+			_quad_n(st, q, nz, z < 0.0)
+		_quad_n(st, [oa * r_out - Vector3(0, 0, t * 0.5), ob * r_out - Vector3(0, 0, t * 0.5), ob * r_out + Vector3(0, 0, t * 0.5), oa * r_out + Vector3(0, 0, t * 0.5)], (oa + ob).normalized(), false)
+		_quad_n(st, [oa * r_in - Vector3(0, 0, t * 0.5), ob * r_in - Vector3(0, 0, t * 0.5), ob * r_in + Vector3(0, 0, t * 0.5), oa * r_in + Vector3(0, 0, t * 0.5)], -(oa + ob).normalized(), true)
+	# the two flat jaw faces at the gap
+	for a: float in [a0, a1]:
+		var o := Vector3(cos(a), sin(a), 0)
+		var nn := Vector3(-sin(a), cos(a), 0) * (1.0 if a == a0 else -1.0)
+		_quad_n(st, [o * r_in - Vector3(0, 0, t * 0.5), o * r_out - Vector3(0, 0, t * 0.5), o * r_out + Vector3(0, 0, t * 0.5), o * r_in + Vector3(0, 0, t * 0.5)], nn, a == a0)
+	return st.commit()
+
+
+## A quad facing n (drawn both ways round so it never disappears).
+static func _quad_n(st: SurfaceTool, q: Array, n: Vector3, _flip: bool) -> void:
+	for idx in [[0, 1, 2, 0, 2, 3], [0, 2, 1, 0, 3, 2]]:
+		for i in idx:
+			st.set_normal(n)
+			st.add_vertex(q[i])
 
 
 ## The hall's floor as a high-gloss epoxy coat: dark grey with fine flakes, a mirror-like clear coat.

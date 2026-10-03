@@ -14,7 +14,7 @@ const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const MMUtil = preload("res://scripts/util/mm_util.gd")
 
 const TOOLS := [
-	["select", "Auswählen", "Klicken: Objekt / Baum wählen · Ziehen: verschieben · R / Shift+R: drehen · +/-: Größe · Bild↑/↓: Höhe · Entf: löschen"],
+	["select", "Auswählen", "Klicken: Objekt / Baum wählen · Strg+Klick: zur Auswahl hinzufügen · Ziehen: verschieben · R / Shift+R: drehen · +/-: Größe · Bild↑/↓: Höhe · Entf: löschen"],
 	["place", "Platzieren", "Objekt aus der Liste wählen · Klicken: setzen · R: drehen · +/-: Größe"],
 	["raise", "Anheben", "Gedrückt halten: Gelände anheben (Pinselgröße / -stärke links)"],
 	["lower", "Absenken", "Gedrückt halten: Gelände absenken"],
@@ -510,9 +510,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_mmb = mb.pressed
 			MOUSE_BUTTON_LEFT:
 				if mb.pressed:
-					_click(mb.double_click, mb.shift_pressed)
+					_click(mb.double_click, mb.shift_pressed or mb.ctrl_pressed or mb.meta_pressed)
 				else:
-					_release(mb.shift_pressed)
+					_release(mb.shift_pressed or mb.ctrl_pressed or mb.meta_pressed)
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.pressed:
