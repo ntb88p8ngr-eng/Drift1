@@ -206,6 +206,7 @@ var _next := 3.0
 var _pulses: Array = []       # [start time, strength]
 var _t := 0.0
 var _heavy := false
+var _roofs: Array = []         # heavy: roofed ground beside the hall (office, paint booth): no rain
 var _rain_alpha := 0.12
 var _pano: ShaderMaterial          # heavy: the photo sky (its "energy"), brightened by the flashes
 var _pano_energy := 1.0
@@ -245,7 +246,8 @@ func setup(env: Environment, hall: Rect2) -> void:
 
 
 ## The heavy storm round a hall with its own street outside and a panorama sky (env keeps it).
-func setup_heavy(env: Environment, hall: Rect2) -> void:
+func setup_heavy(env: Environment, hall: Rect2, roofs: Array = []) -> void:
+	_roofs = roofs
 	_heavy = true
 	_rain_alpha = 0.2
 	if env.sky and env.sky.sky_material is ShaderMaterial:
@@ -276,10 +278,59 @@ func _apply_volume() -> void:
 
 
 ## Splashes where the rain hits the ground outside: tiny bright flecks that pop up and fade.
+## The ground round the hall that the rain reaches: a 2 m grid without the roofed parts (the hall,
+## the annexes in `_roofs`) and without the strip in front where the camera stands, merged back into
+## a few rectangles (one rain system each).
+func _open_sky(hall: Rect2, reach: float) -> Array:
+	var covered: Array = [hall.grow(1.5)]
+	for r in _roofs:
+		covered.append((r as Rect2).grow(0.8))
+	var area := Rect2(hall.position.x - reach, hall.position.y - reach, hall.size.x + reach * 2.0, hall.size.y + reach)
+	var cell := 2.0
+	var nx := int(ceil(area.size.x / cell))
+	var nz := int(ceil(area.size.y / cell))
+	var rows: Array = []
+	for iz in nz:
+		var spans: Array = []
+		var start := -1
+		for ix in nx + 1:
+			var free := false
+			if ix < nx:
+				var c := Rect2(area.position.x + ix * cell, area.position.y + iz * cell, cell, cell)
+				free = c.end.y <= hall.end.y + 1.5      # (nothing in front of the hall)
+				for cv in covered:
+					if (cv as Rect2).intersects(c):
+						free = false
+						break
+			if free and start < 0:
+				start = ix
+			elif not free and start >= 0:
+				spans.append(Vector2i(start, ix))
+				start = -1
+		rows.append(spans)
+	# rows with the same spans one after another become one rectangle
+	var out: Array = []
+	var open := {}       # span -> first row
+	for iz in nz + 1:
+		var spans: Array = rows[iz] if iz < nz else []
+		for sp in open.keys():
+			if not spans.has(sp):
+				var z0: int = open[sp]
+				out.append(Rect2(area.position.x + sp.x * cell, area.position.y + z0 * cell, (sp.y - sp.x) * cell, (iz - z0) * cell))
+				open.erase(sp)
+		for sp in spans:
+			if not open.has(sp):
+				open[sp] = iz
+	return out
+
+
 func _build_splashes(hall: Rect2) -> void:
 	var outer := hall.grow(1.0)
-	for r in [Rect2(outer.position.x - 12.0, outer.position.y - 30.0, outer.size.x + 24.0, 30.0),
-			Rect2(outer.position.x - 12.0, outer.end.y, outer.size.x + 24.0, 10.0)]:
+	var rects: Array = [Rect2(outer.position.x - 12.0, outer.position.y - 30.0, outer.size.x + 24.0, 30.0),
+			Rect2(outer.position.x - 12.0, outer.end.y, outer.size.x + 24.0, 10.0)]
+	if _heavy:
+		rects = _open_sky(hall, 30.0)
+	for r in rects:
 		var rect: Rect2 = r
 		var p := GPUParticles3D.new()
 		p.amount = int(rect.size.x * rect.size.y * [0.4, 0.7, 1.0, 1.4][clampi(Game.quality(), 0, 3)])
@@ -383,7 +434,6 @@ func _build_ground(hall: Rect2) -> void:
 
 func _build_rain(hall: Rect2, density := 1.0, reach := 14.0) -> void:
 	var outer := hall.grow(1.5)
-	# four slabs of rain around the hall
 	var slabs := [
 		Rect2(outer.position.x - reach, outer.position.y - reach, outer.size.x + reach * 2.0, reach),   # back
 		Rect2(outer.position.x - reach, outer.end.y, outer.size.x + reach * 2.0, reach),                 # front
@@ -391,8 +441,9 @@ func _build_rain(hall: Rect2, density := 1.0, reach := 14.0) -> void:
 		Rect2(outer.end.x, outer.position.y, reach, outer.size.y),                                       # right
 	]
 	if _heavy:
-		# (the menu camera stands out in front: no rain right in front of the lens)
-		slabs.remove_at(1)
+		# everywhere round the hall that has no roof over it (not the office and the paint booth
+		# beside the hall, and not in front of the camera)
+		slabs = _open_sky(hall, reach)
 	var q := clampi(Game.quality(), 0, 3)
 	for r in slabs:
 		var rect: Rect2 = r

@@ -60,10 +60,14 @@ var _pc_size := Vector2.ONE      # metres
 var _ceiling_mat: BaseMaterial3D
 var _platform_mat: BaseMaterial3D
 var _ceiling_emission := 1.0
+var _ceiling_albedo := Color.WHITE
 var _platform_emission := 1.0
 var _ceiling_lights: Array = []
 var _platform_lights: Array = []
 var _light_base := {}
+var _ceiling_extra: Array = []    # [material, base emission] – the warm fixtures, dimmed with the ceiling
+var _probe: ReflectionProbe       # the floor's mirror image: re-shot whenever the lights change
+var _probe_t := -1.0
 
 ## The platform (menu buttons): it turns slowly on its own, always the same way; held buttons turn it
 ## either way; a view ("overview", "wheels", "front", "rear") swings it (forwards) and the camera to a
@@ -316,7 +320,8 @@ func _load_workshop() -> bool:
 	var storm_fx := MenuStorm.new()
 	storm_fx.name = "Storm"
 	add_child(storm_fx)
-	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0))
+	# (no rain under the roofs beside the hall: the office annex on the left, the paint booth on the right)
+	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5, 7.1, 4.7)])
 	for l in g.find_children("*", "Light3D", true, false):
 		var light := l as Light3D
 		for pre in WORKSHOP_LIGHTS:
@@ -366,6 +371,9 @@ func _load_workshop() -> bool:
 	key.shadow_bias = 0.08
 	key.shadow_normal_bias = 1.5
 	add_child(key)
+	# (it hangs from the ceiling: the ceiling slider dims it too)
+	_ceiling_lights.append(key)
+	_light_base[key] = key.light_energy
 	var rim := OmniLight3D.new()
 	rim.position = Vector3(0, 1.6, -5.5)
 	rim.omni_range = 8.0
@@ -373,12 +381,16 @@ func _load_workshop() -> bool:
 	rim.light_color = Color(1.0, 0.25, 0.25)
 	add_child(rim)
 	var probe := ReflectionProbe.new()
-	probe.size = Vector3(17.4, 5.2, 20.4)
-	probe.position = Vector3(0, 2.4, -3.8)
+	# (reaching over the extended floor in front of the hall too: outside the box the floor's
+	# mirror image of the honeycomb came out stretched and smeared)
+	probe.size = Vector3(17.4, 5.2, 24.0)
+	probe.position = Vector3(0, 2.4, -2.0)
 	probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	probe.box_projection = true
 	probe.interior = true
 	add_child(probe)
+	_probe = probe
+	apply_menu_lights()
 	cam = Camera3D.new()
 	cam.fov = 58.0
 	cam.current = true
@@ -621,12 +633,15 @@ func _find_menu_lights(g: Node3D) -> void:
 				continue
 			if mat.resource_name == "Honeycomb_LED_diffuser":
 				_ceiling_mat = mat
+			elif mat.resource_name == "Warm_fixture" and not _ceiling_extra.any(func(e): return e[0] == mat):
+				_ceiling_extra.append([mat, mat.emission_energy_multiplier, mat.albedo_color])
 			elif str(mi.name).contains("Segmented_platform_neon"):
 				if _platform_mat == null:
 					_platform_mat = mat.duplicate() as BaseMaterial3D
 				mi.set_surface_override_material(si, _platform_mat)
 	if _ceiling_mat:
 		_ceiling_emission = _ceiling_mat.emission_energy_multiplier
+		_ceiling_albedo = _ceiling_mat.albedo_color
 	if _platform_mat:
 		_platform_emission = _platform_mat.emission_energy_multiplier
 	for l in g.find_children("*", "Light3D", true, false):
@@ -644,19 +659,27 @@ func apply_menu_lights() -> void:
 	var col := Color(str(ml.get("platform_color", "#ff0505")))
 	if _ceiling_mat:
 		_ceiling_mat.emission_energy_multiplier = _ceiling_emission * ceiling
+		# switched off it is a dark diffuser, not a pale one catching the other lights
+		_ceiling_mat.albedo_color = Color(0.06, 0.06, 0.065).lerp(_ceiling_albedo, clampf(ceiling, 0.0, 1.0))
+	for e in _ceiling_extra:
+		(e[0] as BaseMaterial3D).emission_energy_multiplier = float(e[1]) * ceiling
+		(e[0] as BaseMaterial3D).albedo_color = (e[2] as Color).darkened(0.85 * (1.0 - clampf(ceiling, 0.0, 1.0)))
 	for l in _ceiling_lights:
 		if is_instance_valid(l):
 			l.light_energy = float(_light_base.get(l, 1.0)) * ceiling
 			l.visible = ceiling > 0.01
 	if _platform_mat:
 		_platform_mat.emission = col
-		_platform_mat.albedo_color = col.darkened(0.2)
+		_platform_mat.albedo_color = col.darkened(0.2 + 0.75 * (1.0 - clampf(platform, 0.0, 1.0)))
 		_platform_mat.emission_energy_multiplier = _platform_emission * platform
 	for l in _platform_lights:
 		if is_instance_valid(l):
 			l.light_color = col
 			l.light_energy = float(_light_base.get(l, 1.0)) * platform
 			l.visible = platform > 0.01
+	# the floor mirrors what is lit now (not what was lit when the probe was first shot)
+	if _probe:
+		_probe_t = 0.35
 
 
 ## The camera stands in front of the open hall: the floor runs on out of the front and to the sides,
@@ -996,6 +1019,12 @@ static func _spline(pts: Array, u: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _probe_t >= 0.0:
+		# re-shot every frame while a slider moves, then frozen again
+		_probe.update_mode = ReflectionProbe.UPDATE_ALWAYS
+		_probe_t -= delta
+		if _probe_t < 0.0:
+			_probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	if _office_door and absf(_door_open - _door_want) > 0.001:
 		# eased: quick at first, settling softly
 		_door_open = move_toward(_door_open, _door_want, delta * (0.25 + 1.6 * absf(_door_want - _door_open)))
