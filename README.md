@@ -133,3 +133,21 @@ Grüne Hölle (`assets/tracks/gruene_hoelle/`, erzeugt mit `tools/make_gruene_ho
 - Landbedeckung (Wald, Felder, Orte): Overture Maps Foundation, abgeleitet aus ESA WorldCover (**CC BY 4.0**)
 - Höhendaten: AWS Terrain Tiles (Mapzen) – enthält SRTM, EU-DEM (produziert mit Copernicus-Daten, gefördert von der
   Europäischen Union) und GMTED
+
+## Dedizierter Server
+
+Export-Vorlage **„Windows Server“** → `build/server/MidnightDriftServer.exe` (läuft ohne Fenster, mit
+Konsole: `MidnightDriftServer.console.exe`, oder `tools/server/StartServer.bat` daneben legen). Das Spiel
+selbst startet mit `--server` ebenfalls als Server (`godot --headless --path . -- --server`).
+
+- Beim ersten Start entsteht `server.cfg` neben dem Programm (sonst im Benutzerordner; `--config=pfad`):
+  Name, Port, Plätze, Passwort, öffentlich gelistet ja/nein, Begrüßung (`motd`), Streckenrotation,
+  Modus, Runden, Wetter, Tageszeit, Mindestspieler, Startverzögerung und Aktionscodes (`[codes]`).
+- Der Server ist selbst kein Spieler: Rennen starten automatisch, wenn alle bereit sind; nach dem
+  Ziel geht es zurück in die Lobby und weiter zur nächsten Strecke. Keine KI-Gegner / Party-Spiele.
+- Konsole: `help`, `status`, `players`, `say`, `kick`, `start`, `lobby`, `track`, `mode`, `laps`,
+  `weather`, `time`, `code add/del/list`, `reload`, `quit`.
+- **Serverliste** (Online → Serverliste): öffentliche Server und Lobbys senden alle 40 s ein Lebenszeichen
+  an das öffentliche Relay (ntfy.sh) – nur Name, Spielerzahl, Strecke, Modus und Beitritts-Code, keine
+  IP-Adresse. Beitreten läuft über den Code (verschlüsselt, ohne Portfreigabe). LAN-Lobbys stehen
+  ebenfalls in der Liste.

@@ -152,7 +152,7 @@ func _float_action(text: String, callback: Callable) -> Button:
 
 
 func show_screen(screen: String) -> void:
-	if current == "online" and screen != "online":
+	if (current == "online" or current == "servers") and screen != current:
 		Net.stop_lan_scan()
 	current = screen
 	_clear()
@@ -178,6 +178,8 @@ func show_screen(screen: String) -> void:
 			_build_replays()
 		"credits":
 			_build_credits()
+		"servers":
+			_build_servers()
 		"admin":
 			_header("ADMIN")
 			var box := VBoxContainer.new()
@@ -295,6 +297,85 @@ func _build_editor() -> void:
 	_add(UiKit.spacer(8))
 	_add(UiKit.button("Karte importieren …", _import_map, 360))
 	_float_button("◀  Zurück", func(): show_screen("main"))
+
+
+# ---------------------------------------------------------------------------
+# Server browser: public servers (internet, by short code) and lobbies in the LAN
+# ---------------------------------------------------------------------------
+var _srv_box: VBoxContainer
+var _srv_pw: LineEdit
+
+
+func _build_servers() -> void:
+	_header("SERVERLISTE")
+	_srv_pw = LineEdit.new()
+	_srv_pw.placeholder_text = "nur für Server mit 🔒"
+	_srv_pw.secret = true
+	_srv_pw.custom_minimum_size = Vector2(260, 40)
+	_add(UiKit.row([UiKit.button("⟳  Aktualisieren", func():
+		Net.server_list.refresh()
+		_fill_servers(), 220), UiKit.label("Passwort", 16), _srv_pw]))
+	_srv_box = VBoxContainer.new()
+	_srv_box.add_theme_constant_override("separation", 6)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(900, 470)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.add_child(_srv_box)
+	_add(sc)
+	_add(UiKit.label("Eigene Server: MidnightDriftServer.exe (Einstellungen in server.cfg) – oder eine Lobby mit „In der öffentlichen Serverliste zeigen“.", 13, UiKit.TEXT_DIM))
+	if not Net.server_list.changed.is_connected(_fill_servers):
+		Net.server_list.changed.connect(_fill_servers)
+	if not Net.lan_lobbies_changed.is_connected(_fill_servers):
+		Net.lan_lobbies_changed.connect(_fill_servers)
+	Net.start_lan_scan()
+	Net.server_list.refresh()
+	_fill_servers()
+	_float_button("◀  Zurück", func(): show_screen("online"))
+
+
+func _fill_servers() -> void:
+	if current != "servers" or _srv_box == null or not is_instance_valid(_srv_box):
+		return
+	for c in _srv_box.get_children():
+		c.queue_free()
+	var head := "INTERNET"
+	if Net.server_list.fetching:
+		head += "  (lädt …)"
+	_srv_box.add_child(UiKit.label(head, 19, UiKit.GOLD))
+	if Net.server_list.last_error != "":
+		_srv_box.add_child(UiKit.label(Net.server_list.last_error, 15, UiKit.BAD))
+	var list: Array = Net.server_list.servers.values()
+	list.sort_custom(func(a, b): return int(a["players"]) > int(b["players"]))
+	if list.is_empty() and not Net.server_list.fetching:
+		_srv_box.add_child(UiKit.label("Gerade keine öffentlichen Server.", 15, UiKit.TEXT_DIM))
+	for sv in list:
+		var e: Dictionary = sv
+		var text := "%s%s   %d/%d   %s · %s%s%s" % ["🔒 " if bool(e["locked"]) else "", e["name"], int(e["players"]), int(e["max"]),
+			Game.track_name(str(e["track"])), Game.mode_name(str(e["mode"])), "   [Server]" if bool(e["dedicated"]) else "",
+			"   (Rennen läuft)" if bool(e["in_race"]) else ""]
+		var full := int(e["players"]) >= int(e["max"])
+		var b := UiKit.button("Voll" if full else "Beitreten", func():
+			var err := Net.join_code(str(e["code"]), _srv_pw.text)
+			show_status(err if err != "" else "Verbinde verschlüsselt …", UiKit.BAD if err != "" else UiKit.GOLD), 150)
+		b.disabled = full or str(e["v"]) != Game.VERSION
+		if str(e["v"]) != Game.VERSION:
+			b.text = "Version %s" % e["v"]
+		var row := UiKit.row([UiKit.label(text, 16), b])
+		_srv_box.add_child(row)
+		if str(e.get("motd", "")) != "":
+			_srv_box.add_child(UiKit.label("      " + str(e["motd"]), 13, UiKit.TEXT_DIM))
+	_srv_box.add_child(UiKit.spacer(6))
+	_srv_box.add_child(UiKit.label("LOKALES NETZWERK", 19, UiKit.GOLD))
+	if Net.lan_lobbies.is_empty():
+		_srv_box.add_child(UiKit.label("Keine Lobbys im LAN gefunden.", 15, UiKit.TEXT_DIM))
+	for key in Net.lan_lobbies:
+		var info: Dictionary = Net.lan_lobbies[key]
+		var ip := str(key).rsplit(":", true, 1)[0]
+		var text := "%s%s   %d/%d   %s · %s" % ["🔒 " if bool(info.get("locked", false)) else "", info.get("name", "Lobby"),
+			int(info.get("players", 0)), int(info.get("max", 8)), Game.track_name(str(info.get("track", ""))), Game.mode_name(str(info.get("mode", "")))]
+		_srv_box.add_child(UiKit.row([UiKit.label(text, 16), UiKit.button("Beitreten", func():
+			_lan_pw = _srv_pw
+			_join(ip, int(info.get("port", Net.DEFAULT_PORT)), str(info.get("cert", ""))), 150)]))
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +641,8 @@ func _build_garage() -> void:
 		if bool(r[0]):
 			_build_garage_again.call_deferred()
 	code_edit.text_submitted.connect(func(_t): redeem.call())
+	if not Net.code_result.is_connected(_on_code_result):
+		Net.code_result.connect(_on_code_result)
 	_add(UiKit.labeled("Aktionscode", UiKit.row([code_edit, UiKit.button("Einlösen", redeem, 140)])))
 	var paint_names: Array = []
 	var paint_idx := 0
@@ -638,6 +721,14 @@ func _build_garage() -> void:
 		show_screen(_return_to))
 
 
+func _on_code_result(ok: bool, text: String) -> void:
+	if current != "garage":
+		return
+	if ok:
+		_build_garage_again()
+	show_status(text, UiKit.GOOD if ok else UiKit.BAD)
+
+
 func _build_garage_again() -> void:
 	var msg := _status_text()
 	show_screen("garage")
@@ -707,6 +798,7 @@ func _update_car_info() -> void:
 # ---------------------------------------------------------------------------
 func _build_online() -> void:
 	_header("ONLINE-MODUS")
+	_add(UiKit.button("🌐  Serverliste", func(): show_screen("servers"), 360))
 	var name_edit := LineEdit.new()
 	name_edit.text = Game.settings["player_name"]
 	name_edit.max_length = 20
@@ -748,12 +840,18 @@ func _build_online() -> void:
 	upnp.button_pressed = bool(Game.settings["use_upnp"])
 	upnp.toggled.connect(func(on): Game.set_setting("use_upnp", on))
 	_add(upnp)
+	var pub := CheckBox.new()
+	pub.text = "In der öffentlichen Serverliste zeigen"
+	pub.button_pressed = bool(Game.settings.get("list_public", false))
+	pub.tooltip_text = "Andere finden deine Lobby unter „Serverliste“. Gezeigt werden nur Name, Spieler, Strecke und der Beitritts-Code – keine IP-Adresse."
+	pub.toggled.connect(func(on): Game.set_setting("list_public", on))
+	_add(pub)
 	_add(UiKit.button("Lobby erstellen", func():
 		var port := int(port_edit.text) if port_edit.text.is_valid_int() else Net.DEFAULT_PORT
 		Game.settings["port"] = port
 		Game.set_setting("lobby_name", lobby_name.text)
 		Game.set_setting("lobby_password", pw_edit.text.strip_edges())
-		var err := Net.host_lobby(lobby_name.text, port, int(Game.settings["max_players"]), bool(Game.settings["use_upnp"]), pw_edit.text)
+		var err := Net.host_lobby(lobby_name.text, port, int(Game.settings["max_players"]), bool(Game.settings["use_upnp"]), pw_edit.text, false, bool(Game.settings.get("list_public", false)))
 		if err != "":
 			show_status(err, UiKit.BAD)
 		else:
@@ -978,6 +1076,8 @@ func _refresh_lobby() -> void:
 			int(Net.lobby.get("port", Net.DEFAULT_PORT)), ", mit Passwort" if Net.password != "" else ", OHNE Passwort"])
 		if Net.upnp_message != "":
 			info_lines.append(Net.upnp_message)
+	elif bool(Net.lobby.get("dedicated", false)):
+		info_lines.append("Dedizierter Server – das Rennen startet automatisch, sobald alle bereit sind.")
 	else:
 		info_lines.append("Verbunden (verschlüsselt) – warte darauf, dass der Host das Rennen startet.")
 	_lobby_info.text = "\n".join(info_lines)

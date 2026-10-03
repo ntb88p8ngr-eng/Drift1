@@ -924,7 +924,6 @@ const BUILTIN_CODES := {
 	"BMWM": {"car": "m6gt3"},
 	"BOUNCE": {"car": "yaris"},
 }
-var server_codes := {}           # codes the online server hands out (set by Net)
 
 
 func car_price(car_id: String) -> int:
@@ -982,11 +981,20 @@ func redeem_code(raw: String) -> Array:
 	var code := raw.strip_edges().to_upper().replace(" ", "")
 	if code == "":
 		return [false, "Bitte einen Code eingeben"]
-	var e = BUILTIN_CODES.get(code, server_codes.get(code, (settings["admin_codes"] as Dictionary).get(code)))
-	if not (e is Dictionary):
-		return [false, "Unbekannter Code"]
+	var e = BUILTIN_CODES.get(code, (settings["admin_codes"] as Dictionary).get(code))
 	if (settings["redeemed_codes"] as Array).has(code):
 		return [false, "Code wurde schon eingelöst"]
+	if not (e is Dictionary):
+		if Net.is_online and not Net.is_host():
+			# maybe one of the server's codes: it checks it and sends the reward (Net.code_result)
+			Net.request_code(code)
+			return [true, "Code wird beim Server geprüft …"]
+		return [false, "Unbekannter Code"]
+	return apply_code_reward(code, e)
+
+
+## Gives what a code gives (credits, a car) and remembers the code: [ok, message].
+func apply_code_reward(code: String, e: Dictionary) -> Array:
 	var got: Array = []
 	var cr := int(e.get("credits", 0))
 	if cr > 0:
@@ -996,7 +1004,8 @@ func redeem_code(raw: String) -> Array:
 	if CARS.has(car) and not (settings["owned_cars"] as Array).has(car):
 		settings["owned_cars"].append(car)
 		got.append(str(CARS[car]["name"]))
-	settings["redeemed_codes"].append(code)
+	if code != "":
+		settings["redeemed_codes"].append(code)
 	save_settings()
 	return [true, "Eingelöst: " + (", ".join(got) if not got.is_empty() else "nichts Neues")]
 

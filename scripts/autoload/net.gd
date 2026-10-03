@@ -31,6 +31,7 @@ signal upnp_finished(ok: bool, message: String)
 signal graffiti_claimed(owner_id: int, cells: PackedInt32Array)
 signal party_msg(from_id: int, msg: Dictionary)
 signal join_status(text: String)   # short-code join: progress for the menu
+signal code_result(ok: bool, text: String)   # an action code checked by the server
 
 const DEFAULT_PORT := 24570
 const DISCOVERY_PORT := 24571
@@ -72,6 +73,13 @@ var _upnp_thread: Thread
 var _upnp_port := 0
 
 const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
+const ServerList = preload("res://scripts/autoload/server_list.gd")
+var server_list: Node
+var dedicated := false      # this machine is a dedicated server (no player of its own)
+var public_list := false    # shown in the public server list
+var motd := ""              # dedicated server: message of the day (lobby chat, server list)
+var server_codes := {}      # dedicated server: action codes CODE -> {credits, car}
+var _redeemed := {}         # server: CODE -> [player names that used it]
 var host_code := ""        # host: short code for internet play (no port forwarding needed)
 var _rv: Node              # Rendezvous while hosting or joining by code
 var _host_cands: Array = []
@@ -100,6 +108,9 @@ func _ready() -> void:
 	sm.auth_timeout = AUTH_TIMEOUT
 	sm.peer_authenticating.connect(_on_peer_authenticating)
 	sm.peer_authentication_failed.connect(_on_peer_auth_failed)
+	server_list = ServerList.new()
+	server_list.name = "ServerList"
+	add_child(server_list)
 
 
 func _exit_tree() -> void:
@@ -121,8 +132,10 @@ func local_id() -> int:
 # Hosting / joining
 # ---------------------------------------------------------------------------
 ## Creates a lobby on this machine. Returns an error text or "" on success.
-func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool, lobby_password := "") -> String:
+func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool, lobby_password := "", p_dedicated := false, p_public := false) -> String:
 	leave()
+	dedicated = p_dedicated
+	public_list = p_public
 	var tls := _server_tls()
 	if tls == null:
 		return "Verschlüsselung konnte nicht eingerichtet werden (Zertifikat)."
@@ -133,7 +146,7 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 		seen = Rendezvous.stun(probe)
 		probe.close()
 	peer = ENetMultiplayerPeer.new()
-	var err := peer.create_server(port, maxi(max_players - 1, 1))
+	var err := peer.create_server(port, maxi(max_players - (0 if dedicated else 1), 1))
 	if err != OK:
 		peer = null
 		return "Server konnte nicht gestartet werden – ist Port %d schon belegt?" % port
@@ -165,13 +178,20 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 		"collisions": true,
 		"bots": int(Game.settings.get("bots", 0)),
 		"bot_level": int(Game.settings.get("bot_level", 1)),
-		"host_id": 1,
+		"host_id": 0 if dedicated else 1,
 		"locked": password != "",
+		"dedicated": dedicated,
 	}
-	players = {1: Game.local_player_info()}
+	players = {} if dedicated else {1: Game.local_player_info()}
+	if dedicated:
+		# no world on a dedicated server: nobody to drive bots or run party games
+		lobby["bots"] = 0
+		lobby["party"] = false
 	_start_broadcast()
 	_host_cands = Rendezvous.candidates(seen, port, global_ipv6_addresses(), get_local_addresses())
 	_start_rendezvous(Rendezvous.make_code())
+	if public_list:
+		server_list.announce(_heartbeat)
 	upnp_message = ""
 	if use_upnp:
 		_start_upnp(port)
@@ -389,7 +409,19 @@ static func split_address(text: String, port: int) -> Array:
 	return [t, port]
 
 
+## What the public server list shows (no address – joining goes through the short code).
+func _heartbeat() -> Dictionary:
+	if not is_host() or host_code == "":
+		return {}
+	return {"game": GAME_TAG, "v": Game.VERSION, "name": lobby.get("name", "Server"), "code": host_code,
+		"players": players.size(), "max": lobby.get("max_players", 8), "track": lobby.get("track", "ridge"),
+		"mode": lobby.get("mode", "race"), "locked": password != "", "dedicated": dedicated, "in_race": in_race, "motd": motd}
+
+
 func leave() -> void:
+	if server_list:
+		server_list.stop_announce()
+	dedicated = false
 	_stop_rendezvous()
 	_stop_broadcast()
 	_remove_upnp()
@@ -887,6 +919,43 @@ func all_ready() -> bool:
 		if id != 1 and not players[id].get("ready", false):
 			return false
 	return true
+
+
+# ---------------------------------------------------------------------------
+# Action codes: checked by the server (its codes never leave it), the reward comes back
+# ---------------------------------------------------------------------------
+func request_code(code: String) -> void:
+	if is_online and not is_host():
+		_request_code.rpc_id(1, code)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_code(code: String) -> void:
+	if not is_host():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	code = code.strip_edges().to_upper().replace(" ", "").substr(0, 32)
+	var codes: Dictionary = server_codes if dedicated else Game.settings.get("admin_codes", {})
+	if not codes.has(code):
+		_code_reply.rpc_id(id, false, "Unbekannter Code", {})
+		return
+	var who := str(players.get(id, {}).get("name", "?"))
+	var used: Array = _redeemed.get(code, [])
+	if used.has(who):
+		_code_reply.rpc_id(id, false, "Code wurde schon eingelöst", {})
+		return
+	used.append(who)
+	_redeemed[code] = used
+	_code_reply.rpc_id(id, true, "", codes[code])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _code_reply(ok: bool, text: String, reward: Dictionary) -> void:
+	if ok:
+		var r: Array = Game.apply_code_reward("", reward)
+		code_result.emit(true, str(r[1]))
+	else:
+		code_result.emit(false, text)
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,12 @@ var _loading: CanvasLayer
 
 
 func _ready() -> void:
+	# dedicated server: no menu, no world – the lobby and the console (see server/server_main.gd)
+	if OS.has_feature("server") or "--server" in OS.get_cmdline_user_args() or "--server" in OS.get_cmdline_args():
+		var srv = load("res://scripts/server/server_main.gd").new()
+		srv.name = "Server"
+		add_child(srv)
+		return
 	var art := ArtFilter.new()
 	art.name = "ArtFilter"
 	add_child(art)
