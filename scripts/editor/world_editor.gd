@@ -1089,6 +1089,8 @@ func _finish_road() -> void:
 	_road_preview.mesh = null
 	if body == null:
 		return
+	# trees, bushes and rocks on the new road are cleared away
+	var cleared := _clear_spots(RoadBuilder.centre_line(world, _pts_v3(r["pts"])), road_w * 0.5 + 1.5)
 	var old := {}
 	if road_flatten:
 		var hs: PackedFloat32Array = t.heights
@@ -1102,10 +1104,52 @@ func _finish_road() -> void:
 			body.queue_free()
 		if not old.is_empty():
 			_restore_heights(old)
+		for c in cleared:
+			_spot_set(c[0], c[1])
+			if MapData.spot_key(c[1].origin) == c[2]:
+				map.edits.erase(c[2])
 		_sync_objects())
 	_sync_objects()
 	_changed = true
 	message("Straße gebaut (%d m breit)" % int(road_w))
+
+
+static func _pts_v3(arr: Array) -> Array:
+	var out: Array = []
+	for p in arr:
+		out.append(Vector3(p[0], p[1], p[2]))
+	return out
+
+
+## Removes the scenery within `r` of a line: [[removed key, transform, original key]] (for undo).
+func _clear_spots(line: PackedVector3Array, r: float) -> Array:
+	var out: Array = []
+	if line.size() < 2:
+		return out
+	var lo := Vector2(1e9, 1e9)
+	var hi := Vector2(-1e9, -1e9)
+	for p in line:
+		lo = lo.min(Vector2(p.x, p.z))
+		hi = hi.max(Vector2(p.x, p.z))
+	var keys: Array = []
+	for cz in range(floori((lo.y - r) / INDEX_CELL), floori((hi.y + r) / INDEX_CELL) + 1):
+		for cx in range(floori((lo.x - r) / INDEX_CELL), floori((hi.x + r) / INDEX_CELL) + 1):
+			keys.append_array(_cells.get(Vector2i(cx, cz), []))
+	for key in keys:
+		var e: Dictionary = _spots[key]
+		var p: Vector3 = e["pos"]
+		var q := Vector2(p.x, p.z)
+		var near := false
+		for i in line.size() - 1:
+			var a := Vector2(line[i].x, line[i].z)
+			var b := Vector2(line[i + 1].x, line[i + 1].z)
+			if q.distance_to(Geometry2D.get_closest_point_to_segment(q, a, b)) < r:
+				near = true
+				break
+		if near:
+			var xf := _spot_xf(key)
+			out.append([_spot_set(key, null), xf, e["orig"]])
+	return out
 
 
 func _cancel_road() -> void:

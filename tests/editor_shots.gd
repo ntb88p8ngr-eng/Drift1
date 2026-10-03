@@ -51,6 +51,10 @@ func _ready() -> void:
 	ed._road_pts = [hill + Vector3(-30, 0, -50), hill + Vector3(10, 0, -45)]
 	ed._update_road_preview(hill + Vector3(40, 0, -20))
 	ed._mouse = Vector2(640, 360)
+	ed._focus = hill + Vector3(-5, 0, 20)
+	ed._dist = 75.0
+	ed._pitch = -0.45
+	ed._yaw = PI
 	for f in 30:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
