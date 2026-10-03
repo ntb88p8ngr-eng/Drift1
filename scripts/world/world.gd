@@ -259,6 +259,8 @@ func _ready() -> void:
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
 	else:
 		_start_countdown()
+	_collect_view_ranges()
+	Game.settings_changed.connect(_apply_view_ranges)
 	# admin mode (offline or the host): F10 panel
 	if bool(Game.settings.get("admin_mode", false)) and (not online or Net.is_host()) and not (mode in ["editor", "replay"]):
 		var ap := AdminPanel.new()
@@ -948,6 +950,41 @@ func _on_wall_hit(strength: float) -> void:
 		scorer.fail("Wand berührt")
 		for ev in scorer.events:
 			hud.on_drift_event(ev)
+
+
+# ---------------------------------------------------------------------------
+# View distance for everything (buildings, traffic lights, lamps, people …): the setting scales the
+# distances they are drawn to (1200 m = as built). Trees and props: scenery.apply_view_distance().
+# ---------------------------------------------------------------------------
+var _view_ranges: Array = []     # [GeometryInstance3D, begin, end]
+var _view_k := -1.0
+
+
+func _collect_view_ranges() -> void:
+	var skip := {}
+	if scenery:
+		for r in scenery._ranged:
+			skip[r[0]] = true
+	for n in find_children("*", "GeometryInstance3D", true, false):
+		var gi := n as GeometryInstance3D
+		if gi.visibility_range_end <= 0.0 or skip.has(gi) or (terrain and terrain.is_ancestor_of(gi)):
+			continue
+		_view_ranges.append([gi, gi.visibility_range_begin, gi.visibility_range_end])
+	_apply_view_ranges()
+
+
+func _apply_view_ranges() -> void:
+	var k := clampf(float(Game.settings.get("view_distance", 1200)) / 1200.0, 0.3, 2.5)
+	if is_equal_approx(k, _view_k):
+		return      # (settings_changed fires for every setting)
+	_view_k = k
+	for r in _view_ranges:
+		var gi: GeometryInstance3D = r[0]
+		if not is_instance_valid(gi):
+			continue
+		# near and far versions scale together: no gaps between them
+		gi.visibility_range_begin = float(r[1]) * k
+		gi.visibility_range_end = float(r[2]) * k
 
 
 ## Saves what was recorded so far as a replay (watch it from the main menu: Replays).

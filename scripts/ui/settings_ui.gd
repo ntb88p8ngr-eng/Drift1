@@ -114,8 +114,8 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 		vd_val.text = "%d m" % int(x)
 		Game.settings["view_distance"] = int(x)
 		Game.save_settings(), 200)
-	vd.tooltip_text = "Bis zu dieser Entfernung werden Bäume, Büsche, Sträucher, Felsen und Deko in 3D gezeichnet. Dahinter stehen die Bäume als 2D-Bilder bis zum Horizont – es fehlt nie ein Baum. Weniger = mehr FPS. Wirkt sofort."
-	v.add_child(UiKit.labeled("Sichtweite 3D-Bäume & Pflanzen", UiKit.row([vd, vd_val], 8)))
+	vd.tooltip_text = "Bis zu dieser Entfernung werden Bäume, Büsche, Felsen und Deko in 3D gezeichnet – und Gebäude, Ampeln, Laternen, Zuschauer und alle anderen Objekte entsprechend weiter oder näher (1200 m = Standard). Dahinter stehen die Bäume als 2D-Bilder bis zum Horizont. Weniger = mehr FPS. Wirkt sofort."
+	v.add_child(UiKit.labeled("Sichtweite (Bäume, Gebäude, Objekte)", UiKit.row([vd, vd_val], 8)))
 	var fps := CheckBox.new()
 	fps.text = "FPS-Anzeige im Rennen"
 	fps.button_pressed = bool(Game.settings.get("show_fps", false))
