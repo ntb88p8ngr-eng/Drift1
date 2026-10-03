@@ -39,7 +39,10 @@ static func make_roster(count: int, seed_v: int, tuning: Dictionary = {}) -> Arr
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_v
 	var out: Array = []
-	var cars: Array = Game.CARS.keys()
+	var cars: Array = []
+	for id in Game.CARS:
+		if not bool(Game.CARS[id].get("egg", false)):
+			cars.append(id)
 	var names := NAMES.duplicate()
 	for k in clampi(count, 0, 7):
 		var ni := r.randi() % names.size()

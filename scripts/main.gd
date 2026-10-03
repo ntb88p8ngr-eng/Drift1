@@ -11,11 +11,13 @@ const LoadingScreen = preload("res://scripts/ui/loading_screen.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
+const Replay = preload("res://scripts/replay/replay.gd")
 
 var world: World
 var menu: Menu
 var showroom: Showroom
 var last_config := {}
+var _replay_return := false   # leaving a replay goes back to the replay list
 var _editor_return := ""     # test drive from the world editor: back into it afterwards (map path)
 var _loading: CanvasLayer
 
@@ -116,6 +118,20 @@ func start_editor(base_track: String, map_path := "") -> void:
 	_start_world(cfg)
 
 
+## Watches a saved replay: the world as it was, the cars driven by the recording.
+func start_replay(path: String) -> void:
+	var r := Replay.read_file(path, false)
+	if r.is_empty():
+		show_menu("replays", "Replay nicht lesbar", UiKit.BAD)
+		return
+	var h: Dictionary = r[0]
+	_start_world({"track": str(h.get("track", "ridge")), "map": str(h.get("map", "")), "mode": "replay", "replay": path,
+		"laps": 1, "time_of_day": str(h.get("time_of_day", "day")), "hour": float(h.get("hour", 12.0)),
+		"weather": str(h.get("weather", "dry")), "day_cycle": int(h.get("day_cycle", 0)), "storm": bool(h.get("storm", false)),
+		"weather_seed": int(h.get("weather_seed", 0)), "online": false, "collisions": true, "traffic": 0})
+	_replay_return = true
+
+
 func _start_world(cfg: Dictionary) -> void:
 	last_config = cfg
 	_clear_world()
@@ -185,6 +201,10 @@ func _handle_exit(target: String) -> void:
 		cfg["party"] = false
 		cfg.erase("bots")
 		_start_world(cfg)
+		return
+	if _replay_return and target == "menu":
+		_replay_return = false
+		show_menu("replays")
 		return
 	if _editor_return != "" and target == "menu":
 		var back := _editor_return

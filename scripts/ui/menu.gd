@@ -10,6 +10,7 @@ const CarBody = preload("res://scripts/car/car_body.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
+const Replay = preload("res://scripts/replay/replay.gd")
 
 var main   # main.gd
 var current := ""
@@ -164,6 +165,8 @@ func show_screen(screen: String) -> void:
 			_build_controls()
 		"editor":
 			_build_editor()
+		"replays":
+			_build_replays()
 		_:
 			current = "main"
 			_build_main()
@@ -214,6 +217,7 @@ func _build_main() -> void:
 	_add(UiKit.button("Garage", func():
 		_return_to = "main"
 		show_screen("garage"), 360))
+	_add(UiKit.button("Replays", func(): show_screen("replays"), 360))
 	_add(UiKit.button("Welt-Editor", func(): show_screen("editor"), 360))
 	_add(UiKit.button("Leaderboard", func(): show_screen("leaderboard"), 360))
 	_add(UiKit.button("Steuerung", func(): show_screen("controls"), 360))
@@ -264,6 +268,33 @@ func _build_editor() -> void:
 		_add(UiKit.row([UiKit.label("%s  ·  %s" % [m[1], Game.track_name(m[2])], 18), UiKit.button("Bearbeiten", func(): main.start_editor("", path), 180), del]))
 	_add(UiKit.spacer(8))
 	_add(UiKit.button("Karte importieren …", _import_map, 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
+
+
+# ---------------------------------------------------------------------------
+# Replays
+# ---------------------------------------------------------------------------
+func _build_replays() -> void:
+	_header("REPLAYS")
+	var info := UiKit.label("Gespeichert am Ende einer Runde (Ergebnis-Bildschirm) oder im Pausemenü. Abgespielt wird die Fahrt aus den reinen Positions- und Geschwindigkeitsdaten – mit der Originalkamera oder einer freien Kamera.", 16, UiKit.TEXT_DIM)
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.custom_minimum_size = Vector2(640, 0)
+	_add(info)
+	var all := Replay.list()
+	if all.is_empty():
+		_add(UiKit.label("Noch keine Replays gespeichert.", 19, UiKit.GOLD))
+	for r in all.slice(0, 12):
+		var path: String = r[0]
+		var h: Dictionary = r[1]
+		var cars: Array = []
+		for c in h.get("cars", []):
+			cars.append(str(c.get("name", "?")))
+		var text := "%s  ·  %s  ·  %s  ·  %s" % [str(h.get("name", "")), Game.mode_name(str(h.get("mode", ""))),
+			Game.format_time(float(h.get("duration", 0.0))), ", ".join(cars)]
+		var del := UiKit.button("Löschen", func():
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+			show_screen("replays"), 120)
+		_add(UiKit.row([UiKit.label(text, 16), UiKit.button("▶ Abspielen", func(): main.start_replay(path), 160), del]))
 	_float_button("◀  Zurück", func(): show_screen("main"))
 
 

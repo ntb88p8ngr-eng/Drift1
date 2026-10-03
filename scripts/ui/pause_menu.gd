@@ -39,6 +39,8 @@ func _ready() -> void:
 	if not world.online:
 		_main_box.add_child(UiKit.button("Neustart", func(): _close_then(Callable(world, "request_restart"))))
 	_main_box.add_child(UiKit.button("Optionen", func(): _show(_options_box)))
+	if world.recorder:
+		_main_box.add_child(UiKit.button("Replay speichern", func(): _close_then(Callable(world, "save_replay"))))
 	if world.mode == "free":
 		_main_box.add_child(UiKit.button("Session beenden (Punkte speichern)", func(): _close_then(Callable(world, "end_free_session"))))
 	if world.online:

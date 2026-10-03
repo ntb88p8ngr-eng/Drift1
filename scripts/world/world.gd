@@ -30,6 +30,8 @@ const Tutorial = preload("res://scripts/world/tutorial.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
 const WorldEditor = preload("res://scripts/editor/world_editor.gd")
+const Replay = preload("res://scripts/replay/replay.gd")
+const ReplayPlayer = preload("res://scripts/replay/replay_player.gd")
 
 const SECTORS := 8
 
@@ -65,6 +67,9 @@ var race_ai: RaceAI           # AI opponents (race mode), or null
 var custom_map                # map_data.gd: a map from the world editor (config "map"), or null
 var map_content: Node3D       # what that map placed
 var editor: Node3D            # world_editor.gd (mode "editor")
+var recorder: Node            # replay.gd: records the session (saved on request)
+var replay_player: Node       # replay_player.gd (mode "replay")
+var _replay: Array = []       # [header, data] being played
 
 var state := "loading"      # loading, waiting, countdown, running, finished
 var race_time := 0.0
@@ -232,6 +237,16 @@ func _ready() -> void:
 		tutorial.name = "Tutorial"
 		tutorial.setup(self, tutorial_site)
 		add_child(tutorial)
+	elif mode == "replay":
+		state = "replay"
+		hud.visible = false
+		hud.process_mode = Node.PROCESS_MODE_DISABLED
+		pause_menu.process_mode = Node.PROCESS_MODE_DISABLED
+		camera.process_mode = Node.PROCESS_MODE_DISABLED
+		replay_player = ReplayPlayer.new()
+		replay_player.name = "ReplayPlayer"
+		replay_player.setup(self, _replay[0] if not _replay.is_empty() else {}, _replay[1] if not _replay.is_empty() else PackedFloat32Array())
+		add_child(replay_player)
 	elif mode == "editor":
 		state = "editor"
 		_enter_editor(str(config.get("map", "")), base_heights)
@@ -240,6 +255,12 @@ func _ready() -> void:
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
 	else:
 		_start_countdown()
+	# every driven session is recorded (saved as a replay when asked)
+	if not (mode in ["editor", "replay", "tutorial"]):
+		recorder = Replay.new()
+		recorder.name = "Recorder"
+		add_child(recorder)
+		recorder.setup(self)
 	Game.async_loading = false
 	Game.load_progress = 1.0
 	is_loaded = true
@@ -264,6 +285,20 @@ func _enter_editor(path: String, base_heights: PackedFloat32Array) -> void:
 
 func _spawn_cars() -> void:
 	var night: float = atmosphere.night
+	if mode == "replay":
+		_replay = Replay.read_file(str(config.get("replay", "")))
+		var infos: Array = _replay[0].get("cars", []) if not _replay.is_empty() else []
+		for k in infos.size():
+			var ci: Dictionary = infos[k]
+			var info := {"name": ci.get("name", "?"), "car": ci.get("car", "r34"), "paint_dict": ci.get("paint", {}),
+				"rims": ci.get("rims", {}), "underglow": ci.get("underglow", {}), "burble": ci.get("burble", 1)}
+			var car := _make_car(info, true)
+			cars[k] = car
+			car.place(track.grid_transform(k))
+		if cars.is_empty():
+			cars[0] = _make_car(Game.local_player_info(), true)
+		local_car = cars.get(int(_replay[0].get("local", 0)) if not _replay.is_empty() else 0, cars.values()[0])
+		return
 	if online:
 		var players: Dictionary = config.get("players", {})
 		var ids: Array = players.keys()
@@ -378,6 +413,11 @@ func _make_car(info: Dictionary, remote: bool, bot := false) -> Car:
 	var car := Car.new()
 	car.car_id = str(info.get("car", "r34"))
 	car.paint = Game.get_paint(str(info.get("paint", "red")), str(info.get("custom_color", "")), str(info.get("paint_finish", "gloss")))
+	if info.get("paint_dict") is Dictionary:
+		# a replay: the paint exactly as recorded
+		var pd: Dictionary = info["paint_dict"]
+		car.paint = {"id": "custom", "name": "", "color": Color.from_string(str(pd.get("color", "aa0000")), Color.RED),
+			"metallic": float(pd.get("metallic", 0.1)), "roughness": float(pd.get("roughness", 0.2)), "finish": str(pd.get("finish", "gloss"))}
 	if info.get("rims") is Dictionary:
 		car.rims_cfg = info["rims"]
 	car.player_name = str(info.get("name", "Driver"))
@@ -436,7 +476,7 @@ func _start_countdown() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not is_loaded or state == "editor":
+	if not is_loaded or state == "editor" or state == "replay":
 		return
 	match state:
 		"waiting":
@@ -631,7 +671,7 @@ func _finish() -> void:
 		var header := ["Fahrer", "Auto", "Revier", "Anteil", "Driftpunkte"]
 		var rows := [[local_car.player_name, Game.get_car(local_car.car_id)["name"], "%d m" % int(held),
 			"%d %%" % int(round(held / maxf(track.length, 1.0) * 100.0)), Game.format_points(scorer.total), true]]
-		hud.show_results("GRAFFITI – ZEIT ABGELAUFEN", header, rows, notes, [["Nochmal", request_restart], ["Hauptmenü", request_main_menu]])
+		hud.show_results("GRAFFITI – ZEIT ABGELAUFEN", header, rows, notes, [["Nochmal", request_restart], ["Replay speichern", save_replay], ["Hauptmenü", request_main_menu]])
 	else:
 		var header := ["", "Fahrer", "Auto", "Gesamtzeit", "Beste Runde", "Driftpunkte"]
 		var rows := [["1.", local_car.player_name, Game.get_car(local_car.car_id)["name"], Game.format_time(finish_time), Game.format_time(best_lap), Game.format_points(scorer.total), true]]
@@ -641,7 +681,7 @@ func _finish() -> void:
 		for i in lap_times.size():
 			lap_rows.append("Runde %d: %s" % [i + 1, Game.format_time(lap_times[i])])
 		hud.show_results("ZIEL!" if mode == "race" else "DRIFT-BATTLE BEENDET", header, rows, notes + lap_rows, [
-			["Nochmal", request_restart], ["Hauptmenü", request_main_menu]])
+			["Nochmal", request_restart], ["Replay speichern", save_replay], ["Hauptmenü", request_main_menu]])
 
 
 ## Offline race against the AI: everybody who finished by time, then the others by distance.
@@ -709,7 +749,7 @@ func end_free_session() -> void:
 	var notes := _submit_leaderboard()
 	var header := ["Fahrer", "Driftpunkte", "Bester Drift", "Beste Runde", "Runden"]
 	var rows := [[local_car.player_name, Game.format_points(scorer.total), Game.format_points(scorer.best_chain), Game.format_time(best_lap), str(lap), true]]
-	hud.show_results("SESSION BEENDET", header, rows, notes, [["Weiterfahren", _resume_free], ["Hauptmenü", request_main_menu]])
+	hud.show_results("SESSION BEENDET", header, rows, notes, [["Weiterfahren", _resume_free], ["Replay speichern", save_replay], ["Hauptmenü", request_main_menu]])
 
 
 func _resume_free() -> void:
@@ -786,6 +826,7 @@ func _show_online_results() -> void:
 	var buttons: Array = []
 	if Net.is_host():
 		buttons.append(["Zurück zur Lobby", func(): Net.host_return_to_lobby()])
+	buttons.append(["Replay speichern", save_replay])
 	buttons.append(["Lobby verlassen", request_leave_online])
 	var title_text := "ERGEBNIS – " + Game.mode_name(mode).to_upper()
 	hud.show_results(title_text, header, rows, [], buttons)
@@ -883,6 +924,18 @@ func _on_wall_hit(strength: float) -> void:
 		scorer.fail("Wand berührt")
 		for ev in scorer.events:
 			hud.on_drift_event(ev)
+
+
+## Saves what was recorded so far as a replay (watch it from the main menu: Replays).
+func save_replay() -> void:
+	if recorder == null:
+		return
+	var path: String = recorder.save()
+	if hud:
+		if path != "":
+			hud.show_message("REPLAY GESPEICHERT", "%s – im Hauptmenü unter „Replays“" % Game.format_time(recorder.duration()), UiKit.GOOD, 3.0)
+		else:
+			hud.show_message("REPLAY", "Nichts aufgenommen", UiKit.BAD, 2.0)
 
 
 func request_restart() -> void:

@@ -184,6 +184,7 @@ var _net_vel := Vector3.ZERO
 var _net_time := 0.0
 var _net_has := false
 var remote_flags := 0
+var replay_driven := false     # a replay car: placed exactly where the recording says
 var remote_progress := 0.0
 var remote_lap := 0
 var remote_drift := 0.0
@@ -1293,13 +1294,17 @@ func _remote_step(delta: float) -> void:
 	_update_backfire(delta)
 	_prev_throttle = throttle
 	_net_time += delta
-	var predicted := _net_pos + _net_vel * minf(_net_time, 0.25)
-	var cur := global_transform
-	var pos := cur.origin.lerp(predicted, 1.0 - exp(-delta * 14.0))
-	if pos.distance_to(predicted) > 12.0:
-		pos = predicted
-	var rot := cur.basis.get_rotation_quaternion().slerp(_net_rot, 1.0 - exp(-delta * 14.0))
-	global_transform = Transform3D(Basis(rot), pos)
+	if replay_driven:
+		# a replay sets the exact (interpolated) pose itself
+		global_transform = Transform3D(Basis(_net_rot), _net_pos)
+	else:
+		var predicted := _net_pos + _net_vel * minf(_net_time, 0.25)
+		var cur := global_transform
+		var pos := cur.origin.lerp(predicted, 1.0 - exp(-delta * 14.0))
+		if pos.distance_to(predicted) > 12.0:
+			pos = predicted
+		var rot := cur.basis.get_rotation_quaternion().slerp(_net_rot, 1.0 - exp(-delta * 14.0))
+		global_transform = Transform3D(Basis(rot), pos)
 	linear_velocity = _net_vel
 	speed = _net_vel.length()
 	var fwd := -global_transform.basis.z
