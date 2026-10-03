@@ -32,6 +32,7 @@ const MapData = preload("res://scripts/editor/map_data.gd")
 const WorldEditor = preload("res://scripts/editor/world_editor.gd")
 const Replay = preload("res://scripts/replay/replay.gd")
 const ReplayPlayer = preload("res://scripts/replay/replay_player.gd")
+const AdminPanel = preload("res://scripts/admin/admin_panel.gd")
 
 const SECTORS := 8
 
@@ -258,6 +259,12 @@ func _ready() -> void:
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
 	else:
 		_start_countdown()
+	# admin mode (offline or the host): F10 panel
+	if bool(Game.settings.get("admin_mode", false)) and (not online or Net.is_host()) and not (mode in ["editor", "replay"]):
+		var ap := AdminPanel.new()
+		ap.name = "AdminPanel"
+		ap.world = self
+		add_child(ap)
 	# every driven session is recorded (saved as a replay when asked)
 	if not (mode in ["editor", "replay", "tutorial"]):
 		recorder = Replay.new()

@@ -178,6 +178,18 @@ func show_screen(screen: String) -> void:
 			_build_replays()
 		"credits":
 			_build_credits()
+		"admin":
+			_header("ADMIN")
+			var box := VBoxContainer.new()
+			box.add_theme_constant_override("separation", 6)
+			load("res://scripts/admin/admin_ui.gd").build_screen(func(c): box.add_child(c), func():
+				show_screen("admin"), func(t): show_status(t, UiKit.GOOD))
+			var sc := ScrollContainer.new()
+			sc.custom_minimum_size = Vector2(900, 560)
+			sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+			sc.add_child(box)
+			_add(sc)
+			_float_button("◀  Zurück", func(): show_screen("main"))
 		_:
 			current = "main"
 			_build_main()
@@ -235,6 +247,8 @@ func _build_main() -> void:
 	_add(UiKit.button("Optionen", func():
 		_opts_return = "main"
 		show_screen("options"), 360))
+	if bool(Game.settings.get("admin_mode", false)):
+		_add(UiKit.button("Admin", func(): show_screen("admin"), 360))
 	_add(UiKit.button("Credits", func(): show_screen("credits"), 360))
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
 	_add(UiKit.spacer(18))

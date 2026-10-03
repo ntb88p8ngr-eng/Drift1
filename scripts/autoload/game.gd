@@ -245,6 +245,9 @@ var settings := {
 	"owned_cars": [],      # bought (and unlocked) cars; the first FREE_CARS of CAR_ORDER are always owned
 	"redeemed_codes": [],  # action codes used already (each only once)
 	"admin_codes": {},     # action codes made in the admin menu: CODE -> {credits, car}
+	"admin_mode": false,   # admin menu (main menu) and in-game admin panel (F10)
+	"bot_personalities": {},
+	"bot_slots": [],
 	"tuning": {},
 	"burble": {},
 	"response": {},

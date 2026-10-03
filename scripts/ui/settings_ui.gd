@@ -218,6 +218,12 @@ static func _device_name(d: String) -> String:
 
 static func gameplay_page() -> VBoxContainer:
 	var v := _page()
+	var adm := CheckBox.new()
+	adm.text = "Admin-Modus (Hauptmenü: Admin · im Spiel: F10)"
+	adm.button_pressed = bool(Game.settings.get("admin_mode", false))
+	adm.tooltip_text = "Freie Kamera mit Tempo, Bots fein einstellen und Persönlichkeiten geben, Bot-Bestrunden als Standard, Aktionscodes anlegen."
+	adm.toggled.connect(func(on): Game.set_setting("admin_mode", on))
+	v.add_child(adm)
 	v.add_child(UiKit.labeled("Sichtfeld (FOV)", UiKit.slider(60, 100, 1, float(Game.settings["fov"]), func(x):
 		Game.set_setting("fov", x))))
 	var cs_val := UiKit.label("%d %%" % int(float(Game.settings["camera_smoothing"]) * 100.0), 16, UiKit.TEXT_DIM)
