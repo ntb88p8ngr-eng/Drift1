@@ -1,7 +1,8 @@
 extends RefCounted
 ## Roads drawn in the world editor: a smooth curve (Catmull-Rom) through the clicked points, a
 ## ribbon of the chosen width and surface laid on the ground (or the ground levelled under it),
-## kerb-free edges, solid to drive on.
+## kerb-free edges, solid to drive on. It always lies on the ground: a height above 0 makes it
+## that thick (sides down into the ground), below 0 sinks it into a dug-out bed.
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
@@ -46,9 +47,8 @@ static func make_mesh(world, r: Dictionary, flatten_ground: bool) -> ArrayMesh:
 	var w: float = float(r.get("width", 10.0))
 	var terrain = world.terrain
 	var h := float(r.get("height", 0.0))
-	if absf(h) > 0.01:
-		# raised (a bridge, a ramp up) or sunk: the smoothed ground line plus the height; the
-		# ground is only levelled for sunk roads (it is dug out under them)
+	if h < -0.01:
+		# sunk: the smoothed ground line minus the depth, the ground dug out under it
 		var ys := PackedFloat32Array()
 		for p in line:
 			ys.append(float(terrain.height_at(p.x, p.z)))
@@ -59,7 +59,7 @@ static func make_mesh(world, r: Dictionary, flatten_ground: bool) -> ArrayMesh:
 			ys = ys2
 		for i in line.size():
 			line[i] = Vector3(line[i].x, ys[i] + h, line[i].z)
-		if flatten_ground and h < 0.0:
+		if flatten_ground:
 			_level_under(terrain, line, w * 0.5 + 0.8, 5.0)
 		flatten_ground = true      # (the surface follows the line, not the ground)
 	elif flatten_ground:
@@ -75,7 +75,14 @@ static func make_mesh(world, r: Dictionary, flatten_ground: bool) -> ArrayMesh:
 		for i in line.size():
 			line[i] = Vector3(line[i].x, ys[i], line[i].z)
 		_level_under(terrain, line, w * 0.5 + 0.8, 5.0)
+	# a positive height is the road's thickness: the surface lies that far above the ground right
+	# under it, the sides go down into the ground – a solid layer, never a gap underneath
+	var thick := maxf(h, 0.0)
+	var lift := LIFT + float(r.get("lift", 0.0))
+	# across the road every ~1 m, so a laid road follows the ground between its edges too
+	var across := maxi(int(ceil(w / 1.0)), 1)
 	var st := MeshKit.new_st()
+	var sides := MeshKit.new_st()
 	var v := 0.0
 	for i in line.size() - 1:
 		var a: Vector3 = line[i]
@@ -85,62 +92,36 @@ static func make_mesh(world, r: Dictionary, flatten_ground: bool) -> ArrayMesh:
 		var na := Vector3(-da.z, 0, da.x).normalized()
 		var nb := Vector3(-db.z, 0, db.x).normalized()
 		var l := a.distance_to(b)
-		var q := [a - na * w * 0.5, a + na * w * 0.5, b + nb * w * 0.5, b - nb * w * 0.5]
-		for k in 4:
-			var qp: Vector3 = q[k]
-			var gy: float = qp.y if flatten_ground else float(terrain.height_at(qp.x, qp.z))
-			q[k] = Vector3(qp.x, gy + LIFT + float(r.get("lift", 0.0)), qp.z)
-		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(0.15, v), Vector2(0.85, v), Vector2(0.85, v + l), Vector2(0.15, v + l))
+		var row_a: Array = []
+		var row_b: Array = []
+		for k in across + 1:
+			var f := float(k) / across - 0.5
+			row_a.append(_surface_pt(terrain, a + na * w * f, flatten_ground, thick, lift))
+			row_b.append(_surface_pt(terrain, b + nb * w * f, flatten_ground, thick, lift))
+		for k in across:
+			var u0 := lerpf(0.15, 0.85, float(k) / across)
+			var u1 := lerpf(0.15, 0.85, float(k + 1) / across)
+			MeshKit.quad(st, row_a[k], row_a[k + 1], row_b[k + 1], row_b[k], Vector3.UP, Vector2(u0, v), Vector2(u1, v), Vector2(u1, v + l), Vector2(u0, v + l))
+		# the edges down into the ground
+		for e in [[0, -1.0], [across, 1.0]]:
+			var ta: Vector3 = row_a[e[0]]
+			var tb: Vector3 = row_b[e[0]]
+			var ga := Vector3(ta.x, float(terrain.height_at(ta.x, ta.z)) - 0.4, ta.z)
+			var gb := Vector3(tb.x, float(terrain.height_at(tb.x, tb.z)) - 0.4, tb.z)
+			# (always: no gap shows under an edge, even over a dip between two points)
+			_both(sides, ta, tb, gb, ga, (na + nb).normalized() * float(e[1]))
 		v += l
 	var mesh := MeshKit.commit(st, material(str(r.get("surface", "asphalt")), world))
-	if h > 0.3:
-		_deck(mesh, terrain, line, w)
+	MeshKit.commit(sides, material("concrete" if str(r.get("surface", "asphalt")) == "asphalt" else str(r.get("surface", "asphalt")), world), mesh)
 	return mesh
 
 
-## A raised road's concrete: the deck's sides and underside, low parapets and pillars down to the
-## ground (every 18 m, two side by side on wide roads).
-static func _deck(mesh: ArrayMesh, terrain, line: PackedVector3Array, w: float) -> void:
-	var st := MeshKit.new_st()
-	var thick := 0.7
-	var half := w * 0.5
-	var since := 9.0
-	for i in line.size() - 1:
-		var a: Vector3 = line[i] + Vector3(0, LIFT, 0)
-		var b: Vector3 = line[i + 1] + Vector3(0, LIFT, 0)
-		var dir := b - a
-		var n := Vector3(-dir.z, 0, dir.x).normalized()
-		var dn := Vector3(0, -thick, 0)
-		for sg in [-1.0, 1.0]:
-			var oa: Vector3 = a + n * half * sg
-			var ob: Vector3 = b + n * half * sg
-			# side face, the parapet's outer and inner face and its top
-			_both(st, oa, ob, ob + dn, oa + dn, n * sg)
-			var pa := Vector3(0, 0.9, 0)
-			var inset: Vector3 = n * 0.25 * sg
-			_both(st, oa, ob, ob + pa, oa + pa, n * sg)
-			_both(st, oa - inset, ob - inset, ob - inset + pa, oa - inset + pa, -n * sg)
-			_both(st, oa + pa, ob + pa, ob - inset + pa, oa - inset + pa, Vector3.UP)
-		_both(st, a - n * half + dn, b - n * half + dn, b + n * half + dn, a + n * half + dn, Vector3.DOWN)
-		since += a.distance_to(b)
-		if since >= 18.0:
-			since = 0.0
-			var spots: Array = [a] if w < 12.0 else [a - n * half * 0.5, a + n * half * 0.5]
-			for p: Vector3 in spots:
-				var gy := float(terrain.height_at(p.x, p.z)) - 0.5
-				var top := p.y - thick
-				if top - gy > 0.5:
-					_pillar(st, Vector3(p.x, gy, p.z), top - gy, 0.6)
-	MeshKit.commit(st, material("concrete", null), mesh)
-
-
-static func _pillar(st: SurfaceTool, base: Vector3, height: float, r: float) -> void:
-	var c := [Vector3(-r, 0, -r), Vector3(r, 0, -r), Vector3(r, 0, r), Vector3(-r, 0, r)]
-	for k in 4:
-		var p0: Vector3 = base + c[k]
-		var p1: Vector3 = base + c[(k + 1) % 4]
-		var up := Vector3(0, height, 0)
-		_both(st, p0, p1, p1 + up, p0 + up, (c[k] + c[(k + 1) % 4]).normalized())
+## A point of the road surface: on the ground (or on the levelled bed's line height) plus the
+## thickness – never above a gap.
+static func _surface_pt(terrain, p: Vector3, on_line: bool, thick: float, lift: float) -> Vector3:
+	var g := float(terrain.height_at(p.x, p.z))
+	var y := p.y if on_line else g
+	return Vector3(p.x, maxf(y, g) + thick + lift, p.z)
 
 
 ## A quad facing `n` (MeshKit turns it that way round).
@@ -209,7 +190,7 @@ static func build(holder: Node3D, world, r: Dictionary) -> StaticBody3D:
 	var flat := bool(r.get("flatten", false))
 	var mesh := make_mesh(world, r, flat)
 	if float(r.get("height", 0.0)) > 0.01:
-		flat = false        # (raised: the ground under it stays as it was)
+		flat = false        # (a thick road lies on the ground as it is)
 	if mesh == null:
 		return null
 	if flat:
@@ -228,8 +209,8 @@ static func build(holder: Node3D, world, r: Dictionary) -> StaticBody3D:
 	cs.shape = mesh.create_trimesh_shape()
 	body.add_child(cs)
 	holder.add_child(body)
-	# no grass growing through it (a bridge leaves the grass under it alone)
-	if float(r.get("height", 0.0)) <= 0.3 and world.get("grass") and is_instance_valid(world.grass):
+	# no grass growing through it
+	if world.get("grass") and is_instance_valid(world.grass):
 		var pts: Array = []
 		for p in r["pts"]:
 			pts.append(p if p is Vector3 else Vector3(p[0], p[1], p[2]))

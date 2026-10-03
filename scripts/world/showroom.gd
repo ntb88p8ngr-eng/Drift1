@@ -96,6 +96,28 @@ const VIEWS := {
 const GARAGE_CAM := [Vector3(-2.25, 1.7, 4.0), Vector3(-2.0, 0.9, -1.0), 72.0]
 
 
+## The rim view frames the front wheel facing the camera, whole, in the free right half of the
+## screen (the menu covers the left): straight from the side, the wheel right of centre.
+## [camera position, look at] or null.
+func _wheel_frame():
+	if car == null or not is_instance_valid(car) or car.body == null or car.body.wheel_nodes.size() < 2:
+		return null
+	var base: Vector3 = VIEWS["wheels"][1]
+	var best: Node3D = null
+	for i in 2:
+		var w: Node3D = car.body.wheel_nodes[i][0]
+		if best == null or w.global_position.distance_to(base) < best.global_position.distance_to(base):
+			best = w
+	var wp := best.global_position
+	var side: Vector3 = car.global_transform.basis.x
+	side = Vector3(side.x, 0, side.z).normalized()
+	if side.dot(base - wp) < 0.0:
+		side = -side
+	var right := (-side).cross(Vector3.UP).normalized()
+	var shift := right * -0.85
+	return [wp + side * 2.7 + Vector3.UP * 0.25 + shift, wp + shift + Vector3.UP * 0.05]
+
+
 func set_view(v: String) -> void:
 	view = v
 	if VIEWS.has(v):
@@ -235,6 +257,11 @@ func _load_workshop() -> bool:
 	WorkshopTextures.apply(g)
 	_epoxy_floor(g)
 	_open_spanners(g)
+	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
+	# ("MIDNIGHT DRIFT") all the time: gone
+	for pat in ["*Turntable_skirt_segment*", "*Skirt_hex_bolt*"]:
+		for n in g.find_children(pat, "Node3D", true, false):
+			n.queue_free()
 	# the roller shutter comes further down (from 2.9 m to 1.5 m): less of the street shows
 	var shutter := g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
 	if shutter:
@@ -1040,6 +1067,11 @@ func _process(delta: float) -> void:
 		if VIEWS.has(view):
 			pos = VIEWS[view][1]
 			at = VIEWS[view][2]
+			if view == "wheels":
+				var wf = _wheel_frame()
+				if wf != null:
+					pos = wf[0]
+					at = wf[1]
 		elif view == "garage":
 			pos = GARAGE_CAM[0]
 			at = GARAGE_CAM[1]

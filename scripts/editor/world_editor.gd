@@ -14,7 +14,7 @@ const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const MMUtil = preload("res://scripts/util/mm_util.gd")
 
 const TOOLS := [
-	["select", "Auswählen", "Klicken: Objekt / Baum wählen · Strg+Klick: zur Auswahl hinzufügen · Ziehen: verschieben · R / Shift+R: drehen · +/-: Größe · Bild↑/↓: Höhe · Entf: löschen"],
+	["select", "Auswählen", "Klicken: Objekt / Baum wählen · Strg+Klick: zur Auswahl hinzufügen · Ziehen: verschieben · R / Shift+R: drehen · +/-: Größe · Bild↑/↓ oder Alt+Mausrad: Höhe · Entf: löschen"],
 	["place", "Platzieren", "Objekt aus der Liste wählen · Klicken: setzen · R: drehen · +/-: Größe"],
 	["raise", "Anheben", "Gedrückt halten: Gelände anheben (Pinselgröße / -stärke links)"],
 	["lower", "Absenken", "Gedrückt halten: Gelände absenken"],
@@ -78,6 +78,8 @@ var _drag_has_box := false
 var _drag_nodes: Array = []
 var _ghost_at = null           # where a click would place the ghost (snapped)
 var _snap_boxes: Array = []    # the checkboxes (kept in step with G / Shift+G)
+## the mouse wheel raises / lowers the selection instead of zooming (Alt + wheel always does)
+var wheel_height := false
 var _clip: Array = []          # Ctrl+C: [asset, transform relative to the copied group's middle]
 var _panels: Array = []        # the UI panels (the mouse wheel scrolls them, not the camera)
 
@@ -91,7 +93,7 @@ var _ghost_scale := 1.0
 var road_w := 10.0
 var road_surface := "asphalt"
 var road_flatten := true
-var road_h := 0.0              # height above the ground (bridges) or below it (cuttings)
+var road_h := 0.0              # thickness above the ground (it always lies on it) or depth below it (cuttings)
 var _road_pts: Array = []
 var _road_h_slider: HSlider
 var _road_preview: MeshInstance3D
@@ -212,6 +214,13 @@ func _build_ui() -> void:
 				snap_grid = on)
 		_snap_boxes.append(cb)
 		left.add_child(cb)
+	var whc := CheckBox.new()
+	whc.text = "Mausrad: Höhe der Auswahl"
+	whc.tooltip_text = "An: das Mausrad hebt und senkt die gewählten Objekte (Shift: feiner),\nstatt zu zoomen. Alt + Mausrad geht immer."
+	whc.button_pressed = wheel_height
+	whc.focus_mode = Control.FOCUS_NONE
+	whc.toggled.connect(func(on): wheel_height = on)
+	left.add_child(whc)
 	var dfc := CheckBox.new()
 	dfc.text = "Deflicker-Modus"
 	dfc.tooltip_text = "Gesetzte Objekte und Straßen bekommen je ein paar Millimeter Versatz,\ndamit ineinander gesetzte Flächen nicht flackern."
@@ -288,13 +297,13 @@ func _build_ui() -> void:
 	_road_box.add_child(UiKit.option(names, 0, func(i):
 		road_surface = RoadBuilder.SURFACES[i][0]
 		_preview_dirty = true, 280))
-	var h_l := UiKit.label("Höhe: %.1f m" % road_h, 16)
+	var h_l := UiKit.label("Dicke: %.1f m" % road_h, 16)
 	_road_box.add_child(h_l)
-	_road_h_slider = UiKit.slider(-6, 25, 0.5, road_h, func(v):
+	_road_h_slider = UiKit.slider(-6, 4, 0.1, road_h, func(v):
 		road_h = v
-		h_l.text = "Höhe: %.1f m%s" % [v, "  (Brücke)" if v > 0.3 else ("  (vertieft)" if v < -0.3 else "")]
+		h_l.text = ("Dicke: %.1f m" % v) if v >= 0.0 else ("Vertieft: %.1f m" % -v)
 		_preview_dirty = true, 280)
-	_road_h_slider.tooltip_text = "Höhe über dem Gelände. Eine gewählte Straße: Bild↑ / Bild↓ hebt und senkt sie."
+	_road_h_slider.tooltip_text = "Dicke der Straße – sie liegt immer auf dem Boden, nie in der Luft (unter 0: eingegraben). Eine gewählte Straße: Bild↑ / Bild↓."
 	_road_box.add_child(_road_h_slider)
 	var flat := CheckBox.new()
 	flat.text = "Gelände anpassen"
@@ -499,6 +508,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 				# over the panels the wheel scrolls them, not the camera
 				if _over_ui(mb.position):
+					return
+				if (wheel_height or mb.alt_pressed) and not _sel.is_empty():
+					if mb.pressed:
+						var step := 0.1 if mb.shift_pressed else 0.25
+						_raise(step if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -step)
+					get_viewport().set_input_as_handled()
 					return
 				_dist = clampf(_dist * (0.88 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.14), 6.0, 1500.0)
 			MOUSE_BUTTON_RIGHT:
@@ -1241,7 +1256,7 @@ func _set_snap(objects: bool, grid_on: bool) -> void:
 func _road_height(body: Node3D, dy: float) -> void:
 	var old: Dictionary = body.get_meta("road")
 	var r := old.duplicate(true)
-	r["height"] = clampf(float(old.get("height", 0.0)) + dy, -6.0, 25.0)
+	r["height"] = clampf(float(old.get("height", 0.0)) + dy, -6.0, 4.0)
 	r["flatten"] = false      # (the ground was levelled when it was first built)
 	var idx := body.get_index()
 	var nb := RoadBuilder.build(holder, world, r)
@@ -1260,7 +1275,8 @@ func _road_height(body: Node3D, dy: float) -> void:
 		_sync_objects())
 	_sync_objects()
 	_changed = true
-	message("Straße auf %.1f m Höhe" % float(r["height"]))
+	var hh := float(r["height"])
+	message("Straßendicke %.1f m (liegt immer auf dem Boden)" % hh if hh >= 0.0 else "Straße %.1f m eingegraben" % -hh)
 
 
 ## The track barrier under the mouse: {kind: wall, p0, p1 (metres along the track), side} for a

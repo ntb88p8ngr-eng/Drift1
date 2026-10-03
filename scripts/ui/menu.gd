@@ -50,8 +50,7 @@ var _light_panel: Control
 var _platform_picker: ColorPickerButton
 var _view_row: HBoxContainer
 var _player_info: VBoxContainer   # driver / car / credits, top right
-var _side: Control          # the menu column on the left (and its shade)
-var _shade: Control
+var _side: Control          # the menu column on the left
 var _at_pc := false         # story mode: the camera is at the office PC, its screen takes the input
 
 
@@ -62,22 +61,6 @@ func _ready() -> void:
 	_root.theme = UiKit.theme()
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
-	# gradient shade on the left so the menu stays readable over the showroom
-	var shade := TextureRect.new()
-	var grad := Gradient.new()
-	grad.set_color(0, Color(0.01, 0.0, 0.03, 0.9))
-	grad.set_color(1, Color(0.01, 0.0, 0.03, 0.0))
-	var gt := GradientTexture2D.new()
-	gt.gradient = grad
-	gt.fill_from = Vector2(0, 0)
-	gt.fill_to = Vector2(1, 0)
-	shade.texture = gt
-	shade.stretch_mode = TextureRect.STRETCH_SCALE
-	shade.anchor_bottom = 1.0
-	shade.anchor_right = 0.62
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(shade)
-	_shade = shade
 	var margin := MarginContainer.new()
 	margin.anchor_bottom = 1.0
 	margin.anchor_right = 0.0
@@ -341,7 +324,6 @@ func show_screen(screen: String) -> void:
 	_clear()
 	_side.visible = screen != "story"
 	_player_info.visible = false      # (the main screen shows it again)
-	_shade.visible = screen != "story"
 	if screen != "story":
 		_at_pc_off()
 	show_status("")
