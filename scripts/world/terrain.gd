@@ -396,7 +396,7 @@ func _height_fn(x: float, z: float, d: float) -> float:
 	var bw := 26.0 + 30.0 * (_n_blend.get_noise_2d(x, z) * 0.5 + 0.5)
 	var blend := smoothstep(fr, fr + bw, d)
 	var bumps := _n_small.get_noise_2d(x, z) * 0.55 * smoothstep(fr, fr + 10.0, d)
-	if track_id == "tokyo":
+	if Game.is_city(track_id):
 		bumps = 0.0
 	return h * blend + bumps
 
@@ -507,7 +507,7 @@ func pad_sd(x: float, z: float) -> float:
 ## Hills, ridges and mountains without the road corridor.
 func _base_height(x: float, z: float) -> float:
 	var r := Vector2(x, z).distance_to(_center)
-	if track_id == "tokyo":
+	if Game.is_city(track_id):
 		return 0.0       # the city is flat; the skyline closes the view
 	if track_id == "playground":
 		var hills := _n_large.get_noise_2d(x, z) * 12.0 + 8.0 + _n_mid.get_noise_2d(x, z) * 5.0
@@ -542,7 +542,7 @@ func _splat_fn(x: float, z: float, d: float) -> Color:
 		var gr := pad_grass(x, z)
 		paved = (1.0 - smoothstep(-1.0, 1.5, sd)) * (1.0 - gr)
 		dirt = smoothstep(0.5, 2.0, sd) * (1.0 - smoothstep(3.0, 8.0, sd)) * 0.7
-	elif track_id == "tokyo":
+	elif Game.is_city(track_id):
 		paved = 1.0      # pavements and plazas everywhere (the parks paint their own grass)
 	elif track_id == "harbor":
 		var apron := float(track.wall_base) + 30.0 + _n_blend.get_noise_2d(x, z) * 10.0
@@ -575,7 +575,7 @@ func forest_density(x: float, z: float, d := -1.0) -> float:
 		var cv := cover_at(x, z)
 		f = smoothstep(0.3, 0.62, cv.x * lerpf(1.0, 0.7 + 0.6 * n, _far_fade(d)) - cv.z * 0.8)
 		return f * smoothstep(float(track.wall_base) + 1.5, float(track.wall_base) + 4.0, d)
-	if track_id == "tokyo":
+	if Game.is_city(track_id):
 		return 0.0       # streets and buildings; the city places its own street trees
 	if track_id == "playground":
 		return f * smoothstep(14.0, 40.0, pad_sd(x, z))

@@ -110,7 +110,7 @@ static func merge(root: Node3D, keep: Callable) -> int:
 		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		am.surface_set_material(0, mat)
 		var out := MeshInstance3D.new()
-		out.name = "Merged"
+		out.name = "Merged_%d" % root.get_child_count()
 		out.mesh = am
 		root.add_child(out)
 	return merged

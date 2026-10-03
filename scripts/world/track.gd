@@ -50,6 +50,20 @@ const DEFS := {
 		"width": 16.0, "runoff": 1.5, "start_dist": 60.0,
 		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.07, 0.07, 0.08),
 	},
+	# the Tokyo Midnight Circuit district (uploaded map): its rounded street circuit through the old
+	# block grid, the pits on the south straight
+	"old_tokyo": {
+		"points": [Vector2(90, 103), Vector2(-90, 103), Vector2(-98.8, 102.1), Vector2(-107.2, 99.6), Vector2(-115, 95.4),
+			Vector2(-121.8, 89.8), Vector2(-127.4, 83), Vector2(-131.6, 75.2), Vector2(-134.1, 66.8), Vector2(-135, 58),
+			Vector2(-135, -58), Vector2(-134.1, -66.8), Vector2(-131.6, -75.2), Vector2(-127.4, -83), Vector2(-121.8, -89.8),
+			Vector2(-115, -95.4), Vector2(-107.2, -99.6), Vector2(-98.8, -102.1), Vector2(-90, -103), Vector2(90, -103),
+			Vector2(98.8, -102.1), Vector2(107.2, -99.6), Vector2(115, -95.4), Vector2(121.8, -89.8), Vector2(127.4, -83),
+			Vector2(131.6, -75.2), Vector2(134.1, -66.8), Vector2(135, -58), Vector2(135, 58), Vector2(134.1, 66.8),
+			Vector2(131.6, 75.2), Vector2(127.4, 83), Vector2(121.8, 89.8), Vector2(115, 95.4), Vector2(107.2, 99.6),
+			Vector2(98.8, 102.1)],
+		"width": 15.0, "runoff": 1.5, "start_dist": 90.0,
+		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.075, 0.075, 0.085),
+	},
 	# Nordschleife replica: course and heights from real data (tools/make_gruene_hoelle.py)
 	"gruene_hoelle": {
 		"data": "res://assets/tracks/gruene_hoelle",

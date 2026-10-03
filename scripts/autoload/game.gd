@@ -13,8 +13,17 @@ const TRACKS := [
 	{"id": "harbor", "name": "Harbor Drift Yard", "desc": "Breiter Industriekurs am Hafen – enge Kehren zwischen Containern und Lagerhallen."},
 	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
 	{"id": "tokyo", "name": "Neo Tokyo", "desc": "Japanische Großstadt: Scramble-Kreuzung mit Riesen-Bildschirmen, enge 90°-Ecken zwischen Hochhäusern, eine Stadtautobahn-Schleife auf Stelzen, Kirschblüten, Neonschilder – nachts am schönsten."},
+	{"id": "old_tokyo", "name": "Old Tokyo", "desc": "Das alte Viertel bei Nacht: ein schneller Stadtkurs mit vier Haarnadel-Bögen um dichte Blocks, Boxengasse am Start, die Stadtautobahn quer durch – und offene Straßen, Car-Meet-Parkplätze und ein Parkhaus zum freien Fahren."},
 	{"id": "gruene_hoelle", "name": "Grüne Hölle", "desc": "Nachbau der Nordschleife aus echten Karten- und Höhendaten – 20,5 km durch die Eifel, fast 300 m Höhenunterschied, von Hatzenbach über Karussell bis Döttinger Höhe."},
 ]
+
+## The city maps: flat paved ground, no forest, their own street furniture and lights.
+const CITY_TRACKS := ["tokyo", "old_tokyo"]
+
+
+static func is_city(id: String) -> bool:
+	return CITY_TRACKS.has(id)
+
 
 const MODES := [
 	{"id": "free", "name": "Freies Driften", "desc": "Kein Zeitlimit – sammle Driftpunkte und jage Rundenzeiten."},

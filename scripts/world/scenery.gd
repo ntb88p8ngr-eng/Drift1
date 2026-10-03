@@ -13,6 +13,7 @@ const PeopleHits = preload("res://scripts/world/people_hits.gd")
 const TreeHits = preload("res://scripts/world/tree_hits.gd")
 const Festival = preload("res://scripts/world/festival.gd")
 const City = preload("res://scripts/world/city.gd")
+const OldTokyo = preload("res://scripts/world/old_tokyo.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const Playground = preload("res://scripts/world/playground.gd")
@@ -37,6 +38,7 @@ var night := 0.0            # 0 = day … 1 = night (lamps / window glow)
 var quality := 2
 var rng := RandomNumberGenerator.new()
 var crowd: Node3D
+var old_city: Node3D           # old_tokyo.gd: the Old Tokyo district
 var people: Node3D             # people_hits.gd: every instanced person can be run over
 var trees: Node3D              # tree_hits.gd: the trees near the roads can be felled
 var festival: Node3D
@@ -115,6 +117,11 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		city.name = "City"
 		add_child(city)
 		await city.build(track, terrain, self, quality)
+	elif id == "old_tokyo":
+		old_city = OldTokyo.new()
+		old_city.name = "OldTokyo"
+		add_child(old_city)
+		await old_city.build(track, terrain, self, quality)
 	elif id == "playground":
 		var pg := Playground.new()
 		pg.name = "Playground"
@@ -131,7 +138,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 			details.add_bus_stop(_village + 12, -1.0)
 	await Game.load_tick()
 	_car_parks(id)
-	if id != "playground" and id != "tokyo":
+	if id != "playground" and not Game.is_city(id):
 		var tp := Playground.new()
 		tp.name = "TracksideProps"
 		add_child(tp)
@@ -147,7 +154,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	add_child(festival)
 	await festival.build(track, terrain, self, quality)
 	await Game.load_tick()
-	if id != "tokyo":
+	if not Game.is_city(id):
 		# (the city has its own signs, trees and street furniture)
 		details.build(quality)
 		await Game.load_tick()
@@ -159,7 +166,7 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		await _build_rocks(id)
 	_finish_ground()
 	details.finish()
-	if id == "harbor" or id == "tokyo":
+	if id == "harbor" or Game.is_city(id):
 		_build_skyline()
 	set_night(night)
 	apply_view_distance()
@@ -1023,6 +1030,8 @@ func set_night(n: float) -> void:
 		festival.set_night(n)
 	if city:
 		city.set_night(n)
+	if old_city:
+		old_city.set_night(n)
 
 
 # ---------------------------------------------------------------------------
@@ -1280,7 +1289,7 @@ func _build_skyline() -> void:
 		mat.metallic = 0.25
 		_glow_mats.append([mat, 0.0, 1.4])
 		mats.append(mat)
-	var tokyo: bool = track.track_id == "tokyo"
+	var tokyo: bool = Game.is_city(track.track_id)
 	for k in (220 if tokyo else 70):
 		var a := rng.randf_range(-PI * 0.95, -PI * 0.05)  # north side (away from the water)
 		var r := rng.randf_range(750.0, 1050.0)
@@ -1350,7 +1359,7 @@ func _build_lamps() -> void:
 	if track.track_id == "playground":
 		_playground_lamps(pole_mat, head_mat)
 		return
-	if track.track_id == "tokyo":
+	if Game.is_city(track.track_id):
 		return          # the city brings its own streetlights (city/streets.gd, lit by the light pool)
 	var k := 0
 	for i in range(0, n, every):
@@ -1697,7 +1706,7 @@ func _house_paths(builder, xf: Transform3D, style: String) -> void:
 
 
 func _car_parks(id: String) -> void:
-	if details == null or id == "playground" or id == "tokyo":
+	if details == null or id == "playground" or Game.is_city(id):
 		return
 	var n: int = track.sample_count()
 	var want: int = {"harbor": 3, "ridge": 2}.get(id, 4)
