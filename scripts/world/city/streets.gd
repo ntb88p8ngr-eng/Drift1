@@ -603,6 +603,7 @@ func _furniture(k: int) -> void:
 	var next_tree := [rng.randf_range(3.0, 8.0), rng.randf_range(3.0, 8.0)]
 	var next_pole := rng.randf_range(5.0, 20.0)
 	var next_hydrant := [rng.randf_range(20.0, 60.0), rng.randf_range(20.0, 60.0)]
+	var next_tsign := [rng.randf_range(30.0, 90.0), rng.randf_range(30.0, 90.0)]
 	var next_misc := [rng.randf_range(10.0, 30.0), rng.randf_range(10.0, 30.0)]
 	var parking := [not narrow and kind != "ring" and kind != "crossing" and rng.randf() < 0.5, false]
 	parking[1] = not narrow and kind == "street" and rng.randf() < 0.3
@@ -639,6 +640,10 @@ func _furniture(k: int) -> void:
 					add_inst.call(tk, Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sc, sc, sc)), Vector3(walk.x, 0, walk.y)), Color(1, 1, 1, 1))
 					add_inst.call("tree_pit", Transform3D(Basis.looking_at(face, Vector3.UP), Vector3(walk.x, 0.0, walk.y)), Color(1, 1, 1, 1))
 				# hydrants
+				# a no-entry or speed-limit sign now and then (breakable, city_lamps.gd)
+				if d >= float(next_tsign[si]):
+					next_tsign[si] = d + rng.randf_range(70.0, 140.0)
+					lamps.add_traffic_sign(Vector3(kerb.x - t.x * 2.0, 0, kerb.y - t.y * 2.0), Vector3(t.x, 0, t.y) * side, 1 if rng.randf() < 0.35 else 3)
 				if d >= float(next_hydrant[si]):
 					next_hydrant[si] = d + rng.randf_range(55.0, 90.0)
 					# breakable (a fountain when knocked off): city_lamps.gd
@@ -686,6 +691,10 @@ func _furniture(k: int) -> void:
 		var sp := e0 + dir * (off + 5.0) + nrm * (hw + 1.0)
 		# the signal faces the cars coming up the street towards the junction
 		_signal(Vector3(sp.x, 0, sp.y), Vector3(dir.x, 0, dir.y), Vector3(-nrm.x, 0, -nrm.y), hw)
+		# the narrow streets: a stop sign (止まれ) a little before the junction
+		if narrow:
+			var stp := e0 + dir * (off + 9.0) + nrm * (hw + 0.9)
+			lamps.add_traffic_sign(Vector3(stp.x, 0, stp.y), Vector3(dir.x, 0, dir.y), 0)
 
 
 static var _barricade_mesh: ArrayMesh
@@ -813,8 +822,8 @@ func _bus_stop(p: Vector3, face: Vector3, along: Vector2) -> void:
 	# the lit ad panel at one end, the stop sign at the kerb
 	var ad_basis := Basis.looking_at(Vector3(along.x, 0, along.y), Vector3.UP)
 	cm.sign_box(Transform3D(ad_basis, p + basis.x * 1.75 + Vector3(0, 1.25, 0) - face * 0.2), Vector3(1.2, 1.8, 0.12), CityAtlas.ad(rng.randi()), 1.0, true)
-	cm.box("metal", Transform3D(basis, p + face * 1.2 + Vector3(0, 1.3, 0)), Vector3(0.08, 2.6, 0.08), col)
-	cm.sign_box(Transform3D(basis.rotated(Vector3.UP, PI), p + face * 1.2 + Vector3(0, 2.5, 0)), Vector3(0.5, 0.5, 0.05), CityAtlas.misc(6), 0.6, true)
+	# the bus stop sign at the kerb: knocked down like the other traffic signs (city_lamps.gd)
+	lamps.add_traffic_sign(p + face * 1.2, -face, 2)
 	stats["bus_stops"] = int(stats.get("bus_stops", 0)) + 1
 
 

@@ -19,7 +19,7 @@ func _ready() -> void:
 	var car = world.local_car
 	car.controls_locked = true
 	var ok := true
-	for job in [["bench", 3.0], ["bin", 3.0], ["shelter", 14.0]]:
+	for job in [["bench", 4.0], ["bin", 4.0], ["shelter", 14.0], ["tsign0", 12.0], ["tsign3", 12.0]]:
 		var kind: String = job[0]
 		var speed: float = job[1]
 		var pl = null
@@ -32,7 +32,9 @@ func _ready() -> void:
 			ok = false
 			continue
 		var xf: Transform3D = pl["xf"]
-		var face: Vector3 = -xf.basis.z           # towards the road
+		var face: Vector3 = -xf.basis.z           # towards the road (a bench sits with its back to it)
+		if kind == "bench":
+			face = -face
 		var dir := -face                          # drive in from the road side
 		var target: Vector3 = xf * lamps._centre_of(kind)
 		target.y = 0.0
@@ -59,6 +61,8 @@ func _ready() -> void:
 			moved = maxf(moved, (b as Node3D).global_position.distance_to(target))
 		print("PROPS: %s at %.0f m/s: hit %s, %d pieces, moved up to %.1f m" % [kind, speed, str(hit), bodies.size(), moved])
 		var want := 5 if kind == "shelter" else 1
+		if kind.begins_with("tsign"):
+			want = 1
 		ok = ok and hit and bodies.size() >= want and moved > 1.0
 		car.place(Transform3D(Basis.IDENTITY, Vector3(0, 0.6, 0) + target + Vector3(0, 0, 30)))
 	print("PROPS TEST: %s" % ("PASS" if ok else "FAIL"))

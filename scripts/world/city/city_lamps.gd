@@ -35,6 +35,9 @@ const KINDS := {
 	"bench": [0.9, 0.9, 0.0, 40.0],
 	"bin": [0.27, 0.95, 0.0, 12.0],
 	"shelter": [1.8, 2.5, 0.0, 180.0],
+	# traffic signs on a thin post (designs: 0 stop, 1 no entry, 2 bus stop, 3 speed limit)
+	"tsign0": [0.06, 2.6, 0.25, 12.0], "tsign1": [0.06, 2.6, 0.25, 12.0],
+	"tsign2": [0.06, 2.6, 0.25, 12.0], "tsign3": [0.06, 2.6, 0.25, 12.0],
 }
 ## Loose furniture: a car merely pushes it (from walking pace on), it slides and tumbles away.
 const PUSHED := ["bench", "bin"]
@@ -145,6 +148,12 @@ func add_prop(kind: String, p: Vector3, face: Vector3) -> void:
 	poles.append({"kind": kind, "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": li, "broken": false, "spans": []})
 
 
+## A traffic sign at the kerb, its board towards `face`. design: 0 stop (止まれ triangle), 1 no
+## entry, 2 bus stop, 3 speed limit.
+func add_traffic_sign(p: Vector3, face: Vector3, design: int) -> void:
+	poles.append({"kind": "tsign%d" % clampi(design, 0, 3), "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": -1, "broken": false, "spans": []})
+
+
 func add_hydrant(p: Vector3, face: Vector3) -> void:
 	poles.append({"kind": "hydrant", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": -1, "broken": false, "spans": []})
 
@@ -206,7 +215,7 @@ func build(p_world) -> void:
 			mm.set_instance_transform(j, Transform3D(xf.basis, xf.origin - centre))
 			pl["mm"] = mm
 			pl["slot"] = j
-		_chunk_node(mm, centre, "%s_%d_%d" % [kind, key.x, key.y], {"hydrant": 200.0, "vending": 200.0, "bench": 160.0, "bin": 160.0, "shelter": 300.0}.get(kind, RANGE))
+		_chunk_node(mm, centre, "%s_%d_%d" % [kind, key.x, key.y], {"hydrant": 200.0, "vending": 200.0, "bench": 160.0, "bin": 160.0, "shelter": 300.0}.get(kind, 220.0 if kind.begins_with("tsign") else RANGE))
 	# the wires: one unit span stretched from pole to pole
 	var wchunks := {}
 	for si in spans.size():
@@ -233,7 +242,7 @@ func build(p_world) -> void:
 		_chunk_node(mm, centre, "wires_%d_%d" % [key.x, key.y], 360.0)
 	for pl in poles:
 		var nm: String = {"lamp0": "streetlights", "lamp1": "streetlights", "upole1": "utility_poles", "upole-1": "utility_poles",
-			"signal": "signals", "vending": "vending", "bench": "benches", "bin": "bins", "shelter": "bus_shelters"}.get(pl["kind"], "hydrants")
+			"signal": "signals", "vending": "vending", "bench": "benches", "bin": "bins", "shelter": "bus_shelters"}.get(pl["kind"], "traffic_signs" if str(pl["kind"]).begins_with("tsign") else "hydrants")
 		stats[nm] = int(stats.get(nm, 0)) + 1
 	stats["wire_spans"] = spans.size()
 
@@ -393,6 +402,9 @@ func _break(k: int, car: RigidBody3D, v: Vector3) -> void:
 			tb.size = Vector3(0.3, 0.45, arm2 + 0.6)
 			top = CollisionShape3D.new()
 			top.transform = Transform3D(Basis.looking_at(across_l, Vector3.UP), Vector3(0, 5.4, 0) + across_l * arm2 * 0.5)
+		elif kind.begins_with("tsign"):
+			tb.size = Vector3(0.7, 0.7, 0.08)
+			top.position = Vector3(0, 2.2, -0.03)
 		else:
 			tb.size = Vector3(1.8, 1.1, 0.2)
 			top.position = Vector3(0, 9.05, 0)
@@ -556,6 +568,10 @@ func _make_meshes() -> void:
 	_glow_mat.shader = Shader.new()
 	_glow_mat.shader.code = GLOW_SHADER
 	_meshes["stub_signal"] = _stub(0.3, 0.18, Color(0.6, 0.6, 0.62), _metal)
+	for d in 4:
+		_meshes["full_tsign%d" % d] = _traffic_sign_mesh(d, 0.0)
+		_meshes["upper_tsign%d" % d] = _traffic_sign_mesh(d, 0.25)
+		_meshes["stub_tsign%d" % d] = _stub(0.25, 0.08, Color(0.62, 0.63, 0.65), _metal)
 	_meshes["full_vending"] = _vending_mesh()
 	_meshes["upper_vending"] = _meshes["full_vending"]
 	for k in PUSHED:
@@ -583,6 +599,55 @@ func _make_meshes() -> void:
 			MeshKit.box(whole, Transform3D(Basis.IDENTITY, part[2]), size, cols[nm])
 			_meshes["sh_" + nm] = MeshKit.commit(one, _metal)
 	_meshes["full_shelter"] = MeshKit.commit(whole_glass, glass, MeshKit.commit(whole, _metal))
+
+
+## A traffic sign: the grey post (from `from_y` up) and its board at 2.2 m facing -Z, the back grey.
+func _traffic_sign_mesh(design: int, from_y: float) -> ArrayMesh:
+	var st := MeshKit.new_st()
+	var grey := Color(0.62, 0.63, 0.65)
+	Props._cyl(st, Vector3(0, from_y, 0), Vector3(0, 2.55, 0), 0.04, 0.04, grey, 8)
+	var c := Vector3(0, 2.2, -0.05)
+	var red := Color(0.8, 0.06, 0.05)
+	var white := Color(0.95, 0.95, 0.93)
+	var blue := Color(0.05, 0.25, 0.7)
+	match design:
+		0:
+			# 止まれ: a red triangle point down, white rim
+			_sign_poly(st, c, [Vector2(-0.38, 0.24), Vector2(0.38, 0.24), Vector2(0, -0.42)], white, 0.0)
+			_sign_poly(st, c, [Vector2(-0.31, 0.2), Vector2(0.31, 0.2), Vector2(0, -0.34)], red, 0.01)
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, c + Vector3(0, 0.02, -0.022)), Vector3(0.3, 0.06, 0.005), white)
+		1:
+			_sign_disc(st, c, 0.3, red, 0.0)
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, c + Vector3(0, 0, -0.016)), Vector3(0.36, 0.08, 0.005), white)
+		2:
+			_sign_disc(st, c, 0.3, white, 0.0)
+			_sign_disc(st, c, 0.25, blue, 0.01)
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, c + Vector3(0, -0.02, -0.022)), Vector3(0.22, 0.12, 0.005), white)
+		_:
+			_sign_disc(st, c, 0.3, red, 0.0)
+			_sign_disc(st, c, 0.23, white, 0.01)
+			for k in 2:
+				MeshKit.box(st, Transform3D(Basis.IDENTITY, c + Vector3(-0.06 + k * 0.12, 0, -0.022)), Vector3(0.07, 0.16, 0.005), blue)
+	# the plain back of the board
+	_sign_disc(st, c + Vector3(0, 0, 0.012), 0.31, grey, 0.0, true)
+	return MeshKit.commit(st, _paint)
+
+
+func _sign_disc(st: SurfaceTool, c: Vector3, r: float, col: Color, lift: float, back := false) -> void:
+	var ring := PackedVector3Array()
+	for k in 20:
+		var a := TAU * k / 20.0
+		ring.append(c + Vector3(cos(a) * r, sin(a) * r, -lift))
+	MeshKit.cap(st, ring, c + Vector3(0, 0, -lift), Vector3(0, 0, 1) if back else Vector3(0, 0, -1), col)
+
+
+func _sign_poly(st: SurfaceTool, c: Vector3, pts: Array, col: Color, lift: float) -> void:
+	var ring := PackedVector3Array()
+	var mid := Vector3.ZERO
+	for p in pts:
+		ring.append(c + Vector3(p.x, p.y, -lift))
+		mid += c + Vector3(p.x, p.y, -lift)
+	MeshKit.cap(st, ring, mid / pts.size(), Vector3(0, 0, -1), col)
 
 
 ## A signal: pole, mast arm, the lamp head (one lamp lit), the pedestrian signal.

@@ -11,6 +11,7 @@ const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Crowd = preload("res://scripts/world/crowd.gd")
 const PeopleHits = preload("res://scripts/world/people_hits.gd")
 const TreeHits = preload("res://scripts/world/tree_hits.gd")
+const SignHits = preload("res://scripts/world/sign_hits.gd")
 const Festival = preload("res://scripts/world/festival.gd")
 const City = preload("res://scripts/world/city.gd")
 const Details = preload("res://scripts/world/details.gd")
@@ -39,6 +40,7 @@ var rng := RandomNumberGenerator.new()
 var crowd: Node3D
 var people: Node3D             # people_hits.gd: every instanced person can be run over
 var trees: Node3D              # tree_hits.gd: the trees near the roads can be felled
+var signs: Node3D              # sign_hits.gd: road signs can be knocked down
 var festival: Node3D
 var city: Node3D
 var details: Node3D
@@ -87,6 +89,10 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	add_child(trees)
 	trees.world = get_parent()
 	trees.terrain = p_terrain
+	signs = SignHits.new()
+	signs.name = "SignHits"
+	add_child(signs)
+	signs.world = get_parent()
 	var id: String = track.track_id
 	big = bool(track.elevated)
 	if big:
@@ -351,6 +357,8 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		mm.buffer = buf
 		if trees != null:
 			trees.register_set(label, mm, items)
+		if signs != null:
+			signs.register_set(label, mm, items)
 		# people can be run over: register every one with its slot
 		if people != null and mesh == Crowd.person_mesh():
 			for idx in items.size():

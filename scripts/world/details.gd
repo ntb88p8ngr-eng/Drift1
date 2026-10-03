@@ -229,11 +229,17 @@ func _sign(pos: Vector3, basis: Basis, name: String, size: Vector2, bottom: floa
 	var centre := pos + Vector3(0, bottom + size.y * 0.5, 0)
 	add("sign", Transform3D(Basis(basis.x * size.x, basis.y * size.y, basis.z), centre), cell)
 	var top := bottom + size.y * 0.8
+	var post_xfs: Array = []
 	if posts == 1:
-		add("post", Transform3D(Basis.IDENTITY.scaled(Vector3(1, top + 0.4, 1)), pos - basis.z * 0.05 + Vector3(0, -0.4, 0)))
+		post_xfs.append(Transform3D(Basis.IDENTITY.scaled(Vector3(1, top + 0.4, 1)), pos - basis.z * 0.05 + Vector3(0, -0.4, 0)))
 	else:
 		for k in [-0.35, 0.35]:
-			add("post", Transform3D(Basis.IDENTITY.scaled(Vector3(1, top + 0.4, 1)), pos + basis.x * size.x * k - basis.z * 0.05 + Vector3(0, -0.4, 0)))
+			post_xfs.append(Transform3D(Basis.IDENTITY.scaled(Vector3(1, top + 0.4, 1)), pos + basis.x * size.x * k - basis.z * 0.05 + Vector3(0, -0.4, 0)))
+	for pxf in post_xfs:
+		add("post", pxf)
+	# knocked down by a car (sign_hits.gd)
+	if scenery.signs:
+		scenery.signs.add_sign(Transform3D(Basis(basis.x * size.x, basis.y * size.y, basis.z), centre), post_xfs, pos)
 
 
 ## Corners: [apex index, side of the outside (+1 = right), first index, last index, peak curvature]
