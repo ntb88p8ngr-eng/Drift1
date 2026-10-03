@@ -45,9 +45,25 @@ const ASSETS := [
 static var _mesh_cache := {}
 ## Uploaded models: id -> PackedScene-like generated Node (template), set by the map / editor.
 static var uploaded := {}
+## Scenery meshes by their MultiMeshInstance name ("Trees_hi", "Prop_bench" …): "scn:<name>#<colour>"
+## places a copy of a tree / rock / prop of the track itself (pasted in the editor).
+static var scenery_meshes := {}
+
+
+static func register_scenery(scenery) -> void:
+	if scenery == null:
+		return
+	for r in scenery._ranged:
+		var mmi = r[0]
+		if mmi is MultiMeshInstance3D and is_instance_valid(mmi) and (mmi as MultiMeshInstance3D).multimesh:
+			var nm := str(mmi.get_meta("label", str(mmi.name)))
+			if nm != "" and not nm.begins_with("@") and not scenery_meshes.has(nm):
+				scenery_meshes[nm] = (mmi as MultiMeshInstance3D).multimesh.mesh
 
 
 static func name_of(id: String) -> String:
+	if id.begins_with("scn:"):
+		return "Kopie " + id.substr(4).split("#")[0]
 	for a in ASSETS:
 		if a[0] == id:
 			return a[1]
@@ -63,6 +79,23 @@ static func make(id: String) -> Node3D:
 		if tpl == null:
 			return null
 		return (tpl as Node3D).duplicate()
+	if id.begins_with("scn:"):
+		var parts := id.substr(4).split("#")
+		var sm: Mesh = scenery_meshes.get(parts[0])
+		if sm == null:
+			return null
+		var smm := MultiMesh.new()
+		smm.transform_format = MultiMesh.TRANSFORM_3D
+		smm.use_custom_data = true
+		smm.mesh = sm
+		smm.instance_count = 1
+		smm.set_instance_transform(0, Transform3D.IDENTITY)
+		smm.set_instance_custom_data(0, Color.from_string(parts[1], Color(1, 1, 1, 1)) if parts.size() > 1 else Color(1, 1, 1, 1))
+		var sroot := Node3D.new()
+		var smmi := MultiMeshInstance3D.new()
+		smmi.multimesh = smm
+		sroot.add_child(smmi)
+		return sroot
 	var mesh := mesh_of(id)
 	if mesh == null:
 		return null

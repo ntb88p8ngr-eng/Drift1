@@ -69,8 +69,8 @@ func _ready() -> void:
 	var keys: Array = ed._spots.keys()
 	print("EDITOR: %d scenery spots" % keys.size())
 	ok = ok and keys.size() > 100
-	var k_move: String = keys[keys.size() / 3]
-	var k_del: String = keys[keys.size() / 2]
+	var k_move: int = keys[keys.size() / 3]
+	var k_del: int = keys[keys.size() / 2]
 	var del_orig: String = ed._spots[k_del]["orig"]
 	var from: Transform3D = ed._spot_xf(k_move)
 	var ed_orig: String = ed._spots[k_move]["orig"]
@@ -78,11 +78,21 @@ func _ready() -> void:
 		for r in world.scenery._ranged:
 			if r[0].multimesh == l[0]:
 				print("EDITOR: moved spot part ", r[0].name, " idx ", l[1], " base ", l[2], " count ", l[0].instance_count, " xf ", l[0].get_instance_transform(l[1]))
-	ed._select({"kind": "spot", "key": k_move})
-	ed._edit_sel(Transform3D(from.basis.scaled(Vector3.ONE * 2.0), from.origin + Vector3(7, 0, 0)))
+	ed._select({"kind": "spot", "id": k_move})
+	ed._edit_all(func(x: Transform3D) -> Transform3D: return Transform3D(x.basis.scaled(Vector3.ONE * 2.0), x.origin + Vector3(7, 0, 0)))
 	var moved_to: Vector3 = from.origin + Vector3(7, 0, 0)
-	ed._select({"kind": "spot", "key": k_del})
+	ed._select({"kind": "spot", "id": k_del})
 	ed._delete()
+	# copy a tree and the container, paste them elsewhere: two more placed objects
+	ed._select({"kind": "spot", "id": keys[keys.size() / 4]})
+	for c in ed.holder.get_children():
+		if c.has_meta("asset"):
+			ed._toggle({"kind": "node", "node": c})
+	ed._copy()
+	print("EDITOR: copied %d (selection %d)" % [ed._clip.size(), ed._sel.size()])
+	ok = ok and ed._clip.size() == 2
+	var paste_at := hill + Vector3(-20, 0, -20)
+	ed._mouse = ed.cam.unproject_position(paste_at)
 	# a road and water
 	ed.road_w = 12.0
 	ed.road_flatten = true
@@ -101,6 +111,10 @@ func _ready() -> void:
 			print("EDITOR: road at %s: ground %.2f, ray hits %s at %.2f" % [p, gy, h2.get("collider"), float(h2.get("position", Vector3.ZERO).y)])
 	print("EDITOR: ground above the road surface by up to %.2f m" % worst)
 	ed._add_water(hill + Vector3(-50, 0, -30))
+	ed._focus = hill
+	ed._update_cam()
+	ed._mouse = ed.cam.unproject_position(hill + Vector3(-20, 0, -20))
+	ed._paste()
 	ed.map.map_name = "Editor-Test"
 	ed.map_path = PATH
 	ed._save_copy()
@@ -131,9 +145,12 @@ func _ready() -> void:
 	var found_deleted := false
 	for r in w2.scenery._ranged:
 		var mm: MultiMesh = r[0].multimesh
-		var base: Vector3 = r[0].global_position
+		var mxf: Transform3D = r[0].global_transform
 		for i in mm.instance_count:
-			var p: Vector3 = mm.get_instance_transform(i).origin + base
+			var lx := mm.get_instance_transform(i)
+			if absf(lx.basis.determinant()) < 1e-6:
+				continue
+			var p: Vector3 = mxf * lx.origin
 			if p.distance_to(from.origin) < 0.3:
 				found_orig = true
 			if p.distance_to(moved_to) < 0.3:
@@ -142,7 +159,7 @@ func _ready() -> void:
 				found_deleted = true
 	print("EDITOR: tree moved from %s to %s, original spot still taken %s, edit %s" % [from.origin, moved_to, found_orig, w2.custom_map.edits.get(ed_orig)])
 	print("EDITOR: map height %.2f (edited %.2f), %d objects, %d roads, %d water, moved tree %s, deleted tree still there %s" % [h2, h1, n_obj, n_road, n_water, found_moved, found_deleted])
-	ok = ok and absf(h2 - h1) < 0.6 and n_obj == 1 and n_road == 1 and n_water == 1 and found_moved and not found_deleted
+	ok = ok and absf(h2 - h1) < 0.6 and n_obj == 3 and n_road == 1 and n_water == 1 and found_moved and not found_deleted
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
 	print("EDITOR TEST: %s" % ("PASS" if ok else "FAIL"))
 	get_tree().quit(0 if ok else 1)

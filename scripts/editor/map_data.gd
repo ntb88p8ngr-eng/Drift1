@@ -7,6 +7,7 @@ extends RefCounted
 const AssetLib = preload("res://scripts/editor/asset_lib.gd")
 const RoadBuilder = preload("res://scripts/editor/road_builder.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
+const MMUtil = preload("res://scripts/util/mm_util.gd")
 
 const MAGIC := "DMAP"
 const VERSION := 1
@@ -165,6 +166,8 @@ func apply(world) -> Node3D:
 		if hi.x >= 0:
 			terrain.rebuild_region(lo.x, lo.y, hi.x, hi.y)
 			terrain.refresh_collision()
+	# scenery copies (pasted in the editor) are built from the scenery's own meshes
+	AssetLib.register_scenery(world.scenery)
 	# scenery that was moved or removed
 	if not edits.is_empty():
 		apply_edits(world.scenery, edits)
@@ -230,18 +233,23 @@ static func apply_edits(scenery, e: Dictionary) -> void:
 		if not (mmi is MultiMeshInstance3D) or not is_instance_valid(mmi):
 			continue
 		var mm: MultiMesh = (mmi as MultiMeshInstance3D).multimesh
-		var base: Vector3 = (mmi as Node3D).global_position
+		if mm == null:
+			continue
+		var mxf: Transform3D = (mmi as Node3D).global_transform
+		var inv := mxf.affine_inverse()
+		var changes := {}
 		for i in mm.instance_count:
-			var xf := mm.get_instance_transform(i)
-			var key := spot_key(xf.origin + base)
+			var lxf := MMUtil.get_xf(mm, i)
+			var key := spot_key(mxf * lxf.origin)
 			if not e.has(key):
 				continue
 			var v = e[key]
 			if v == null:
-				mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(0, -3000, 0)))
+				# removed: shrunk to nothing where it stood
+				changes[i] = Transform3D(lxf.basis.scaled(Vector3.ONE * 0.0001), lxf.origin)
 			else:
-				var nx := arr_to_xf(v)
-				mm.set_instance_transform(i, Transform3D(nx.basis, nx.origin - base))
+				changes[i] = inv * arr_to_xf(v)
+		MMUtil.set_many(mm, changes)
 
 
 ## Game objects with a body, found by where they were built.

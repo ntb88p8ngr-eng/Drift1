@@ -8,6 +8,7 @@ extends Node3D
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const Props = preload("res://scripts/world/prop_meshes.gd")
 const Debris = preload("res://scripts/util/debris.gd")
+const MMUtil = preload("res://scripts/util/mm_util.gd")
 
 const CELL := 8.0
 ## The blocks are debris (debris.gd): the car knocks them about, they never push the car.
@@ -93,7 +94,7 @@ func _wake_cars() -> void:
 func _wake(e: Array) -> void:
 	e[6] = true
 	var mm: MultiMesh = e[0]
-	mm.set_instance_transform(int(e[1]), Transform3D(Basis.IDENTITY, Vector3(0, -2000, 0)))
+	MMUtil.hide(mm, int(e[1]))
 	var xf: Transform3D = e[2]
 	var kind: String = e[4]
 	var sz: Vector3 = Props.CAR_SIZES[kind]
@@ -179,7 +180,7 @@ func _physics_process(delta: float) -> void:
 func _burst(e: Array, v: Vector3) -> void:
 	e[4] = false
 	var mm: MultiMesh = e[0]
-	mm.set_instance_transform(int(e[1]), Transform3D(Basis.IDENTITY, Vector3(0, -2000, 0)))
+	MMUtil.hide(mm, int(e[1]))
 	var xf: Transform3D = e[2]
 	var custom: Color = e[3]
 	var shirt := Color(custom.r, custom.g, custom.b)

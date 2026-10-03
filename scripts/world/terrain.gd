@@ -654,6 +654,8 @@ func flatten(pos: Vector3, radius: float, falloff := 8.0) -> float:
 # ---------------------------------------------------------------------------
 ## Height of the rendered surface (same triangle split as the mesh).
 func height_at(x: float, z: float) -> float:
+	if not (is_finite(x) and is_finite(z)):
+		return 0.0
 	var fx := (x - origin.x) / CELL
 	var fz := (z - origin.y) / CELL
 	if fx < 0.0 or fz < 0.0 or fx >= nx - 1 or fz >= nz - 1:

@@ -9,6 +9,7 @@ const MapData = preload("res://scripts/editor/map_data.gd")
 const AssetLib = preload("res://scripts/editor/asset_lib.gd")
 const RoadBuilder = preload("res://scripts/editor/road_builder.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const MMUtil = preload("res://scripts/util/mm_util.gd")
 
 const TOOLS := [
 	["select", "Auswählen", "Klicken: Objekt / Baum wählen · Ziehen: verschieben · R / Shift+R: drehen · +/-: Größe · Bild↑/↓: Höhe · Entf: löschen"],
@@ -51,12 +52,17 @@ var _has_dirty := false
 var _rebuild_t := 0.0
 var _ring: MeshInstance3D
 
-# selection: {kind: "node", node} or {kind: "spot", key} or {kind: "water", node}
-var _sel := {}
+# selection: items {kind: "node", node} / {kind: "spot", id} / {kind: "water", node} – one or many
+var _sel: Array = []
 var _drag := false
-var _drag_off := Vector3.ZERO
-var _drag_from: Transform3D
+var _drag_start := Vector3.ZERO
+var _drag_before: Array = []
+var _boxing := false
+var _box_from := Vector2.ZERO
+var _box_rect: ColorRect
 var _sel_box: MeshInstance3D
+var _clip: Array = []          # Ctrl+C: [asset, transform relative to the copied group's middle]
+var _panels: Array = []        # the UI panels (the mouse wheel scrolls them, not the camera)
 
 # placing
 var place_asset := "tree_pine"
@@ -73,9 +79,10 @@ var _road_preview: MeshInstance3D
 var _preview_t := 0.0
 var _preview_dirty := false
 
-# scenery index: spot key (current position) -> {pos, gy, orig, list: [[mm, idx, base]]}
+# scenery index: id -> {pos, gy, orig (key of its original spot), list: [[mm, idx, MMI transform]], label, h, w, dead}
 var _spots := {}
-var _cells := {}            # Vector2i -> Array of spot keys
+var _cells := {}            # Vector2i -> Array of spot ids
+var _next_id := 0
 var _indexed := false
 
 var _undo: Array = []       # Callables
@@ -161,6 +168,7 @@ func _build_ui() -> void:
 	lp.position = Vector2(10, 10)
 	lp.custom_minimum_size = Vector2(300, 0)
 	root.add_child(lp)
+	_panels.append(lp)
 	left.add_child(UiKit.label("WELT-EDITOR", 22, UiKit.GOLD))
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -231,6 +239,12 @@ func _build_ui() -> void:
 	right.add_theme_constant_override("separation", 6)
 	var rp := UiKit.panel(right)
 	_pin(rp, 1.0, 0.0, Vector2(-330, 10))
+	_panels.append(rp)
+	_box_rect = ColorRect.new()
+	_box_rect.color = Color(0.3, 0.9, 1.0, 0.15)
+	_box_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_box_rect.visible = false
+	root.add_child(_box_rect)
 	rp.custom_minimum_size = Vector2(320, 0)
 	root.add_child(rp)
 	right.add_child(UiKit.label("Basis: " + Game.track_name(map.base_track), 16, UiKit.TEXT_DIM))
@@ -386,15 +400,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			_focus += (-right * mm.relative.x + fwd * mm.relative.y) * _dist * 0.0018
 		elif _drag:
 			_drag_move()
+		elif _boxing:
+			_update_box()
 		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		_mouse = mb.position
 		match mb.button_index:
-			MOUSE_BUTTON_WHEEL_UP:
-				_dist = maxf(_dist * 0.88, 6.0)
-			MOUSE_BUTTON_WHEEL_DOWN:
-				_dist = minf(_dist * 1.14, 1500.0)
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+				# over the panels the wheel scrolls them, not the camera
+				if _over_ui(mb.position):
+					return
+				_dist = clampf(_dist * (0.88 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.14), 6.0, 1500.0)
 			MOUSE_BUTTON_RIGHT:
 				if mb.pressed and tool == "road" and _road_pts.size() >= 2:
 					_finish_road()
@@ -404,13 +421,20 @@ func _unhandled_input(event: InputEvent) -> void:
 				_mmb = mb.pressed
 			MOUSE_BUTTON_LEFT:
 				if mb.pressed:
-					_click(mb.double_click)
+					_click(mb.double_click, mb.shift_pressed)
 				else:
-					_release()
+					_release(mb.shift_pressed)
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.pressed:
 		_key(event as InputEventKey)
+
+
+func _over_ui(p: Vector2) -> bool:
+	for c in _panels:
+		if is_instance_valid(c) and (c as Control).visible and (c as Control).get_global_rect().has_point(p):
+			return true
+	return false
 
 
 func _key(k: InputEventKey) -> void:
@@ -424,6 +448,21 @@ func _key(k: InputEventKey) -> void:
 		KEY_S:
 			if k.ctrl_pressed:
 				_save_copy()
+			else:
+				handled = false
+		KEY_C:
+			if k.ctrl_pressed:
+				_copy()
+			else:
+				handled = false
+		KEY_V:
+			if k.ctrl_pressed:
+				_paste()
+			else:
+				handled = false
+		KEY_A:
+			if k.ctrl_pressed:
+				handled = true
 			else:
 				handled = false
 		KEY_R:
@@ -451,24 +490,37 @@ func _key(k: InputEventKey) -> void:
 			else:
 				_select({})
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
-			_set_tool(TOOLS[k.keycode - KEY_1][0])
+			if not k.ctrl_pressed:
+				_set_tool(TOOLS[k.keycode - KEY_1][0])
 		_:
 			handled = false
 	if handled:
 		get_viewport().set_input_as_handled()
 
 
-func _click(double: bool) -> void:
+func _click(double: bool, shift := false) -> void:
 	var hit = _ground_hit(_mouse)
 	match tool:
 		"select":
-			_pick()
-			if _movable():
-				var at = hit
-				if at != null:
-					_drag = true
-					_drag_from = _sel_xf()
-					_drag_off = _drag_from.origin - at
+			var it := _pick_at(_mouse)
+			if it.is_empty():
+				# empty ground: drag a box to select several
+				if not shift:
+					_select({})
+				_boxing = true
+				_box_from = _mouse
+				_update_box()
+				return
+			if shift:
+				_toggle(it)
+				return
+			if _index_of(it) < 0:
+				_select(it)
+			# drag: everything selected moves along
+			if hit != null and _movable():
+				_drag = true
+				_drag_start = hit
+				_drag_before = _states(_sel)
 		"place":
 			if hit != null:
 				_place(hit)
@@ -489,7 +541,7 @@ func _click(double: bool) -> void:
 					_preview_dirty = true
 
 
-func _release() -> void:
+func _release(shift := false) -> void:
 	if _stroke:
 		_stroke = false
 		_flush_terrain()
@@ -501,12 +553,19 @@ func _release() -> void:
 		_changed = true
 	if _drag:
 		_drag = false
-		var from := _drag_from
-		var sel := _sel.duplicate()
-		if _sel_xf() != from:
+		var before: Array = _drag_before
+		var moved := false
+		for st in before:
+			if _item_xf(st[0]) != st[1]:
+				moved = true
+		if moved:
 			_undo.append(func():
-				_set_xf(sel, from))
+				_restore_states(before))
 			_changed = true
+	if _boxing:
+		_boxing = false
+		_box_rect.visible = false
+		_box_select(Rect2(_box_from, _mouse - _box_from).abs(), shift)
 
 
 # ---------------------------------------------------------------------------
@@ -534,14 +593,16 @@ func _ground_hit(pos: Vector2, exclude: Array[RID] = []):
 	return null
 
 
-func _pick() -> void:
-	var r := _ray(_mouse)
-	var q := PhysicsRayQueryParameters3D.create(r[0], r[0] + r[1] * 5000.0, 0xFFFFFFFF)
-	var res := get_world_3d().direct_space_state.intersect_ray(q)
-	var ground = res.get("position") if not res.is_empty() else _ground_hit(_mouse)
-	# water first (no collider): a plane under the ray
+## The thing under the mouse: placed objects and game objects by their colliders, scenery (trees,
+## rocks, props …) by how close it is drawn to the mouse on screen – whichever is nearer the camera.
+func _pick_at(mpos: Vector2) -> Dictionary:
+	var r := _ray(mpos)
 	var ro: Vector3 = r[0]
 	var rd: Vector3 = r[1]
+	var q := PhysicsRayQueryParameters3D.create(ro, ro + rd * 5000.0, 0xFFFFFFFF)
+	var res := get_world_3d().direct_space_state.intersect_ray(q)
+	var ground = res.get("position") if not res.is_empty() else _ground_hit(mpos)
+	# water (no collider): a plane under the ray
 	for c in holder.get_children():
 		if c.has_meta("water"):
 			var w := c as MeshInstance3D
@@ -551,19 +612,43 @@ func _pick() -> void:
 				var pm := w.mesh as PlaneMesh
 				var lp: Vector3 = w.global_transform.affine_inverse() * p
 				if absf(lp.x) < pm.size.x * 0.5 and absf(lp.z) < pm.size.y * 0.5 and (ground == null or ro.distance_to(p) <= ro.distance_to(ground) + 0.5):
-					_select({"kind": "water", "node": w})
-					return
+					return {"kind": "water", "node": w}
+	var node: Node3D = null
+	var dn := 1e9
 	if not res.is_empty():
-		var body := _pickable(res["collider"])
-		if body:
-			_select({"kind": "node", "node": body})
-			return
+		node = _pickable(res["collider"])
+		if node:
+			dn = ro.distance_to(res["position"])
+	var best := -1
+	var best_score := 14.0       # pixels
+	var ds := 1e9
 	if ground != null:
-		var key := _nearest_spot(ground, PICK_R + 2.0)
-		if key != "":
-			_select({"kind": "spot", "key": key})
-			return
-	_select({})
+		var g: Vector3 = ground
+		for id in _ids_near(g, 22.0):
+			var e: Dictionary = _spots[id]
+			var top: Vector3 = e["pos"] + Vector3(0, float(e["h"]), 0)
+			var mid: Vector3 = e["pos"] + Vector3(0, float(e["h"]) * 0.5, 0)
+			if cam.is_position_behind(mid):
+				continue
+			# distance from the mouse to the drawn upright line of the thing (foot to top)
+			var a := cam.unproject_position(e["pos"])
+			var b := cam.unproject_position(top)
+			var on := Geometry2D.get_closest_point_to_segment(mpos, a, b)
+			var width_px := maxf(float(e["w"]) * 0.5 / maxf(ro.distance_to(mid), 1.0) * _focal_px(), 4.0)
+			var score := mpos.distance_to(on) - width_px
+			if score < best_score:
+				best_score = score
+				best = id
+				ds = ro.distance_to(mid)
+	if best >= 0 and (node == null or ds < dn + 1.5):
+		return {"kind": "spot", "id": best}
+	if node:
+		return {"kind": "node", "node": node}
+	return {}
+
+
+func _focal_px() -> float:
+	return get_viewport().get_visible_rect().size.y * 0.5 / tan(deg_to_rad(cam.fov) * 0.5)
 
 
 ## The thing to move for a hit collider (not the ground, the track or the car).
@@ -571,32 +656,110 @@ func _pickable(c: Object) -> Node3D:
 	if not (c is CollisionObject3D):
 		return null
 	var n := c as Node3D
-	if n.name == "TerrainBody" or n is VehicleBody3D or (world.local_car and (n == world.local_car or world.local_car.is_ancestor_of(n))):
+	if n.name == "TerrainBody" or (world.local_car and (n == world.local_car or world.local_car.is_ancestor_of(n))):
 		return null
 	if world.track and world.track.is_ancestor_of(n):
 		return null
-	if n.has_meta("road"):
-		return n
 	return n
 
 
-func _select(s: Dictionary) -> void:
-	_sel = s
-	if s.is_empty():
+func _select(it: Dictionary) -> void:
+	_sel = [] if it.is_empty() else [it]
+	_sel_message()
+
+
+func _toggle(it: Dictionary) -> void:
+	var i := _index_of(it)
+	if i >= 0:
+		_sel.remove_at(i)
+	else:
+		_sel.append(it)
+	_sel_message()
+
+
+func _index_of(it: Dictionary) -> int:
+	for i in _sel.size():
+		var s: Dictionary = _sel[i]
+		if s["kind"] == it["kind"] and ((it["kind"] == "spot" and s["id"] == it["id"]) or (it["kind"] != "spot" and s["node"] == it["node"])):
+			return i
+	return -1
+
+
+func _sel_message() -> void:
+	if _sel.is_empty():
 		message("")
+	elif _sel.size() > 1:
+		message("%d Objekte ausgewählt · Ziehen: verschieben · R: drehen · +/-: Größe · Entf: löschen · Strg+C / Strg+V" % _sel.size())
+	else:
+		var s: Dictionary = _sel[0]
+		match str(s["kind"]):
+			"node":
+				var n: Node3D = s["node"]
+				message("Ausgewählt: %s" % (AssetLib.name_of(str(n.get_meta("asset"))) if n.has_meta("asset") else ("Straße" if n.has_meta("road") else str(n.name))))
+			"spot":
+				message("Ausgewählt: %s" % _spot_name(int(s["id"])))
+			"water":
+				message("Ausgewählt: Wasser (Bild↑/↓: Pegel)")
+
+
+func _spot_name(id: int) -> String:
+	var lab := str(_spots[id].get("label", ""))
+	if lab.begins_with("Tree") or lab.begins_with("Oak"):
+		return "Baum"
+	if lab.begins_with("Bush") or lab.begins_with("Shrub") or lab.begins_with("Fern"):
+		return "Busch"
+	if lab.begins_with("Rock") or lab.begins_with("Stone"):
+		return "Fels"
+	return lab.trim_prefix("Prop_").trim_prefix("Fest_") if lab != "" else "Szenerie-Objekt"
+
+
+# --- box select --------------------------------------------------------------
+func _update_box() -> void:
+	var r := Rect2(_box_from, _mouse - _box_from).abs()
+	_box_rect.position = r.position
+	_box_rect.size = r.size
+	_box_rect.visible = r.size.length() > 4.0
+
+
+func _box_select(r: Rect2, add: bool) -> void:
+	if r.size.length() < 6.0:
 		return
-	match str(s["kind"]):
-		"node":
-			var n: Node3D = s["node"]
-			message("Ausgewählt: %s" % (AssetLib.name_of(str(n.get_meta("asset"))) if n.has_meta("asset") else ("Straße" if n.has_meta("road") else str(n.name))))
-		"spot":
-			message("Ausgewählt: Baum / Szenerie-Objekt")
-		"water":
-			message("Ausgewählt: Wasser (Bild↑/↓: Pegel)")
+	var found: Array = []
+	# the ground under the box (corners and centre), plus a margin
+	var lo := Vector2(1e9, 1e9)
+	var hi := Vector2(-1e9, -1e9)
+	for pt in [r.position, r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y), r.get_center()]:
+		var g = _ground_hit(pt)
+		if g != null:
+			lo = lo.min(Vector2(g.x, g.z))
+			hi = hi.max(Vector2(g.x, g.z))
+	if hi.x >= lo.x:
+		lo -= Vector2(10, 10)
+		hi += Vector2(10, 10)
+		var ncell := (int((hi.x - lo.x) / INDEX_CELL) + 1) * (int((hi.y - lo.y) / INDEX_CELL) + 1)
+		if ncell < 40000:
+			for cz in range(floori(lo.y / INDEX_CELL), floori(hi.y / INDEX_CELL) + 1):
+				for cx in range(floori(lo.x / INDEX_CELL), floori(hi.x / INDEX_CELL) + 1):
+					for id in _cells.get(Vector2i(cx, cz), []):
+						var e: Dictionary = _spots[id]
+						var mid: Vector3 = e["pos"] + Vector3(0, float(e["h"]) * 0.5, 0)
+						if not cam.is_position_behind(mid) and r.has_point(cam.unproject_position(mid)):
+							found.append({"kind": "spot", "id": id})
+	for c in holder.get_children():
+		if c.has_meta("asset") and not cam.is_position_behind(c.global_position) and r.has_point(cam.unproject_position(c.global_position)):
+			found.append({"kind": "node", "node": c})
+	if not add:
+		_sel = []
+	for it in found:
+		if _index_of(it) < 0:
+			_sel.append(it)
+	_sel_message()
 
 
 # ---------------------------------------------------------------------------
-# Scenery instances (trees, rocks, props …): every MultiMesh instance at the same spot is one thing
+# Scenery instances (trees, rocks, props …): every MultiMesh instance at the same spot is one thing,
+# with an id; its LOD copies are edited together. Instance transforms are relative to their
+# MultiMeshInstance (which can be moved, turned and scaled itself).
 # ---------------------------------------------------------------------------
 func _build_index() -> void:
 	_indexed = true
@@ -610,6 +773,7 @@ func _build_index() -> void:
 		var v = map.edits[k]
 		if v != null:
 			moved[MapData.spot_key(MapData.arr_to_xf(v).origin)] = k
+	var by_key := {}
 	for r in sc._ranged:
 		var mmi = r[0]
 		if not (mmi is MultiMeshInstance3D) or not is_instance_valid(mmi):
@@ -617,104 +781,127 @@ func _build_index() -> void:
 		var mm: MultiMesh = (mmi as MultiMeshInstance3D).multimesh
 		if mm == null or mm.transform_format != MultiMesh.TRANSFORM_3D:
 			continue
-		var base: Vector3 = (mmi as Node3D).global_position
+		var mxf: Transform3D = (mmi as Node3D).global_transform
+		var label := str(mmi.get_meta("label", "" if str(mmi.name).begins_with("@") else str(mmi.name)))
+		var aabb: AABB = mm.mesh.get_aabb() if mm.mesh else AABB(Vector3(-1, 0, -1), Vector3(2, 2, 2))
 		var buf := mm.buffer
 		var stride := 12 + (4 if mm.use_colors else 0) + (4 if mm.use_custom_data else 0)
 		for i in mm.instance_count:
 			var j := i * stride
-			var y := buf[j + 7] + base.y
-			if y < -1000.0:
+			if j + 11 >= buf.size():
+				break
+			var lb := Basis(Vector3(buf[j], buf[j + 4], buf[j + 8]), Vector3(buf[j + 1], buf[j + 5], buf[j + 9]), Vector3(buf[j + 2], buf[j + 6], buf[j + 10]))
+			if absf(lb.determinant()) < 1e-6:
+				continue      # removed (shrunk to nothing)
+			var wxf := mxf * Transform3D(lb, Vector3(buf[j + 3], buf[j + 7], buf[j + 11]))
+			var p := wxf.origin
+			if p.y < -1000.0 or not p.is_finite():
 				continue
-			var p := Vector3(buf[j + 3] + base.x, y, buf[j + 11] + base.z)
 			var key := MapData.spot_key(p)
-			var e: Dictionary = _spots.get(key, {})
-			if e.is_empty():
-				e = {"pos": p, "gy": float(world.terrain.height_at(p.x, p.z)), "orig": moved.get(key, key), "list": []}
-				_spots[key] = e
-				var c := Vector2i(floori(p.x / INDEX_CELL), floori(p.z / INDEX_CELL))
-				if not _cells.has(c):
-					_cells[c] = []
-				_cells[c].append(key)
-			e["list"].append([mm, i, base])
+			var id: int = by_key.get(key, -1)
+			if id < 0:
+				id = _next_id
+				_next_id += 1
+				by_key[key] = id
+				var sy := wxf.basis.y.length()
+				var sx := wxf.basis.x.length()
+				_spots[id] = {"pos": p, "gy": _ground_y(p), "orig": moved.get(key, key), "list": [], "label": label,
+					"h": maxf(aabb.end.y * sy, 0.6), "w": maxf(maxf(aabb.size.x, aabb.size.z) * sx, 0.6), "dead": false}
+				_file(id)
+			var e: Dictionary = _spots[id]
+			e["list"].append([mm, i, mxf])
+			if e["label"] == "" and label != "":
+				e["label"] = label
 	print("EDITOR: indexed %d scenery spots in %d ms" % [_spots.size(), Time.get_ticks_msec() - t0])
 
 
-func _nearest_spot(p: Vector3, r: float) -> String:
-	var best := ""
-	var bd := r
-	var c0 := Vector2i(floori((p.x - r) / INDEX_CELL), floori((p.z - r) / INDEX_CELL))
-	var c1 := Vector2i(floori((p.x + r) / INDEX_CELL), floori((p.z + r) / INDEX_CELL))
-	for cz in range(c0.y, c1.y + 1):
-		for cx in range(c0.x, c1.x + 1):
-			for key in _cells.get(Vector2i(cx, cz), []):
-				var q: Vector3 = _spots[key]["pos"]
-				var d := Vector2(q.x - p.x, q.z - p.z).length()
-				if d < bd:
-					bd = d
-					best = key
-	return best
+func _ground_y(p: Vector3) -> float:
+	var h: float = world.terrain.height_at(p.x, p.z)
+	return h if is_finite(h) else p.y
 
 
-func _spot_xf(key: String) -> Transform3D:
-	var e: Dictionary = _spots[key]
-	var l: Array = e["list"][0]
-	var xf: Transform3D = (l[0] as MultiMesh).get_instance_transform(l[1])
-	return Transform3D(xf.basis, xf.origin + l[2])
+func _cell_of(p: Vector3) -> Vector2i:
+	return Vector2i(floori(p.x / INDEX_CELL), floori(p.z / INDEX_CELL))
 
 
-## Moves / turns / scales a scenery spot (all its LODs) – null hides it (deleted). Returns its new key.
-func _spot_set(key: String, xf, record := true) -> String:
-	var e: Dictionary = _spots[key]
+func _file(id: int) -> void:
+	var c := _cell_of(_spots[id]["pos"])
+	if not _cells.has(c):
+		_cells[c] = []
+	_cells[c].append(id)
+
+
+func _unfile(id: int) -> void:
+	var c := _cell_of(_spots[id]["pos"])
+	if _cells.has(c):
+		_cells[c].erase(id)
+
+
+func _ids_near(p: Vector3, r: float) -> Array:
+	var out: Array = []
+	for cz in range(floori((p.z - r) / INDEX_CELL), floori((p.z + r) / INDEX_CELL) + 1):
+		for cx in range(floori((p.x - r) / INDEX_CELL), floori((p.x + r) / INDEX_CELL) + 1):
+			out.append_array(_cells.get(Vector2i(cx, cz), []))
+	return out
+
+
+func _spot_xf(id: int) -> Transform3D:
+	var l: Array = _spots[id]["list"][0]
+	return (l[2] as Transform3D) * MMUtil.get_xf(l[0], l[1])
+
+
+## Moves / turns / scales a scenery spot (all its LODs) – null removes it (shrunk to nothing where it
+## stands, so its shaders and shadows have nothing left to draw).
+func _spot_set(id: int, xf, record := true) -> void:
+	var e: Dictionary = _spots[id]
+	if xf != null and not (xf as Transform3D).origin.is_finite():
+		return
 	for l in e["list"]:
 		var mm: MultiMesh = l[0]
+		var mxf: Transform3D = l[2]
 		if xf == null:
-			mm.set_instance_transform(l[1], Transform3D(Basis.IDENTITY, Vector3(0, -3000, 0)))
+			MMUtil.hide(mm, l[1])
 		else:
-			var x: Transform3D = xf
-			mm.set_instance_transform(l[1], Transform3D(x.basis, x.origin - l[2]))
+			MMUtil.set_xf(mm, l[1], mxf.affine_inverse() * (xf as Transform3D))
 	if record:
 		map.edits[e["orig"]] = null if xf == null else MapData.xf_to_arr(xf)
-	# re-file under the new spot
-	var old_c := Vector2i(floori(e["pos"].x / INDEX_CELL), floori(e["pos"].z / INDEX_CELL))
-	if _cells.has(old_c):
-		_cells[old_c].erase(key)
-	_spots.erase(key)
-	var p: Vector3 = Vector3(0, -3000, 0) if xf == null else (xf as Transform3D).origin
-	var nkey := MapData.spot_key(p) if xf != null else "del:" + str(e["orig"])
-	e["pos"] = p
-	_spots[nkey] = e
+	if not e["dead"]:
+		_unfile(id)
+	e["dead"] = xf == null
 	if xf != null:
-		e["gy"] = float(world.terrain.height_at(p.x, p.z))
-		var c := Vector2i(floori(p.x / INDEX_CELL), floori(p.z / INDEX_CELL))
-		if not _cells.has(c):
-			_cells[c] = []
-		_cells[c].append(nkey)
-	return nkey
+		e["pos"] = (xf as Transform3D).origin
+		e["gy"] = _ground_y(e["pos"])
+		_file(id)
 
 
 # ---------------------------------------------------------------------------
-# Editing the selection
+# Editing the selection (one or many)
 # ---------------------------------------------------------------------------
-func _sel_xf() -> Transform3D:
-	match str(_sel.get("kind", "")):
+func _item_xf(it: Dictionary):
+	match str(it.get("kind", "")):
 		"node", "water":
-			return (_sel["node"] as Node3D).global_transform
+			var n: Node3D = it["node"]
+			return n.global_transform if is_instance_valid(n) else Transform3D.IDENTITY
 		"spot":
-			return _spot_xf(_sel["key"])
+			return null if _spots[it["id"]]["dead"] else _spot_xf(it["id"])
 	return Transform3D.IDENTITY
 
 
-func _set_xf(sel: Dictionary, xf: Transform3D) -> void:
-	match str(sel.get("kind", "")):
+func _item_set(it: Dictionary, xf: Transform3D) -> void:
+	match str(it.get("kind", "")):
 		"node":
-			var n: Node3D = sel["node"]
+			var n: Node3D = it["node"]
 			if not is_instance_valid(n):
 				return
+			if not n.has_meta("asset") and not n.has_meta("orig_pos"):
+				n.set_meta("orig_pos", n.global_position)
+			if n is RigidBody3D:
+				(n as RigidBody3D).freeze = true
 			n.global_transform = xf
 			if not n.has_meta("asset"):
 				_record_node(n)
 		"water":
-			var w: Node3D = sel["node"]
+			var w: Node3D = it["node"]
 			if not is_instance_valid(w):
 				return
 			w.global_transform = xf
@@ -722,10 +909,29 @@ func _set_xf(sel: Dictionary, xf: Transform3D) -> void:
 			d["c"] = [xf.origin.x, xf.origin.z]
 			d["level"] = xf.origin.y
 		"spot":
-			var nk := _spot_set(sel["key"], xf)
-			if _sel.get("key") == sel["key"]:
-				_sel["key"] = nk
-			sel["key"] = nk
+			_spot_set(it["id"], xf)
+
+
+## Transforms of the given items (null for removed scenery), for undo.
+func _states(items: Array) -> Array:
+	var out: Array = []
+	for it in items:
+		out.append([it, _item_xf(it)])
+	return out
+
+
+func _restore_states(states: Array) -> void:
+	for st in states:
+		var it: Dictionary = st[0]
+		if st[1] == null:
+			if it["kind"] == "spot":
+				_spot_set(it["id"], null)
+		else:
+			if it["kind"] == "spot" and MapData.spot_key((st[1] as Transform3D).origin) == str(_spots[it["id"]]["orig"]):
+				_spot_set(it["id"], st[1], false)
+				map.edits.erase(_spots[it["id"]]["orig"])
+			else:
+				_item_set(it, st[1])
 	_sync_objects()
 
 
@@ -738,28 +944,44 @@ func _record_node(n: Node3D) -> void:
 
 func _drag_move() -> void:
 	var ex: Array[RID] = []
-	if _sel.get("kind") == "node":
-		ex.append((_sel["node"] as CollisionObject3D).get_rid())
+	for it in _sel:
+		if it["kind"] == "node" and it["node"] is CollisionObject3D:
+			ex.append((it["node"] as CollisionObject3D).get_rid())
 	var hit = _ground_hit(_mouse, ex)
 	if hit == null or _sel.is_empty():
 		return
-	var xf := _sel_xf()
-	var to: Vector3 = hit + _drag_off
-	# stays on the ground it stood on (scenery: its foot)
-	var dy: float = xf.origin.y - world.terrain.height_at(xf.origin.x, xf.origin.z)
-	to.y = world.terrain.height_at(to.x, to.z) + dy
-	if _sel["kind"] == "node" and not (_sel["node"] as Node3D).has_meta("asset"):
-		(_sel["node"] as Node3D).set_meta("orig_pos", (_sel["node"] as Node3D).get_meta("orig_pos", _drag_from.origin))
-		if _sel["node"] is RigidBody3D:
-			(_sel["node"] as RigidBody3D).freeze = true
-	_set_xf(_sel, Transform3D(xf.basis, to))
+	var d: Vector3 = hit - _drag_start
+	d.y = 0.0
+	for st in _drag_before:
+		if st[1] == null:
+			continue
+		var xf: Transform3D = st[1]
+		var to: Vector3 = xf.origin + d
+		# stays as high above the ground as it stood
+		var above: float = xf.origin.y - _ground_y(xf.origin)
+		to.y = _ground_y(to) + above
+		_item_set(st[0], Transform3D(xf.basis, to))
+	_sync_objects()
 
 
 ## Roads stay where they were drawn (delete and redraw them); water only changes level and size.
 func _movable() -> bool:
-	if _sel.is_empty() or _sel["kind"] == "water":
-		return false
-	return not (_sel["kind"] == "node" and (_sel["node"] as Node3D).has_meta("road"))
+	for it in _sel:
+		if it["kind"] == "water" or (it["kind"] == "node" and (it["node"] as Node3D).has_meta("road")):
+			return false
+	return not _sel.is_empty()
+
+
+## The middle of the selection (turning and scaling a group goes round it).
+func _centre() -> Vector3:
+	var c := Vector3.ZERO
+	var n := 0
+	for it in _sel:
+		var xf = _item_xf(it)
+		if xf != null:
+			c += (xf as Transform3D).origin
+			n += 1
+	return c / maxf(n, 1)
 
 
 func _rotate(a: float) -> void:
@@ -768,8 +990,10 @@ func _rotate(a: float) -> void:
 		return
 	if not _movable():
 		return
-	var xf := _sel_xf()
-	_edit_sel(Transform3D(Basis(Vector3.UP, a) * xf.basis, xf.origin))
+	var c := _centre()
+	var rot := Basis(Vector3.UP, a)
+	_edit_all(func(xf: Transform3D) -> Transform3D:
+		return Transform3D(rot * xf.basis, c + rot * (xf.origin - c)))
 
 
 func _scale(f: float) -> void:
@@ -778,11 +1002,8 @@ func _scale(f: float) -> void:
 		if _ghost:
 			_ghost.scale = Vector3.ONE * _ghost_scale
 		return
-	if _sel.is_empty() or not (_movable() or _sel["kind"] == "water"):
-		return
-	var xf := _sel_xf()
-	if _sel["kind"] == "water":
-		var w: MeshInstance3D = _sel["node"]
+	if _sel.size() == 1 and _sel[0]["kind"] == "water":
+		var w: MeshInstance3D = _sel[0]["node"]
 		var pm := w.mesh as PlaneMesh
 		pm.size *= f
 		var d: Dictionary = w.get_meta("water")
@@ -790,61 +1011,79 @@ func _scale(f: float) -> void:
 		_changed = true
 		_sync_objects()
 		return
-	_edit_sel(Transform3D(xf.basis.scaled(Vector3.ONE * f), xf.origin))
+	if not _movable():
+		return
+	var c := _centre()
+	_edit_all(func(xf: Transform3D) -> Transform3D:
+		var o := c + (xf.origin - c) * f
+		o.y = xf.origin.y
+		return Transform3D(xf.basis.scaled(Vector3.ONE * f), o))
 
 
 func _raise(dy: float) -> void:
-	if _sel.is_empty() or not (_movable() or _sel["kind"] == "water"):
+	if _sel.size() == 1 and _sel[0]["kind"] == "water":
+		var w: Node3D = _sel[0]["node"]
+		var before := _states(_sel)
+		_item_set(_sel[0], Transform3D(w.global_transform.basis, w.global_transform.origin + Vector3(0, dy, 0)))
+		_undo.append(func(): _restore_states(before))
+		_changed = true
 		return
-	var xf := _sel_xf()
-	_edit_sel(Transform3D(xf.basis, xf.origin + Vector3(0, dy, 0)))
+	if not _movable():
+		return
+	_edit_all(func(xf: Transform3D) -> Transform3D:
+		return Transform3D(xf.basis, xf.origin + Vector3(0, dy, 0)))
 
 
-func _edit_sel(xf: Transform3D) -> void:
-	var from := _sel_xf()
-	var sel := _sel.duplicate()
-	if _sel["kind"] == "node" and not (_sel["node"] as Node3D).has_meta("asset"):
-		(_sel["node"] as Node3D).set_meta("orig_pos", (_sel["node"] as Node3D).get_meta("orig_pos", from.origin))
-	_set_xf(_sel, xf)
-	sel["key"] = _sel.get("key", "")
-	_undo.append(func():
-		_set_xf(sel, from))
+func _edit_all(f: Callable) -> void:
+	var before := _states(_sel)
+	for st in before:
+		if st[1] != null:
+			_item_set(st[0], f.call(st[1]))
+	_sync_objects()
+	_undo.append(func(): _restore_states(before))
 	_changed = true
 
 
 func _delete() -> void:
 	if _sel.is_empty():
 		return
-	var sel := _sel
-	match str(sel["kind"]):
-		"spot":
-			var from := _spot_xf(sel["key"])
-			var e: Dictionary = _spots[sel["key"]]
-			var nk := _spot_set(sel["key"], null)
-			_undo.append(func():
-				var k2 := _spot_set(nk, from)
-				if MapData.spot_key(from.origin) == e["orig"]:
-					map.edits.erase(e["orig"])
-				return k2)
-		"node", "water":
-			var n: Node3D = sel["node"]
-			var parent := n.get_parent()
-			if n.has_meta("asset") or n.has_meta("road") or n.has_meta("water"):
-				parent.remove_child(n)
-				_undo.append(func():
-					parent.add_child(n)
-					_sync_objects())
+	var before := _states(_sel)
+	var removed: Array = []
+	for it in _sel:
+		match str(it["kind"]):
+			"spot":
+				if not _spots[it["id"]]["dead"]:
+					_spot_set(it["id"], null)
+			"node", "water":
+				var n: Node3D = it["node"]
+				if not is_instance_valid(n):
+					continue
+				var parent := n.get_parent()
+				if n.has_meta("asset") or n.has_meta("road") or n.has_meta("water"):
+					parent.remove_child(n)
+					removed.append([n, parent])
+				else:
+					# a game object: hidden and without collision, remembered as removed
+					var key := MapData.node_key(n.get_meta("orig_pos", n.global_position))
+					n.set_meta("edit_orig", key)
+					map.nodes[key] = null
+					n.visible = false
+					n.process_mode = Node.PROCESS_MODE_DISABLED
+					removed.append([n, null, key])
+	_undo.append(func():
+		for r in removed:
+			var n: Node3D = r[0]
+			if r[1] != null:
+				(r[1] as Node).add_child(n)
 			else:
-				# a game object: hidden and without collision, remembered as removed
-				var key := MapData.node_key(n.get_meta("orig_pos", n.global_position))
-				n.set_meta("edit_orig", key)
-				map.nodes[key] = null
-				n.visible = false
-				n.process_mode = Node.PROCESS_MODE_DISABLED
-				_undo.append(func():
-					n.visible = true
-					n.process_mode = Node.PROCESS_MODE_INHERIT
-					map.nodes.erase(key))
+				n.visible = true
+				n.process_mode = Node.PROCESS_MODE_INHERIT
+				map.nodes.erase(r[2])
+		var spots_back: Array = []
+		for st in before:
+			if st[0]["kind"] == "spot":
+				spots_back.append(st)
+		_restore_states(spots_back))
 	_select({})
 	_sync_objects()
 	_changed = true
@@ -859,6 +1098,66 @@ func _do_undo() -> void:
 	_select({})
 	_sync_objects()
 	message("Rückgängig")
+
+
+# --- copy & paste ------------------------------------------------------------
+## Ctrl+C: what is selected, relative to its middle (scenery is pasted as placed copies).
+func _copy() -> void:
+	_clip = []
+	var c := _centre()
+	var skipped := 0
+	for it in _sel:
+		var xf = _item_xf(it)
+		if xf == null:
+			continue
+		var asset := ""
+		if it["kind"] == "node" and (it["node"] as Node3D).has_meta("asset"):
+			asset = str((it["node"] as Node3D).get_meta("asset"))
+		elif it["kind"] == "spot":
+			var e: Dictionary = _spots[it["id"]]
+			if str(e["label"]) != "":
+				var l: Array = e["list"][0]
+				var mm: MultiMesh = l[0]
+				var col := mm.get_instance_custom_data(l[1]) if mm.use_custom_data else Color(1, 1, 1, 1)
+				asset = "scn:%s#%s" % [e["label"], col.to_html(true)]
+		if asset == "":
+			skipped += 1
+			continue
+		var x: Transform3D = xf
+		var rel := x.origin - c
+		rel.y = x.origin.y - _ground_y(x.origin)      # height above the ground
+		_clip.append([asset, Transform3D(x.basis, rel)])
+	message("%d kopiert%s – Strg+V setzt sie unter die Maus" % [_clip.size(), " (%d Spielobjekte lassen sich nicht kopieren)" % skipped if skipped > 0 else ""])
+
+
+## Ctrl+V: the copied things around the point under the mouse.
+func _paste() -> void:
+	if _clip.is_empty():
+		return
+	var hit = _ground_hit(_mouse)
+	if hit == null:
+		return
+	var at: Vector3 = hit
+	var placed: Array = []
+	for c in _clip:
+		var rel: Transform3D = c[1]
+		var o := Vector3(at.x + rel.origin.x, 0, at.z + rel.origin.z)
+		o.y = _ground_y(o) + rel.origin.y
+		var body := MapData.place_object(holder, str(c[0]), Transform3D(rel.basis, o))
+		if body:
+			placed.append(body)
+	_undo.append(func():
+		for b in placed:
+			if is_instance_valid(b):
+				b.get_parent().remove_child(b)
+				b.queue_free()
+		_sync_objects())
+	_sel = []
+	for b in placed:
+		_sel.append({"kind": "node", "node": b})
+	_sync_objects()
+	_changed = true
+	_sel_message()
 
 
 # ---------------------------------------------------------------------------
@@ -897,6 +1196,8 @@ func _sync_objects() -> void:
 # Terrain
 # ---------------------------------------------------------------------------
 func _brush(hit: Vector3, delta: float) -> void:
+	if not hit.is_finite():
+		return
 	var t = world.terrain
 	var c: float = t.CELL
 	var o: Vector2 = t.origin
@@ -979,19 +1280,19 @@ func _follow_ground(changed: Dictionary) -> void:
 		var p := Vector2(t.origin.x + (int(i) % int(t.nx)) * t.CELL, t.origin.y + (int(i) / int(t.nx)) * t.CELL)
 		lo = lo.min(p)
 		hi = hi.max(p)
-	var keys: Array = []
+	var ids: Array = []
 	for cz in range(floori((lo.y - 4.0) / INDEX_CELL), floori((hi.y + 4.0) / INDEX_CELL) + 1):
 		for cx in range(floori((lo.x - 4.0) / INDEX_CELL), floori((hi.x + 4.0) / INDEX_CELL) + 1):
-			keys.append_array(_cells.get(Vector2i(cx, cz), []))
-	for key in keys:
-		var e: Dictionary = _spots[key]
+			ids.append_array(_cells.get(Vector2i(cx, cz), []))
+	for id in ids:
+		var e: Dictionary = _spots[id]
 		var p: Vector3 = e["pos"]
-		var gy: float = t.height_at(p.x, p.z)
+		var gy := _ground_y(p)
 		var dy := gy - float(e["gy"])
-		if absf(dy) < 0.01:
+		if absf(dy) < 0.01 or not is_finite(dy):
 			continue
-		var xf := _spot_xf(key)
-		_spot_set(key, Transform3D(xf.basis, xf.origin + Vector3(0, dy, 0)))
+		var xf := _spot_xf(id)
+		_spot_set(id, Transform3D(xf.basis, xf.origin + Vector3(0, dy, 0)))
 
 
 func _draw_ring(hit) -> void:
@@ -1014,29 +1315,35 @@ func _draw_selection() -> void:
 	im.clear_surfaces()
 	if _sel.is_empty():
 		return
-	var bb := AABB(Vector3(-1.5, 0, -1.5), Vector3(3, 6, 3))
-	var xf := _sel_xf()
-	match str(_sel["kind"]):
-		"node":
-			var n: Node3D = _sel["node"]
-			if not is_instance_valid(n):
-				_sel = {}
-				return
-			bb = AssetLib.bounds(n)
-			if bb.size == Vector3.ZERO:
-				bb = AABB(Vector3(-1, 0, -1), Vector3(2, 2, 2))
-		"water":
-			var pm := (_sel["node"] as MeshInstance3D).mesh as PlaneMesh
-			bb = AABB(Vector3(-pm.size.x * 0.5, -0.2, -pm.size.y * 0.5), Vector3(pm.size.x, 0.4, pm.size.y))
-		"spot":
-			var l: Array = _spots[_sel["key"]]["list"][0]
-			var mesh: Mesh = (l[0] as MultiMesh).mesh
-			if mesh:
-				bb = mesh.get_aabb()
 	im.surface_begin(Mesh.PRIMITIVE_LINES)
-	for e in [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]]:
-		for k in e:
-			im.surface_add_vertex(xf * bb.get_endpoint(k))
+	var n := 0
+	for it in _sel:
+		n += 1
+		if n > 200:
+			break
+		var xf = _item_xf(it)
+		if xf == null:
+			continue
+		var bb := AABB(Vector3(-1.5, 0, -1.5), Vector3(3, 6, 3))
+		match str(it["kind"]):
+			"node":
+				var nd: Node3D = it["node"]
+				if not is_instance_valid(nd):
+					continue
+				bb = AssetLib.bounds(nd)
+				if bb.size == Vector3.ZERO:
+					bb = AABB(Vector3(-1, 0, -1), Vector3(2, 2, 2))
+			"water":
+				var pm := (it["node"] as MeshInstance3D).mesh as PlaneMesh
+				bb = AABB(Vector3(-pm.size.x * 0.5, -0.2, -pm.size.y * 0.5), Vector3(pm.size.x, 0.4, pm.size.y))
+			"spot":
+				var l: Array = _spots[it["id"]]["list"][0]
+				var mesh: Mesh = (l[0] as MultiMesh).mesh
+				if mesh:
+					bb = mesh.get_aabb()
+		for e in [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]]:
+			for k in e:
+				im.surface_add_vertex((xf as Transform3D) * bb.get_endpoint(k))
 	im.surface_end()
 
 
@@ -1105,9 +1412,8 @@ func _finish_road() -> void:
 		if not old.is_empty():
 			_restore_heights(old)
 		for c in cleared:
-			_spot_set(c[0], c[1])
-			if MapData.spot_key(c[1].origin) == c[2]:
-				map.edits.erase(c[2])
+			_spot_set(c[0], c[1], false)
+			map.edits.erase(c[2])
 		_sync_objects())
 	_sync_objects()
 	_changed = true
@@ -1131,12 +1437,12 @@ func _clear_spots(line: PackedVector3Array, r: float) -> Array:
 	for p in line:
 		lo = lo.min(Vector2(p.x, p.z))
 		hi = hi.max(Vector2(p.x, p.z))
-	var keys: Array = []
+	var ids: Array = []
 	for cz in range(floori((lo.y - r) / INDEX_CELL), floori((hi.y + r) / INDEX_CELL) + 1):
 		for cx in range(floori((lo.x - r) / INDEX_CELL), floori((hi.x + r) / INDEX_CELL) + 1):
-			keys.append_array(_cells.get(Vector2i(cx, cz), []))
-	for key in keys:
-		var e: Dictionary = _spots[key]
+			ids.append_array(_cells.get(Vector2i(cx, cz), []))
+	for id in ids:
+		var e: Dictionary = _spots[id]
 		var p: Vector3 = e["pos"]
 		var q := Vector2(p.x, p.z)
 		var near := false
@@ -1147,8 +1453,9 @@ func _clear_spots(line: PackedVector3Array, r: float) -> Array:
 				near = true
 				break
 		if near:
-			var xf := _spot_xf(key)
-			out.append([_spot_set(key, null), xf, e["orig"]])
+			var xf := _spot_xf(id)
+			_spot_set(id, null)
+			out.append([id, xf, e["orig"]])
 	return out
 
 

@@ -356,6 +356,7 @@ func _emit_chunks(mesh: Mesh, chunks: Dictionary, range_begin: float, range_end:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.name = label
+		mmi.set_meta("label", label)     # (the name gets made unique: Godot renames the duplicates)
 		mmi.position = center
 		mmi.visibility_range_begin = range_begin
 		mmi.visibility_range_end = range_end
