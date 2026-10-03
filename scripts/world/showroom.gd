@@ -1,11 +1,14 @@
 extends Node3D
-## Scene behind the menu: the selected car on a slowly turning platform in the middle of an old
-## garage hall (assets/env/garage.glb), softbox lights that reflect in the paint and an orbiting camera.
+## Scene behind the menu: the selected car on the neon turntable of the Midnight Drift workshop
+## (assets/main_menu/Midnight_Drift_Garage_Detailed: red-and-black garage, the open shutter onto a
+## night street), its work lights and an orbiting camera. Falls back to the old garage hall
+## (assets/env/garage.glb) when the workshop is missing.
 
 const Car = preload("res://scripts/car/car.gd")
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const MenuStorm = preload("res://scripts/world/menu_storm.gd")
+const MeshMerge = preload("res://scripts/util/mesh_merge.gd")
 
 var car: Car
 var turntable: Node3D
@@ -16,9 +19,20 @@ var _t := 0.0
 const GARAGE_SCENE := "res://assets/env/garage.glb"
 const POSTER_DIR := "res://assets/env/posters/"
 const GARAGE_INFO := "res://assets/env/garage.json"
+const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed/Midnight_Drift_Garage.glb"
+const WORKSHOP_SKY := "res://assets/main_menu/Midnight_Drift_Garage_Detailed/skybox/Midnight_City_Panorama.png"
+const DECK_Y := 0.465            # top of the turntable deck
+## glTF light intensities come in far too strong for Godot: energy per light name prefix
+const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Workbench": 0.7, "Neon": 1.4}
+
+var _workshop := false
+var _anim: AnimationPlayer
+var _deck: Node3D
 
 
 func _ready() -> void:
+	if _load_workshop():
+		return
 	var garage := _load_garage()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -123,6 +137,103 @@ func _ready() -> void:
 	cam.current = true
 	add_child(cam)
 	rebuild_car()
+
+
+## The Midnight Drift workshop: the car stands on its turntable (spun by the scene's own
+## 20-second animation), the night street panorama behind the open shutter.
+func _load_workshop() -> bool:
+	if not ResourceLoader.exists(WORKSHOP):
+		return false
+	var scene := load(WORKSHOP) as PackedScene
+	if scene == null:
+		return false
+	var g := scene.instantiate() as Node3D
+	add_child(g)
+	_workshop = true
+	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
+	var t0 := Time.get_ticks_msec()
+	var n := MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool: return str(mi.get_path()).contains("Turntable_ROTATE"))
+	print("SHOWROOM: merged %d workshop meshes in %d ms" % [n, Time.get_ticks_msec() - t0])
+	var env := Environment.new()
+	if ResourceLoader.exists(WORKSHOP_SKY):
+		var sky_mat := PanoramaSkyMaterial.new()
+		sky_mat.panorama = load(WORKSHOP_SKY)
+		sky_mat.energy_multiplier = 0.9
+		var sky := Sky.new()
+		sky.sky_material = sky_mat
+		env.background_mode = Environment.BG_SKY
+		env.sky = sky
+		env.sky_rotation = Vector3(0, 0.37 * TAU, 0)     # the street faces the shutter
+	else:
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.01, 0.01, 0.015)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.62, 0.58, 0.6)
+	env.ambient_light_energy = 0.28
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_BG
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.05
+	env.glow_enabled = true
+	env.glow_intensity = 0.8
+	env.glow_bloom = 0.05
+	env.glow_hdr_threshold = 1.1
+	env.ssao_enabled = Game.quality() >= 2
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.08, 0.05, 0.05)
+	env.fog_density = 0.006
+	var we := WorldEnvironment.new()
+	we.environment = env
+	add_child(we)
+	for l in g.find_children("*", "Light3D", true, false):
+		var light := l as Light3D
+		for pre in WORKSHOP_LIGHTS:
+			if str(light.name).begins_with(pre):
+				light.light_energy = float(WORKSHOP_LIGHTS[pre])
+		# only the ceiling lights cast shadows (a dozen shadowed omnis is plenty)
+		light.shadow_enabled = str(light.name).begins_with("Overhead") and absf(light.global_position.x) < 0.5 and Game.quality() >= 2
+	for c in g.find_children("*", "Camera3D", true, false):
+		(c as Camera3D).current = false
+	# the car is not parented to the deck (its node carries a mirroring axis swap, which would turn
+	# the car inside out): it copies the deck's turn every frame
+	_deck = g.find_child("Turntable_ROTATE", true, false) as Node3D
+	turntable = Node3D.new()
+	turntable.name = "CarOnDeck"
+	turntable.position = Vector3(0, DECK_Y, 0)
+	add_child(turntable)
+	_anim = g.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if _anim and _anim.has_animation("Turntable_360_20s"):
+		_anim.get_animation("Turntable_360_20s").loop_mode = Animation.LOOP_LINEAR
+		_anim.play("Turntable_360_20s")
+	# a key light from the front for the paint, a red rim from the shutter side
+	var key := SpotLight3D.new()
+	key.position = Vector3(3.2, 4.0, 4.5)
+	key.look_at_from_position(key.position, Vector3(0, 0.6, 0), Vector3.UP)
+	key.spot_range = 14.0
+	key.spot_angle = 38.0
+	key.light_energy = 5.0
+	key.shadow_enabled = true
+	key.shadow_bias = 0.08
+	key.shadow_normal_bias = 1.5
+	add_child(key)
+	var rim := OmniLight3D.new()
+	rim.position = Vector3(0, 1.6, -5.5)
+	rim.omni_range = 8.0
+	rim.light_energy = 1.2
+	rim.light_color = Color(1.0, 0.25, 0.25)
+	add_child(rim)
+	var probe := ReflectionProbe.new()
+	probe.size = Vector3(17.4, 5.2, 20.4)
+	probe.position = Vector3(0, 2.4, -3.8)
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	probe.box_projection = true
+	probe.interior = true
+	add_child(probe)
+	cam = Camera3D.new()
+	cam.fov = 60.0
+	cam.current = true
+	add_child(cam)
+	rebuild_car()
+	return true
 
 
 ## Floor rectangle (x, z) of the hall in showroom coordinates.
@@ -264,6 +375,15 @@ func refresh_paint() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _workshop:
+		if _deck:
+			var x := _deck.global_transform.basis.x
+			turntable.rotation.y = atan2(-x.z, x.x)
+		# a slow sweep in front of the platform, the shutter and the night street behind the car
+		var a := 0.5 + sin(_t * 0.1) * 0.32
+		cam.position = Vector3(sin(a) * 7.6 - 1.0, 2.3 + sin(_t * 0.17) * 0.25, minf(cos(a) * 7.6, 6.1))
+		cam.look_at(Vector3(-2.5, 0.9, -0.8), Vector3.UP)
+		return
 	turntable.rotation.y = _t * 0.25
 	var a := 0.6 + sin(_t * 0.12) * 0.25
 	cam.position = Vector3(sin(a) * 8.0 - 1.7, 1.75 + sin(_t * 0.2) * 0.2, cos(a) * 8.0)

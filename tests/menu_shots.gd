@@ -18,7 +18,7 @@ func _ready() -> void:
 			"left": {"on": true, "color": "#8a3dff", "flash": false}, "right": {"on": true, "color": "#8a3dff", "flash": false}}}}
 	var main := Main.new()
 	add_child(main)
-	for f in 20:
+	for f in 60:
 		await get_tree().process_frame
 	var storm = main.find_child("Storm", true, false)
 	await _shot(out.path_join("menu_calm.png"))

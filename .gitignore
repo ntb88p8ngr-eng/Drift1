@@ -6,3 +6,9 @@ export_credentials.cfg
 __pycache__/
 # textures Godot extracts from the garage GLB on import
 assets/env/garage_*.jpg
+# textures Godot extracts from the uploaded GLBs on import
+assets/main_menu/Midnight_Drift_Garage_Detailed/Midnight_Drift_Garage_*
+assets/main_menu/Midnight_Drift_Garage_Detailed/Neon_Turntable_*
+assets/props/parking_garage/parking_garage_*
+assets/world_upload/Red_Mesa/Red_Mesa_Drift_Run_*.png
+assets/world_upload/Red_Mesa/Red_Mesa_Drift_Run_*.jpg
