@@ -597,6 +597,12 @@ func _click(double: bool, shift := false) -> void:
 	match tool:
 		"select":
 			var it := _pick_at(_mouse)
+			# a track barrier: its stretch round the click can be taken out (Delete)
+			var wall := _wall_at(_mouse)
+			if not wall.is_empty() and (str(it.get("kind", "")) == "none" or it.is_empty()):
+				_sel = [wall]
+				message("Leitplanke ausgewählt (%d m) – Entf entfernt dieses Stück (Rückgängig: Strg+Z)" % int(float(wall["p1"]) - float(wall["p0"])))
+				return
 			if str(it.get("kind", "")) == "none":
 				if not shift:
 					_select({})
@@ -785,7 +791,7 @@ func _pickable(c: Object):
 	# placed in the editor (or part of something placed)
 	var a: Node = n
 	while a and a != world:
-		if a.has_meta("asset") or a.has_meta("road"):
+		if a.has_meta("asset") or a.has_meta("road") or a.has_meta("city_build") or a.has_meta("city_prop"):
 			return a
 		a = a.get_parent()
 	if n is RigidBody3D:
@@ -834,7 +840,15 @@ func _sel_message() -> void:
 		match str(s["kind"]):
 			"node":
 				var n: Node3D = s["node"]
-				message("Ausgewählt: %s" % (AssetLib.name_of(str(n.get_meta("asset"))) if n.has_meta("asset") else ("Straße" if n.has_meta("road") else str(n.name))))
+				var nm := str(n.name)
+				if n.has_meta("label"):
+					nm = str(n.get_meta("label"))
+				elif n.has_meta("asset"):
+					var aid := str(n.get_meta("asset"))
+					nm = "Kopie: Gebäude" if aid.begins_with("cbld:") else ("Kopie: " + aid.substr(6) if aid.begins_with("cprop:") else AssetLib.name_of(aid))
+				elif n.has_meta("road"):
+					nm = "Straße"
+				message("Ausgewählt: %s" % nm)
 			"spot":
 				message("Ausgewählt: %s" % _spot_name(int(s["id"])))
 			"water":
@@ -1023,6 +1037,8 @@ func _item_xf(it: Dictionary):
 			return n.global_transform if is_instance_valid(n) else Transform3D.IDENTITY
 		"spot":
 			return null if _spots[it["id"]]["dead"] else _spot_xf(it["id"])
+		"wall":
+			return Transform3D(Basis.IDENTITY, it["at"])
 	return Transform3D.IDENTITY
 
 
@@ -1247,9 +1263,25 @@ func _road_height(body: Node3D, dy: float) -> void:
 	message("Straße auf %.1f m Höhe" % float(r["height"]))
 
 
+## The track barrier under the mouse: {kind: wall, p0, p1 (metres along the track), side} for a
+## 12 m stretch round the point (empty if the mouse isn't on a barrier).
+func _wall_at(mpos: Vector2) -> Dictionary:
+	var r := _ray(mpos)
+	var q := PhysicsRayQueryParameters3D.create(r[0], r[0] + r[1] * 3000.0, 0xFFFFFFFF)
+	var res := get_world_3d().direct_space_state.intersect_ray(q)
+	if res.is_empty() or not (res["collider"] is Node) or str((res["collider"] as Node).name) != "WallBody":
+		return {}
+	var t = world.track
+	var pr: Array = t.project(res["position"], -1)
+	var p := float(pr[1])
+	return {"kind": "wall", "p0": maxf(p - 6.0, 0.0), "p1": minf(p + 6.0, float(t.length)), "side": signf(float(pr[2])), "at": res["position"]}
+
+
 ## Roads stay where they were drawn (delete and redraw them); water only changes level and size.
 func _movable() -> bool:
 	for it in _sel:
+		if it["kind"] == "wall":
+			return false
 		if it["kind"] == "water" or (it["kind"] == "node" and (it["node"] as Node3D).has_meta("road")):
 			return false
 	return not _sel.is_empty()
@@ -1338,6 +1370,12 @@ func _delete() -> void:
 	var removed: Array = []
 	for it in _sel:
 		match str(it["kind"]):
+			"wall":
+				var gap := [float(it["p0"]), float(it["p1"]), float(it["side"])]
+				world.track.wall_gaps.append(gap)
+				map.wall_gaps.append(gap)
+				world.track.rebuild_walls()
+				removed.append([null, null, "", gap])
 			"spot":
 				if not _spots[it["id"]]["dead"]:
 					_spot_set(it["id"], null)
@@ -1359,6 +1397,11 @@ func _delete() -> void:
 					removed.append([n, null, key])
 	_undo.append(func():
 		for r in removed:
+			if r.size() > 3:
+				world.track.wall_gaps.erase(r[3])
+				map.wall_gaps.erase(r[3])
+				world.track.rebuild_walls()
+				continue
 			var n: Node3D = r[0]
 			if r[1] != null:
 				(r[1] as Node).add_child(n)
@@ -1400,6 +1443,8 @@ func _copy() -> void:
 		var asset := ""
 		if it["kind"] == "node" and (it["node"] as Node3D).has_meta("asset"):
 			asset = str((it["node"] as Node3D).get_meta("asset"))
+		elif it["kind"] == "node" and (it["node"] as Node3D).has_meta("copy_asset"):
+			asset = str((it["node"] as Node3D).get_meta("copy_asset"))
 		elif it["kind"] == "spot":
 			var e: Dictionary = _spots[it["id"]]
 			if str(e["label"]) != "":

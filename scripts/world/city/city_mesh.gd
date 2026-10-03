@@ -132,6 +132,8 @@ void fragment() {
 """
 
 var chunks := {}          # Vector2i -> {layer name: Buf}
+var group := -1           # >= 0: geometry goes to its own group (one building in the world editor)
+var groups := {}          # group -> chunks of its own
 var mats := {}
 var road_material: Material
 var stats := {}
@@ -237,9 +239,14 @@ func set_night(n: float) -> void:
 
 func buf(mat: String, p: Vector3) -> Buf:
 	var key := Vector2i(int(floor(p.x / CHUNK)), int(floor(p.z / CHUNK)))
-	var c: Dictionary = chunks.get(key, {})
+	var store: Dictionary = chunks
+	if group >= 0:
+		if not groups.has(group):
+			groups[group] = {}
+		store = groups[group]
+	var c: Dictionary = store.get(key, {})
 	if c.is_empty():
-		chunks[key] = c
+		store[key] = c
 	var layer := mat + "_d" if detail and mat != "glass" and mat != "sign" else mat
 	var b: Buf = c.get(layer)
 	if b == null:
@@ -366,6 +373,25 @@ func glow_box(xf: Transform3D, size: Vector3, col: Color, day := 0.2) -> void:
 ## Builds the meshes under `parent`. ranges: layer -> visibility range end (m); a detail layer
 ## ("frame_d") without an entry gets DETAIL_RANGE.
 const DETAIL_RANGE := 240.0
+
+## One group's geometry as meshes under `parent` (kept where they are in the world).
+func commit_group(parent: Node3D, g: int, ranges: Dictionary) -> void:
+	if not groups.has(g):
+		return
+	var keep := chunks
+	chunks = groups[g]
+	groups.erase(g)
+	var tmp := Node3D.new()
+	parent.add_child(tmp)
+	commit(tmp, ranges)
+	chunks = keep
+	for c in tmp.get_children():
+		var xf: Transform3D = (c as Node3D).global_transform
+		tmp.remove_child(c)
+		parent.add_child(c)
+		(c as Node3D).global_transform = xf
+	tmp.queue_free()
+
 
 func commit(parent: Node3D, ranges: Dictionary) -> void:
 	for key in chunks:

@@ -18,6 +18,7 @@ var map_name := "Meine Karte"
 var heights := {}        # terrain vertex index -> height
 var edits := {}          # scenery instance key ("x|z" of its original spot, 0.1 m) -> Array (12 floats: new transform) or null (removed)
 var objects: Array = []  # {asset, xf: 12 floats}
+var wall_gaps: Array = []    # track barrier stretches taken out: [from m, to m, side]
 var paint := {}          # painted ground textures (terrain_paint.gd to_dict)
 var roads: Array = []    # {pts: [[x,y,z]...], width, surface, flatten}
 var water: Array = []    # {c: [x, z], size: [w, d], level}
@@ -36,7 +37,7 @@ func to_dict() -> Dictionary:
 		hv.append(float(heights[k]))
 	return {"version": VERSION, "base_track": base_track, "name": map_name,
 		"height_idx": Marshalls.raw_to_base64(hk.to_byte_array()), "height_val": Marshalls.raw_to_base64(hv.to_byte_array()),
-		"edits": edits, "objects": objects, "roads": roads, "water": water, "models": models, "nodes": nodes, "paint": paint}
+		"edits": edits, "objects": objects, "roads": roads, "water": water, "models": models, "nodes": nodes, "paint": paint, "wall_gaps": wall_gaps}
 
 
 static func from_dict(d: Dictionary):
@@ -54,6 +55,7 @@ static func from_dict(d: Dictionary):
 	m.models = d.get("models", {})
 	m.nodes = d.get("nodes", {})
 	m.paint = d.get("paint", {})
+	m.wall_gaps = d.get("wall_gaps", [])
 	return m
 
 
@@ -170,6 +172,10 @@ func apply(world) -> Node3D:
 			terrain.refresh_collision()
 	if not paint.is_empty():
 		terrain.paint.from_dict(paint)
+	if not wall_gaps.is_empty():
+		for g in wall_gaps:
+			world.track.wall_gaps.append([float(g[0]), float(g[1]), float(g[2])])
+		world.track.rebuild_walls()
 	# scenery copies (pasted in the editor) are built from the scenery's own meshes
 	AssetLib.register_scenery(world.scenery)
 	# scenery that was moved or removed

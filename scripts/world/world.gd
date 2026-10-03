@@ -141,6 +141,13 @@ func _ready() -> void:
 		tutorial_site.name = "TutorialSite"
 		scenery.tutorial_site = tutorial_site
 	add_child(scenery)
+	# the map from the world editor is read now: the city applies its building edits as it builds
+	if str(config.get("map", "")) != "":
+		custom_map = MapData.load_file(str(config["map"]))
+	if custom_map == null and mode == "editor":
+		custom_map = MapData.new()
+		custom_map.base_track = track.track_id
+		custom_map.map_name = "%s (Kopie)" % Game.track_name(track.track_id)
 	Game.load_begin("Streckenrand", 0.34, 0.36)
 	await scenery.build(track, terrain, atmosphere.night, quality)
 	# party mode: the minigames are played on stretches of the track (not on the long data tracks)
@@ -176,12 +183,6 @@ func _ready() -> void:
 	var base_heights := PackedFloat32Array()
 	if mode == "editor":
 		base_heights = terrain.heights.duplicate()
-	if str(config.get("map", "")) != "":
-		custom_map = MapData.load_file(str(config["map"]))
-	if custom_map == null and mode == "editor":
-		custom_map = MapData.new()
-		custom_map.base_track = track.track_id
-		custom_map.map_name = "%s (Kopie)" % Game.track_name(track.track_id)
 	if custom_map:
 		map_content = custom_map.apply(self)
 	flares = LensFlare.new()

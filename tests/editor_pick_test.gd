@@ -47,6 +47,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	var it2: Dictionary = ed._pick_at(cam.unproject_position(bc))
 	print("PICK: building -> %s" % str(it2))
-	ok = ok and str(it2.get("kind", "")) == "none"
+	# buildings are editable now: the click selects the building itself (its own node in the editor)
+	ok = ok and str(it2.get("kind", "")) == "node" and (it2["node"] as Node3D).has_meta("city_build")
 	print("EDITOR PICK TEST: %s" % ("PASS" if ok else "FAIL"))
 	get_tree().quit(0 if ok else 1)

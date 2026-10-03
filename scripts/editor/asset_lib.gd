@@ -48,6 +48,7 @@ static var uploaded := {}
 ## Scenery meshes by their MultiMeshInstance name ("Trees_hi", "Prop_bench" …): "scn:<name>#<colour>"
 ## places a copy of a tree / rock / prop of the track itself (pasted in the editor).
 static var scenery_meshes := {}
+static var city                # city.gd of the map (copies of its buildings: "cbld:<description>")
 
 
 static func register_scenery(scenery) -> void:
@@ -74,6 +75,15 @@ static func name_of(id: String) -> String:
 
 ## The visual of asset `id` (no collider), or null.
 static func make(id: String) -> Node3D:
+	if id.begins_with("cprop:"):
+		if city == null or not is_instance_valid(city) or city.lamps == null:
+			return null
+		return city.lamps.make_prop_node(id.substr(6))
+	if id.begins_with("cbld:"):
+		if city == null or not is_instance_valid(city):
+			return null
+		var desc = JSON.parse_string(id.substr(5))
+		return city.make_building_node(desc) if desc is Dictionary else null
 	if id.begins_with("model:"):
 		var tpl = uploaded.get(id.substr(6))
 		if tpl == null:

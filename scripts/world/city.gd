@@ -25,6 +25,8 @@ const CityLights = preload("res://scripts/world/city/city_lights.gd")
 const CityLamps = preload("res://scripts/world/city/city_lamps.gd")
 const FlowerBeds = preload("res://scripts/world/city/flower_beds.gd")
 const PhotoWindows = preload("res://scripts/world/city/photo_windows.gd")
+const MapData = preload("res://scripts/editor/map_data.gd")
+const AssetLib = preload("res://scripts/editor/asset_lib.gd")
 const Pigeons = preload("res://scripts/world/city/pigeons.gd")
 const CityFog = preload("res://scripts/world/city/city_fog.gd")
 const CityAtlas = preload("res://scripts/world/city/city_atlas.gd")
@@ -100,6 +102,8 @@ var halls: Array = []        # towers with a drive-in entrance hall (builds entr
 var groves: Array = []       # small green corners between the buildings: [centre, half size, along]
 var flowers                  # flower_beds.gd
 var photo_windows            # photo_windows.gd
+var _editor := false         # built for the world editor: every building a node of its own
+var _edits := {}             # the map's edits of game objects (map_data.gd nodes): buildings by key
 var plazas: Array = []
 var pigeon_spots: Array = []
 var _sets := {}
@@ -116,6 +120,11 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	terrain = p_terrain
 	scenery = p_scenery
 	quality = p_quality
+	var wld = scenery.get_parent()
+	_editor = str(wld.get("mode")) == "editor"
+	if wld.get("custom_map") != null:
+		_edits = wld.custom_map.nodes
+	AssetLib.city = self
 	rng.seed = 8128
 	_lap("")
 	CityAtlas.ensure_painted(self)
@@ -145,6 +154,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_round_towers()
 	_mark_blind_faces()
 	_halls_and_plinths()
+	_apply_building_edits()
 	bld = Buildings.new(cm)
 	var body := StaticBody3D.new()
 	body.name = "BuildingColliders"
@@ -153,6 +163,13 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	add_child(body)
 	for k in builds.size():
 		var b: Dictionary = builds[k]
+		if b.get("deleted", false):
+			continue
+		if _editor:
+			_editor_building(k, b)
+			if k % 60 == 59:
+				await Game.load_tick()
+			continue
 		bld.building(b)
 		if b.has("boxes"):
 			# drive-in halls, raised floors with steps: their own set of boxes
@@ -224,6 +241,10 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 		scenery._emit_chunks(m[0], _sets[kind], float(m[3]), float(m[1]), "City_" + kind, bool(m[2]), 96.0)
 	_lap("instances")
 	_sakura_petals()
+	# world editor edits of the lamps, signs, barriers …: before the lights are made (theirs move along)
+	lamps.editor = _editor
+	lamps.edits = _edits
+	lamps.apply_edits()
 	emitters.append_array(bld.emitters)
 	lights_node = CityLights.new()
 	lights_node.name = "CityLights"
@@ -556,6 +577,131 @@ func _drive_ins() -> void:
 			gaps = true
 	if gaps:
 		track.rebuild_walls()
+
+
+## Buildings moved, turned, resized or removed in the world editor (stored like other game
+## objects: by where they stood): applied to their description before any geometry is made, so a
+## resized tower gets its own windows and floors.
+func _apply_building_edits() -> void:
+	for b in builds:
+		var key := MapData.node_key(b["c"])
+		b["key"] = key
+		if not _edits.has(key):
+			continue
+		var v = _edits[key]
+		if v == null:
+			b["deleted"] = true
+			continue
+		_set_frame(b, MapData.arr_to_xf(v))
+
+
+## A building description takes a transform: position, heading, and its scale as new size.
+static func _set_frame(b: Dictionary, xf: Transform3D) -> void:
+	var sx := xf.basis.x.length()
+	var sy := xf.basis.y.length()
+	var sz := xf.basis.z.length()
+	var az := Vector3(xf.basis.z.x, 0, xf.basis.z.z).normalized()
+	if az.length() < 0.5:
+		az = Vector3.BACK
+	b["c"] = Vector3(xf.origin.x, 0.0, xf.origin.z)
+	b["az"] = az
+	b["ax"] = Vector3.UP.cross(az)
+	b["w"] = float(b["w"]) * sx
+	b["d"] = float(b["d"]) * sz
+	b["h"] = float(b["h"]) * sy
+
+
+## World editor: the building as a node of its own (its meshes, its colliders), standing at its
+## centre and turned like it – the editor moves, turns, scales, copies and deletes it like any
+## game object; what it does is saved by the building's original place.
+func _editor_building(k: int, b: Dictionary) -> void:
+	var node := Node3D.new()
+	node.name = "CityBuilding_%d" % k
+	add_child(node)
+	var frame := Transform3D(Basis(b["ax"], Vector3.UP, b["az"]), b["c"])
+	node.global_transform = frame
+	cm.group = k
+	bld.building(b)
+	cm.group = -1
+	cm.commit_group(node, k, {"frame": 620.0, "metal": 360.0, "glass": 620.0, "sign": 460.0, "glow": 620.0})
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	body.collision_layer = Colliders.LAYER_WORLD
+	body.collision_mask = 0
+	node.add_child(body)
+	body.global_transform = Transform3D.IDENTITY
+	for bx in _building_boxes(b):
+		var cs := CollisionShape3D.new()
+		cs.shape = bx[0]
+		cs.transform = bx[1]
+		body.add_child(cs)
+	# body back under the node's frame (its shapes were placed in world space)
+	var inv := frame.affine_inverse()
+	for cs in body.get_children():
+		(cs as Node3D).transform = inv * (cs as Node3D).transform
+	body.transform = Transform3D.IDENTITY
+	node.set_meta("city_build", k)
+	node.set_meta("orig_pos", b["c"])
+	if _edits.has(b.get("key", "")):
+		node.set_meta("edit_orig", b["key"])
+	node.set_meta("copy_asset", "cbld:" + JSON.stringify(_desc(b)))
+	node.set_meta("label", {"tower": "Hochhaus", "round": "Rundes Hochhaus", "office": "Bürogebäude", "apartment": "Wohnhaus", "zakkyo": "Geschäftshaus", "house": "Haus"}.get(str(b["style"]), "Gebäude"))
+
+
+## The colliders of a building (world space): [shape, transform].
+func _building_boxes(b: Dictionary) -> Array:
+	var out: Array = []
+	if b.has("boxes"):
+		for bx in b["boxes"]:
+			var bsh := BoxShape3D.new()
+			bsh.size = bx[1]
+			out.append([bsh, bx[0]])
+		return out
+	var xf := Transform3D(Basis(b["ax"], Vector3.UP, b["az"]), (b["c"] as Vector3) + Vector3(0, float(b["h"]) * 0.5, 0))
+	if b["style"] == "round":
+		var cy := CylinderShape3D.new()
+		cy.radius = minf(float(b["w"]), float(b["d"])) * 0.5
+		cy.height = float(b["h"])
+		out.append([cy, xf])
+	else:
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(float(b["w"]), float(b["h"]), float(b["d"]))
+		out.append([bs, xf])
+	return out
+
+
+## What a copy needs to know of a building (its look; where it stands comes from the copy).
+static func _desc(b: Dictionary) -> Dictionary:
+	var d := {}
+	for k in ["style", "w", "d", "h", "shop", "hall", "plinth", "variant"]:
+		if b.has(k):
+			d[k] = b[k]
+	return d
+
+
+## A copy of a building (world editor Ctrl+V, and the copies of a saved map): its meshes around
+## the node's origin, front towards -Z. The placed object's own collider is its bounding box.
+func make_building_node(desc: Dictionary) -> Node3D:
+	if bld == null:
+		return null
+	var b := desc.duplicate()
+	b["c"] = Vector3.ZERO
+	b["ax"] = Vector3.RIGHT
+	b["az"] = Vector3.BACK
+	for k in ["w", "d", "h", "plinth"]:
+		if b.has(k):
+			b[k] = float(b[k])
+	if b.has("variant"):
+		b["variant"] = int(b["variant"])
+	var node := Node3D.new()
+	add_child(node)
+	var g := 1000000 + get_child_count()
+	cm.group = g
+	bld.building(b)
+	cm.group = -1
+	cm.commit_group(node, g, {"frame": 620.0, "metal": 360.0, "glass": 620.0, "sign": 460.0, "glow": 620.0})
+	remove_child(node)
+	return node
 
 
 ## A share of the towers on the street get a drive-in entrance hall (its opening kept free of

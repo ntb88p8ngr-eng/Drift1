@@ -10,6 +10,7 @@ extends Node3D
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
+const MapData = preload("res://scripts/editor/map_data.gd")
 const Debris = preload("res://scripts/util/debris.gd")
 const Props = preload("res://scripts/world/prop_meshes.gd")
 
@@ -45,6 +46,14 @@ const KINDS := {
 	"tsign0": [0.06, 2.6, 0.25, 12.0], "tsign1": [0.06, 2.6, 0.25, 12.0],
 	"tsign2": [0.06, 2.6, 0.25, 12.0], "tsign3": [0.06, 2.6, 0.25, 12.0],
 }
+const PROP_NAMES := {"lamp0": "Straßenlaterne", "lamp1": "Straßenlaterne", "upole1": "Strommast", "upole-1": "Strommast",
+	"hydrant": "Hydrant", "signal": "Ampel", "vending": "Getränkeautomat", "bench": "Bank", "bin": "Mülleimer",
+	"shelter": "Bushaltestelle", "pot_red": "Blumentopf", "pot_yellow": "Blumentopf", "pot_purple": "Blumentopf",
+	"pot_white": "Blumentopf", "planter": "Pflanzkübel", "barrier": "Absperrung", "water_barrier": "Wasserbarriere", "cone": "Pylone"}
+var editor := false          # built for the world editor (every prop a node of its own)
+var edits := {}              # the map's game-object edits (map_data.gd nodes)
+var _edits_done := false
+
 ## Loose furniture: a car merely pushes it (from walking pace on), it slides and tumbles away.
 const PUSHED := ["bench", "bin", "pot_red", "pot_yellow", "pot_purple", "pot_white", "planter", "barrier", "water_barrier", "cone"]
 ## Box colliders [size, centre] (the rest are cylinders standing on their foot).
@@ -188,12 +197,20 @@ func build(p_world) -> void:
 		_shapes[kind] = cyl
 	var kinds: Array = KINDS.keys()
 	var chunks := {}
+	apply_edits()
 	for k in poles.size():
 		var pl: Dictionary = poles[k]
+		if pl.get("deleted", false):
+			pl["broken"] = true
+			continue
+		if editor:
+			_editor_prop(k, pl)
+			pl["broken"] = true      # (not knocked over in the editor)
+			continue
 		var o: Vector3 = (pl["xf"] as Transform3D).origin
 		var cs := CollisionShape3D.new()
 		cs.shape = _shapes[pl["kind"]]
-		cs.transform = Transform3D((pl["xf"] as Transform3D).basis, (pl["xf"] as Transform3D) * _centre_of(pl["kind"]))
+		cs.transform = Transform3D((pl["xf"] as Transform3D).basis.orthonormalized(), (pl["xf"] as Transform3D) * _centre_of(pl["kind"]))
 		_body.add_child(cs)
 		pl["shape"] = cs
 		var g := Vector2i(int(floor(o.x / CELL)), int(floor(o.z / CELL)))
@@ -255,6 +272,79 @@ func build(p_world) -> void:
 			"signal": "signals", "vending": "vending", "bench": "benches", "bin": "bins", "shelter": "bus_shelters"}.get(pl["kind"], "traffic_signs" if str(pl["kind"]).begins_with("tsign") else "hydrants")
 		stats[nm] = int(stats.get(nm, 0)) + 1
 	stats["wire_spans"] = spans.size()
+
+
+## World editor edits (moved, turned, scaled, removed), stored like other game objects by where
+## the thing stood.
+func apply_edits() -> void:
+	if _edits_done:
+		return
+	_edits_done = true
+	for pl in poles:
+		var key := MapData.node_key((pl["xf"] as Transform3D).origin)
+		pl["key"] = key
+		pl["orig"] = (pl["xf"] as Transform3D).origin
+		if not edits.has(key):
+			continue
+		var v = edits[key]
+		var li := int(pl["light"])
+		if v == null:
+			pl["deleted"] = true
+			if li >= 0:
+				(emitters[li] as Array)[3] = 0.0
+		else:
+			var old: Transform3D = pl["xf"]
+			pl["xf"] = MapData.arr_to_xf(v)
+			# its light goes along
+			if li >= 0:
+				var e: Array = emitters[li]
+				e[0] = (pl["xf"] as Transform3D) * (old.affine_inverse() * (e[0] as Vector3))
+
+
+## World editor: one node per lamp, sign, barrier … that the editor can move, turn, scale, copy and
+## delete (saved by where it stood; in the game the edits are applied before it is built).
+func _editor_prop(k: int, pl: Dictionary) -> void:
+	var kind: String = pl["kind"]
+	var node := Node3D.new()
+	node.name = "CityProp_%d" % k
+	add_child(node)
+	node.global_transform = pl["xf"]
+	var mesh: Mesh = _signal_mesh(pl) if kind == "signal" else _meshes.get("full_" + kind)
+	if mesh:
+		var mm := _multimesh(mesh, 1)
+		mm.set_instance_transform(0, Transform3D(Basis.from_scale(Vector3.ONE * HYD_SCALE), Vector3.ZERO) if kind == "hydrant" else Transform3D.IDENTITY)
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		node.add_child(mmi)
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	node.add_child(body)
+	var cs := CollisionShape3D.new()
+	cs.shape = _shapes[kind]
+	cs.position = _centre_of(kind)
+	body.add_child(cs)
+	pl["node"] = node
+	node.set_meta("city_prop", k)
+	node.set_meta("orig_pos", pl["orig"])
+	if edits.has(pl["key"]):
+		node.set_meta("edit_orig", pl["key"])
+	node.set_meta("copy_asset", "cprop:" + kind)
+	node.set_meta("label", PROP_NAMES.get(kind, "Verkehrsschild" if kind.begins_with("tsign") else kind))
+
+
+## A copy of a prop (world editor Ctrl+V and a saved map's copies): its look, standing still.
+func make_prop_node(kind: String) -> Node3D:
+	var mesh: Mesh = _meshes.get("full_" + kind)
+	if mesh == null:
+		return null
+	var root := Node3D.new()
+	var mm := _multimesh(mesh, 1)
+	mm.set_instance_transform(0, Transform3D(Basis.from_scale(Vector3.ONE * HYD_SCALE), Vector3.ZERO) if kind == "hydrant" else Transform3D.IDENTITY)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	root.add_child(mmi)
+	return root
 
 
 ## Centre of a kind's collider, local to its foot.
