@@ -503,6 +503,11 @@ func _click(double: bool, shift := false) -> void:
 	match tool:
 		"select":
 			var it := _pick_at(_mouse)
+			if str(it.get("kind", "")) == "none":
+				if not shift:
+					_select({})
+				message("%s gehört fest zur Karte und ist nicht editierbar." % str(it["why"]))
+				return
 			if it.is_empty():
 				# empty ground: drag a box to select several
 				if not shift:
@@ -594,7 +599,9 @@ func _ground_hit(pos: Vector2, exclude: Array[RID] = []):
 
 
 ## The thing under the mouse: placed objects and game objects by their colliders, scenery (trees,
-## rocks, props …) by how close it is drawn to the mouse on screen – whichever is nearer the camera.
+## rocks, props …) by whether the mouse ray passes through its upright body – whichever is nearer
+## the camera. Parts of the map that can't be edited (city blocks, the track, shared colliders)
+## come back as {kind: "none", why: text}.
 func _pick_at(mpos: Vector2) -> Dictionary:
 	var r := _ray(mpos)
 	var ro: Vector3 = r[0]
@@ -613,37 +620,40 @@ func _pick_at(mpos: Vector2) -> Dictionary:
 				var lp: Vector3 = w.global_transform.affine_inverse() * p
 				if absf(lp.x) < pm.size.x * 0.5 and absf(lp.z) < pm.size.y * 0.5 and (ground == null or ro.distance_to(p) <= ro.distance_to(ground) + 0.5):
 					return {"kind": "water", "node": w}
-	var node: Node3D = null
-	var dn := 1e9
-	if not res.is_empty():
-		node = _pickable(res["collider"])
-		if node:
-			dn = ro.distance_to(res["position"])
+	var hit_d := ro.distance_to(res["position"]) if not res.is_empty() else (ro.distance_to(ground) if ground != null else 800.0)
+	# scenery along the ray up to what it hits: the nearest upright body the ray passes through
+	var reach := minf(hit_d + 6.0, 900.0)
+	var seen := {}
 	var best := -1
-	var best_score := 14.0       # pixels
-	var ds := 1e9
-	if ground != null:
-		var g: Vector3 = ground
-		for id in _ids_near(g, 22.0):
-			var e: Dictionary = _spots[id]
-			var top: Vector3 = e["pos"] + Vector3(0, float(e["h"]), 0)
-			var mid: Vector3 = e["pos"] + Vector3(0, float(e["h"]) * 0.5, 0)
-			if cam.is_position_behind(mid):
+	var best_t := 1e9
+	var px := 1.0 / _focal_px()          # metres per pixel at 1 m
+	var t := 0.0
+	while t <= reach:
+		for id in _ids_near(ro + rd * t, 16.0):
+			if seen.has(id):
 				continue
-			# distance from the mouse to the drawn upright line of the thing (foot to top)
-			var a := cam.unproject_position(e["pos"])
-			var b := cam.unproject_position(top)
-			var on := Geometry2D.get_closest_point_to_segment(mpos, a, b)
-			var width_px := maxf(float(e["w"]) * 0.5 / maxf(ro.distance_to(mid), 1.0) * _focal_px(), 4.0)
-			var score := mpos.distance_to(on) - width_px
-			if score < best_score:
-				best_score = score
+			seen[id] = true
+			var e: Dictionary = _spots[id]
+			if bool(e.get("dead", false)):
+				continue
+			var foot: Vector3 = e["pos"]
+			var top: Vector3 = foot + Vector3(0, maxf(float(e["h"]), 0.3), 0)
+			var cp := Geometry3D.get_closest_points_between_segments(ro, ro + rd * reach, foot, top)
+			var along := ro.distance_to(cp[0])
+			# its radius, plus a few pixels of slack so thin things (posts, signs) can be hit
+			var radius := maxf(float(e["w"]) * 0.45, 0.3) + along * px * 5.0
+			if (cp[0] as Vector3).distance_to(cp[1]) < radius and along < best_t:
+				best_t = along
 				best = id
-				ds = ro.distance_to(mid)
-	if best >= 0 and (node == null or ds < dn + 1.5):
+		t += 12.0
+	if best >= 0 and best_t <= hit_d + 1.0:
 		return {"kind": "spot", "id": best}
-	if node:
-		return {"kind": "node", "node": node}
+	if not res.is_empty():
+		var n = _pickable(res["collider"])
+		if n is Node3D:
+			return {"kind": "node", "node": n}
+		if n is String:
+			return {"kind": "none", "why": n}
 	return {}
 
 
@@ -651,15 +661,34 @@ func _focal_px() -> float:
 	return get_viewport().get_visible_rect().size.y * 0.5 / tan(deg_to_rad(cam.fov) * 0.5)
 
 
-## The thing to move for a hit collider (not the ground, the track or the car).
-func _pickable(c: Object) -> Node3D:
+## The thing to move for a hit collider: a placed object, a loose game object (tyres, barrels, parked
+## cars …) or the model a collider belongs to. null for the ground and the car (nothing to pick:
+## a box can be dragged there), a text for parts of the map that can't be edited.
+func _pickable(c: Object):
 	if not (c is CollisionObject3D):
 		return null
 	var n := c as Node3D
 	if n.name == "TerrainBody" or (world.local_car and (n == world.local_car or world.local_car.is_ancestor_of(n))):
 		return null
 	if world.track and world.track.is_ancestor_of(n):
-		return null
+		return "Die Strecke (Fahrbahn, Randsteine, Leitplanken)"
+	# placed in the editor (or part of something placed)
+	var a: Node = n
+	while a and a != world:
+		if a.has_meta("asset") or a.has_meta("road"):
+			return a
+		a = a.get_parent()
+	if n is RigidBody3D:
+		return n
+	var shapes := 0
+	for ch in n.get_children():
+		if ch is CollisionShape3D:
+			shapes += 1
+	# one collider for a whole model (a house, a hall): the model is the thing
+	if n.get_parent() is MeshInstance3D and shapes <= 1:
+		return n.get_parent()
+	if shapes > 1 or n.get_parent() is MeshInstance3D:
+		return {"BuildingColliders": "Die Gebäude der Stadt", "LampColliders": "Straßenlampen, Ampeln und Masten"}.get(str(n.name), "Dieser Teil der Karte")
 	return n
 
 
