@@ -65,7 +65,9 @@ func setup(p_world, count: int, p_render, speed_level := 1) -> void:
 		var t := TCar.new()
 		t.id = ID_BASE + k
 		# spread over the lap, away from the start grid
-		t.progress = fposmod(120.0 + L * (k + _rng.randf_range(0.0, 0.5)) / count, L)
+		# (a gap of 150 m ahead of the line and behind the grid: nobody runs into the cars at the start)
+		var span := maxf(L - 300.0, L * 0.5)
+		t.progress = fposmod((L - span) * 0.5 + span * (k + _rng.randf_range(0.0, 0.5)) / count, L)
 		t.v_want = speed_kmh / 3.6 * _rng.randf_range(0.96, 1.05)
 		t.v = t.v_want * 0.8
 		t.lane = 1.0 if k % 2 == 0 else -1.0

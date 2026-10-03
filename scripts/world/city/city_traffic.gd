@@ -474,19 +474,41 @@ func _spawn(count: int) -> void:
 			total += p.length
 	if lanes.is_empty():
 		return
+	# where the players start: no car close to them (behind them even further), but the streets they
+	# are on get more traffic than the rest of the city
+	var starts: Array = []
+	for car in world.cars.values():
+		if is_instance_valid(car):
+			starts.append([car.global_position, -(car as Node3D).global_transform.basis.z])
+	var weight := {}
+	total = 0.0
+	for i in lanes:
+		var lane: Path = paths[i]
+		var w := 1.0
+		for st in starts:
+			if _lane_dist(lane, st[0]) < 14.0:
+				w = 4.0
+		weight[i] = lane.length * w
+		total += lane.length * w
 	var tries := 0
 	while cars.size() < count and tries < count * 6:
 		tries += 1
 		var r := _rng.randf() * total
 		var li: int = lanes[0]
 		for i in lanes:
-			r -= (paths[i] as Path).length
+			r -= float(weight[i])
 			if r <= 0.0:
 				li = i
 				break
 		var lane: Path = paths[li]
 		var s := _rng.randf_range(3.0, lane.length - 3.0)
 		var free := true
+		var at_xf := _xf(lane, s)
+		for st in starts:
+			var d: Vector3 = at_xf.origin - (st[0] as Vector3)
+			var ahead: bool = d.dot(st[1]) > 0.0
+			if d.length() < (80.0 if ahead else 150.0):
+				free = false
 		for o in lane.cars:
 			if absf((o as Car).s - s) < 12.0:
 				free = false
@@ -514,6 +536,16 @@ func _spawn(count: int) -> void:
 		lane.cars.insert(at, c)
 		c.xf = _xf(lane, s)
 		cars.append(c)
+
+
+## Distance from a point to a lane (its sampled points).
+func _lane_dist(lane: Path, p: Vector3) -> float:
+	var best := 1e9
+	var n := maxi(int(lane.length / 6.0), 1)
+	for k in n + 1:
+		var q := _xf(lane, lane.length * float(k) / n).origin
+		best = minf(best, Vector2(q.x - p.x, q.z - p.z).length())
+	return best
 
 
 func _choose(p: Path) -> int:
