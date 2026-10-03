@@ -1,0 +1,11 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+config/name="Tokyo Midnight Circuit"
+run/main_scene="res://TokyoDistrict.tscn"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.018, 0.03, 0.06, 1)
