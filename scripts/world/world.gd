@@ -403,7 +403,7 @@ func _spawn_bots(night: float) -> void:
 		cars[id] = car
 		car.place(track.grid_transform(first + k))
 		if driving:
-			race_ai.add_bot(id, car)
+			race_ai.add_bot(id, car, str(e.get("personality", "Ausgeglichen")))
 	if not online:
 		# the player starts behind the field
 		local_car.place(track.grid_transform(roster.size()))

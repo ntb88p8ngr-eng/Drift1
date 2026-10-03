@@ -142,6 +142,15 @@ func _float_button(text: String, callback: Callable) -> Button:
 	return b
 
 
+## A second corner button, right of the way back (e.g. START).
+func _float_action(text: String, callback: Callable) -> Button:
+	var b := UiKit.button(text, callback, 240)
+	b.custom_minimum_size.y = 58
+	b.add_theme_font_size_override("font_size", 24)
+	_float_bar.add_child(b)
+	return b
+
+
 func show_screen(screen: String) -> void:
 	if current == "online" and screen != "online":
 		Net.stop_lan_scan()
@@ -463,11 +472,11 @@ func _build_single() -> void:
 	_add(desc)
 	update_desc.call()
 	_add(UiKit.spacer(8))
-	_add(UiKit.button("▶  START", func(): main.start_offline(), 360))
 	_add(UiKit.button("Garage", func():
 		_return_to = "single"
 		show_screen("garage"), 360))
 	_float_button("◀  Zurück", func(): show_screen("main"))
+	_float_action("▶  START", func(): main.start_offline())
 
 
 func _day_cycle_option(current: int, on_pick: Callable) -> OptionButton:
