@@ -94,10 +94,10 @@ const CARS := {
 		"burble": 3, "transmission": "auto", "desc": "6.5-Liter-V12 mit 700 PS und Allrad – brutal schnell, Flammen beim Gaswegnehmen.",
 	},
 	"supra": {
-		"name": "Toyota Supra (Wangan Midnight)", "mass": 1460.0, "torque": 650.0, "tach": 9000.0,
+		"name": "Toyota Supra A80", "mass": 1460.0, "torque": 650.0, "tach": 9000.0,
 		"redline": 8000.0, "idle": 850.0, "gears": [3.83, 2.36, 1.69, 1.31, 1.0, 0.79], "reverse": 3.28,
 		"final": 3.27, "rear_split": 1.0, "turbo": 0.6, "grip": 1.06, "steer_lock": 46.0, "engine": "i6tt",
-		"burble": 2, "transmission": "auto", "desc": "2JZ-Biturbo-Reihensechser, auf 600 PS gebracht – gebaut für die Wangan bei Nacht.",
+		"burble": 2, "transmission": "auto", "desc": "2JZ-Biturbo-Reihensechser, auf 600 PS gebracht – gebaut für leere Autobahnen bei Nacht.",
 	},
 	# easter eggs: only through an action code (see EGG_CODES), never in the shop
 	"yaris": {

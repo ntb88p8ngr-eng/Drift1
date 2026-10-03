@@ -211,7 +211,7 @@ CARS["m6gt3"] = {
 }
 
 CARS["supra"] = {
-    # Toyota Supra A80 from Wangan Midnight (low poly, own plate texture)
+    # Toyota Supra A80 (low poly, own plate texture)
     "length": 4.515, "subsurf": 0, "body_tris": 40000, "wheel_tris": 3000, "textured": True,
     "exclude": [],
     "materials": {

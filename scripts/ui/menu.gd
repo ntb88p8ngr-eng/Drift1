@@ -167,6 +167,8 @@ func show_screen(screen: String) -> void:
 			_build_editor()
 		"replays":
 			_build_replays()
+		"credits":
+			_build_credits()
 		_:
 			current = "main"
 			_build_main()
@@ -224,6 +226,7 @@ func _build_main() -> void:
 	_add(UiKit.button("Optionen", func():
 		_opts_return = "main"
 		show_screen("options"), 360))
+	_add(UiKit.button("Credits", func(): show_screen("credits"), 360))
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
 	_add(UiKit.spacer(18))
 	var car: Dictionary = Game.get_car(Game.settings["car"])
@@ -268,6 +271,35 @@ func _build_editor() -> void:
 		_add(UiKit.row([UiKit.label("%s  ·  %s" % [m[1], Game.track_name(m[2])], 18), UiKit.button("Bearbeiten", func(): main.start_editor("", path), 180), del]))
 	_add(UiKit.spacer(8))
 	_add(UiKit.button("Karte importieren …", _import_map, 360))
+	_float_button("◀  Zurück", func(): show_screen("main"))
+
+
+# ---------------------------------------------------------------------------
+# Credits
+# ---------------------------------------------------------------------------
+func _build_credits() -> void:
+	_header("CREDITS")
+	var Credits = load("res://scripts/ui/credits.gd")
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	for sec in Credits.ENTRIES:
+		box.add_child(UiKit.spacer(6))
+		box.add_child(UiKit.label(str(sec[0]).to_upper(), 20, UiKit.GOLD))
+		for e in sec[1]:
+			var line := "%s  –  %s" % [e[0], e[1]]
+			var l := UiKit.label(line, 16, UiKit.TEXT)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.custom_minimum_size = Vector2(760, 0)
+			box.add_child(l)
+			var sub := ("%s  ·  %s" % [e[2], e[3]]) if str(e[2]) != "" else str(e[3])
+			box.add_child(UiKit.label("      " + sub, 13, UiKit.TEXT_DIM))
+	box.add_child(UiKit.spacer(8))
+	box.add_child(UiKit.label("Markennamen beschreiben nur die echten Autos, die die Modelle darstellen.", 13, UiKit.TEXT_DIM))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(800, 520)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.add_child(box)
+	_add(sc)
 	_float_button("◀  Zurück", func(): show_screen("main"))
 
 

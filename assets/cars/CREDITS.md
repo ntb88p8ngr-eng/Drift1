@@ -26,3 +26,16 @@ the distance). The Camry got new modelled wheels (the source wheels did not surv
 | `traffic/civic.glb` | Honda Civic Type-R EP3 2005 | "Honda Civic Type-R EP3 2005" by heraSK – http://www.blendswap.com/blends/view/76289 | CC-BY-SA 3.0, Fan Art (non-commercial) |
 
 Brand names are used only to describe the real cars the models depict.
+
+## Sketchfab models (converted with `tools/convert_cars.py` / `tools/convert_rims.py`)
+
+| File | Model | Author / Source | License |
+|---|---|---|---|
+| `m6gt3.glb` | "BMW M Motorsport GT Racing" | DevPoly3D – https://sketchfab.com/3d-models/bmw-m-motorsport-gt-racing-db30660f64f24c2fbfc989040873f7cd | CC-BY 4.0 |
+| `yaris.glb`, `traffic/yaris*.glb` | "2001 Toyota Yaris" | Dave Love SketchFab (Tyler_Dave) – https://sketchfab.com/3d-models/2001-toyota-yaris-443fd49eb0844557a06854cae0b61267 | CC-BY 4.0 |
+| `traffic/s13*.glb` | "TOON Japan : Nissan Silvia S13" | LePoint_BAT – https://sketchfab.com/3d-models/toon-japan-nissan-silvia-s13-c0495b8df2a3431ca9cccf2339b9ae16 | CC-BY 4.0 |
+| `traffic/ktruck*.glb` | "K_truck_b_fix" | Waffles (jkimmel694) – https://sketchfab.com/3d-models/k-truck-b-fix-417f3378b54a4873b67d131b5540f421 | CC-BY 4.0 |
+| `rims/jdm_*.glb` | "Realistic JDM Rim Pack" | Visthétique – https://sketchfab.com/3d-models/realistic-jdm-rim-pack-6c0fab94636e4c60b2c2f766fe7f477f | CC-BY 4.0 |
+| `supra.glb` | Toyota Supra A80 ("Kei's Toyota Supra", Sketchfab) | author not stated in the file – please add | see source |
+
+The camping models in `assets/props/camp/` were created for this project.
