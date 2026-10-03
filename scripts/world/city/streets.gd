@@ -21,6 +21,7 @@ var track
 var scenery
 var add_inst: Callable          # (kind, Transform3D, custom Color)
 var lamps                       # city_lamps.gd: the breakable streetlights
+var _parent: Node3D             # (colliders of the food stalls)
 var keep_clear: Array = []      # entrances of the car parks: [front centre, along, half width]
 var light: Callable             # (pos, colour, range, energy, kind)
 var rng := RandomNumberGenerator.new()
@@ -34,6 +35,7 @@ var stats := {}
 
 
 func build(p_net, p_cm, p_track, p_scenery, p_add: Callable, p_light: Callable, parent: Node3D) -> void:
+	_parent = parent
 	net = p_net
 	cm = p_cm
 	track = p_track
@@ -605,6 +607,8 @@ func _furniture(k: int) -> void:
 	var next_hydrant := [rng.randf_range(20.0, 60.0), rng.randf_range(20.0, 60.0)]
 	var next_tsign := [rng.randf_range(30.0, 90.0), rng.randf_range(30.0, 90.0)]
 	var next_misc := [rng.randf_range(10.0, 30.0), rng.randf_range(10.0, 30.0)]
+	var next_works := [rng.randf_range(60.0, 260.0), rng.randf_range(60.0, 260.0)]
+	var next_stall := [rng.randf_range(40.0, 200.0), rng.randf_range(40.0, 200.0)]
 	var parking := [not narrow and kind != "ring" and kind != "crossing" and rng.randf() < 0.5, false]
 	parking[1] = not narrow and kind == "street" and rng.randf() < 0.3
 	for j in pts.size() - 1:
@@ -642,15 +646,27 @@ func _furniture(k: int) -> void:
 				# hydrants
 				# a no-entry or speed-limit sign now and then (breakable, city_lamps.gd)
 				if d >= float(next_tsign[si]):
-					next_tsign[si] = d + rng.randf_range(70.0, 140.0)
+					next_tsign[si] = d + rng.randf_range(35.0, 80.0)
 					lamps.add_traffic_sign(Vector3(kerb.x - t.x * 2.0, 0, kerb.y - t.y * 2.0), Vector3(t.x, 0, t.y) * side, 1 if rng.randf() < 0.35 else 3)
 				if d >= float(next_hydrant[si]):
 					next_hydrant[si] = d + rng.randf_range(55.0, 90.0)
 					# breakable (a fountain when knocked off): city_lamps.gd
 					lamps.add_hydrant(Vector3(kerb.x + t.x * 1.2, 0, kerb.y + t.y * 1.2), face)
+				# works on the pavement: barriers round a dug-up patch, cones, a flasher, a worker
+				if not narrow and d >= float(next_works[si]):
+					next_works[si] = d + rng.randf_range(220.0, 420.0)
+					next_misc[si] = d + 12.0
+					_pavement_works(Vector3(walk.x, 0, walk.y), face, Vector3(t.x, 0, t.y))
+					continue
+				# a food stall (yatai) with lanterns and people round it
+				if d >= float(next_stall[si]):
+					next_stall[si] = d + rng.randf_range(160.0, 360.0)
+					next_misc[si] = d + 8.0
+					_food_stall(Vector3(walk.x, 0, walk.y), face, Vector3(t.x, 0, t.y))
+					continue
 				# vending machines, bicycles, benches, bins, post boxes
 				if d >= float(next_misc[si]):
-					next_misc[si] = d + rng.randf_range(14.0, 40.0)
+					next_misc[si] = d + rng.randf_range(10.0, 28.0)
 					_misc(Vector3(p.x + nrm.x * side * (hw + 4.0), 0, p.y + nrm.y * side * (hw + 4.0)), face, Vector2(t.x, t.y))
 				# pedestrians
 				if rng.randf() < 0.035:
@@ -792,9 +808,72 @@ func _streetlight(p: Vector3, face: Vector3, hw: float) -> void:
 	stats["streetlights"] = int(stats.get("streetlights", 0)) + 1
 
 
+## Works on the pavement: a dug-up patch fenced by water-filled barriers (pushed about by a car),
+## A-frame barriers at the ends, cones, an amber flasher and a worker in orange.
+func _pavement_works(p: Vector3, face: Vector3, along: Vector3) -> void:
+	var len := rng.randf_range(4.0, 7.0)
+	var basis := Basis.looking_at(face, Vector3.UP)
+	cm.box("frame", Transform3D(basis, p + Vector3(0, 0.02, 0)), Vector3(len, 0.04, 1.6), Color(0.28, 0.21, 0.14))
+	var n := int(len / 1.25)
+	for k in n:
+		lamps.add_prop("water_barrier", p + face * 1.1 + along * (k * 1.25 - (n - 1) * 0.625), face)
+	for sg in [-1.0, 1.0]:
+		lamps.add_prop("barrier", p + along * sg * (len * 0.5 + 0.6), along * sg)
+	for k in rng.randi_range(2, 4):
+		lamps.add_prop("cone", p + face * 1.9 + along * rng.randf_range(-len * 0.5, len * 0.5), face)
+	cm.glow_box(Transform3D(basis, p + along * (len * 0.5 + 0.6) + Vector3(0, 1.1, 0)), Vector3(0.14, 0.14, 0.1), Color(1.0, 0.65, 0.1), 1.5)
+	light.call(p + Vector3(0, 1.6, 0), Color(1.0, 0.65, 0.2), 6.0, 0.6, 0)
+	people_spots.append([p - face * 0.3 + along * rng.randf_range(-1.0, 1.0), face])
+	stats["works"] = int(stats.get("works", 0)) + 1
+
+
+## A yatai: a wooden food cart with a cloth roof, a noren curtain, red lanterns glowing and a
+## few people standing round it.
+func _food_stall(p: Vector3, face: Vector3, along: Vector3) -> void:
+	var basis := Basis.looking_at(face, Vector3.UP)
+	var wood := Color(0.45, 0.28, 0.15)
+	var cloth: Color = [Color(0.75, 0.1, 0.08), Color(0.12, 0.18, 0.4), Color(0.9, 0.85, 0.75)][rng.randi() % 3]
+	cm.box("frame", Transform3D(basis, p + Vector3(0, 0.5, 0)), Vector3(2.4, 1.0, 1.1), wood)
+	cm.box("frame", Transform3D(basis, p + Vector3(0, 1.02, 0) + face * 0.25), Vector3(2.4, 0.06, 0.55), wood.lightened(0.2))
+	for sx in [-1.15, 1.15]:
+		for sz in [-0.5, 0.5]:
+			cm.box("frame", Transform3D(basis, p + along * sx + face * sz + Vector3(0, 1.15, 0)), Vector3(0.08, 2.3, 0.08), wood)
+	cm.box("frame", Transform3D(basis, p + Vector3(0, 2.32, 0)), Vector3(2.8, 0.08, 1.6), cloth)
+	cm.box("frame", Transform3D(basis, p + face * 0.62 + Vector3(0, 1.95, 0)), Vector3(2.4, 0.6, 0.02), cloth.darkened(0.2))
+	for k in 3:
+		var lp := p + face * 0.75 + along * (-0.8 + k * 0.8) + Vector3(0, 1.55, 0)
+		cm.glow_box(Transform3D(basis, lp), Vector3(0.28, 0.36, 0.28), Color(1.0, 0.25, 0.1), 1.4)
+	cm.glow_box(Transform3D(basis, p + Vector3(0, 1.6, 0) - face * 0.2), Vector3(2.2, 0.5, 0.05), Color(1.0, 0.8, 0.5), 0.6)
+	light.call(p + face * 1.0 + Vector3(0, 1.9, 0), Color(1.0, 0.55, 0.3), 9.0, 1.4, 0)
+	Colliders.add_box(_parent, Transform3D(basis, p + Vector3(0, 1.15, 0)), Vector3(2.6, 2.3, 1.2))
+	for k in rng.randi_range(2, 5):
+		var pp := p + face * rng.randf_range(1.3, 2.0) + along * rng.randf_range(-1.4, 1.4)
+		people_spots.append([pp, -face])
+	stats["stalls"] = int(stats.get("stalls", 0)) + 1
+
+
+## Flower pots in a row along the pavement, or a concrete planter with pots at its ends.
+func _pots(p: Vector3, face: Vector3, along: Vector2) -> void:
+	var al := Vector3(along.x, 0, along.y)
+	var kinds := ["pot_red", "pot_yellow", "pot_purple", "pot_white"]
+	if rng.randf() < 0.35:
+		lamps.add_prop("planter", p, face)
+		lamps.add_prop(kinds[rng.randi() % 4], p + al * 1.5, face)
+		lamps.add_prop(kinds[rng.randi() % 4], p - al * 1.5, face)
+		return
+	var n := rng.randi_range(2, 5)
+	var k0 := rng.randi() % 4
+	for k in n:
+		var kind: String = kinds[(k0 + (k % 2 if rng.randf() < 0.7 else rng.randi())) % 4]
+		lamps.add_prop(kind, p + al * (k * 0.85 - (n - 1) * 0.42), face)
+
+
 func _misc(p: Vector3, face: Vector3, along: Vector2) -> void:
 	var basis := Basis.looking_at(face, Vector3.UP)
 	var r := rng.randf()
+	if rng.randf() < 0.4:
+		_pots(p, face, along)
+		return
 	if r < 0.3:
 		# knockable (city_lamps.gd)
 		lamps.add_vending(p, face)

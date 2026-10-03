@@ -93,6 +93,10 @@ static func get_mesh(name: String) -> Mesh:
 				_fence(st)
 			"hydrant":
 				_hydrant(st)
+			"barrier":
+				_barrier(st)
+			"water_barrier":
+				_water_barrier(st)
 		_cache[name] = MeshKit.commit(st, material())
 	return _cache[name]
 
@@ -264,6 +268,29 @@ static func _hay_bale(st: SurfaceTool) -> void:
 		var a := -TAU * k / 14.0
 		ring2.append(Vector3(-0.6, 0.65 + sin(a) * 0.65, cos(a) * 0.65))
 	MeshKit.cap(st, ring2, Vector3(-0.6, 0.65, 0), Vector3.LEFT, hay.darkened(0.15))
+
+
+## Road works A-frame barrier (1.4 m): two striped boards on folding legs, a flasher on top.
+static func _barrier(st: SurfaceTool) -> void:
+	var white := Color(0.95, 0.95, 0.92)
+	var orange := Color(0.95, 0.38, 0.05)
+	for z in [-0.25, 0.25]:
+		for x in [-0.62, 0.62]:
+			_b(st, Vector3(x, 0.5, z), Vector3(0.05, 1.0, 0.05), white, Vector3(-signf(z) * 0.25, 0, 0))
+	for y in [0.75, 0.45]:
+		for k in 6:
+			var c: Color = orange if k % 2 == 0 else white
+			_b(st, Vector3(-0.58 + k * 0.233, y, -0.22), Vector3(0.233, 0.2, 0.025), c, Vector3(0, 0, 0.0))
+	_b(st, Vector3(-0.55, 1.0, -0.02), Vector3(0.12, 0.12, 0.08), Color(1.0, 0.75, 0.1))
+
+
+## Water-filled plastic road barrier (1.2 m), red or white in turn along a row.
+static func _water_barrier(st: SurfaceTool) -> void:
+	var c := Color(0.85, 0.12, 0.1)
+	_b(st, Vector3(0, 0.2, 0), Vector3(1.2, 0.4, 0.45), c)
+	_b(st, Vector3(0, 0.55, 0), Vector3(1.15, 0.3, 0.32), c)
+	_b(st, Vector3(0, 0.75, 0), Vector3(1.1, 0.12, 0.2), c)
+	_b(st, Vector3(0, 0.45, 0.23), Vector3(0.6, 0.12, 0.02), Color(0.95, 0.95, 0.95))
 
 
 static func _traffic_cone(st: SurfaceTool) -> void:

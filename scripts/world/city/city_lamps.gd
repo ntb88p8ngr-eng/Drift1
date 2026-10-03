@@ -35,16 +35,25 @@ const KINDS := {
 	"bench": [0.9, 0.9, 0.0, 40.0],
 	"bin": [0.27, 0.95, 0.0, 12.0],
 	"shelter": [1.8, 2.5, 0.0, 180.0],
+	# flower pots and concrete planters: pushed about, they tumble and roll
+	"pot_red": [0.28, 0.75, 0.0, 22.0], "pot_yellow": [0.28, 0.75, 0.0, 22.0],
+	"pot_purple": [0.28, 0.75, 0.0, 22.0], "pot_white": [0.28, 0.75, 0.0, 22.0],
+	"planter": [1.0, 0.75, 0.0, 140.0],
+	# road works: A-frame barriers, water-filled barriers, cones
+	"barrier": [0.7, 1.05, 0.0, 14.0], "water_barrier": [0.6, 0.8, 0.0, 60.0], "cone": [0.2, 0.36, 0.0, 3.0],
 	# traffic signs on a thin post (designs: 0 stop, 1 no entry, 2 bus stop, 3 speed limit)
 	"tsign0": [0.06, 2.6, 0.25, 12.0], "tsign1": [0.06, 2.6, 0.25, 12.0],
 	"tsign2": [0.06, 2.6, 0.25, 12.0], "tsign3": [0.06, 2.6, 0.25, 12.0],
 }
 ## Loose furniture: a car merely pushes it (from walking pace on), it slides and tumbles away.
-const PUSHED := ["bench", "bin"]
+const PUSHED := ["bench", "bin", "pot_red", "pot_yellow", "pot_purple", "pot_white", "planter", "barrier", "water_barrier", "cone"]
 ## Box colliders [size, centre] (the rest are cylinders standing on their foot).
 const BOXES := {
 	"vending": [Vector3(2.1, 1.85, 0.8), Vector3(0, 0.925, 0)],
 	"bench": [Vector3(1.8, 0.9, 0.6), Vector3(0, 0.45, 0)],
+	"planter": [Vector3(2.0, 0.75, 0.6), Vector3(0, 0.375, 0)],
+	"barrier": [Vector3(1.4, 1.05, 0.6), Vector3(0, 0.525, 0)],
+	"water_barrier": [Vector3(1.2, 0.8, 0.45), Vector3(0, 0.4, 0)],
 	"shelter": [Vector3(3.4, 2.4, 0.4), Vector3(0, 1.2, 0.65)],
 }
 ## Bus shelter parts: [name, box size, centre] – drawn as one, they fly apart when it is hit.
@@ -139,7 +148,8 @@ func add_vending(p: Vector3, face: Vector3) -> void:
 	poles.append({"kind": "vending", "xf": Transform3D(Basis.looking_at(face, Vector3.UP), p), "light": li, "broken": false, "spans": []})
 
 
-## A bench, a bin (pushed about) or a bus shelter (smashed apart) at p, its front towards `face`.
+## A bench, a bin, a flower pot, a planter (pushed about) or a bus shelter (smashed apart) at p,
+## its front towards `face`.
 func add_prop(kind: String, p: Vector3, face: Vector3) -> void:
 	var li := -1
 	if kind == "shelter":

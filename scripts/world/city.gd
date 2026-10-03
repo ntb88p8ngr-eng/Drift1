@@ -23,6 +23,8 @@ const Places = preload("res://scripts/world/city/places.gd")
 const Streets = preload("res://scripts/world/city/streets.gd")
 const CityLights = preload("res://scripts/world/city/city_lights.gd")
 const CityLamps = preload("res://scripts/world/city/city_lamps.gd")
+const FlowerBeds = preload("res://scripts/world/city/flower_beds.gd")
+const PhotoWindows = preload("res://scripts/world/city/photo_windows.gd")
 const Pigeons = preload("res://scripts/world/city/pigeons.gd")
 const CityFog = preload("res://scripts/world/city/city_fog.gd")
 const CityAtlas = preload("res://scripts/world/city/city_atlas.gd")
@@ -94,6 +96,10 @@ var emitters: Array = []
 var builds: Array = []
 var lots: Array = []
 var parks: Array = []
+var halls: Array = []        # towers with a drive-in entrance hall (builds entries)
+var groves: Array = []       # small green corners between the buildings: [centre, half size, along]
+var flowers                  # flower_beds.gd
+var photo_windows            # photo_windows.gd
 var plazas: Array = []
 var pigeon_spots: Array = []
 var _sets := {}
@@ -138,6 +144,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	# geometry
 	_round_towers()
 	_mark_blind_faces()
+	_halls_and_plinths()
 	bld = Buildings.new(cm)
 	var body := StaticBody3D.new()
 	body.name = "BuildingColliders"
@@ -147,6 +154,16 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	for k in builds.size():
 		var b: Dictionary = builds[k]
 		bld.building(b)
+		if b.has("boxes"):
+			# drive-in halls, raised floors with steps: their own set of boxes
+			for bx in b["boxes"]:
+				var bcs := CollisionShape3D.new()
+				var bsh := BoxShape3D.new()
+				bsh.size = bx[1]
+				bcs.shape = bsh
+				bcs.transform = bx[0]
+				body.add_child(bcs)
+			continue
 		var cs := CollisionShape3D.new()
 		if b["style"] == "round":
 			var cy := CylinderShape3D.new()
@@ -161,6 +178,10 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 		body.add_child(cs)
 		if k % 150 == 149:
 			await Game.load_tick()
+	photo_windows = PhotoWindows.new()
+	photo_windows.name = "PhotoWindows"
+	add_child(photo_windows)
+	photo_windows.build(bld.photo_spots)
 	_lap("buildings")
 	places = Places.new()
 	places.setup(cm, self, scenery, _add, _light, _person)
@@ -183,8 +204,14 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_route_markings()
 	_viaduct()
 	_crossing_extras()
+	flowers = FlowerBeds.new()
+	flowers.name = "FlowerBeds"
+	add_child(flowers)
 	for p in parks:
 		_park(p[0], p[1])
+	for g in groves:
+		_grove(g[0], g[1], g[2])
+	_hall_extras()
 	_pedestrians()
 	_lap("extras")
 	await Game.load_tick()
@@ -215,6 +242,7 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 		return out
 	_flocks()
 	lamps.build(world)
+	flowers.build(world)
 	# low fog along the city's square border, a little in from its edge: it turns you round
 	fog = CityFog.new()
 	fog.name = "BorderFog"
@@ -244,6 +272,8 @@ func _lap(label: String) -> void:
 
 
 func set_night(n: float) -> void:
+	if photo_windows:
+		photo_windows.set_night(n)
 	if cm:
 		cm.set_night(n)
 	if lamps:
@@ -528,6 +558,52 @@ func _drive_ins() -> void:
 		track.rebuild_walls()
 
 
+## A share of the towers on the street get a drive-in entrance hall (its opening kept free of
+## street furniture and of the race route's barrier); houses and flats without a shop now and then
+## stand on a raised basement with steps up to the door.
+func _halls_and_plinths() -> void:
+	var gaps := false
+	for b in builds:
+		var style: String = b["style"]
+		if style == "tower" and bool(b.get("shop", false)) and float(b["w"]) >= 18.0 and rng.randf() < 0.4:
+			b["hall"] = true
+			var c: Vector3 = b["c"]
+			var az: Vector3 = b["az"]
+			var ax: Vector3 = b["ax"]
+			var front := c - az * float(b["d"]) * 0.5
+			halls.append(b)
+			drive_ins.append([Vector2(front.x, front.z), Vector2(ax.x, ax.z).normalized(), Buildings.HALL_GAP * 0.5 + 1.0])
+			var pr: Array = track.project(front - az * 1.0, -1)
+			var i: int = pr[0]
+			var off: float = maxf(float(track.off_left[i]), float(track.off_right[i]))
+			if absf(float(pr[2])) < off + StreetNet.SIDEWALK + 6.0 and float(track.samples[i].y) < 0.15:
+				var half := Buildings.HALL_GAP * 0.5
+				track.wall_gaps.append([fposmod(float(pr[1]) - half - 2.0, track.length), fposmod(float(pr[1]) + half + 2.0, track.length), signf(float(pr[2]))])
+				gaps = true
+		elif (style == "house" or style == "apartment") and not bool(b.get("shop", false)) and rng.randf() < 0.5:
+			b["plinth"] = rng.randf_range(1.2, 1.8)
+	if gaps:
+		track.rebuild_walls()
+
+
+## People and flower pots in the drive-in halls.
+func _hall_extras() -> void:
+	var pots := ["pot_red", "pot_yellow", "pot_purple", "pot_white"]
+	for b in halls:
+		var c: Vector3 = b["c"]
+		var az: Vector3 = b["az"]
+		var ax: Vector3 = b["ax"]
+		var front := c - az * float(b["d"]) * 0.5
+		var hd := Buildings.hall_depth(b)
+		var w: float = b["w"]
+		for sg in [-1.0, 1.0]:
+			for k in 3:
+				lamps.add_prop(pots[(k + int(sg > 0)) % 4], front + az * (2.5 + k * (hd - 5.0) * 0.5) + ax * sg * (w * 0.5 - 1.3), ax * -sg)
+		for k in rng.randi_range(3, 7):
+			var p := front + az * rng.randf_range(2.0, hd - 4.5) + ax * rng.randf_range(-w * 0.3, w * 0.3)
+			_person(p, p + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)))
+
+
 ## Some of the tallest towers become round skyscrapers (city/buildings.gd), every one a different
 ## design: 8 of the 12 tallest, the designs dealt out in turn.
 func _round_towers() -> void:
@@ -608,10 +684,10 @@ func _layout_interior() -> void:
 		var p: Vector2 = net.cell_center(ci)
 		if net.value_at(p) != StreetNet.FREE:
 			continue
-		if r >= 24.0 and parks.size() < 6:
+		if r >= 20.0 and parks.size() < 12:
 			var far_ok := true
 			for pk in parks:
-				if Vector2((pk[0] as Vector3).x, (pk[0] as Vector3).z).distance_to(p) < 170.0:
+				if Vector2((pk[0] as Vector3).x, (pk[0] as Vector3).z).distance_to(p) < 120.0:
 					far_ok = false
 			if far_ok:
 				var pr := minf(r - 3.0, 46.0)
@@ -628,8 +704,13 @@ func _layout_interior() -> void:
 		var t := Vector2(-g.y, g.x).normalized() if g.length() > 0.01 else Vector2.RIGHT
 		if not net.rect_is(p, t, size * 0.5, size * 0.5, [StreetNet.FREE]):
 			continue
-		net.mark_rect(p, t, size * 0.5 + 1.0, size * 0.5 + 1.0, StreetNet.BUILT)
 		var down := 1.0 - smoothstep(120.0, 340.0, p.distance_to(DOWNTOWN))
+		# now and then a green corner instead of a building: trees, a flower bed, pots
+		if down < 0.6 and groves.size() < 80 and rng.randf() < 0.22:
+			net.mark_rect(p, t, size * 0.5, size * 0.5, StreetNet.RESERVED)
+			groves.append([Vector3(p.x, 0, p.y), size * 0.5, Vector3(t.x, 0, t.y)])
+			continue
+		net.mark_rect(p, t, size * 0.5 + 1.0, size * 0.5 + 1.0, StreetNet.BUILT)
 		var away3 := Vector3(-t.y, 0, t.x)
 		var style := "tower" if down > 0.4 or rng.randf() < 0.25 else ("office" if rng.randf() < 0.5 else "apartment")
 		var h := (rng.randf_range(60.0, 120.0) + down * rng.randf_range(20.0, 110.0)) if style == "tower" else rng.randf_range(18.0, 50.0)
@@ -957,6 +1038,8 @@ func _park(c: Vector3, r: float) -> void:
 		if absf(d - r * 0.6) < 3.0 or d < 7.0:
 			continue
 		var tp := c + Vector3(cos(a), 0, sin(a)) * d
+		if _in_park_bed(c, r, tp):
+			continue
 		var kind := "sakura" if rng.randf() < 0.65 else "tree"
 		var sc := rng.randf_range(0.9, 1.25) * (1.0 if kind == "sakura" else 0.8)
 		_add(kind, Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sc, sc, sc)), tp))
@@ -988,8 +1071,62 @@ func _park(c: Vector3, r: float) -> void:
 	for x: float in [-0.7, 0.7]:
 		cm.box("frame", Transform3D(Basis.IDENTITY, sw + Vector3(x, 0.5, 0)), Vector3(0.5, 0.05, 0.25), Color(0.2, 0.2, 0.2))
 	cm.box("frame", Transform3D(Basis.IDENTITY, pg + Vector3(0, 0.1, -4.0)), Vector3(3.0, 0.2, 3.0), Color(0.85, 0.75, 0.55))
+	# flower beds: inside the ring between the paths, and outside it towards the edge
+	for k in 4:
+		var a := 0.3 + PI * 0.25 + PI * 0.5 * k
+		var out := Vector3(cos(a), 0, sin(a))
+		flowers.add_bed(c + out * r * 0.38, Vector2(minf(r * 0.3, 9.0), 2.6), -a + PI * 0.5, rng)
+		flowers.add_bed(c + out * r * 0.8, Vector2(minf(r * 0.34, 11.0), 3.2), -a + PI * 0.5, rng)
+	# flower pots round the fountain (they tumble when hit)
+	var pots := ["pot_red", "pot_yellow", "pot_purple", "pot_white"]
+	for k in 12:
+		var a := TAU * (k + 0.5) / 12.0
+		var out := Vector3(cos(a), 0, sin(a))
+		lamps.add_prop(pots[k % 4], c + out * 5.6, -out)
 	_people_around(c, r * 0.6, 18)
 	pigeon_spots.append([c + Vector3(6.0, 0, 0), 14, 3.0])
+
+
+## A small green corner: lawn, a few trees (fellable), a flower bed in the middle, flower pots on
+## the corners, sometimes a bench.
+func _grove(c: Vector3, half: float, along: Vector3) -> void:
+	var side := Vector3(-along.z, 0, along.x)
+	for k in 12:
+		var a := TAU * k / 12.0
+		scenery._ground_paints.append([c + Vector3(cos(a), 0, sin(a)) * half * 0.55, half * 0.55, Color(0.0, 0.04, 0.0, 0.92)])
+	scenery._ground_paints.append([c, half * 0.6, Color(0.0, 0.04, 0.0, 0.92)])
+	var bed_l := minf(half * 1.1, 10.0)
+	var bed_w := minf(half * 0.5, 3.4)
+	flowers.add_bed(c, Vector2(bed_l, bed_w), atan2(-along.z, along.x), rng)
+	var n := clampi(int(half * half * 0.07), 4, 12)
+	for k in n:
+		var tp := c + along * rng.randf_range(-half * 0.85, half * 0.85) + side * rng.randf_range(-half * 0.85, half * 0.85)
+		var rel := tp - c
+		if absf(rel.dot(along)) < bed_l * 0.5 + 1.5 and absf(rel.dot(side)) < bed_w * 0.5 + 1.5:
+			continue      # (not in the bed)
+		var kind := "sakura" if rng.randf() < 0.45 else "tree"
+		var sc := rng.randf_range(0.8, 1.15) * (1.0 if kind == "sakura" else 0.8)
+		_add(kind, Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sc, sc, sc)), tp))
+	var pots := ["pot_red", "pot_yellow", "pot_purple", "pot_white"]
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			var pp := c + along * sx * (bed_l * 0.5 + 0.8) + side * sz * (bed_w * 0.5 + 0.2)
+			lamps.add_prop(pots[rng.randi() % 4], pp, -along * sx)
+	if rng.randf() < 0.5:
+		lamps.add_prop("bench", c + side * (bed_w * 0.5 + 1.6), -side)
+
+
+## Whether a point lies in (or right beside) one of a park's flower beds (see _park).
+func _in_park_bed(c: Vector3, r: float, p: Vector3) -> bool:
+	for k in 4:
+		var a := 0.3 + PI * 0.25 + PI * 0.5 * k
+		var out := Vector3(cos(a), 0, sin(a))
+		var tan := Vector3(-out.z, 0, out.x)
+		for b in [[r * 0.38, minf(r * 0.3, 9.0), 2.6], [r * 0.8, minf(r * 0.34, 11.0), 3.2]]:
+			var rel: Vector3 = p - (c + out * float(b[0]))
+			if absf(rel.dot(tan)) < float(b[1]) * 0.5 + 1.5 and absf(rel.dot(out)) < float(b[2]) * 0.5 + 1.5:
+				return true
+	return false
 
 
 func _ring_wall(c: Vector3, r: float, h: float, col: Color) -> void:

@@ -27,6 +27,10 @@ var stats := {}
 var _crown := 0.0
 
 
+var photo_spots: Array = []    # windows that show a room picture (photo_windows.gd)
+var _photo := false            # this tower has some
+
+
 func _init(p_cm) -> void:
 	cm = p_cm
 	rng.seed = 909
@@ -44,6 +48,17 @@ func building(b: Dictionary) -> void:
 	var gh := 4.6 if bool(b.get("shop", false)) else 0.0
 	var seed := rng.randf()
 	var faces := _faces(b)
+	# a raised ground floor: a concrete plinth with basement windows, stairs up to the door
+	var pl := float(b.get("plinth", 0.0))
+	if pl > 0.0:
+		_plinth(b, faces[0], pl)
+		b = b.duplicate()      # (its colliders were put on the original)
+		b["c"] = (b["c"] as Vector3) + Vector3(0, pl, 0)
+		faces = _faces(b)
+	_photo = style == "tower" and rng.randf() < 0.4
+	var hall := bool(b.get("hall", false)) and style == "tower"
+	if hall:
+		gh = HALL_H
 	var blind: Array = b.get("blind", [false, false, false, false])
 	_crown = 0.0
 	match style:
@@ -60,7 +75,9 @@ func building(b: Dictionary) -> void:
 			_crown = crown
 			for f in faces:
 				_curtain(f, gh, h - crown, col, bay, seed, 0.0)
-			if gh > 0.0:
+			if hall:
+				_hall(b, faces, col)
+			elif gh > 0.0:
 				_lobby(b, faces, gh, col)
 			if crown > 0.0:
 				var b2 := b.duplicate()
@@ -313,6 +330,14 @@ func _curtain(f: Array, y0: float, y1: float, col: Color, bay: float, seed: floa
 		var wide := 0.32 if (k == 0 or k == m) else 0.16
 		cm.box("metal", Transform3D(basis, o + u * x + Vector3(0, y0 + hgt * 0.5, 0) + n * 0.03), Vector3(wide, hgt, 0.26), col)
 	var floors := int(hgt / 3.8)
+	if _photo and floors > 0:
+		# a few bays show a room (only up to where a picture still reads: the lower 40 floors)
+		var fhh := hgt / floors
+		for j in mini(floors, 40):
+			for k in m:
+				if rng.randf() < 0.06:
+					var c := o + u * (w * (k + 0.5) / m) + Vector3(0, y0 + (j + 0.5) * fhh, 0) - n * 0.07
+					photo_spots.append([Transform3D(basis, c), Vector2(w / m * 0.94, fhh * 0.94), rng.randi(), 1.0 if rng.randf() < 0.6 else 0.0])
 	for j in floors + 1:
 		var y := y0 + float(j) * hgt / maxf(floors, 1)
 		cm.box("metal", Transform3D(basis, o + u * w * 0.5 + Vector3(0, y, 0) + n * 0.05), Vector3(w + 0.1, 0.3, 0.32), col.darkened(0.15))
@@ -419,6 +444,130 @@ func _lobby(b: Dictionary, faces: Array, gh: float, col: Color) -> void:
 			cm.box("metal", Transform3D(basis, cf + Vector3(0, gh - 0.4, 0) + n * 2.0), Vector3(minf(w * 0.5, 14.0), 0.25, 4.0), col.darkened(0.2))
 			light(cf + Vector3(0, gh - 0.8, 0) + n * 2.5, Color(1.0, 0.9, 0.75), 12.0, 2.2, 0)
 	cm.box("metal", Transform3D(Basis(b["ax"], Vector3.UP, b["az"]), (b["c"] as Vector3) + Vector3(0, gh - 0.2, 0)), Vector3(float(b["w"]) + 0.3, 0.4, float(b["d"]) + 0.3), col)
+
+
+const HALL_H := 9.0
+const HALL_GAP := 11.0
+
+
+## How deep a tower's drive-in hall reaches back.
+static func hall_depth(b: Dictionary) -> float:
+	return clampf(float(b["d"]) - 6.0, 10.0, 18.0)
+
+
+## A tower's entrance hall, open to the street and big enough to drive into: polished stone floor,
+## two columns either side of the opening, lit ceiling bands, a glowing back wall with the logo,
+## the reception desk. Its colliders go into b["boxes"] (the rest of the tower stays solid).
+func _hall(b: Dictionary, faces: Array, col: Color) -> void:
+	var f: Array = faces[0]
+	var cf: Vector3 = f[0]
+	var n: Vector3 = f[1]          # out to the street
+	var w: float = f[2]
+	var u := Vector3.UP.cross(n)
+	var basis := Basis(u, Vector3.UP, n)
+	var hd := hall_depth(b)
+	var hh := HALL_H
+	var mid := cf - n * hd * 0.5
+	var stone := Color(0.82, 0.8, 0.76)
+	var logo_cols := [Color(0.3, 0.75, 1.0), Color(1.0, 0.35, 0.5), Color(0.6, 0.95, 0.5)]
+	cm.box("frame", Transform3D(basis, mid + Vector3(0, 0.02, 0)), Vector3(w - 0.8, 0.04, hd), stone)
+	# ceiling and its light bands
+	cm.box("frame", Transform3D(basis, mid + Vector3(0, hh - 0.15, 0)), Vector3(w - 0.4, 0.3, hd), Color(0.92, 0.92, 0.9))
+	for k in 3:
+		cm.glow_box(Transform3D(basis, cf - n * hd * (0.2 + 0.3 * k) + Vector3(0, hh - 0.32, 0)), Vector3(w - 3.0, 0.05, 0.5), Color(1.0, 0.95, 0.85), 0.4)
+	# back wall, glowing, with the logo band
+	cm.glow_box(Transform3D(basis, cf - n * (hd - 0.1) + Vector3(0, hh * 0.5, 0)), Vector3(w - 1.0, hh - 0.6, 0.1), Color(0.95, 0.85, 0.65), 0.18)
+	cm.glow_box(Transform3D(basis, cf - n * (hd - 0.25) + Vector3(0, hh * 0.62, 0)), Vector3(minf(w * 0.4, 10.0), 1.2, 0.1), logo_cols[rng.randi() % 3], 1.2)
+	# side walls (stone), the columns at the opening, the beam over it
+	for sg in [-1.0, 1.0]:
+		cm.box("frame", Transform3D(basis, cf - n * hd * 0.5 + u * sg * (w * 0.5 - 0.3) + Vector3(0, hh * 0.5, 0)), Vector3(0.6, hh, hd), stone.darkened(0.15))
+		cm.box("metal", Transform3D(basis, cf + u * sg * (HALL_GAP * 0.5 + 0.45) + Vector3(0, hh * 0.5, 0)), Vector3(0.9, hh, 0.9), col)
+	cm.box("metal", Transform3D(basis, cf + Vector3(0, hh - 0.5, 0)), Vector3(w + 0.3, 1.0, 1.0), col)
+	# glass either side of the opening
+	var side_w := (w - HALL_GAP) * 0.5 - 0.9
+	if side_w > 0.5:
+		for sg in [-1.0, 1.0]:
+			cm.glow_box(Transform3D(basis, cf + u * sg * (HALL_GAP * 0.5 + 0.9 + side_w * 0.5) + Vector3(0, (hh - 1.0) * 0.5, 0) - n * 0.2), Vector3(side_w, hh - 1.0, 0.05), Color(0.9, 0.86, 0.75), 0.15)
+	# reception desk at the back
+	var desk_w := minf(w * 0.3, 7.0)
+	cm.box("frame", Transform3D(basis, cf - n * (hd - 3.0) + Vector3(0, 0.55, 0)), Vector3(desk_w, 1.1, 1.0), Color(0.55, 0.38, 0.24))
+	cm.glow_box(Transform3D(basis, cf - n * (hd - 3.0) + Vector3(0, 1.12, 0)), Vector3(desk_w, 0.04, 1.0), Color(1.0, 0.9, 0.7), 0.6)
+	light(mid + Vector3(0, hh - 1.0, 0), Color(1.0, 0.93, 0.8), 16.0, 3.0, 0)
+	light(cf - n * (hd - 2.0) + Vector3(0, 4.0, 0), Color(1.0, 0.88, 0.7), 10.0, 1.6, 0)
+	light(cf + n * 2.0 + Vector3(0, hh - 1.0, 0), Color(1.0, 0.93, 0.8), 12.0, 1.8, 0)
+	# the slab band over the hall
+	var cb := Basis(b["ax"], Vector3.UP, b["az"])
+	var c: Vector3 = b["c"]
+	var bw: float = b["w"]
+	var bd: float = b["d"]
+	var h: float = b["h"]
+	cm.box("metal", Transform3D(cb, c + Vector3(0, hh - 0.2, 0)), Vector3(bw + 0.3, 0.4, bd + 0.3), col)
+	# solid: everything above the hall, the block behind it, its side walls, the columns, the glass
+	var boxes: Array = []
+	boxes.append([Transform3D(cb, c + Vector3(0, hh + (h - hh) * 0.5, 0)), Vector3(bw, h - hh, bd)])
+	boxes.append([Transform3D(cb, c + (b["az"] as Vector3) * hd * 0.5 + Vector3(0, hh * 0.5, 0)), Vector3(bw, hh, bd - hd)])
+	for sg in [-1.0, 1.0]:
+		boxes.append([Transform3D(basis, cf - n * hd * 0.5 + u * sg * (w * 0.5 - 0.3) + Vector3(0, hh * 0.5, 0)), Vector3(0.6, hh, hd)])
+		boxes.append([Transform3D(basis, cf + u * sg * (HALL_GAP * 0.5 + 0.45) + Vector3(0, hh * 0.5, 0)), Vector3(0.9, hh, 0.9)])
+		if side_w > 0.5:
+			boxes.append([Transform3D(basis, cf + u * sg * (HALL_GAP * 0.5 + 0.9 + side_w * 0.5) + Vector3(0, hh * 0.5, 0) - n * 0.2), Vector3(side_w, hh, 0.3)])
+	boxes.append([Transform3D(basis, cf - n * (hd - 3.0) + Vector3(0, 0.55, 0)), Vector3(desk_w, 1.1, 1.0)])
+	b["boxes"] = boxes
+
+
+## The raised ground floor: a concrete plinth (a little wider than the house) with basement windows,
+## a landing at the door and a flight of steps down along the front wall, a railing.
+## Its colliders (plinth and house as one, the landing, the steps) go into b["boxes"].
+func _plinth(b: Dictionary, f: Array, pl: float) -> void:
+	var cb := Basis(b["ax"], Vector3.UP, b["az"])
+	var c: Vector3 = b["c"]
+	var bw: float = b["w"]
+	var bd: float = b["d"]
+	var concrete := Color(0.58, 0.57, 0.54)
+	cm.box("frame", Transform3D(cb, c + Vector3(0, pl * 0.5, 0)), Vector3(bw + 0.4, pl, bd + 0.4), concrete)
+	var cf: Vector3 = f[0]
+	var n: Vector3 = f[1]
+	var w: float = f[2]
+	var u := Vector3.UP.cross(n)
+	var basis := Basis(u, Vector3.UP, n)
+	# basement windows along the front, some lit
+	var nwin := int(w / 3.0)
+	for k in nwin:
+		var x := -w * 0.5 + (k + 0.5) * w / nwin
+		if absf(x) < 1.6 or (x > 0.0 and x < 1.1 + ceil(pl / 0.18) * 0.3 + 0.6):
+			continue      # (not behind the door and the steps)
+		var wxf := Transform3D(basis, cf + u * x + n * 0.21 + Vector3(0, pl * 0.55, 0))
+		if rng.randf() < 0.5:
+			cm.glow_box(wxf, Vector3(1.1, pl * 0.4, 0.04), Color(1.0, 0.85, 0.6), 0.5)
+		else:
+			cm.box("frame", wxf, Vector3(1.1, pl * 0.4, 0.04), Color(0.08, 0.09, 0.1))
+	# landing at the door, the steps down along the wall, the door, a railing on the open side
+	var land := cf + n * 0.85
+	var stair := concrete.lightened(0.1)
+	cm.box("frame", Transform3D(basis, land + Vector3(0, pl * 0.5, 0)), Vector3(2.2, pl, 1.3), stair)
+	cm.box("frame", Transform3D(basis, cf + n * 0.21 + Vector3(0, pl + 1.1, 0)), Vector3(1.1, 2.2, 0.06), Color(0.25, 0.18, 0.12))
+	var boxes: Array = []
+	boxes.append([Transform3D(cb, c + Vector3(0, (pl + float(b["h"])) * 0.5, 0)), Vector3(bw + 0.4, pl + float(b["h"]), bd + 0.4)])
+	boxes.append([Transform3D(basis, land + Vector3(0, pl * 0.5, 0)), Vector3(2.2, pl, 1.3)])
+	var steps := int(ceil(pl / 0.18))
+	var rise := pl / float(steps + 1)
+	for k in steps:
+		var top := pl - (k + 1) * rise
+		var xf := Transform3D(basis, land + u * (1.1 + k * 0.3 + 0.15) + Vector3(0, top * 0.5, 0))
+		cm.box("frame", xf, Vector3(0.3, top, 1.3), stair)
+		boxes.append([xf, Vector3(0.3, top, 1.3)])
+	var run := 1.1 + steps * 0.3
+	var grey := Color(0.2, 0.2, 0.22, 0.5)
+	for k in 4:
+		var t := float(k) / 3.0
+		var x := -1.1 + t * (run + 1.1)
+		var y := pl if x <= 1.1 else pl * (1.0 - (x - 1.1) / (steps * 0.3))
+		cm.box("metal", Transform3D(basis, land + u * x + n * 0.6 + Vector3(0, y + 0.45, 0)), Vector3(0.04, 0.9, 0.04), grey)
+	var slope := atan2(pl, steps * 0.3)
+	cm.box("metal", Transform3D(basis * Basis(Vector3(0, 0, 1), -slope), land + u * (1.1 + steps * 0.15) + n * 0.6 + Vector3(0, pl * 0.5 + 0.9, 0)), Vector3(sqrt(pow(steps * 0.3, 2) + pl * pl), 0.05, 0.05), grey)
+	cm.box("metal", Transform3D(basis, land + n * 0.6 + Vector3(0, pl + 0.9, 0)), Vector3(2.2, 0.05, 0.05), grey)
+	light(land + Vector3(0, pl + 2.6, 0) + n * 0.3, Color(1.0, 0.85, 0.6), 5.0, 0.8, 0)
+	b["boxes"] = boxes
 
 
 ## Ground floor shop on the front face: glass lit from inside, frame, fascia with the shop sign,
