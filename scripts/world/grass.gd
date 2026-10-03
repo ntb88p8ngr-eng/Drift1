@@ -36,6 +36,11 @@ uniform float trap_w = 4.6;
 uniform vec4 clear_seg[64];
 uniform float clear_half[64];
 uniform int clear_n = 0;
+// painted ground textures (terrain_paint.gd): no grass on anything but the two grasses
+uniform sampler2D paint_tex : filter_nearest, repeat_disable;
+uniform vec2 paint_origin = vec2(0.0);
+uniform float paint_res = 1.0;
+uniform int paint_size = 0;
 uniform vec3 color_a : source_color = vec3(0.12, 0.32, 0.06);
 uniform vec3 color_b : source_color = vec3(0.22, 0.46, 0.1);
 uniform vec3 color_dry : source_color = vec3(0.38, 0.42, 0.18);
@@ -92,6 +97,16 @@ void vertex() {
 	// never on the asphalt: hard cut besides the smooth density falloff (a hash of exactly 0 used to
 	// let single clumps through on the road)
 	float keep = step(r3 + 0.002, dens) * fade * step(clear_to, road);
+	if (paint_size > 0) {
+		ivec2 pi = ivec2(floor((p - paint_origin) / paint_res));
+		if (pi.x >= 0 && pi.y >= 0 && pi.x < paint_size && pi.y < paint_size) {
+			vec2 pt = texelFetch(paint_tex, pi, 0).rg;
+			int pid = int(pt.r * 255.0 + 0.5);
+			if (pid > 2 && pt.g > r3 * 0.6 + 0.2) {
+				keep = 0.0;
+			}
+		}
+	}
 	for (int i = 0; i < clear_n; i++) {
 		vec2 sa = clear_seg[i].xy;
 		vec2 ab = clear_seg[i].zw - sa;
@@ -173,6 +188,7 @@ var wetness := 0.0
 var wind := 1.0
 
 static var _clumps := {}
+var _paint := []           # [texture, origin, res, size] (terrain_paint.gd)
 var _clear_lines := {}     # id -> [[Vector2 a, Vector2 b], …], half width (editor roads)
 var _clear_next := 0
 
@@ -184,6 +200,22 @@ func setup(p_terrain, p_track, p_world) -> void:
 	await _build_textures()
 	_rebuild(int(Game.settings.get("grass_quality", 2)))
 	Game.settings_changed.connect(_on_settings_changed)
+
+
+## The world editor's painted textures: grass only where grass is painted (or nothing).
+func set_paint(tex: Texture2D, origin: Vector2, res: float, size: int) -> void:
+	_paint = [tex, origin, res, size]
+	for l in _layers:
+		_apply_paint(l[1])
+
+
+func _apply_paint(mat: ShaderMaterial) -> void:
+	if _paint.is_empty():
+		return
+	mat.set_shader_parameter("paint_tex", _paint[0])
+	mat.set_shader_parameter("paint_origin", _paint[1])
+	mat.set_shader_parameter("paint_res", _paint[2])
+	mat.set_shader_parameter("paint_size", _paint[3])
 
 
 ## No grass on a road drawn in the world editor (its centre line, half its width plus a margin).
@@ -320,6 +352,7 @@ func _add_layer(spacing: float, radius: float, fade0: float, fade1: float, inner
 	mat.set_shader_parameter("mask_tex", _mask_tex)
 	mat.set_shader_parameter("road_tex", _road_tex)
 	mat.set_shader_parameter("noise_tex", TexKit.noise_texture(81, 0.02, false, 256))
+	_apply_paint(mat)
 	mat.set_shader_parameter("map_origin", terrain.origin)
 	mat.set_shader_parameter("map_cell", Terrain.CELL)
 	mat.set_shader_parameter("map_size", Vector2i(terrain.nx, terrain.nz))

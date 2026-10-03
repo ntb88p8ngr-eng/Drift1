@@ -9,6 +9,7 @@ extends Node3D
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
+const TerrainPaint = preload("res://scripts/world/terrain_paint.gd")
 
 const CELL := 4.0
 const MARGIN := 264.0          # inner grid reaches this far beyond the track bounds (multiple of 24)
@@ -35,6 +36,7 @@ var heights := PackedFloat32Array()
 var splat := PackedColorArray()
 var material: ShaderMaterial
 var outer_material: ShaderMaterial
+var paint = TerrainPaint.new()     # textures painted in the world editor
 var flat_r := 17.0             # distance to the centreline that is guaranteed flat
 var banked := false            # the track has banked corners (the ground follows them)
 

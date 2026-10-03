@@ -9,6 +9,7 @@ const MapData = preload("res://scripts/editor/map_data.gd")
 const AssetLib = preload("res://scripts/editor/asset_lib.gd")
 const RoadBuilder = preload("res://scripts/editor/road_builder.gd")
 const Snap = preload("res://scripts/editor/snap.gd")
+const TerrainPaint = preload("res://scripts/world/terrain_paint.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const MMUtil = preload("res://scripts/util/mm_util.gd")
 
@@ -20,6 +21,7 @@ const TOOLS := [
 	["smooth", "Glätten", "Gedrückt halten: Gelände glätten"],
 	["level", "Ebnen", "Gedrückt halten: auf die Höhe des ersten Klicks ebnen"],
 	["water", "Wasser", "Klicken: Wasserfläche (Pinselgröße) · Bild↑/↓: Pegel · Entf: löschen"],
+	["paint", "Malen", "Gedrückt halten: Textur malen (Textur, Pinselgröße / -stärke links) · Shift gedrückt: wegradieren"],
 	["road", "Straße", "Klicken: Punkte setzen (Vorschau folgt der Maus) · Enter / Rechtsklick: fertig · Rücktaste: letzter Punkt · Esc: verwerfen"],
 ]
 const INDEX_CELL := 16.0
@@ -62,6 +64,11 @@ var _boxing := false
 var _box_from := Vector2.ZERO
 var _box_rect: ColorRect
 var _sel_box: MeshInstance3D
+var paint_id := 1              # the texture the paint tool lays (terrain_paint.gd TEXTURES)
+var _paint_before = null       # paint snapshot at the start of a stroke (undo)
+var _paint_flush_t := 0.0
+var _paint_box: Control
+var _paint_btns := {}
 var deflicker := true          # placed objects get a few mm of offset each: no flicker where they overlap
 var _df_n := 0
 var snap_objects := true       # G: dock onto other objects (side by side, stacked)
@@ -234,6 +241,39 @@ func _build_ui() -> void:
 	prot.toggled.connect(func(on): protect_track = on)
 	_brush_box.add_child(prot)
 	left.add_child(_brush_box)
+	# paint: the ten standard textures
+	var pv := VBoxContainer.new()
+	pv.add_child(UiKit.label("Textur", 16))
+	var pg := GridContainer.new()
+	pg.columns = 2
+	pg.add_theme_constant_override("h_separation", 4)
+	pg.add_theme_constant_override("v_separation", 4)
+	for tx in TerrainPaint.TEXTURES:
+		var tid: int = tx[0]
+		var b := Button.new()
+		b.text = str(tx[1])
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(138, 30)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var sw := ColorRect.new()
+		sw.color = tx[2]
+		sw.custom_minimum_size = Vector2(14, 14)
+		sw.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sw.position = Vector2(118, 8)
+		sw.size = Vector2(14, 14)
+		b.add_child(sw)
+		b.button_pressed = tid == paint_id
+		b.pressed.connect(func():
+			paint_id = tid
+			for k in _paint_btns:
+				_paint_btns[k].button_pressed = k == tid)
+		_paint_btns[tid] = b
+		pg.add_child(b)
+	pv.add_child(pg)
+	_paint_box = pv
+	_paint_box.visible = false
+	left.add_child(_paint_box)
 	# road
 	_road_box = VBoxContainer.new()
 	var w_l := UiKit.label("Breite: %d m" % int(road_w), 16)
@@ -351,7 +391,8 @@ func _set_tool(t: String) -> void:
 	tool = t
 	for k in _tool_btns:
 		_tool_btns[k].button_pressed = k == t
-	_brush_box.visible = t in ["raise", "lower", "smooth", "level", "water"]
+	_brush_box.visible = t in ["raise", "lower", "smooth", "level", "water", "paint"]
+	_paint_box.visible = t == "paint"
 	_road_box.visible = t == "road"
 	for d in TOOLS:
 		if d[0] == t:
@@ -417,6 +458,10 @@ func _process(delta: float) -> void:
 			_preview_dirty = true
 	if _stroke and hit != null:
 		_brush(hit, delta)
+	_paint_flush_t -= delta
+	if tool == "paint" and _paint_flush_t <= 0.0:
+		_paint_flush_t = 0.06
+		world.terrain.paint.flush()
 	_rebuild_t -= delta
 	if _has_dirty and (_rebuild_t <= 0.0 or not _stroke):
 		_flush_terrain()
@@ -538,7 +583,7 @@ func _key(k: InputEventKey) -> void:
 				_cancel_road()
 			else:
 				_select({})
-		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9:
 			if not k.ctrl_pressed:
 				_set_tool(TOOLS[k.keycode - KEY_1][0])
 		_:
@@ -579,6 +624,10 @@ func _click(double: bool, shift := false) -> void:
 		"place":
 			if hit != null:
 				_place(_ghost_at if _ghost_at != null else hit)
+		"paint":
+			if hit != null:
+				_stroke = true
+				_paint_before = world.terrain.paint.snapshot()
 		"raise", "lower", "smooth", "level":
 			if hit != null:
 				_stroke = true
@@ -597,6 +646,13 @@ func _click(double: bool, shift := false) -> void:
 
 
 func _release(shift := false) -> void:
+	if _stroke and tool == "paint":
+		_stroke = false
+		world.terrain.paint.flush()
+		var snap = _paint_before
+		_undo.append(func():
+			world.terrain.paint.restore(snap))
+		_changed = true
 	if _stroke:
 		_stroke = false
 		_flush_terrain()
@@ -1431,6 +1487,9 @@ func _sync_objects() -> void:
 func _brush(hit: Vector3, delta: float) -> void:
 	if not hit.is_finite():
 		return
+	if tool == "paint":
+		world.terrain.paint.dab(hit, brush_r, paint_id, minf(brush_s * delta * 0.35, 1.0), Input.is_key_pressed(KEY_SHIFT))
+		return
 	var t = world.terrain
 	var c: float = t.CELL
 	var o: Vector2 = t.origin
@@ -1751,6 +1810,7 @@ func _collect() -> void:
 		for i in hs.size():
 			if absf(hs[i] - base_heights[i]) > 0.001:
 				map.heights[i] = hs[i]
+	map.paint = world.terrain.paint.to_dict()
 
 
 func _save_copy() -> void:
