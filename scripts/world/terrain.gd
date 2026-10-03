@@ -60,13 +60,6 @@ var _cover := PackedByteArray()   # forest, field, village (3 bytes per DEM cell
 var _rh := PackedFloat32Array()   # distance-field grid: road height at the nearest sample
 var _near_d := PackedFloat32Array()
 var _near_h := PackedFloat32Array()
-## Imported-model maps (track def "glb"): the ground heights baked from the model (assets/maps/<id>/
-## heights.bin); no mesh or collision of ours – the model is the ground.
-var glb := false
-var _gh := PackedFloat32Array()
-var _gh_o := Vector2.ZERO
-var _gh_cell := 4.0
-var _gh_n := Vector2i.ZERO
 
 
 # ---------------------------------------------------------------------------
@@ -112,18 +105,6 @@ func generate(p_track: Node3D) -> void:
 		await _stamp_near()
 		await _generate_big()
 		return
-	glb = track.def.has("glb")
-	if glb:
-		_load_glb_heights()
-		for iz in nz:
-			if iz % 64 == 0:
-				await Game.load_tick(0.3 + 0.7 * iz / nz)
-			var z := origin.y + iz * CELL
-			for ix in nx:
-				var k := iz * nx + ix
-				heights[k] = _glb_h(origin.x + ix * CELL, z)
-				splat[k] = Color(0, 1, 0, 0)
-		return
 	for iz in nz:
 		await Game.load_tick(0.3 + 0.7 * iz / nz)
 		var z := origin.y + iz * CELL
@@ -135,38 +116,6 @@ func generate(p_track: Node3D) -> void:
 			splat[k] = _splat_fn(x, z, d)
 
 
-func _load_glb_heights() -> void:
-	var dir := "res://assets/maps/%s/" % track_id
-	var meta = JSON.parse_string(FileAccess.get_file_as_string(dir + "heights.json"))
-	if not (meta is Dictionary):
-		return
-	_gh_o = Vector2(float(meta["origin"][0]), float(meta["origin"][1]))
-	_gh_cell = float(meta["cell"])
-	_gh_n = Vector2i(int(meta["nx"]), int(meta["nz"]))
-	var raw := FileAccess.get_file_as_bytes(dir + "heights.bin")
-	var n := _gh_n.x * _gh_n.y
-	_gh.resize(n)
-	for i in mini(n, raw.size() / 2):
-		_gh[i] = raw.decode_half(i * 2)
-
-
-## Baked model ground height (bilinear), 0 outside the map.
-func _glb_h(x: float, z: float) -> float:
-	if _gh.is_empty():
-		return 0.0
-	var fx := clampf((x - _gh_o.x) / _gh_cell, 0.0, _gh_n.x - 1.001)
-	var fz := clampf((z - _gh_o.y) / _gh_cell, 0.0, _gh_n.y - 1.001)
-	var ix := int(fx)
-	var iz := int(fz)
-	var tx := fx - ix
-	var tz := fz - iz
-	var k := iz * _gh_n.x + ix
-	var a := lerpf(_gh[k], _gh[k + 1], tx)
-	var b := lerpf(_gh[k + _gh_n.x], _gh[k + _gh_n.x + 1], tx)
-	return lerpf(a, b, tz)
-
-
-# ---------------------------------------------------------------------------
 # Data tracks: real elevation + land cover (tools/make_gruene_hoelle.py)
 # ---------------------------------------------------------------------------
 func _load_data() -> void:
@@ -727,8 +676,6 @@ func height_at(x: float, z: float) -> float:
 func outer_height(x: float, z: float) -> float:
 	if big:
 		return dem_at(x, z)
-	if glb:
-		return _glb_h(x, z)
 	return _base_height(x, z)
 
 
@@ -774,8 +721,6 @@ func build_meshes(wet_capable := true) -> void:
 		material.set_shader_parameter("trap_w", float(track.trap_w))
 		material.set_shader_parameter("shoulder", 1.0)
 	outer_material = material
-	if glb:
-		return          # the imported model is the ground (and its collision)
 	var cx_count := int(ceil(float(nx - 1) / CHUNK))
 	var cz_count := int(ceil(float(nz - 1) / CHUNK))
 	for cz in cz_count:

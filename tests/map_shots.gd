@@ -1,6 +1,6 @@
 extends Node
 ## Views of any map: behind the start, from above, and custom cameras.
-## Run: godot --path . res://tests/map_shots.tscn -- --track=old_tokyo --tod=night --out=/tmp/shots
+## Run: godot --path . res://tests/map_shots.tscn -- --track=tokyo --tod=night --out=/tmp/shots
 ##      [--views=start,aerial,cam1] [--cam1=x,y,z,lx,ly,lz]
 
 const World = preload("res://scripts/world/world.gd")
@@ -10,7 +10,7 @@ func _ready() -> void:
 	Game.persist = false
 	Game.settings["shadow_quality"] = 1
 	get_window().size = Vector2i(960, 540)
-	var args := {"track": "old_tokyo", "tod": "night", "out": "/tmp", "views": "start,aerial"}
+	var args := {"track": "tokyo", "tod": "night", "out": "/tmp", "views": "start,aerial"}
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--") and a.contains("="):
 			args[a.substr(2, a.find("=") - 2)] = a.substr(a.find("=") + 1)

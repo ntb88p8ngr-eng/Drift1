@@ -116,7 +116,7 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	rng.seed = hash(track.track_id) + 77
 	var zones: int = [3, 4, 6, 7][clampi(quality, 0, 3)]
 	# the open playground pad has no barriers to stand behind: only the grandstand there
-	if track.track_id != "playground" and not Game.is_city(track.track_id) and not Game.is_glb_map(track.track_id):
+	if track.track_id != "playground" and not Game.is_city(track.track_id):
 		for i in _corner_indices(zones):
 			await Game.load_tick()
 			_build_zone(i, quality)

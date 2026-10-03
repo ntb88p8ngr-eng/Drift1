@@ -91,7 +91,7 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	var step := maxi(int(step_m / sp), 8)
 	var i := int(track.start_index) + int(60.0 / sp)
 	var placed := 0
-	var guard := n if Game.is_city(track.track_id) or Game.is_glb_map(track.track_id) else 0     # no camping in the city – only the spectators
+	var guard := n if Game.is_city(track.track_id) else 0     # no camping in the city – only the spectators
 	while guard < n:
 		var idx := i % n
 		if placed % 6 == 0:
@@ -101,7 +101,7 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 			placed += 1
 		i += int(step * rng.randf_range(0.75, 1.25))
 		guard += step
-	if not Game.is_city(track.track_id) and not Game.is_glb_map(track.track_id):
+	if not Game.is_city(track.track_id):
 		_paths_between_camps()
 		_access_points()
 	if paddock:

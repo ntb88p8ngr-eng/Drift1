@@ -1034,7 +1034,7 @@ static func terrain_material(track_id: String) -> ShaderMaterial:
 		m.set_shader_parameter("asphalt_tex", photo_texture("asphalt_albedo.jpg"))
 		m.set_shader_parameter("asphalt_nrm", photo_texture("asphalt_normal.png"))
 		m.set_shader_parameter("photo_tex", 1.0)
-	m.set_shader_parameter("paved_mode", {"harbor": 1, "playground": 2, "tokyo": 3, "old_tokyo": 3}.get(track_id, 0))
+	m.set_shader_parameter("paved_mode", {"harbor": 1, "playground": 2, "tokyo": 3}.get(track_id, 0))
 	if track_id == "playground":
 		m.set_shader_parameter("concrete", Color(0.12, 0.12, 0.13))
 		m.set_shader_parameter("joints", 0.0)
