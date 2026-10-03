@@ -321,7 +321,7 @@ TRAFFIC = {
         "split_x": ["Object_23", "Object_24", "Object_25"],
     },
     "yaris": {
-        "length": 3.66, "subsurf": 0, "body_tris": 14000, "wheel_tris": 900,
+        "length": 3.66, "subsurf": 0, "body_tris": 14000, "wheel_tris": 900, "unsteer": True,
         # the interior, engine and suspension are not seen from outside
         "exclude": ["Object_10", "Object_11", "Object_12", "Object_19", "Object_29", "Object_30", "Object_31", "Object_32",
                     "Object_35", "Object_36", "Object_37", "Object_38", "Object_39", "Object_40", "Object_42", "Object_43",

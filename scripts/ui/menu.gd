@@ -250,7 +250,8 @@ func _build_main() -> void:
 		_opts_return = "main"
 		show_screen("options"), 360))
 	if bool(Game.settings.get("admin_mode", false)):
-		_add(UiKit.button("Admin", func(): show_screen("admin"), 360))
+		_add(UiKit.button("Admin", func():
+			load("res://scripts/admin/admin_ui.gd").with_password(self, func(): show_screen("admin")), 360))
 	_add(UiKit.button("Credits", func(): show_screen("credits"), 360))
 	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
 	_add(UiKit.spacer(18))

@@ -55,6 +55,27 @@ def main():
             mat = me.materials[0].name if me.materials else ""
             decimate(o, BUDGET.get(mat, RIM_TRIS))
             objs.append(o)
+        import numpy as np
+        # the wheels lie at an angle in the pack: the axle is the direction the tyre is thinnest in
+        tyre = [o for o in objs if o.data.materials and o.data.materials[0].name.startswith("Material.00")]
+        pts = np.array([v.co[:] for o in (tyre or objs) for v in o.data.vertices])
+        c = Vector(pts.mean(axis=0))
+        ev, evec = np.linalg.eigh(np.cov((pts - pts.mean(axis=0)).T))
+        axle = Vector(evec[:, 0]).normalized()
+        # the face (where the bolts are) looks out along +X
+        bolts = [v.co for o in objs if o.data.materials and o.data.materials[0].name.startswith("Bolt") for v in o.data.vertices]
+        if bolts:
+            bc = Vector((0, 0, 0))
+            for b in bolts:
+                bc += b
+            bc /= len(bolts)
+            if (bc - c).dot(axle) < 0.0:
+                axle = -axle
+        M = axle.rotation_difference(Vector((1, 0, 0))).to_matrix().to_4x4() @ Matrix.Translation(-c)
+        for o in objs:
+            o.data.transform(M)
+            for p in o.data.polygons:
+                p.use_smooth = True
         mn = Vector((1e9, 1e9, 1e9))
         mx = Vector((-1e9, -1e9, -1e9))
         for o in objs:
@@ -62,15 +83,8 @@ def main():
                 for i in range(3):
                     mn[i] = min(mn[i], v.co[i])
                     mx[i] = max(mx[i], v.co[i])
-        c = (mn + mx) * 0.5
-        # the face (bolts) looks along -Y in the pack: turn it to +X
-        M = Matrix.Rotation(math.pi * 0.5, 4, "Z") @ Matrix.Translation(-c)
-        for o in objs:
-            o.data.transform(M)
-            for p in o.data.polygons:
-                p.use_smooth = True
-        radius = max(mx.x - mn.x, mx.z - mn.z) * 0.5
-        width = mx.y - mn.y
+        radius = max(mx.y - mn.y, mx.z - mn.z) * 0.5
+        width = mx.x - mn.x
         bpy.ops.object.select_all(action="DESELECT")
         for o in objs:
             o.select_set(True)

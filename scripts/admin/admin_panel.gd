@@ -75,11 +75,14 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F10:
-		_panel.visible = not _panel.visible
-		if _panel.visible:
-			_refresh()
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		get_viewport().set_input_as_handled()
+		if _panel.visible:
+			_panel.visible = false
+			return
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		AdminUi.with_password(self, func():
+			_panel.visible = true
+			_refresh())
 
 
 func _set_freecam(on: bool) -> void:

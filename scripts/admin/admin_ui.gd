@@ -7,6 +7,46 @@ const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const BotProfiles = preload("res://scripts/admin/bot_profiles.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
 
+const PASSWORD := "4220"
+static var unlocked := false       # asked once per session
+
+
+## Runs `on_ok` once the admin password was given (asks for it the first time in a session).
+static func with_password(parent: Node, on_ok: Callable) -> void:
+	if unlocked:
+		on_ok.call()
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Admin"
+	dlg.ok_button_text = "Öffnen"
+	dlg.cancel_button_text = "Abbrechen"
+	var v := VBoxContainer.new()
+	v.add_child(UiKit.label("Admin-Passwort:", 18))
+	var pw := LineEdit.new()
+	pw.secret = true
+	pw.custom_minimum_size = Vector2(260, 40)
+	v.add_child(pw)
+	var err := UiKit.label("", 15, UiKit.BAD)
+	v.add_child(err)
+	dlg.add_child(v)
+	parent.add_child(dlg)
+	var check := func():
+		if pw.text.strip_edges() == PASSWORD:
+			unlocked = true
+			dlg.queue_free()
+			on_ok.call()
+		else:
+			err.text = "Falsches Passwort"
+			pw.text = ""
+			dlg.popup_centered.call_deferred()
+	dlg.confirmed.connect(check)
+	pw.text_submitted.connect(func(_t):
+		dlg.hide()
+		check.call())
+	dlg.canceled.connect(dlg.queue_free)
+	dlg.popup_centered()
+	pw.grab_focus.call_deferred()
+
 
 ## Sliders for every parameter of `p` (changed in place); on_change(p) after every change.
 static func param_editor(p: Dictionary, on_change: Callable) -> VBoxContainer:
