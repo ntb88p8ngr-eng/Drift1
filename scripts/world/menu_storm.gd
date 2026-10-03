@@ -1,9 +1,13 @@
 extends Node3D
 ## Stormy night outside the menu garage: dark cloud sky with lightning (flashing clouds and a jagged
 ## bolt), a cold flash of light falling through the gate and the skylights (it also shows in the car
-## paint), rain around the hall and wet asphalt outside the gate. Silent: no rain or thunder sound.
+## paint), rain around the hall and wet asphalt outside the gate.
+## setup_heavy(): for a garage with its own street outside and a photo panorama as sky – a
+## cloudburst (dense rain, splashes on the ground), the panorama flashing with the lightning, the
+## rain's roar and thunder rolling in a moment after each strike (weather volume setting).
 
 const TexKit = preload("res://scripts/util/tex_kit.gd")
+const Sfx = preload("res://scripts/util/sfx_kit.gd")
 
 const SKY_SHADER := """
 shader_type sky;
@@ -201,6 +205,13 @@ var _rain_mats: Array = []
 var _next := 3.0
 var _pulses: Array = []       # [start time, strength]
 var _t := 0.0
+var _heavy := false
+var _rain_alpha := 0.12
+var _pano: PanoramaSkyMaterial     # heavy: the photo sky, brightened by the flashes
+var _pano_energy := 1.0
+var _rain_player: AudioStreamPlayer
+var _thunder_at := -1.0
+var _thunder_near := false
 
 
 ## hall: floor rectangle of the garage (x/z) – rain falls only outside of it.
@@ -233,6 +244,117 @@ func setup(env: Environment, hall: Rect2) -> void:
 	_build_rain(hall)
 
 
+## The heavy storm round a hall with its own street outside and a panorama sky (env keeps it).
+func setup_heavy(env: Environment, hall: Rect2) -> void:
+	_heavy = true
+	_rain_alpha = 0.2
+	if env.sky and env.sky.sky_material is PanoramaSkyMaterial:
+		_pano = env.sky.sky_material
+		_pano_energy = _pano.energy_multiplier
+	light = DirectionalLight3D.new()
+	light.light_color = Color(0.72, 0.78, 1.0)
+	light.light_energy = 0.0
+	light.shadow_enabled = true
+	light.directional_shadow_max_distance = 60.0
+	light.visible = false
+	add_child(light)
+	_build_rain(hall, 2.6, 30.0)
+	_build_splashes(hall)
+	_rain_player = AudioStreamPlayer.new()
+	_rain_player.stream = _rain_loop()
+	add_child(_rain_player)
+	_rain_player.play()
+	_apply_volume()
+	Game.settings_changed.connect(_apply_volume)
+	_next = 2.0
+
+
+func _apply_volume() -> void:
+	var v := float(Game.settings.get("weather_volume", 1.0))
+	if _rain_player:
+		_rain_player.volume_db = linear_to_db(maxf(v, 0.001)) - 6.0
+
+
+## Splashes where the rain hits the ground outside: tiny bright flecks that pop up and fade.
+func _build_splashes(hall: Rect2) -> void:
+	var outer := hall.grow(1.0)
+	for r in [Rect2(outer.position.x - 12.0, outer.position.y - 30.0, outer.size.x + 24.0, 30.0),
+			Rect2(outer.position.x - 12.0, outer.end.y, outer.size.x + 24.0, 10.0)]:
+		var rect: Rect2 = r
+		var p := GPUParticles3D.new()
+		p.amount = int(rect.size.x * rect.size.y * [0.4, 0.7, 1.0, 1.4][clampi(Game.quality(), 0, 3)])
+		p.lifetime = 0.25
+		p.preprocess = 0.5
+		p.local_coords = false
+		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		p.position = Vector3(rect.get_center().x, 0.03, rect.get_center().y)
+		p.visibility_aabb = AABB(Vector3(-rect.size.x, -2, -rect.size.y), Vector3(rect.size.x * 2.0, 4, rect.size.y * 2.0))
+		var pm := ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+		pm.emission_box_extents = Vector3(rect.size.x * 0.5, 0.01, rect.size.y * 0.5)
+		pm.direction = Vector3(0, 1, 0)
+		pm.spread = 35.0
+		pm.initial_velocity_min = 0.6
+		pm.initial_velocity_max = 1.4
+		pm.gravity = Vector3(0, -9.8, 0)
+		pm.scale_min = 0.6
+		pm.scale_max = 1.4
+		var fade := Gradient.new()
+		fade.set_color(0, Color(1, 1, 1, 0.5))
+		fade.set_color(1, Color(1, 1, 1, 0.0))
+		var ft := GradientTexture1D.new()
+		ft.gradient = fade
+		pm.color_ramp = ft
+		p.process_material = pm
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.06, 0.05)
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		m.vertex_color_use_as_albedo = true
+		m.albedo_color = Color(0.75, 0.8, 0.9, 0.6)
+		quad.material = m
+		p.draw_pass_1 = quad
+		add_child(p)
+
+
+## A loop of heavy rain: a wash of filtered noise (the roar), a low rumble and dense patter.
+static func _rain_loop() -> AudioStreamWAV:
+	var rate := 22050
+	var n := rate * 4
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var lp := 0.0
+	var lp2 := 0.0
+	var samples := PackedFloat32Array()
+	samples.resize(n)
+	for i in n:
+		var w := rng.randf_range(-1.0, 1.0)
+		lp += (w - lp) * 0.35          # the hiss of the downpour
+		lp2 += (w - lp2) * 0.02        # the low roar
+		var v := lp * 0.45 + lp2 * 1.6
+		if rng.randf() < 0.012:
+			v += rng.randf_range(-0.6, 0.6)  # drops on the roof and the street
+		samples[i] = v
+	# cross-fade the ends so the loop has no click
+	var fade := rate / 4
+	for i in fade:
+		var k := float(i) / fade
+		samples[i] = samples[i] * k + samples[n - fade + i] * (1.0 - k)
+	for i in n:
+		data.encode_s16(i * 2, int(clampf(samples[i] * 0.55, -1.0, 1.0) * 32000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.data = data.slice(0, (n - fade) * 2)
+	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	wav.loop_end = n - fade
+	return wav
+
+
 func _build_ground(hall: Rect2) -> void:
 	# wet asphalt apron around the hall (just below the hall floor, so it never shows inside)
 	var apron := PlaneMesh.new()
@@ -259,9 +381,8 @@ func _build_ground(hall: Rect2) -> void:
 	# (no fields beyond the apron: the skyline in the sky shader starts right behind it)
 
 
-func _build_rain(hall: Rect2) -> void:
+func _build_rain(hall: Rect2, density := 1.0, reach := 14.0) -> void:
 	var outer := hall.grow(1.5)
-	var reach := 14.0
 	# four slabs of rain around the hall
 	var slabs := [
 		Rect2(outer.position.x - reach, outer.position.y - reach, outer.size.x + reach * 2.0, reach),   # back
@@ -269,11 +390,14 @@ func _build_rain(hall: Rect2) -> void:
 		Rect2(outer.position.x - reach, outer.position.y, reach, outer.size.y),                          # left
 		Rect2(outer.end.x, outer.position.y, reach, outer.size.y),                                       # right
 	]
+	if _heavy:
+		# (the menu camera stands out in front: no rain right in front of the lens)
+		slabs.remove_at(1)
 	var q := clampi(Game.quality(), 0, 3)
 	for r in slabs:
 		var rect: Rect2 = r
 		var p := GPUParticles3D.new()
-		p.amount = int(rect.size.x * rect.size.y * [0.6, 0.9, 1.3, 1.6][q])
+		p.amount = mini(int(rect.size.x * rect.size.y * [0.6, 0.9, 1.3, 1.6][q] * density), 60000)
 		p.lifetime = 0.95
 		p.preprocess = 1.0
 		p.local_coords = false
@@ -295,7 +419,9 @@ func _build_rain(hall: Rect2) -> void:
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-		m.albedo_color = Color(0.6, 0.65, 0.75, 0.12)
+		m.albedo_color = Color(0.6, 0.65, 0.75, _rain_alpha)
+		if _heavy:
+			quad.size = Vector2(0.018, 0.75)
 		quad.material = m
 		_rain_mats.append(m)
 		p.draw_pass_1 = quad
@@ -306,8 +432,13 @@ func _strike() -> void:
 	var az := randf() * TAU
 	var el := randf_range(0.18, 0.5)
 	var dir := Vector3(cos(az) * cos(el), sin(el), sin(az) * cos(el))
-	sky_mat.set_shader_parameter("flash_dir", dir)
-	sky_mat.set_shader_parameter("bolt_seed", randf() * 100.0)
+	if sky_mat:
+		sky_mat.set_shader_parameter("flash_dir", dir)
+		sky_mat.set_shader_parameter("bolt_seed", randf() * 100.0)
+	if _heavy:
+		# the thunder follows: close strikes crack soon and loud, far ones roll in later
+		_thunder_near = randf() < 0.45
+		_thunder_at = _t + (randf_range(0.25, 0.9) if _thunder_near else randf_range(1.5, 4.0))
 	light.global_transform = Transform3D(Basis.looking_at(-dir, Vector3.UP), Vector3.ZERO)
 	_pulses.clear()
 	var t0 := _t
@@ -321,8 +452,12 @@ func _process(delta: float) -> void:
 	_t += delta
 	_next -= delta
 	if _next <= 0.0:
-		_next = randf_range(5.0, 13.0)
+		_next = randf_range(4.0, 9.0) if _heavy else randf_range(5.0, 13.0)
 		_strike()
+	if _thunder_at >= 0.0 and _t >= _thunder_at:
+		_thunder_at = -1.0
+		var v := float(Game.settings.get("weather_volume", 1.0))
+		Sfx.play(self, "thunder_near" if _thunder_near else "thunder_far", linear_to_db(maxf(v, 0.001)) + (2.0 if _thunder_near else -3.0), null, randf_range(0.85, 1.1))
 	var f := 0.0
 	var b := 0.0
 	for p in _pulses:
@@ -331,9 +466,12 @@ func _process(delta: float) -> void:
 			var e := float(p[1]) * exp(-age / 0.07)
 			f = maxf(f, e)
 			b = maxf(b, float(p[1]) * exp(-age / 0.05))
-	sky_mat.set_shader_parameter("flash", f)
-	sky_mat.set_shader_parameter("bolt", b)
+	if sky_mat:
+		sky_mat.set_shader_parameter("flash", f)
+		sky_mat.set_shader_parameter("bolt", b)
+	if _pano:
+		_pano.energy_multiplier = _pano_energy * (1.0 + f * 3.5)
 	light.visible = f > 0.01
 	light.light_energy = f * 2.2
 	for m in _rain_mats:
-		(m as StandardMaterial3D).albedo_color = Color(0.6 + f * 0.4, 0.65 + f * 0.35, 0.75 + f * 0.25, 0.12 + f * 0.35)
+		(m as StandardMaterial3D).albedo_color = Color(0.6 + f * 0.4, 0.65 + f * 0.35, 0.75 + f * 0.25, _rain_alpha + f * 0.35)
