@@ -1172,7 +1172,7 @@ func _load_workshop() -> bool:
 	await Game.load_tick(0.8)
 	_pegboards(g)
 	_booth_setup(g)
-	_tape_cabinet()
+	_tape_cabinet(g)
 	await Game.load_tick(0.9)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
@@ -1484,6 +1484,13 @@ func _replace_wall_tools(g: Node3D) -> void:
 			var depth: float = float(ext[order[2]]) * k
 			tool.global_transform = Transform3D(b, Vector3(c.x, c.y, back + depth * 0.5 + 0.005) - b * mbox.get_center())
 			done += 1
+	# the pliers and ratchets on both tool walls stood out as odd shapes between the new tools: gone
+	for pre in ["Hanging_pliers_", "Hanging_ratchet_"]:
+		for n in g.find_children(pre + "*", "Node3D", true, false):
+			var nm := str(n.name)
+			if is_instance_valid(n) and nm.length() == pre.length() + 3 and nm.substr(pre.length()).is_valid_int():
+				n.get_parent().remove_child(n)
+				n.free()
 	print("SHOWROOM: %d wall tools replaced" % done)
 
 
@@ -2215,7 +2222,15 @@ var _cab_want := 0.0
 var _cab_hover := false
 
 
-func _tape_cabinet() -> void:
+func _tape_cabinet(g: Node3D) -> void:
+	# whatever stood on the bench where the cabinet goes (oil bottles) makes room
+	var spot := AABB(CAB_POS - Vector3(CAB_SIZE.x * 0.5, 0, CAB_SIZE.z * 0.5), CAB_SIZE + Vector3(0, 0.45, 0)).grow(0.03)
+	for n in g.find_children("*Oil_bottle*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if (mi.global_transform * mi.get_aabb()).intersects(spot):
+			# (taken out: the workshop is merged into one mesh afterwards, hidden parts would come back)
+			mi.get_parent().remove_child(mi)
+			mi.free()
 	_cab = Node3D.new()
 	_cab.name = "TapeCabinet"
 	add_child(_cab)
