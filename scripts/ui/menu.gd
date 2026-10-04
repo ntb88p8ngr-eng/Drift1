@@ -47,6 +47,7 @@ var _lb_cat := 0
 var _lb_list: VBoxContainer
 var _platform_bar: HBoxContainer   # turntable controls (main menu and garage), above the corner buttons
 var _light_panel: Control
+var _scroll: ScrollContainer
 var _sub_panel: PanelContainer     # round the sub menus' list
 var _platform_picker: ColorPickerButton
 var _view_row: HBoxContainer
@@ -83,8 +84,9 @@ func _ready() -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	# gamepad / keyboard: the list scrolls along with the selected entry
 	scroll.follow_focus = true
-	# (no scrollbar: the wheel and the focus still scroll it)
+	# a scrollbar in the sub menus (the main list shows none)
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_scroll = scroll
 	# the sub menus sit on a rounded, translucent grey panel (the main list stays bare)
 	_sub_panel = PanelContainer.new()
 	_sub_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -352,6 +354,7 @@ func show_screen(screen: String) -> void:
 	_clear()
 	_side.visible = screen != "story"
 	_sub_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new() if screen == "main" else _panel_style())
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER if screen == "main" else ScrollContainer.SCROLL_MODE_AUTO
 	_player_info.visible = false      # (the main screen shows it again)
 	if screen != "story":
 		_at_pc_off()
