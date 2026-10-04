@@ -120,6 +120,7 @@ var _prev_v := {}                # car id -> its body's velocity last step (a ju
 var _phys_t := 0.0
 var ok := false
 var _snd: Array = []             # AudioStreamPlayer3D pool
+var silent := false              # no engine hum at all (the main menu's street)
 var _snd_cand: Array = []        # [distance², position, speed]
 
 
@@ -184,7 +185,7 @@ func setup(p_world) -> void:
 		_owner.append(-1)
 	# draw after the traffic systems have added their cars for this frame
 	process_priority = 100
-	for k in VOICES:
+	for k in (0 if silent else VOICES):
 		var a := AudioStreamPlayer3D.new()
 		a.stream = Sfx.get_sound("traffic_engine")
 		a.unit_size = 7.0

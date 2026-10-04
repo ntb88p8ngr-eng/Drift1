@@ -296,7 +296,8 @@ func setup_heavy(env: Environment, hall: Rect2, roofs: Array = []) -> void:
 func _apply_volume() -> void:
 	var v := float(Game.settings.get("menu_sfx_volume", 0.35))
 	if _rain_player:
-		_rain_player.volume_db = linear_to_db(maxf(v, 0.001)) - 6.0
+		# (the rain only a quiet hiss under everything)
+		_rain_player.volume_db = linear_to_db(maxf(v, 0.001)) - 20.0
 
 
 ## Splashes where the rain hits the ground outside: tiny bright flecks that pop up and fade.

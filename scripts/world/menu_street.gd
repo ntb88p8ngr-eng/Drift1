@@ -694,6 +694,7 @@ func _traffic_setup() -> void:
 	_traffic = TrafficCars.new()
 	_traffic.name = "StreetTraffic"
 	add_child(_traffic)
+	_traffic.silent = true          # (the menu's cars make no sound)
 	_traffic.setup(null)
 	if not _traffic.ok:
 		return
