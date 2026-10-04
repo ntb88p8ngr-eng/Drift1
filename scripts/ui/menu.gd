@@ -49,6 +49,7 @@ var _lb_list: VBoxContainer
 var _platform_bar: HBoxContainer   # turntable controls (main menu and garage), above the corner buttons
 var _light_panel: Control
 var _scroll: ScrollContainer
+var _quit_btn: Button
 var _sub_panel: PanelContainer     # round the sub menus' list
 var _platform_picker: ColorPickerButton
 var _view_row: HBoxContainer
@@ -109,6 +110,32 @@ func _ready() -> void:
 	_float_bar.offset_bottom = -36
 	_root.add_child(_float_bar)
 	_build_platform_bar()
+	# quitting: a round power button, always in the bottom left corner of the main screen
+	_quit_btn = Button.new()
+	_quit_btn.custom_minimum_size = Vector2(76, 76)
+	_quit_btn.tooltip_text = "Beenden"
+	_quit_btn.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_quit_btn.offset_left = 40
+	_quit_btn.offset_top = -112
+	_quit_btn.offset_right = 116
+	_quit_btn.offset_bottom = -36
+	for k in ["normal", "hover", "pressed", "focus"]:
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(38)
+		sb.bg_color = Color(0.45, 0.06, 0.08, 0.85) if k == "normal" else Color(0.8, 0.1, 0.14, 0.95)
+		sb.border_color = Color(1.0, 0.35, 0.38, 0.9)
+		sb.set_border_width_all(2 if k == "normal" else 4)
+		sb.shadow_color = Color(1.0, 0.2, 0.25, 0.35 if k != "normal" else 0.15)
+		sb.shadow_size = 10
+		_quit_btn.add_theme_stylebox_override(k, sb)
+	var qi = MainTiles.MenuIcon.new()
+	qi.kind = "quit"
+	qi.position = Vector2(15, 15)
+	qi.size = Vector2(46, 46)
+	qi.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quit_btn.add_child(qi)
+	_quit_btn.pressed.connect(func(): get_tree().quit())
+	_root.add_child(_quit_btn)
 	_player_info = VBoxContainer.new()
 	_player_info.add_theme_constant_override("separation", 4)
 	_player_info.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -359,6 +386,7 @@ func show_screen(screen: String) -> void:
 	_sub_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new() if screen == "main" else _panel_style())
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER if screen == "main" else ScrollContainer.SCROLL_MODE_AUTO
 	_player_info.visible = false      # (the main screen shows it again)
+	_quit_btn.visible = screen == "main" or not ["story", "single", "garage", "online", "lobby", "leaderboard", "options", "controls", "editor", "replays", "credits", "servers", "admin", "booth"].has(screen)
 	if screen != "story":
 		_at_pc_off()
 	show_status("")
@@ -564,7 +592,6 @@ func _build_main() -> void:
 			_opts_return = "main"
 			show_screen("options")],
 		["Credits", "", "credits", func(): show_screen("credits")],
-		["Beenden", "", "quit", func(): get_tree().quit()],
 	]
 	if bool(Game.settings.get("admin_mode", false)):
 		more.insert(4, ["Admin", "Werkzeuge mit Passwort", "admin", func():

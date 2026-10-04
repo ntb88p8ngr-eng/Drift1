@@ -11,12 +11,14 @@ static func merge(root: Node3D, keep: Callable, slices := false) -> int:
 	var groups := {}            # material -> {v, n, t, uv, idx}
 	var merged := 0
 	var inv := root.global_transform.affine_inverse()
+	# (the autoload looked up at run time: tools run this without it)
+	var gm: Node = (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Game") if slices else null
 	var all := root.find_children("*", "MeshInstance3D", true, false)
 	var seen := 0
 	for node in all:
 		seen += 1
-		if slices and seen % 40 == 0:
-			await Game.load_tick(0.85 * float(seen) / all.size())
+		if gm and seen % 40 == 0:
+			await gm.load_tick(0.85 * float(seen) / all.size())
 		if not is_instance_valid(node):
 			continue           # (freed meanwhile)
 		var mi := node as MeshInstance3D
@@ -108,8 +110,8 @@ static func merge(root: Node3D, keep: Callable, slices := false) -> int:
 	var made := 0
 	for mat in groups:
 		made += 1
-		if slices:
-			await Game.load_tick(0.85 + 0.15 * float(made) / groups.size())
+		if gm:
+			await gm.load_tick(0.85 + 0.15 * float(made) / groups.size())
 		var g: Dictionary = groups[mat]
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)

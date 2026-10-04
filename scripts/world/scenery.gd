@@ -17,6 +17,7 @@ const City = preload("res://scripts/world/city.gd")
 const Desert = preload("res://scripts/world/desert.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Houses = preload("res://scripts/world/houses.gd")
+const MechShop = preload("res://scripts/world/mech_shop.gd")
 const Playground = preload("res://scripts/world/playground.gd")
 const Colliders = preload("res://scripts/util/colliders.gd")
 
@@ -51,6 +52,7 @@ var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car p
 var _ground_paints: Array = []    # [pos, radius, splat colour]: no grass under them
 var lamp_lights: Array = []
 var _debris: Array = []         # snapped lamp posts (debris.gd)
+var mech_shop_at := Vector3.INF     # where the workshop stands (INF: none)
 var _village := -1              # sample index the village clusters around
 
 var _occupied: Array = []   # large objects: [Vector2 pos, radius]
@@ -143,6 +145,9 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		if _village >= 0:
 			details.add_bus_stop(_village + 12, -1.0)
 	await Game.load_tick()
+	# a mechanic's workshop with its parts shop beside the track (not in the city)
+	if not Game.is_city(id):
+		_build_mech_shop()
 	_car_parks(id)
 	if id != "playground" and not Game.is_city(id):
 		var tp := Playground.new()
@@ -973,6 +978,30 @@ func _build_houses(count: int, styles: Array, at := -1) -> void:
 			_vending_machine(house, Vector3(-5.8, 0, -4.2))
 		occupy(pos, lot + 0.5)
 		placed += 1
+
+
+## The workshop: a level free lot beside the track, its open door towards the road.
+func _build_mech_shop() -> void:
+	var n: int = track.sample_count()
+	var r := RandomNumberGenerator.new()
+	r.seed = hash(str(track.track_id) + "mech")
+	for tries in 600:
+		var i := r.randi_range(0, n - 1)
+		var side := -1.0 if r.randf() < 0.5 else 1.0
+		var pos := _roadside(i, 22.0 + r.randf_range(0.0, 14.0), side)
+		if not free_at(pos, 15.0, 8.0):
+			continue
+		if terrain.normal_at(pos.x, pos.z).y < 0.93:
+			continue
+		var wt = track.get("water")
+		if wt != null and wt.wet(pos.x, pos.z, 22.0):
+			continue
+		pos.y = terrain.flatten(pos, 15.0, 10.0)
+		var shop := MechShop.new()
+		shop.build(self, _facing_xf(pos))
+		occupy(pos, 16.0)
+		mech_shop_at = pos
+		return
 
 
 ## Transform on the ground at pos whose -Z faces the nearest point of the road.
