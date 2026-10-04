@@ -24,6 +24,7 @@ var _panel: PanelContainer
 var _pages: Array = []
 var _shape_grid: GridContainer   # one colour
 var _full_grid: GridContainer    # full colour
+var _pack_grid: GridContainer    # the sticker sheets (one colour)
 var _shape_note: Label
 var _list: ItemList
 var _props: VBoxContainer
@@ -191,7 +192,7 @@ func _sticker_page() -> VBoxContainer:
 	_shape_note = UiKit.label("Formen werden vorbereitet …", 14, UiKit.TEXT_DIM)
 	v.add_child(_shape_note)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(0, 190)
+	sc.custom_minimum_size = Vector2(0, 260)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var kinds := VBoxContainer.new()
 	kinds.add_theme_constant_override("separation", 6)
@@ -200,10 +201,13 @@ func _sticker_page() -> VBoxContainer:
 	kinds.add_child(UiKit.label("Einfarbig – in der gewählten Farbe", 14, UiKit.TEXT))
 	_shape_grid = GridContainer.new()
 	kinds.add_child(_shape_grid)
+	kinds.add_child(UiKit.label("Sticker – Zahlen, Embleme, Streifen, Schriften (in der gewählten Farbe)", 14, UiKit.TEXT))
+	_pack_grid = GridContainer.new()
+	kinds.add_child(_pack_grid)
 	kinds.add_child(UiKit.label("Vollfarbe – im Original", 14, UiKit.TEXT))
 	_full_grid = GridContainer.new()
 	kinds.add_child(_full_grid)
-	for g in [_shape_grid, _full_grid]:
+	for g in [_shape_grid, _pack_grid, _full_grid]:
 		g.columns = 8
 		g.add_theme_constant_override("h_separation", 4)
 		g.add_theme_constant_override("v_separation", 4)
@@ -278,7 +282,7 @@ func _swatch_button(c: Color, cb: Callable, w: float, h: float) -> Button:
 
 func _fill_shapes() -> void:
 	_shape_note.text = "Form wählen, dann aufs Auto klicken – sie hängt bis dahin halb durchsichtig am Mauszeiger."
-	for g in [_shape_grid, _full_grid]:
+	for g in [_shape_grid, _pack_grid, _full_grid]:
 		for c in g.get_children():
 			c.queue_free()
 	for s in Livery.shapes():
@@ -293,7 +297,7 @@ func _fill_shapes() -> void:
 		b.pressed.connect(func():
 			shape = id
 			_start_placing(id))
-		(_full_grid if full else _shape_grid).add_child(b)
+		(_full_grid if full else (_pack_grid if id.begins_with("st_") else _shape_grid)).add_child(b)
 	_apply()
 
 

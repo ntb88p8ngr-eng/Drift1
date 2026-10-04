@@ -16,7 +16,7 @@ func ensure_all() -> void:
 	var todo: Array = []
 	for s in Livery.shapes():
 		var id: String = s[0]
-		if not id.begins_with("graffiti_") and Livery.texture(id) == null:
+		if not id.begins_with("graffiti_") and not id.begins_with("st_") and Livery.texture(id) == null:
 			todo.append(id)
 	if todo.is_empty():
 		progress = 1.0

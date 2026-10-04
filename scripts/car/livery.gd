@@ -8,6 +8,7 @@ extends RefCounted
 ## where the straight-in ray from the chosen side lands.
 
 const SIDES := ["left", "right", "top", "front", "rear"]
+const StickerPack = preload("res://scripts/car/sticker_pack.gd")
 const SIDE_NAMES := {"left": "Links", "right": "Rechts", "top": "Oben (Haube, Dach)", "front": "Front", "rear": "Heck"}
 
 ## The shapes: [id, name] – the basic shapes, a tree, a unicorn, digits, letters, the graffiti pieces.
@@ -19,6 +20,8 @@ static func shapes() -> Array:
 		["flame", "Flamme"], ["moon", "Mond"], ["checker", "Zielflagge"], ["tree", "Baum"], ["unicorn", "Einhorn"]]
 	for c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
 		out.append(["ch_" + c, c])
+	for n in StickerPack.NAMES:
+		out.append(["st_" + n, "Sticker"])
 	for k in range(1, 7):
 		if ResourceLoader.exists(graffiti_path(k)):
 			out.append(["graffiti_%d" % k, "Graffiti %d" % k])
@@ -49,6 +52,10 @@ static func texture(id: String) -> Texture2D:
 		var p := graffiti_path(int(id.trim_prefix("graffiti_")))
 		if ResourceLoader.exists(p):
 			t = load(p)
+	elif id.begins_with("st_"):
+		var sp := "res://assets/stickers/%s.png" % id.trim_prefix("st_")
+		if ResourceLoader.exists(sp):
+			t = load(sp)
 	elif FileAccess.file_exists(CACHE + id + ".png"):
 		var img := Image.load_from_file(CACHE + id + ".png")
 		if img:

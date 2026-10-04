@@ -984,4 +984,5 @@ const EN := {
 	"Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom": "Click the car: place / drag a sticker · drag a corner: scale (Shift: keep proportions) · right mouse button: turn the camera · wheel: zoom",
 	"Regen und Donner im Hauptmenü (ganz links = aus).": "Rain and thunder in the main menu (far left = off).",
 	"Hauptmenü-Geräusche": "Main-menu sounds",
+	"Sticker – Zahlen, Embleme, Streifen, Schriften (in der gewählten Farbe)": "Stickers – numbers, emblems, stripes, lettering (in the colour picked)",
 }
