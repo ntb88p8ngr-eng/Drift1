@@ -5,6 +5,7 @@ extends CanvasLayer
 const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
+const MainTiles = preload("res://scripts/ui/main_tiles.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const CarBody = preload("res://scripts/car/car_body.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
@@ -539,29 +540,34 @@ func _forward_mouse(pos: Vector2):
 # Main
 # ---------------------------------------------------------------------------
 func _build_main() -> void:
-	var tut := UiKit.button("Tutorial" if bool(Game.settings.get("tutorial_done", false)) else "★  Tutorial", _ask_tutorial, 360)
-	tut.tooltip_text = "Mitternacht, Regen, eine Nachricht auf dem Handy … die Steuerung auf einer Fahrt über die Grüne Hölle.\nJederzeit überspringbar."
-	_add(tut)
-	var story := UiKit.button("Story", func(): show_screen("story"), 360)
-	story.tooltip_text = "Am Computer im Büro der Werkstatt: die Story-Teile."
-	_add(story)
-	_add(UiKit.button("Einzelspieler", func(): show_screen("single"), 360))
-	_add(UiKit.button("Online-Modus", func(): show_screen("online"), 360))
-	_add(UiKit.button("Garage", func():
-		_return_to = "main"
-		show_screen("garage"), 360))
-	_add(UiKit.button("Replays", func(): show_screen("replays"), 360))
-	_add(UiKit.button("Welt-Editor", func(): show_screen("editor"), 360))
-	_add(UiKit.button("Leaderboard", func(): show_screen("leaderboard"), 360))
-	_add(UiKit.button("Steuerung", func(): show_screen("controls"), 360))
-	_add(UiKit.button("Optionen", func():
-		_opts_return = "main"
-		show_screen("options"), 360))
+	var tut_new := not bool(Game.settings.get("tutorial_done", false))
+	var play := [
+		["Story-Mode", "Am PC in der Werkstatt", "story", func(): show_screen("story")],
+		["Online-Modus", "Lobbys, Server, Freunde", "online", func(): show_screen("online")],
+		["Einzelspieler", "Rennen, Drift, Party, frei", "single", func(): show_screen("single")],
+		["Garage", "Autos, Lack, Tuning", "garage", func():
+			_return_to = "main"
+			show_screen("garage")],
+		["Tutorial" + ("  ★" if tut_new else ""), "Steuerung lernen, Grüne Hölle", "tutorial", _ask_tutorial],
+		["Replays", "Gespeicherte Fahrten", "replays", func(): show_screen("replays")],
+	]
+	var more := [
+		["Welt-Editor", "Eigene Karten bauen", "editor", func(): show_screen("editor")],
+		["Leaderboard", "Bestzeiten und Punkte", "leaderboard", func(): show_screen("leaderboard")],
+		["Steuerung", "Tastatur und Gamepad", "controls", func(): show_screen("controls")],
+		["Optionen", "Grafik, Audio, Spiel", "options", func():
+			_opts_return = "main"
+			show_screen("options")],
+		["Credits", "Wer das gebaut hat", "credits", func(): show_screen("credits")],
+		["Beenden", "Ab ins Bett", "quit", func(): get_tree().quit()],
+	]
 	if bool(Game.settings.get("admin_mode", false)):
-		_add(UiKit.button("Admin", func():
-			load("res://scripts/admin/admin_ui.gd").with_password(self, func(): show_screen("admin")), 360))
-	_add(UiKit.button("Credits", func(): show_screen("credits"), 360))
-	_add(UiKit.button("Beenden", func(): get_tree().quit(), 360))
+		more.insert(4, ["Admin", "Werkzeuge mit Passwort", "admin", func():
+			load("res://scripts/admin/admin_ui.gd").with_password(self, func(): show_screen("admin"))])
+	var tiles := MainTiles.new()
+	tiles.setup([play, more], ["SPIELEN", "MEHR"])
+	tiles.page = 0
+	_add(tiles)
 	_fill_player_info()
 
 
