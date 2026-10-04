@@ -269,7 +269,71 @@ func _term_print(t: String) -> void:
 	_term_out.add_text(t + "\n")
 
 
+const TERM_CMDS := ["help", "whoami", "status", "garage", "story", "ls", "cat", "code", "ping", "date", "echo", "clear", "exit"]
+var _tab_last := ""          # the line at the last Tab (a second Tab lists the choices)
+
+
+## Tab: completes the command, the file after "cat", "rm car" and the car after "garage" – like a
+## shell: one match fills it in, several fill in what they share (a second Tab lists them).
+func _term_tab() -> void:
+	var line := _term_in.text.substr(0, _term_in.caret_column)
+	var rest := _term_in.text.substr(_term_in.caret_column)
+	var words := line.split(" ", true)
+	var cur := words[words.size() - 1]
+	var head := " ".join(words.slice(0, words.size() - 1))
+	var choices: Array = []
+	if words.size() == 1:
+		choices = TERM_CMDS
+	else:
+		match words[0].to_lower():
+			"cat", "type":
+				if words.size() == 2:
+					choices = FILES.keys()
+			"garage", "cars":
+				if words.size() == 2:
+					choices = ["rm"]
+				elif words.size() == 3 and words[1].to_lower() == "rm":
+					choices = ["car"]
+				elif words.size() >= 4 and words[1].to_lower() == "rm" and words[2].to_lower() == "car":
+					# car names (quoted when they have spaces), from what has been typed so far
+					cur = " ".join(words.slice(3))
+					head = " ".join(words.slice(0, 3))
+					for c in Game.CAR_ORDER:
+						if Game.owns_car(str(c)):
+							choices.append("\"%s\"" % str(Game.CARS[str(c)]["name"]))
+			"story", "help", "ls", "status", "whoami", "date", "clear", "exit":
+				choices = []
+	var hits: Array = []
+	for c in choices:
+		if str(c).to_lower().begins_with(cur.to_lower()) or ("\"" + str(c).trim_prefix("\"")).to_lower().begins_with(("\"" + cur.trim_prefix("\"")).to_lower()):
+			hits.append(str(c))
+	if hits.is_empty():
+		return
+	var done := ""
+	if hits.size() == 1:
+		done = hits[0] + ("" if hits[0].ends_with("\"") and words.size() >= 4 else " ")
+	else:
+		# what they all start with
+		done = hits[0]
+		for h in hits:
+			while not str(h).to_lower().begins_with(done.to_lower()):
+				done = done.left(done.length() - 1)
+		if done.length() <= cur.length() and _tab_last == _term_in.text:
+			_term_print("%s@md-net:~$ %s" % [_user(), _term_in.text])
+			_term_print("  ".join(hits))
+		if done.length() < cur.length():
+			done = cur
+	var new_line := (head + " " if head != "" else "") + done
+	_term_in.text = new_line + rest
+	_term_in.caret_column = new_line.length()
+	_tab_last = _term_in.text
+
+
 func _term_keys(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and (e as InputEventKey).keycode == KEY_TAB:
+		_term_tab()
+		_term_in.accept_event()
+		return
 	# ↑ / ↓: the last commands again
 	if e is InputEventKey and e.pressed and not _term_hist.is_empty():
 		var k := (e as InputEventKey).keycode
