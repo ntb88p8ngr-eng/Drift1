@@ -72,12 +72,15 @@ var _probe_t := -1.0
 const SHUTTER_TOP := 4.53
 const SHUTTER_B0 := 2.91           # its lower edge in the model
 const SHUTTER_DOWN := 0.02
-const SHUTTER_UP := 2.91
+const SHUTTER_UP := 4.28           # rolled right up: only the last slats show under the drum
 var _shutter: Node3D
 var _shutter_base := Transform3D.IDENTITY
 var _shutter_b := 1.5
 var _shutter_want := 1.5
 var _shutter_paused := false
+var _trolley: Node3D                # the opener's carriage on its rail (moves with the shutter)
+var _trolley_a := Vector3.ZERO      # its place with the shutter down / up
+var _trolley_b := Vector3.ZERO
 
 ## The platform (menu buttons): it turns slowly on its own, always the same way; held buttons turn it
 ## either way; a view ("overview", "wheels", "front", "rear") swings it (forwards) and the camera to a
@@ -147,6 +150,108 @@ func _set_shutter(b: float) -> void:
 		return
 	var k := (SHUTTER_TOP - b) / (SHUTTER_TOP - SHUTTER_B0)
 	_shutter.global_transform = Transform3D(Basis.from_scale(Vector3(1.0, k, 1.0)), Vector3(0, SHUTTER_TOP * (1.0 - k), 0)) * _shutter_base
+	if _trolley:
+		_trolley.position = _trolley_a.lerp(_trolley_b, clampf((b - SHUTTER_DOWN) / (SHUTTER_UP - SHUTTER_DOWN), 0.0, 1.0))
+
+
+## The shutter's top works, as in a real garage: the roller drum in its housing above the opening,
+## the torsion spring shaft, the guide rails running back under the ceiling on both sides, and the
+## opener – its motor hung from the ceiling, a T-rail out to the door and a carriage that travels
+## along it while the door moves.
+func _shutter_opener(door: AABB) -> void:
+	# (the honeycomb light panels hang at 4.02 m, the door header comes down to 4.24 m: all of it
+	# hangs below them, where it can be seen)
+	var ceil_y := 4.02
+	var cz := door.get_center().z
+	var s := -signf(cz) if absf(cz) > 0.01 else -1.0      # into the hall
+	var x0 := door.position.x
+	var x1 := door.end.x
+	var cx := (x0 + x1) * 0.5
+	var w := x1 - x0
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.55, 0.56, 0.58)
+	steel.metallic = 0.85
+	steel.roughness = 0.35
+	var black := StandardMaterial3D.new()
+	black.albedo_color = Color(0.03, 0.03, 0.035)
+	black.metallic = 0.4
+	black.roughness = 0.5
+	var shell := StandardMaterial3D.new()
+	shell.albedo_color = Color(0.85, 0.85, 0.83)
+	shell.roughness = 0.45
+	var red := StandardMaterial3D.new()
+	red.albedo_color = Color(0.45, 0.06, 0.05)
+	red.roughness = 0.4
+	var root := Node3D.new()
+	root.name = "ShutterOpener"
+	add_child(root)
+	var add := func(size: Vector3, mat: Material, pos: Vector3) -> MeshInstance3D:
+		var mi := MeshKit.box_node(size, mat, pos)
+		root.add_child(mi)
+		return mi
+	# the drum housing over the opening (the rolled-up shutter sits in it) and its end plates
+	var hz := cz + s * 0.32
+	add.call(Vector3(w + 0.1, 0.4, 0.5), black, Vector3(cx, 4.1, hz))
+	for e in [x0 - 0.08, x1 + 0.08]:
+		add.call(Vector3(0.06, 0.46, 0.58), steel, Vector3(e, 4.1, hz))
+	# the torsion spring shaft just inside, with its two black springs
+	var sz := cz + s * 0.72
+	var sy := 3.84
+	add.call(Vector3(w + 0.3, 0.05, 0.05), steel, Vector3(cx, sy, sz))
+	for f in [0.3, 0.7]:
+		var sp := MeshKit.mesh_instance(_spring_mesh(0.07, 0.75), black)
+		sp.position = Vector3(lerpf(x0, x1, f), sy, sz)
+		root.add_child(sp)
+	# the horizontal guide rails along both sides, back under the ceiling, hung on angle brackets
+	var rail_len := 3.6
+	var ry := 3.9
+	for e in [x0 + 0.05, x1 - 0.05]:
+		add.call(Vector3(0.06, 0.1, rail_len), steel, Vector3(e, ry, cz + s * (0.5 + rail_len * 0.5)))
+		for d in [1.6, rail_len + 0.4]:
+			add.call(Vector3(0.04, ceil_y - ry, 0.04), steel, Vector3(e, (ry + ceil_y) * 0.5, cz + s * d))
+		add.call(Vector3(0.05, 0.05, 0.9), steel, Vector3(e, ceil_y - 0.05, cz + s * (rail_len + 0.1)))
+	# the opener: motor unit, the T-rail to the door, its ceiling hangers and the carriage
+	var my := 3.84
+	var mz := cz + s * 4.4
+	add.call(Vector3(0.42, 0.2, 0.55), shell, Vector3(cx, my, mz))
+	add.call(Vector3(0.36, 0.17, 0.05), red, Vector3(cx, my - 0.01, mz - s * 0.29))
+	var lamp := StandardMaterial3D.new()
+	lamp.albedo_color = Color(1, 0.9, 0.7)
+	lamp.emission_enabled = true
+	lamp.emission = Color(1, 0.85, 0.6)
+	lamp.emission_energy_multiplier = 0.6
+	add.call(Vector3(0.3, 0.03, 0.3), lamp, Vector3(cx, my - 0.11, mz))
+	for hx in [-0.15, 0.15]:
+		add.call(Vector3(0.03, ceil_y - my, 0.03), steel, Vector3(cx + hx, (my + ceil_y) * 0.5, mz))
+	var rail_a := cz + s * 0.75
+	var rail_b := mz - s * 0.27
+	add.call(Vector3(0.05, 0.06, absf(rail_b - rail_a)), black, Vector3(cx, my, (rail_a + rail_b) * 0.5))
+	add.call(Vector3(0.03, ceil_y - my, 0.03), steel, Vector3(cx, (my + ceil_y) * 0.5, cz + s * 1.6))
+	# carriage + the bent arm down to the shutter's top (the arm goes with the carriage)
+	_trolley = Node3D.new()
+	root.add_child(_trolley)
+	var tr := MeshKit.box_node(Vector3(0.1, 0.08, 0.2), steel, Vector3.ZERO)
+	_trolley.add_child(tr)
+	var cord := MeshKit.box_node(Vector3(0.01, 0.45, 0.01), red, Vector3(0, -0.25, 0))
+	_trolley.add_child(cord)
+	_trolley_a = Vector3(cx, my - 0.05, cz + s * 0.95)
+	_trolley_b = Vector3(cx, my - 0.05, cz + s * 3.6)
+	_trolley.position = _trolley_a
+
+
+## A coil spring along x (radius r, length l).
+static func _spring_mesh(r: float, l: float) -> ArrayMesh:
+	var pts: Array = []
+	var radii: Array = []
+	var turns := 18
+	var n := turns * 8
+	for i in n + 1:
+		var a := float(i) / 8.0 * TAU
+		pts.append(Vector3(-l * 0.5 + l * float(i) / n, cos(a) * r, sin(a) * r))
+		radii.append(0.009)
+	var st := MeshKit.new_st()
+	MeshKit.tube(st, pts, radii, 5)
+	return MeshKit.commit(st, null)
 
 
 func set_view(v: String) -> void:
@@ -299,6 +404,7 @@ func _load_workshop() -> bool:
 	_shutter = g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
 	if _shutter:
 		_shutter_base = _shutter.global_transform
+		_shutter_opener(_tree_aabb(_shutter))
 		_set_shutter(_shutter_b)
 	# a smaller platform (its turning deck and the fixed neon ring round it)
 	for nm in ["Platform_Static", "Turntable_ROTATE"]:
