@@ -141,6 +141,88 @@ static func video_page(on_quality: Callable = Callable(), in_race := false) -> V
 	return v
 
 
+## The car radio: its volume, the stations on the presets (FM1 / FM2, 1-6) – picked from all stations
+## there are – and own stations by their stream address.
+static func _radio_section(v: VBoxContainer) -> void:
+	v.add_child(UiKit.label("Autoradio", 20, UiKit.GOLD))
+	var rv := UiKit.slider(0, 1, 0.02, Radio.volume, func(x): Radio.set_volume(x))
+	rv.tooltip_text = "Lautstärke des Autoradios (auch am Lautstärkeknopf des Radios)."
+	v.add_child(UiKit.labeled("Radio-Lautstärke", rv))
+	var pickers: Array = []          # [band, preset, OptionButton]
+	var fill := func():
+		var cat: Array = Radio.catalog()
+		for p in pickers:
+			var o: OptionButton = p[2]
+			o.clear()
+			var cur := str(Radio._stations[p[0]][p[1]].get("url", ""))
+			for k in cat.size():
+				var c: Dictionary = cat[k]
+				o.add_item(("★ " if bool(c.get("own", false)) else "") + str(c.get("name", c.get("ps", ""))))
+				o.set_item_metadata(k, str(c.get("url", "")))
+				if str(c.get("url", "")) == cur:
+					o.select(k)
+	for b in 2:
+		v.add_child(UiKit.label("FM%d – Stationstasten" % (b + 1), 16, UiKit.TEXT))
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 10)
+		grid.add_theme_constant_override("v_separation", 6)
+		for i in 6:
+			var o := OptionButton.new()
+			o.custom_minimum_size = Vector2(330, 40)
+			o.fit_to_longest_item = false
+			var bb := b
+			var ii := i
+			o.item_selected.connect(func(k): Radio.set_slot(bb, ii, str(o.get_item_metadata(k))))
+			pickers.append([b, i, o])
+			grid.add_child(UiKit.row([UiKit.label(str(i + 1), 18, UiKit.TEXT_DIM), o], 8))
+		v.add_child(grid)
+	# own stations
+	v.add_child(UiKit.label("Eigener Sender (Stream-Adresse, MP3)", 16, UiKit.TEXT))
+	var name_in := LineEdit.new()
+	name_in.placeholder_text = "Name"
+	name_in.custom_minimum_size = Vector2(180, 40)
+	var url_in := LineEdit.new()
+	url_in.placeholder_text = "https://…  (z. B. https://ice2.somafm.com/metal-128-mp3)"
+	url_in.custom_minimum_size = Vector2(420, 40)
+	url_in.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var note := UiKit.label("", 14, UiKit.TEXT_DIM)
+	var own_box := VBoxContainer.new()
+	own_box.add_theme_constant_override("separation", 4)
+	var list_own := func(self_ref: Callable):
+		for c in own_box.get_children():
+			c.queue_free()
+		for c in Game.settings.get("radio_custom", []):
+			var url := str(c.get("url", ""))
+			var del := UiKit.button("✕", func():
+				Radio.remove_custom(url)
+				fill.call()
+				self_ref.call(self_ref), 46)
+			del.alignment = HORIZONTAL_ALIGNMENT_CENTER
+			del.tooltip_text = "Sender entfernen"
+			var l := UiKit.label("★ %s  –  %s" % [str(c.get("name", "")), url], 15, UiKit.TEXT)
+			l.clip_text = true
+			l.custom_minimum_size = Vector2(560, 0)
+			own_box.add_child(UiKit.row([del, l], 8))
+	var add := UiKit.button("+ Hinzufügen", func():
+		var err := Radio.add_custom(name_in.text, url_in.text)
+		note.text = err if err != "" else "Hinzugefügt – jetzt oben einer Stationstaste zuweisen."
+		note.add_theme_color_override("font_color", UiKit.BAD if err != "" else UiKit.GOOD)
+		if err == "":
+			name_in.text = ""
+			url_in.text = ""
+			fill.call()
+			list_own.call(list_own), 170)
+	v.add_child(UiKit.row([name_in, url_in, add], 8))
+	v.add_child(note)
+	v.add_child(own_box)
+	v.add_child(UiKit.button("Standard-Sender wiederherstellen", func():
+		Radio.reset_slots()
+		fill.call(), 340))
+	fill.call()
+	list_own.call(list_own)
+
+
 static func audio_page() -> VBoxContainer:
 	var v := _page()
 	v.add_child(UiKit.labeled("Gesamtlautstärke", UiKit.slider(0, 1, 0.05, float(Game.settings["master_volume"]), func(x):
@@ -157,6 +239,8 @@ static func audio_page() -> VBoxContainer:
 		Game.set_setting("menu_sfx_volume", x))
 	mv.tooltip_text = "Regen und Donner im Hauptmenü (ganz links = aus)."
 	v.add_child(UiKit.labeled("Hauptmenü-Geräusche", mv))
+	v.add_child(UiKit.sep())
+	_radio_section(v)
 	v.add_child(UiKit.sep())
 	# --- devices ---
 	var outs := _device_list(AudioServer.get_output_device_list())

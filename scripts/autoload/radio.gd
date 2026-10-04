@@ -9,7 +9,8 @@ extends Node
 ## every chunk starts with the last frames of the one before, the next player starts on those and the two
 ## crossfade there, so the cuts are not heard (the first frames of a cut decode badly – they stay muted).
 ##
-## Stations can be replaced with user://radio_stations.json: [[{"ps": "NAME", "freq": "98.5", "url": "https://…"}, …], […]]
+## The presets (FM1 / FM2, 6 each) can be set in Optionen → Audio from all stations there are (catalog()),
+## own stations added there by their stream address (MP3) – Game.settings "radio_slots" / "radio_custom".
 ## Tapes: TAPES (found in the game, kept in the garage's cabinet) and every folder user://cassettes/<name>/
 ## with .mp3 / .ogg files in it (an own tape, always there). A tape with files plays those, one after another.
 
@@ -34,6 +35,18 @@ const STATIONS := [
 		{"ps": "FOLK", "name": "SomaFM – Folk Forward", "freq": "100.1", "url": "https://ice2.somafm.com/folkfwd-128-mp3"},
 		{"ps": "AGENT", "name": "SomaFM – Secret Agent", "freq": "107.4", "url": "https://ice2.somafm.com/secretagent-128-mp3"},
 	],
+]
+
+## More stations to pick for the presets (Optionen → Audio), besides the ones above and the own ones.
+const MORE := [
+	{"ps": "INDIE POP", "name": "SomaFM – Indie Pop Rocks!", "freq": "92.4", "url": "https://ice2.somafm.com/indiepop-128-mp3"},
+	{"ps": "POPTRON", "name": "SomaFM – PopTron", "freq": "97.1", "url": "https://ice2.somafm.com/poptron-128-mp3"},
+	{"ps": "GROOVE", "name": "SomaFM – Groove Salad", "freq": "99.6", "url": "https://ice2.somafm.com/groovesalad-128-mp3"},
+	{"ps": "7 SOUL", "name": "SomaFM – Seven Inch Soul", "freq": "102.7", "url": "https://ice2.somafm.com/7soul-128-mp3"},
+	{"ps": "JAZZ", "name": "SomaFM – Sonic Universe", "freq": "103.9", "url": "https://ice2.somafm.com/sonicuniverse-128-mp3"},
+	{"ps": "THE TRIP", "name": "SomaFM – The Trip", "freq": "105.5", "url": "https://ice2.somafm.com/thetrip-128-mp3"},
+	{"ps": "LUSH", "name": "SomaFM – Lush", "freq": "90.2", "url": "https://ice2.somafm.com/lush-128-mp3"},
+	{"ps": "DRONE", "name": "SomaFM – Drone Zone", "freq": "87.9", "url": "https://ice2.somafm.com/dronezone-128-mp3"},
 ]
 
 ## Cassettes that can be found. `stream` = what the tape plays when user://cassettes/<id>/ holds no files.
@@ -357,24 +370,100 @@ func _files_in(path: String) -> PackedStringArray:
 
 
 func _load_stations() -> void:
-	if not FileAccess.file_exists("user://radio_stations.json"):
-		return
-	var data = JSON.parse_string(FileAccess.get_file_as_string("user://radio_stations.json"))
-	if not (data is Array) or data.is_empty():
-		return
+	var slots = Game.settings.get("radio_slots", [])
 	var bands: Array = []
-	for b in data:
-		if not (b is Array):
-			continue
+	for b in STATIONS.size():
 		var l: Array = []
-		for s in b:
-			if s is Dictionary and str(s.get("url", "")).begins_with("http"):
-				l.append({"ps": str(s.get("ps", "RADIO")).to_upper().left(8), "name": str(s.get("name", s.get("ps", ""))),
-					"freq": str(s.get("freq", "%.1f" % (88.0 + randf() * 20.0))), "url": str(s["url"])})
-		if l.size() > 0:
-			bands.append(l.slice(0, 6))
-	if bands.size() > 0:
-		_stations = bands
+		for i in 6:
+			var st: Dictionary = STATIONS[b][i]
+			if slots is Array and b < slots.size() and slots[b] is Array and i < (slots[b] as Array).size():
+				var found := station_by_url(str(slots[b][i]))
+				if not found.is_empty():
+					st = found
+			l.append(st)
+		bands.append(l)
+	_stations = bands
+
+
+## Every station: the built-in ones and the own ones.
+func catalog() -> Array:
+	var out: Array = []
+	for b in STATIONS:
+		out.append_array(b)
+	out.append_array(MORE)
+	for c in Game.settings.get("radio_custom", []):
+		if c is Dictionary and str(c.get("url", "")) != "":
+			out.append(c)
+	return out
+
+
+func station_by_url(url: String) -> Dictionary:
+	for c in catalog():
+		if str(c.get("url", "")) == url:
+			return c
+	return {}
+
+
+## Preset `i` (0..5) of `b` (0 = FM1, 1 = FM2) set to the station with that address.
+func set_slot(b: int, i: int, url: String) -> void:
+	var slots: Array = []
+	for bb in STATIONS.size():
+		var l: Array = []
+		for ii in 6:
+			l.append(str(_stations[bb][ii].get("url", "")))
+		slots.append(l)
+	slots[b][i] = url
+	Game.settings["radio_slots"] = slots
+	Game.save_settings()
+	var playing := on and mode == "radio" and band == b and int(preset[b]) == i
+	_load_stations()
+	if playing:
+		_start_source()
+	changed.emit()
+
+
+func reset_slots() -> void:
+	Game.settings["radio_slots"] = []
+	Game.save_settings()
+	_load_stations()
+	if on and mode == "radio":
+		_start_source()
+	changed.emit()
+
+
+## An own station by its stream address (MP3, http / https). Returns an error text, "" when added.
+func add_custom(name: String, url: String) -> String:
+	url = url.strip_edges()
+	name = name.strip_edges()
+	if not (url.begins_with("http://") or url.begins_with("https://")):
+		return "Die Adresse muss mit http:// oder https:// beginnen."
+	if not station_by_url(url).is_empty():
+		return "Diesen Sender gibt es schon."
+	if name == "":
+		name = url.get_slice("/", 2)
+	var list: Array = Game.settings.get("radio_custom", [])
+	list.append({"ps": name.to_upper().left(8), "name": name, "url": url,
+		"freq": "%.1f" % (87.6 + float(absi(hash(url)) % 200) * 0.1), "own": true})
+	Game.settings["radio_custom"] = list
+	Game.save_settings()
+	return ""
+
+
+func remove_custom(url: String) -> void:
+	var list: Array = Game.settings.get("radio_custom", [])
+	Game.settings["radio_custom"] = list.filter(func(c): return str(c.get("url", "")) != url)
+	# presets that played it fall back to the built-in station
+	var slots = Game.settings.get("radio_slots", [])
+	if slots is Array:
+		for b in slots.size():
+			if slots[b] is Array:
+				for i in (slots[b] as Array).size():
+					if str(slots[b][i]) == url:
+						slots[b][i] = str(STATIONS[b][i]["url"]) if b < STATIONS.size() else ""
+		Game.settings["radio_slots"] = slots
+	Game.save_settings()
+	_load_stations()
+	changed.emit()
 
 
 func _store() -> void:

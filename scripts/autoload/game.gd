@@ -251,6 +251,8 @@ var settings := {
 	"menu_sfx_volume": 0.35,       # the main menu's storm (rain, thunder): quiet unless turned up
 	# car radio (see radio.gd): on / volume 0..1 / band FM1|FM2 / preset per band / radio|tape / inserted tape
 	"radio": {"on": false, "volume": 0.5, "band": 0, "preset": [0, 0], "mode": "radio", "tape": "", "api": true},
+	"radio_slots": [],            # the presets' stations by address [[6 x FM1], [6 x FM2]], [] = built-in
+	"radio_custom": [],           # own stations: {ps, name, url, freq}
 	"radio_menu": true,            # the floating radio in the main menu shown
 	"cassettes": ["garage_mix"],   # tapes found so far (in the garage's cabinet), see radio.gd TAPES
 	"menu_lights": {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"},
