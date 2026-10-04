@@ -1173,6 +1173,7 @@ func _load_workshop() -> bool:
 	_pegboards(g)
 	_booth_setup(g)
 	_tape_cabinet(g)
+	_lava_lamp(g)
 	await Game.load_tick(0.9)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
@@ -2141,6 +2142,7 @@ func _process(delta: float) -> void:
 		return            # (still loading)
 	_t += delta
 	_cabinet_process(delta)
+	_lava_process(delta)
 	if _shutter and not _shutter_paused and absf(_shutter_b - _shutter_want) > 0.001:
 		# rolling at an even pace, easing in the last few centimetres
 		var d := _shutter_want - _shutter_b
@@ -2319,3 +2321,89 @@ func _cabinet_process(delta: float) -> void:
 	# a faint glow while the mouse is on it (it is easy to miss)
 	var want := (0.25 + 0.12 * sin(_t * 5.0)) if _cab_hover else 0.0
 	_cab_mat.emission_energy_multiplier = lerpf(_cab_mat.emission_energy_multiplier, want, 1.0 - exp(-delta * 10.0))
+
+
+# ---------------------------------------------------------------------------
+# The lava lamp on the shelf over the right tool wall
+# ---------------------------------------------------------------------------
+const LAVA_POS := Vector3(4.27, 2.83, -5.8)
+var _lava_blobs: Array = []          # [node, phase, speed, radius]
+
+
+func _lava_lamp(g: Node3D) -> void:
+	# (the parts box that stood there makes room)
+	var b := g.find_child("Overhead_parts_box_007", true, false)
+	if b:
+		b.get_parent().remove_child(b)
+		b.free()
+	var root := Node3D.new()
+	root.name = "LavaLamp"
+	add_child(root)
+	root.position = LAVA_POS
+	var metal := TexKit.std(Color(0.12, 0.12, 0.14), 0.3, 0.85)
+	# the foot and the cap: tapered metal
+	root.add_child(MeshKit.cyl_node(0.045, 0.075, 0.13, metal, Vector3(0, 0.065, 0), Vector3.ZERO, 24))
+	root.add_child(MeshKit.cyl_node(0.012, 0.032, 0.06, metal, Vector3(0, 0.40, 0), Vector3.ZERO, 20))
+	# the glass with its blue liquid (glowing a little, see-through)
+	var liquid := StandardMaterial3D.new()
+	liquid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	liquid.albedo_color = Color(0.1, 0.45, 1.0, 0.45)
+	liquid.emission_enabled = true
+	liquid.emission = Color(0.1, 0.5, 1.0)
+	liquid.emission_energy_multiplier = 0.9
+	liquid.roughness = 0.05
+	liquid.metallic_specular = 0.9
+	liquid.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var glass := MeshKit.cyl_node(0.032, 0.046, 0.24, liquid, Vector3(0, 0.25, 0), Vector3.ZERO, 28)
+	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(glass)
+	# the wax: red blobs rising, sinking, stretching
+	var wax := StandardMaterial3D.new()
+	wax.albedo_color = Color(1.0, 0.12, 0.05)
+	wax.emission_enabled = true
+	wax.emission = Color(1.0, 0.15, 0.05)
+	wax.emission_energy_multiplier = 1.6
+	wax.roughness = 0.3
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	for k in 6:
+		var sm := SphereMesh.new()
+		var r := rng.randf_range(0.011, 0.02)
+		sm.radius = r
+		sm.height = r * 2.0
+		sm.radial_segments = 14
+		sm.rings = 8
+		var mi := MeshInstance3D.new()
+		mi.mesh = sm
+		mi.material_override = wax
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+		_lava_blobs.append([mi, rng.randf_range(0.0, TAU), rng.randf_range(0.12, 0.3), r, rng.randf_range(-1.0, 1.0)])
+	# a pool of wax at the bottom that the blobs come out of
+	var pool := MeshKit.cyl_node(0.04, 0.042, 0.02, wax, Vector3(0, 0.14, 0), Vector3.ZERO, 20)
+	root.add_child(pool)
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.45, 0.4, 1.0)
+	light.light_energy = 0.6
+	light.omni_range = 1.6
+	light.position = Vector3(0, 0.27, 0.06)
+	root.add_child(light)
+
+
+func _lava_process(_delta: float) -> void:
+	for b in _lava_blobs:
+		var mi: MeshInstance3D = b[0]
+		var ph: float = b[1]
+		var sp: float = b[2]
+		var r: float = b[3]
+		# slow up and down the glass (0.15 … 0.36 m), a lazy sideways drift, stretched while moving
+		var t := _t * sp + ph
+		var u := 0.5 - 0.5 * cos(t)
+		var y := lerpf(0.155, 0.355, u)
+		# the glass narrows to the top: the blobs stay inside it
+		var room := lerpf(0.04, 0.026, (y - 0.13) / 0.24) - r
+		var x := sin(t * 1.7 + ph) * maxf(room, 0.0) * 0.6 * float(b[4])
+		var z := cos(t * 1.3 + ph * 2.0) * maxf(room, 0.0) * 0.5
+		mi.position = Vector3(x, y, z)
+		var v := absf(sin(t))
+		mi.scale = Vector3(1.0 - 0.15 * v, 1.0 + 0.45 * v, 1.0 - 0.15 * v)
