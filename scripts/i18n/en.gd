@@ -1012,4 +1012,8 @@ const EN := {
 	"Spiegeln (links ↔ rechts)": "Mirror (left ↔ right)",
 	"Zurück: letzte Änderung zurücknehmen (Strg+Z)": "Back: undo the last change (Ctrl+Z)",
 	"Vor: zurückgenommene Änderung wiederholen (Strg+Y)": "Forward: redo the undone change (Ctrl+Y)",
+	"Musik": "Music",
+	"Willkommen bei Midnight Drift!\n\nSoll das Autoradio Musik spielen?\n(Es lässt sich jederzeit oben rechts bedienen – oder mit ♪ Radio ausblenden.)": "Welcome to Midnight Drift!\n\nShould the car radio play music?\n(It can be used any time in the top right corner – or hidden with ♪ Radio.)",
+	"Ja, Musik an": "Yes, music on",
+	"Nein, danke": "No, thanks",
 }

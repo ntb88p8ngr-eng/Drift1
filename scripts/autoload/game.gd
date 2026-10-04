@@ -220,7 +220,7 @@ var settings := {
 	"party_coins": 5,
 	"party_coins_city": false,      # Neo Tokyo: coins spread over the whole city (not just the route)
 	"time_of_day": "dusk",
-	"master_volume": 0.8,
+	"master_volume": 0.6,
 	"audio_output": "Default",
 	"audio_input": "Default",
 	"mic_volume": 1.0,
@@ -248,12 +248,13 @@ var settings := {
 	"abs": true,
 	"esp": false,
 	"weather_volume": 0.6,
-	"menu_sfx_volume": 0.35,       # the main menu's storm (rain, thunder): quiet unless turned up
+	"menu_sfx_volume": 0.0,        # the main menu's storm (rain, thunder): silent unless turned up
 	# car radio (see radio.gd): on / volume 0..1 / band FM1|FM2 / preset per band / radio|tape / inserted tape
 	"radio": {"on": false, "volume": 0.5, "band": 0, "preset": [0, 0], "mode": "radio", "tape": "", "api": true},
 	"radio_slots": [],            # the presets' stations by address [[6 x FM1], [6 x FM2]], [] = built-in
 	"radio_custom": [],           # own stations: {ps, name, url, freq}
 	"radio_menu": true,
+	"garage_door": -1.0,           # the menu's roller door: where it was left (m up its track, < 0 = as built)
 	"radio_hud": true,             # the small radio in a race (bottom left) shown            # the floating radio in the main menu shown
 	"cassettes": ["garage_mix"],   # tapes found so far (in the garage's cabinet), see radio.gd TAPES
 	"menu_lights": {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"},
@@ -527,8 +528,12 @@ const CONTROLS_HELP := [
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
+var first_boot := false          # no settings yet: the game's very first start (asks about music)
+
+
 func load_settings() -> void:
 	var data = _read_json(SETTINGS_PATH)
+	first_boot = not (data is Dictionary)
 	if data is Dictionary:
 		for k in data.keys():
 			if settings.has(k):

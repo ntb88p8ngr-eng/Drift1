@@ -491,6 +491,28 @@ func show_screen(screen: String) -> void:
 	_focus_first.call_deferred()
 
 
+## The menu has come up after the loading screen: the radio plays on as it was left; at the game's
+## very first start it is off and the menu silent – a question whether there should be music.
+func on_shown() -> void:
+	if not Game.first_boot:
+		Radio.start_saved()
+		return
+	Game.first_boot = false
+	var d := ConfirmationDialog.new()
+	d.title = Game.t("Musik")
+	d.dialog_text = Game.t("Willkommen bei Midnight Drift!\n\nSoll das Autoradio Musik spielen?\n(Es lässt sich jederzeit oben rechts bedienen – oder mit ♪ Radio ausblenden.)")
+	d.ok_button_text = Game.t("Ja, Musik an")
+	d.cancel_button_text = Game.t("Nein, danke")
+	d.confirmed.connect(func():
+		Game.settings["radio_menu"] = true
+		Radio.power(true)
+		_sync_radio()
+		d.queue_free())
+	d.canceled.connect(func(): d.queue_free())
+	_root.add_child(d)
+	d.popup_centered()
+
+
 ## The radio where the car is in view (main menu, garage) when it is switched on there; the text in
 ## the top right corner (driver, car, credits) moves down under it.
 func _sync_radio() -> void:

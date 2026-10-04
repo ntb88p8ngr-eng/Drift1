@@ -79,6 +79,10 @@ func show_menu(screen: String, message := "", color := UiKit.GOLD) -> void:
 		# a moment for the first frames (shaders, the probe) behind the screen, then fade it out
 		await get_tree().create_timer(0.4).timeout
 		_hide_loading()
+		# the menu is up: now the radio (as it was left – or, at the very first start, a question)
+		await get_tree().create_timer(0.6).timeout
+		if menu:
+			menu.on_shown()
 
 
 func refresh_showroom(full: bool) -> void:

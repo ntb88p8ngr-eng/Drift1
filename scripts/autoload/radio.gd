@@ -115,6 +115,7 @@ var _tape_files: PackedStringArray = []
 var _tape_track := 0
 
 var _clock := 0.0
+var _resume := false            # it was on when the game was closed
 
 
 func _ready() -> void:
@@ -150,8 +151,9 @@ func _ready() -> void:
 	# no sound and no network for the dedicated server / headless tests
 	if DisplayServer.get_name() == "headless":
 		on = false
-	if on:
-		_start_source.call_deferred()
+	# (it plays again once the main menu is on screen: start_saved())
+	_resume = on
+	on = false
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +170,13 @@ func power(state: bool) -> void:
 		status = ""
 		title = ""
 	_store()
+
+
+## The menu is on screen: the radio carries on as it was left.
+func start_saved() -> void:
+	if _resume:
+		_resume = false
+		power(true)
 
 
 func toggle_power() -> void:

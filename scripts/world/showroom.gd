@@ -169,6 +169,8 @@ func toggle_shutter() -> void:
 		_shutter_paused = true
 		return
 	_shutter_want = SHUTTER_UP if _shutter_b <= SHUTTER_DOWN + 0.01 else SHUTTER_DOWN
+	Game.settings["garage_door"] = _shutter_want
+	Game.save_settings()
 
 
 ## The door lifted `b` metres along its track: each panel where its stretch of track is, turned
@@ -1185,6 +1187,11 @@ func _load_workshop() -> bool:
 	_shutter = g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
 	if _shutter:
 		_shutter_opener(_tree_aabb(_shutter))
+		# where it was left the last time
+		var saved := float(Game.settings.get("garage_door", -1.0))
+		if saved >= 0.0:
+			_shutter_b = clampf(saved, SHUTTER_DOWN, SHUTTER_UP)
+			_shutter_want = _shutter_b
 		_set_shutter(_shutter_b)
 	# a smaller platform (its turning deck and the fixed neon ring round it)
 	for nm in ["Platform_Static", "Turntable_ROTATE"]:
