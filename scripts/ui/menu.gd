@@ -437,6 +437,7 @@ func _build_story() -> void:
 		sr.story_arrived.connect(_on_story_arrived)
 		sr.story_left.connect(_on_story_left)
 		sr.pc_ui.back_pressed.connect(_leave_story)
+		sr.pc_ui.code_redeemed.connect(_fill_player_info)
 	if not sr.enter_story():
 		show_screen("main")
 
@@ -483,6 +484,9 @@ func _input(event: InputEvent) -> void:
 	if sr == null or sr.pc_viewport == null:
 		return
 	if event.is_action_pressed("ui_cancel"):
+		if sr.pc_ui and sr.pc_ui.has_method("terminal_open") and sr.pc_ui.terminal_open():
+			sr.pc_ui.close_terminal()          # Esc closes the terminal first
+			get_viewport().set_input_as_handled()
 		return      # (back: _unhandled_input)
 	if event is InputEventMouse:
 		var ev := (event as InputEventMouse).duplicate() as InputEventMouse
@@ -922,20 +926,7 @@ func _build_garage() -> void:
 		_update_car_info()
 		main.refresh_showroom(true))))
 	_add(_buy_row)
-	# action codes (easter eggs, gifts from the admin)
-	var code_edit := LineEdit.new()
-	code_edit.placeholder_text = "Code eingeben"
-	code_edit.custom_minimum_size = Vector2(200, 40)
-	var redeem := func():
-		var r: Array = Game.redeem_code(code_edit.text)
-		code_edit.text = ""
-		show_status(str(r[1]), UiKit.GOOD if bool(r[0]) else UiKit.BAD)
-		if bool(r[0]):
-			_build_garage_again.call_deferred()
-	code_edit.text_submitted.connect(func(_t): redeem.call())
-	if not Net.code_result.is_connected(_on_code_result):
-		Net.code_result.connect(_on_code_result)
-	_add(UiKit.labeled("Aktionscode", UiKit.row([code_edit, UiKit.button("Einlösen", redeem, 140)])))
+	# (action codes are typed in at the office PC – Story)
 	var paint_names: Array = []
 	var paint_idx := 0
 	for i in Game.PAINTS.size():
