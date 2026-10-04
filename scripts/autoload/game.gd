@@ -249,6 +249,10 @@ var settings := {
 	"esp": false,
 	"weather_volume": 0.6,
 	"menu_sfx_volume": 0.35,       # the main menu's storm (rain, thunder): quiet unless turned up
+	# car radio (see radio.gd): on / volume 0..1 / band FM1|FM2 / preset per band / radio|tape / inserted tape
+	"radio": {"on": false, "volume": 0.5, "band": 0, "preset": [0, 0], "mode": "radio", "tape": "", "api": true},
+	"radio_menu": true,            # the floating radio in the main menu shown
+	"cassettes": ["garage_mix"],   # tapes found so far (in the garage's cabinet), see radio.gd TAPES
 	"menu_lights": {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"},
 	"handbrake_strength": 0.75,
 	"slide": 0.5,
@@ -355,6 +359,7 @@ func _setup_input() -> void:
 	_add_action("pause", [KEY_ESCAPE], [JOY_BUTTON_START], [])
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
 	# (X) fires in the shooting minigames (there it does not look back, see camera_rig.gd)
+	_add_action("radio", [KEY_P], [], [])
 	_add_action("fire", [KEY_F], [JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_X], [])
 	if InputMap.action_get_events("fire").filter(func(e): return e is InputEventMouseButton).is_empty():
 		var mb := InputEventMouseButton.new()
@@ -395,7 +400,7 @@ const REBINDABLE := [
 	["fire", "Feuer (Party)"], ["camera_next", "Kamera wechseln"], ["camera_free", "Freie Kamera"],
 	["look_back", "Nach hinten schauen"], ["reset_car", "Auto zurücksetzen"], ["lights", "Licht"],
 	["neon_flash", "Neon blitzen"], ["toggle_abs", "ABS an/aus"], ["toggle_esp", "ESP an/aus"],
-	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["pause", "Pause"],
+	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["radio", "Autoradio"], ["pause", "Pause"],
 ]
 
 

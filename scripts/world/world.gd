@@ -4,6 +4,7 @@ extends Node3D
 
 signal exit_requested(target: String)   # "menu", "lobby", "restart", "leave"
 
+const CassettePickup = preload("res://scripts/world/cassette_pickup.gd")
 const Traffic = preload("res://scripts/world/traffic.gd")
 const TrafficCars = preload("res://scripts/world/traffic_cars.gd")
 const CityTraffic = preload("res://scripts/world/city/city_traffic.gd")
@@ -261,6 +262,11 @@ func _ready() -> void:
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
 	else:
 		_start_countdown()
+	# the map's hidden cassette (for the car radio), while it is not found yet
+	if mode in ["free", "race", "drift", "graffiti"] and not party_sites:
+		var tape = CassettePickup.for_world(self)
+		if tape:
+			add_child(tape)
 	_collect_view_ranges()
 	Game.settings_changed.connect(_apply_view_ranges)
 	# admin mode (offline or the host): F10 panel

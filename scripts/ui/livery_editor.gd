@@ -211,7 +211,7 @@ func _sticker_page() -> VBoxContainer:
 	_shape_note = UiKit.label("Formen werden vorbereitet …", 14, UiKit.TEXT_DIM)
 	v.add_child(_shape_note)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(0, 260)
+	sc.custom_minimum_size = Vector2(0, 300)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var kinds := VBoxContainer.new()
 	kinds.add_theme_constant_override("separation", 6)
@@ -305,16 +305,80 @@ func _fill_shapes() -> void:
 		var id: String = s[0]
 		var full := Livery.full_color(id)
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(52, 52)
-		b.tooltip_text = str(s[1])
+		# the grid's whole width (8 to a row), the icon nearly to the button's edge
+		b.custom_minimum_size = Vector2(60, 64)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.icon = Livery.texture(id)
 		b.expand_icon = true
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
+		for st in ["normal", "hover", "pressed", "focus"]:
+			var sb = b.get_theme_stylebox(st)
+			if sb:
+				sb = sb.duplicate()
+				sb.set_content_margin_all(5)
+				b.add_theme_stylebox_override(st, sb)
+		# hovering (or the gamepad's focus): the shape big next to the panel
+		var tex: Texture2D = b.icon
+		var nm := str(s[1])
+		b.mouse_entered.connect(func(): _show_big(b, tex, nm, full))
+		b.focus_entered.connect(func(): _show_big(b, tex, nm, full))
+		b.mouse_exited.connect(func(): _show_big(null, null, "", false))
+		b.focus_exited.connect(func(): _show_big(null, null, "", false))
 		b.pressed.connect(func():
 			shape = id
 			_start_placing(id))
 		(_full_grid if full else _shape_grid).add_child(b)
 	_apply()
+
+
+var _big: PanelContainer
+var _big_tex: TextureRect
+var _big_name: Label
+
+
+## The shape under the mouse, big, beside the panel (null: hidden).
+func _show_big(b: Control, tex: Texture2D, nm: String, full: bool) -> void:
+	if _big == null:
+		_big = PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.08, 0.07, 0.11, 0.94)
+		sb.border_color = Color(0.62, 0.32, 1.0, 0.8)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(14)
+		sb.set_content_margin_all(14)
+		_big.add_theme_stylebox_override("panel", sb)
+		_big.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 8)
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_big.add_child(v)
+		_big_tex = TextureRect.new()
+		_big_tex.custom_minimum_size = Vector2(220, 220)
+		_big_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_big_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_big_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(_big_tex)
+		_big_name = UiKit.label("", 18, UiKit.TEXT)
+		_big_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_big_name.custom_minimum_size = Vector2(220, 0)
+		_big_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(_big_name)
+		add_child(_big)
+	if b == null or not is_instance_valid(b):
+		_big.visible = false
+		return
+	_big_tex.texture = tex
+	# one-colour shapes in the picked colour (white on the dark panel when that is too dark to see)
+	_big_tex.modulate = Color.WHITE if full or color.get_luminance() < 0.15 else color
+	_big_name.text = nm
+	_big.visible = true
+	_big.reset_size()
+	var r := b.get_global_rect()
+	var vs := get_viewport_rect().size
+	var x := _panel.get_global_rect().end.x + 14.0
+	var y := clampf(r.get_center().y - _big.size.y * 0.5, 10.0, vs.y - _big.size.y - 10.0)
+	_big.global_position = Vector2(x, y)
 
 
 func _set_color(c: Color) -> void:

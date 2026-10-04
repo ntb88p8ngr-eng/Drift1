@@ -89,8 +89,8 @@ var _door_s := 1.0                  # into the hall along z
 ## rolls in; the camera inside orbits it. booth: "" / "in" (on the way) / "inside" / "out"
 signal booth_ready
 signal booth_left
-const BOOTH_LONGER := 1.5           # the booth's back wall moved out this far (+x)
-const BOOTH_C := Vector3(11.25, 0.038, -3.9)     # where the car stands (further in)
+const BOOTH_LONGER := 3.0           # the booth's back wall moved out this far (+x)
+const BOOTH_C := Vector3(12.0, 0.038, -3.9)     # where the car stands (further in)
 const BOOTH_WIDEN := 1.5            # the booth's near side wall moved out this far (z)
 const BOOTH_WIDEN_FAR := 1.5        # … and its far side wall the other way (-z)
 ## the room the booth camera stays in (x, y, z ranges; clear of the walls)
@@ -380,12 +380,18 @@ func _widen_booth(g: Node3D) -> void:
 	var z0 := -6.35
 	var k := (4.5 + BOOTH_WIDEN + BOOTH_WIDEN_FAR) / 4.5
 	var walls := _booth_wall_material()
+	var light_sets := {}        # the wall / ceiling lights by their x (the model's 4 sets across)
 	for c in annex.get_children():
 		if not (c is MeshInstance3D):
 			continue
 		var mi := c as MeshInstance3D
 		var bb: AABB = mi.global_transform * mi.get_aabb()
 		var nm := String(mi.name)
+		if nm.contains("light_housing") or nm.contains("LED"):
+			var key := roundi(bb.get_center().x * 10.0)
+			if not light_sets.has(key):
+				light_sets[key] = []
+			light_sets[key].append(mi)
 		if (nm.contains("wall") or nm.contains("ceiling_0")) and not nm.contains("LED"):
 			mi.material_override = walls
 		if nm.contains("LED"):
@@ -421,6 +427,27 @@ func _widen_booth(g: Node3D) -> void:
 			mi.global_position += Vector3(0, 0, BOOTH_WIDEN)
 		elif bb.get_center().z < -5.6:
 			mi.global_position -= Vector3(0, 0, BOOTH_WIDEN_FAR)
+	# the lights along the walls (and their ceiling strips) spread evenly over the longer booth, sets
+	# added for the new length (they stayed bunched up at the door end)
+	var keys := light_sets.keys()
+	keys.sort()
+	if keys.size() >= 2:
+		var x_first: float = keys[0] / 10.0
+		var x_last: float = 13.4 + BOOTH_LONGER - (13.4 - keys[keys.size() - 1] / 10.0)
+		var step0: float = (keys[keys.size() - 1] - keys[0]) / 10.0 / (keys.size() - 1)
+		var n := maxi(keys.size(), roundi((x_last - x_first) / step0) + 1)
+		# (from the back: the extra sets are copied from the last one before it moves)
+		for i in range(n - 1, -1, -1):
+			var x := lerpf(x_first, x_last, float(i) / (n - 1))
+			var src: Array = light_sets[keys[mini(i, keys.size() - 1)]]
+			var from_x: float = keys[mini(i, keys.size() - 1)] / 10.0
+			for m in src:
+				var mm := m as MeshInstance3D
+				if i >= keys.size():
+					mm = mm.duplicate() as MeshInstance3D
+					annex.add_child(mm)
+					mm.global_transform = (m as MeshInstance3D).global_transform
+				mm.global_position.x += x - from_x
 	# the front wall either side of the door: the hall's plaster wall showed through on the near side,
 	# on the far side there was none yet
 	var near := MeshKit.box_node(Vector3(0.04, 3.5, BOOTH_WIDEN + 0.1), walls, Vector3(6.97, 1.75, -2.02 + (BOOTH_WIDEN + 0.1) * 0.5))
