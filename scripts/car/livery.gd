@@ -199,7 +199,7 @@ static func surface(body: Node3D) -> Dictionary:
 		var xf: Transform3D = inv * mi.global_transform
 		var nb := xf.basis.inverse().transposed()
 		for si in mi.mesh.get_surface_count():
-			if mi.mesh.surface_get_primitive_type(si) != Mesh.PRIMITIVE_TRIANGLES:
+			if mi.mesh is ArrayMesh and (mi.mesh as ArrayMesh).surface_get_primitive_type(si) != Mesh.PRIMITIVE_TRIANGLES:
 				continue
 			var arr := mi.mesh.surface_get_arrays(si)
 			var pos: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
