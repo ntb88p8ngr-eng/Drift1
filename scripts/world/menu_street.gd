@@ -40,7 +40,7 @@ func at(s: float, lateral: float, y := 0.0) -> Vector3:
 
 
 func build(_asphalt: Material) -> void:
-	var walk_mat := TexKit.ground_material(Color(0.16, 0.16, 0.17), Color(0.19, 0.19, 0.2), Color(0.14, 0.14, 0.15), 0.45, 1.25)
+	var walk_mat := TexKit.ground_material(Color(0.075, 0.075, 0.08), Color(0.09, 0.09, 0.095), Color(0.07, 0.07, 0.075), 0.7, 1.25)
 	var grass_mat := TexKit.ground_material(Color(0.07, 0.08, 0.07), Color(0.085, 0.09, 0.075), Color(0.09, 0.085, 0.07), 0.9)
 	var line_mat := TexKit.std(Color(0.85, 0.84, 0.8), 0.45)
 	var mid := LENGTH * 0.5
