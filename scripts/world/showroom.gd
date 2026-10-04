@@ -89,11 +89,12 @@ var _door_s := 1.0                  # into the hall along z
 ## rolls in; the camera inside orbits it. booth: "" / "in" (on the way) / "inside" / "out"
 signal booth_ready
 signal booth_left
-const BOOTH_C := Vector3(10.05, 0.034, -3.9)
+const BOOTH_LONGER := 1.5           # the booth's back wall moved out this far (+x)
+const BOOTH_C := Vector3(11.25, 0.038, -3.9)     # where the car stands (further in)
 const BOOTH_WIDEN := 1.5            # the booth's near side wall moved out this far (z)
 const BOOTH_WIDEN_FAR := 1.5        # … and its far side wall the other way (-z)
 ## the room the booth camera stays in (x, y, z ranges; clear of the walls)
-const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8 - BOOTH_WIDEN_FAR), Vector3(5.6, 2.75, 4.94 + BOOTH_WIDEN_FAR))
+const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8 - BOOTH_WIDEN_FAR), Vector3(5.6 + BOOTH_LONGER, 2.75, 4.94 + BOOTH_WIDEN_FAR))
 var booth := ""
 var _booth_doors: Array = []        # (unused: the booth has a sectional door now)
 var _bdoor_panels: Array = []       # the booth's sectional door, bottom panel first
@@ -348,7 +349,7 @@ func _booth_setup(g: Node3D) -> void:
 	var cm := CylinderMesh.new()
 	cm.top_radius = 0.022
 	cm.bottom_radius = 0.022
-	cm.height = 6.3
+	cm.height = 6.3 + BOOTH_LONGER
 	cm.radial_segments = 10
 	var z := -6.0 - BOOTH_WIDEN_FAR
 	while z <= -2.2 + BOOTH_WIDEN:
@@ -356,12 +357,12 @@ func _booth_setup(g: Node3D) -> void:
 		t.mesh = cm
 		t.material_override = tube
 		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		t.global_transform = Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(10.05, 3.4, z))
+		t.global_transform = Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(10.05 + BOOTH_LONGER * 0.5, 3.4, z))
 		add_child(t)
-		for ex in [6.95, 13.15]:
+		for ex in [6.95, 13.15 + BOOTH_LONGER]:
 			add_child(MeshKit.box_node(Vector3(0.06, 0.08, 0.07), cap, Vector3(ex, 3.43, z)))
 		z += 0.42
-	for x in [7.8, 10.05, 12.3]:
+	for x in [7.8, 10.05 + BOOTH_LONGER * 0.5, 12.3 + BOOTH_LONGER]:
 		var l := OmniLight3D.new()
 		l.position = Vector3(x, 3.0, -3.35)
 		l.omni_range = 5.0
@@ -399,6 +400,15 @@ func _widen_booth(g: Node3D) -> void:
 			# (a hair above the hall's floor: where the two overlap at the door they lay in one plane
 			# and flickered)
 			mi.global_position.y += 0.004
+		# longer: the back wall (and its filters) out by BOOTH_LONGER, whatever runs the booth's length
+		# stretched from the door end
+		if bb.size.x > 3.0:
+			var x0 := 6.82
+			var kx := (6.68 + BOOTH_LONGER) / 6.68
+			mi.global_transform = Transform3D(Basis.IDENTITY, Vector3(x0, 0, 0)) * Transform3D(Basis.from_scale(Vector3(kx, 1, 1)), Vector3.ZERO) \
+				* Transform3D(Basis.IDENTITY, Vector3(-x0, 0, 0)) * mi.global_transform
+		elif bb.get_center().x > 13.0:
+			mi.global_position.x += BOOTH_LONGER
 		if nm.contains("Door_frame") or nm.contains("Filter"):
 			continue
 		if nm.contains("Extraction"):
@@ -421,7 +431,7 @@ func _widen_booth(g: Node3D) -> void:
 		add_child(w)
 	# (static rain streaks of the model that now stand in the bigger booth)
 	# (the whole widened booth: both of its new sides were street before)
-	var room := AABB(Vector3(6.5, -0.5, -6.6 - BOOTH_WIDEN_FAR), Vector3(7.4, 4.6, 6.6 + BOOTH_WIDEN_FAR))
+	var room := AABB(Vector3(6.5, -0.5, -6.6 - BOOTH_WIDEN_FAR), Vector3(7.6 + BOOTH_LONGER, 4.6, 6.6 + BOOTH_WIDEN_FAR))
 	for n in g.find_children("*Rain_streak*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if room.has_point((mi.global_transform * mi.get_aabb()).get_center()):
@@ -1230,7 +1240,7 @@ func _load_workshop() -> bool:
 	storm_fx.name = "Storm"
 	add_child(storm_fx)
 	# (no rain under the roofs beside the hall: the office annex on the left, the paint booth on the right)
-	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5 - BOOTH_WIDEN_FAR, 7.1, 4.7 + BOOTH_WIDEN + BOOTH_WIDEN_FAR)])
+	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5 - BOOTH_WIDEN_FAR, 7.1 + BOOTH_LONGER, 4.7 + BOOTH_WIDEN + BOOTH_WIDEN_FAR)])
 	await Game.load_tick(0.9)
 	for l in g.find_children("*", "Light3D", true, false):
 		var light := l as Light3D
