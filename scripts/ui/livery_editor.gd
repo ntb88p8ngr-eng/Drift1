@@ -713,6 +713,15 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or sr == null:
 		return
+	# the mouse over the panel on the left: never the camera (the wheel at the end of a list, over a
+	# label, … used to zoom it)
+	if event is InputEventMouseButton and _panel and _panel.get_global_rect().has_point((event as InputEventMouseButton).position):
+		if (event as InputEventMouseButton).button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
+			get_viewport().set_input_as_handled()
+			return
+		if (event as InputEventMouseButton).pressed:
+			get_viewport().set_input_as_handled()
+			return
 	# Entf / Delete: the selected sticker goes
 	if event is InputEventKey and event.pressed and not event.is_echo() and (event as InputEventKey).keycode == KEY_DELETE and _placing == "":
 		_del_layer()
