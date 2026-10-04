@@ -50,6 +50,8 @@ const MORE := [
 
 ## Cassettes that can be found. `stream` = what the tape plays when user://cassettes/<id>/ holds no files.
 const TAPES := {
+	# the game's own tape (real tracks in the game): in the cabinet from the start
+	"kassette1": {"title": "Kassette 1", "color": Color(0.95, 0.85, 0.2), "stream": "", "dir": "res://assets/audio/Kassette1"},
 	"garage_mix": {"title": "Garage Mix", "color": Color(0.85, 0.12, 0.1), "stream": "https://ice2.somafm.com/u80s-128-mp3"},
 	"night_run": {"title": "Night Run", "color": Color(0.12, 0.3, 0.85), "stream": "https://ice2.somafm.com/metal-128-mp3"},
 	"desert_tape": {"title": "Desert Tape", "color": Color(0.9, 0.6, 0.15), "stream": "https://ice2.somafm.com/bootliquor-128-mp3"},
@@ -370,6 +372,8 @@ func tapes() -> Dictionary:
 	for id in TAPES:
 		var d: Dictionary = TAPES[id].duplicate()
 		d["files"] = _files_in(TAPE_DIR + id)
+		if (d["files"] as PackedStringArray).is_empty() and d.has("dir"):
+			d["files"] = _files_in(str(d["dir"]))
 		out[id] = d
 	var dir := DirAccess.open(TAPE_DIR)
 	if dir:
@@ -382,12 +386,12 @@ func tapes() -> Dictionary:
 	return out
 
 
-## The tapes in the cabinet: the found ones and the own ones.
+## The tapes in the cabinet: the found ones, the game's own one and the player's own ones.
 func owned_tapes() -> Array:
 	var all := tapes()
 	var out: Array = []
 	for id in all:
-		if bool(all[id].get("own", false)) or (Game.settings.get("cassettes", []) as Array).has(id):
+		if bool(all[id].get("own", false)) or id == "kassette1" or (Game.settings.get("cassettes", []) as Array).has(id):
 			out.append(id)
 	return out
 
@@ -416,9 +420,11 @@ func _files_in(path: String) -> PackedStringArray:
 	if d == null:
 		return out
 	for f in d.get_files():
-		var e := f.get_extension().to_lower()
-		if e == "mp3" or e == "ogg":
-			out.append(path.path_join(f))
+		# (in an exported game the imported ones are listed as "<name>.mp3.import")
+		var name := f.trim_suffix(".import") if path.begins_with("res://") else f
+		var e := name.get_extension().to_lower()
+		if (e == "mp3" or e == "ogg") and not out.has(path.path_join(name)):
+			out.append(path.path_join(name))
 	out.sort()
 	return out
 
@@ -569,7 +575,9 @@ func _play_tape_file() -> void:
 	_stop_players()
 	var path := _tape_files[_tape_track]
 	var st: AudioStream = null
-	if path.get_extension().to_lower() == "ogg":
+	if path.begins_with("res://"):
+		st = load(path) as AudioStream
+	elif path.get_extension().to_lower() == "ogg":
 		st = AudioStreamOggVorbis.load_from_file(path)
 	else:
 		var mp := AudioStreamMP3.new()
