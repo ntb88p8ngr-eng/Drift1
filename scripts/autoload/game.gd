@@ -944,6 +944,7 @@ const CAR_PRICES := [15000, 25000, 40000, 60000, 85000, 120000, 160000, 210000]
 const BUILTIN_CODES := {
 	"BMWM": {"car": "m6gt3"},
 	"BOUNCE": {"car": "yaris"},
+	"BOUNCY": {"car": "yaris"},       # the bouncy Toyota
 }
 
 
