@@ -941,6 +941,9 @@ static func paint_material(paint: Dictionary) -> StandardMaterial3D:
 	m.clearcoat = 1.0
 	m.clearcoat_roughness = 0.03
 	m.metallic_specular = 0.6
+	# both sides: seen through a window, the inside of the far door and the roof are painted
+	# shell, not a hole
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	apply_paint(m, paint)
 	return m
 

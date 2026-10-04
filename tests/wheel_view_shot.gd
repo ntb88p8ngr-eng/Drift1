@@ -1,7 +1,7 @@
 extends Node
 ## One shot of a main menu view (default the rim view, "wheels"), with the menu drawn over it;
 ## --shutter rolls the shutter down first.
-## Run: godot --path . res://tests/wheel_view_shot.tscn -- --out=/tmp/wheel.png [--view=overview] [--shutter]
+## Run: godot --path . res://tests/wheel_view_shot.tscn -- --out=/tmp/wheel.png [--view=overview] [--shutter] [--car=m3e46]
 
 const Main = preload("res://scripts/main.gd")
 
@@ -18,6 +18,8 @@ func _ready() -> void:
 			view = a.substr(7)
 		if a == "--shutter":
 			shutter = true
+		if a.begins_with("--car="):
+			Game.settings["car"] = a.substr(6)
 	var main := Main.new()
 	add_child(main)
 	for f in 4:

@@ -71,6 +71,8 @@ const MODELS := {
 		"axle_f": -1.33, "axle_r": 1.33, "length": 4.6, "half_width": 0.89, "base": 0.16, "roof": 1.3,
 		"head": [[-0.65, 0.666, -2.0], [0.65, 0.666, -2.0]], "tail": [[-0.53, 0.85, 2.17], [0.53, 0.85, 2.17]],
 		"exhaust": [[-0.409, 0.317, 2.29]], "exhaust_r": 0.045,
+		# the model is an empty shell from below: floor pan, wheel arch liners, exhaust added
+		"underbody": true,
 	},
 	"mustang": {
 		"path": "res://assets/cars/mustang.glb", "wheel_r": 0.34, "wheel_w": 0.27, "track": 0.834,
@@ -1109,6 +1111,94 @@ func _build_lights() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Underbody (models without one)
+# ---------------------------------------------------------------------------
+## What a car looks like from below: the floor pan (narrow between the wheels, full width between
+## the axles), black wheel arch liners round every wheel, the engine's sump, the transmission
+## tunnel with the prop shaft, the fuel tank, and the exhaust from the engine back to the tip:
+## down-pipe, catalytic converter, centre silencer, rear box.
+func _underbody(m: Dictionary) -> void:
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.045, 0.045, 0.05)
+	dark.roughness = 0.85
+	dark.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.42, 0.4, 0.38)
+	metal.metallic = 0.8
+	metal.roughness = 0.38
+	var rusty := StandardMaterial3D.new()
+	rusty.albedo_color = Color(0.3, 0.22, 0.17)
+	rusty.metallic = 0.5
+	rusty.roughness = 0.6
+	var wr := float(m["wheel_r"])
+	var ww := float(m["wheel_w"])
+	var tr := float(m["track"])
+	var af := float(m["axle_f"])
+	var ar := float(m["axle_r"])
+	var hw := float(m["half_width"]) - 0.06
+	var y := float(m["base"]) + 0.03
+	var st := MeshKit.new_st()
+	var inner := tr - ww * 0.5 - 0.07          # inboard edge of the wheel arches
+	var gap := wr + 0.12
+	# floor pan: between the axles full width, at the ends between the wheels
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y, (af + gap + ar - gap) * 0.5)), Vector3(hw * 2.0, 0.03, (ar - gap) - (af + gap)))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.02, af)), Vector3(inner * 2.0, 0.03, gap * 2.0))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.02, ar)), Vector3(inner * 2.0, 0.03, gap * 2.0))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.03, (_front + af - gap) * 0.5)), Vector3(hw * 1.9, 0.03, absf(af - gap - _front) - 0.15))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.05, (_rear + ar + gap) * 0.5)), Vector3(hw * 1.9, 0.03, absf(_rear - ar - gap) - 0.12))
+	# the transmission tunnel and the sump, the fuel tank in front of the rear axle
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.06, (af + ar) * 0.5)), Vector3(0.3, 0.1, ar - af - 0.6))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.02, af + 0.15)), Vector3(0.45, 0.12, 0.6))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0.15, y + 0.04, ar - gap - 0.35)), Vector3(0.9, 0.12, 0.5))
+	# wheel arch liners: a half tube over each wheel and the inner wall beside it
+	for side in [-1.0, 1.0]:
+		for az in [af, ar]:
+			var cx: float = side * tr
+			var rr := wr + 0.07
+			var segs := 14
+			for k in segs:
+				var a0 := lerpf(-0.25, PI + 0.25, float(k) / segs)
+				var a1 := lerpf(-0.25, PI + 0.25, float(k + 1) / segs)
+				var p0 := Vector3(0, wr + sin(a0) * rr, az + cos(a0) * rr)
+				var p1 := Vector3(0, wr + sin(a1) * rr, az + cos(a1) * rr)
+				var xo: float = cx - ww * 0.5 - 0.05
+				var xi: float = cx + ww * 0.5 + 0.05
+				MeshKit.quad(st, Vector3(xo, p0.y, p0.z), Vector3(xi, p0.y, p0.z), Vector3(xi, p1.y, p1.z), Vector3(xo, p1.y, p1.z),
+					-(p0 - Vector3(0, wr, az)).normalized())
+				# the inner wall (towards the middle of the car)
+				var xw: float = cx - side * (ww * 0.5 + 0.05)
+				MeshKit.tri(st, Vector3(xw, wr, az), Vector3(xw, p0.y, p0.z), Vector3(xw, p1.y, p1.z),
+					Vector3(-side, 0, 0), Vector3(-side, 0, 0), Vector3(-side, 0, 0), Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector3(-side, 0, 0))
+	var under := MeshKit.mesh_instance(MeshKit.commit(st, dark))
+	under.name = "Underbody"
+	add_child(under)
+	# the exhaust: from under the engine back along the tunnel's side to the tip
+	var ex := Vector3(-0.3, 0.3, _rear)
+	if not exhaust_points.is_empty():
+		ex = exhaust_points[0]
+	var sx := signf(ex.x) if absf(ex.x) > 0.05 else -1.0
+	var pipe_y := y - 0.06
+	var path: Array = [Vector3(0.12 * sx, y + 0.12, af + 0.45), Vector3(0.18 * sx, pipe_y, af + 0.9),
+		Vector3(0.2 * sx, pipe_y, 0.0), Vector3(0.22 * sx, pipe_y, ar - gap - 0.1),
+		Vector3(ex.x * 0.7, pipe_y + 0.02, ar + gap * 0.6), Vector3(ex.x, ex.y - 0.02, _rear - 0.35), ex - Vector3(0, 0, 0.05)]
+	var pst := MeshKit.new_st()
+	var radii: Array = []
+	for i in path.size():
+		radii.append(float(m.get("exhaust_r", 0.045)) * 0.85)
+	MeshKit.tube(pst, path, radii, 10)
+	var pipe := MeshKit.mesh_instance(MeshKit.commit(pst, metal))
+	pipe.name = "Exhaust"
+	add_child(pipe)
+	# catalytic converter, centre silencer, rear box
+	var bst := MeshKit.new_st()
+	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0.19 * sx, pipe_y, af + 1.25)), Vector3(0.16, 0.11, 0.42))
+	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0.21 * sx, pipe_y, 0.35)), Vector3(0.2, 0.13, 0.6))
+	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(ex.x * 0.8, pipe_y + 0.03, _rear - 0.55)), Vector3(0.55, 0.18, 0.32))
+	var boxes := MeshKit.mesh_instance(MeshKit.commit(bst, rusty))
+	add_child(boxes)
+
+
+# ---------------------------------------------------------------------------
 # Imported model
 # ---------------------------------------------------------------------------
 func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
@@ -1124,8 +1214,12 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 	tail_mat.roughness = 0.08
 	reverse_mat = TexKit.std(Color(0.8, 0.8, 0.82), 0.1, 0.3, Color(1, 1, 1), 0.0)
 	var indicator_mat := TexKit.emissive(Color(1.0, 0.45, 0.02), 0.35)
+	# tinted glass you can see the cabin through, drawn from both sides (some models' windows face
+	# inwards: one-sided they vanished from outside)
 	glass_mat = StandardMaterial3D.new()
-	glass_mat.albedo_color = Color(0.015, 0.018, 0.024)
+	glass_mat.albedo_color = Color(0.02, 0.025, 0.03, 0.62)
+	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	glass_mat.metallic = 0.4
 	glass_mat.roughness = 0.03
 	glass_mat.clearcoat_enabled = true
@@ -1139,6 +1233,9 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 		"md_paint": paint_mat, "md_glass": glass_mat, "md_head_lens": head_mat, "md_tail": tail_mat,
 		"md_indicator": indicator_mat, "md_chrome": TexKit.chrome(), "md_mirror": TexKit.chrome(),
 	}
+	for k in replace:
+		if replace[k] is BaseMaterial3D and k != "md_glass":
+			(replace[k] as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
 	for node in _mesh_instances(inst):
 		var mi: MeshInstance3D = node
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -1200,6 +1297,8 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 	brake_light.position = Vector3(0, float(m["tail"][0][1]), float(m["tail"][0][2]) + 0.4)
 	brake_light.visible = false
 	add_child(brake_light)
+	if bool(m.get("underbody", false)):
+		_underbody(m)
 	# reverse lamps: small emissive discs next to the tail lights
 	for t in m["tail"]:
 		var rv := MeshKit.cyl_node(0.03, 0.03, 0.01, reverse_mat, Vector3(float(t[0]) * 0.55, float(t[1]) - 0.08, float(t[2]) + 0.02), Vector3(PI * 0.5, 0, 0), 12)
