@@ -25,13 +25,21 @@ func _ready() -> void:
 	cam.current = true
 	cam.fov = 65.0
 	world.local_car.visible = false
-	for gid in str(args["games"]).split(","):
+	for gname in str(args["games"]).split(","):
+		var gid := gname
+		# parkour0 … parkour4: one of the parkour's courses
+		if gname.begins_with("parkour") and gname.length() > 7:
+			gid = "parkour"
+			sites.pk_variant = int(gname.substr(7))
 		if not sites.sites.has(gid):
 			continue
 		sites.build_course(gid)
 		var views: Array = []
 		var l: float = sites.sites[gid]["len"]
 		match gid:
+			"parkour" when gname != gid:
+				var k: float = l / 210.0
+				views = [["a", 6.0 * k, 4.5, 4.5, 60.0 * k], ["b", 62.0 * k, -4.5, 4.5, 125.0 * k], ["c", 125.0 * k, 4.5, 4.5, 195.0 * k]]
 			"parkour":
 				var k: float = l / 210.0
 				views = [["mud", 14.0 * k, 4.0, 2.2, 34.0 * k], ["logs", 64.0 * k, 3.5, 2.6, 88.0 * k], ["logs_low", 78.0 * k, -2.5, 1.2, 92.0 * k],
@@ -51,7 +59,7 @@ func _ready() -> void:
 			for f in 8:
 				await get_tree().process_frame
 			await RenderingServer.frame_post_draw
-			var path: String = str(args["out"]).path_join("party_%s_%s.png" % [gid, v[0]])
+			var path: String = str(args["out"]).path_join("party_%s_%s.png" % [gname, v[0]])
 			get_viewport().get_texture().get_image().save_png(path)
 			print("SHOT ", path)
 		sites.clear_course()

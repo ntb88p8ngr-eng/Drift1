@@ -26,6 +26,10 @@ const POP_SHIELD := 0.8        # balloon mode: short grace after a pop (a triple
 const BALLOON_COLS := [Color(1.0, 0.15, 0.2), Color(0.2, 0.55, 1.0), Color(1.0, 0.85, 0.1), Color(0.2, 0.85, 0.35),
 	Color(0.9, 0.3, 1.0), Color(1.0, 0.5, 0.1), Color(0.1, 0.9, 0.9), Color(1.0, 1.0, 1.0)]
 const BOT_NAMES := ["Bot Blitz", "Bot Kurbel", "Bot Turbo"]
+## alone: the bots that join (set before setup) – the race's own bots by name and car when there
+## are any (up to 7), else the three above
+var bot_names: Array = []
+var bot_cars: Array = []
 const LAYER_WORLD := 1
 const Car = preload("res://scripts/car/car.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
@@ -76,7 +80,9 @@ func setup(p_party: Node, p_world: Node3D, p_sites: Node3D, p_seed: int, ids: Ar
 			_add_fighter(int(id), world.cars[id], false)
 	# alone: three bots join
 	if ids.size() <= 1:
-		for b in BOT_NAMES.size():
+		if bot_names.is_empty():
+			bot_names = BOT_NAMES.duplicate()
+		for b in mini(bot_names.size(), 7):
 			_spawn_bot(-(b + 1), b)
 	# everybody is shielded through the countdown and the first seconds
 	for id in fighters:
@@ -93,9 +99,9 @@ func _add_fighter(id: int, car: Node, bot: bool) -> void:
 func _spawn_bot(id: int, b: int) -> void:
 	var car := Car.new()
 	var car_ids: Array = Game.CARS.keys()
-	car.car_id = str(car_ids[(b + 1) % car_ids.size()])
+	car.car_id = str(bot_cars[b]) if b < bot_cars.size() and Game.CARS.has(str(bot_cars[b])) else str(car_ids[(b + 1) % car_ids.size()])
 	car.paint = Game.get_paint(str(Game.PAINTS[(b * 2 + 1) % Game.PAINTS.size()]["id"]))
-	car.player_name = BOT_NAMES[b]
+	car.player_name = str(bot_names[b])
 	car.is_bot = true
 	car.input_enabled = false
 	car.track = world.track
@@ -112,7 +118,8 @@ func _spawn_bot(id: int, b: int) -> void:
 	tag.outline_size = 12
 	tag.modulate = Color(1.0, 0.55, 0.45)
 	car.add_child(tag)
-	car.place(sites.arena_spawn(b + 1 + (4 if b % 2 == 1 else 0)))
+	# (three bots: spread out over the eight spots; more: one spot each)
+	car.place(sites.arena_spawn(b + 1 + (4 if b % 2 == 1 else 0) if bot_names.size() <= 3 else b + 1))
 	car.arena_kill_y = float(world.track.kill_y)
 	car.respawn_fn = func() -> Transform3D: return _spawn_xf()
 	_add_fighter(id, car, true)

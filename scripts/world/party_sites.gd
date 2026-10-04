@@ -350,90 +350,56 @@ func _traffic_light(parent: Node3D, pos: Vector3, s: float) -> Array:
 	return out
 
 
+## Parkour: five courses (which one: pk_variant, from the minigame's shared seed – the same on every
+## machine). All of them rough: mud nearly everywhere, big obstacles, narrow ways through.
+const PK_VARIANTS := ["HOLZFÄLLER", "SCHANZEN", "SCHLAMM-SLALOM", "FELSGARTEN", "EXTREM"]
+var pk_variant := 0
+
+
 func _build_parkour() -> void:
 	var id := "parkour"
 	var hw: float = track.half_w
 	var hazard := _mat(Color(1.0, 0.75, 0.05), 0.6, 0.3)
 	var len: float = sites[id]["len"]
 	var k: float = len / 210.0     # shorter on short tracks
-	# the same layout on every machine (seeded by the stretch), but nothing lined up
+	# the same layout on every machine (seeded by the stretch and the variant), but nothing lined up
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(["parkour", int(sites[id]["i0"])])
+	rng.seed = hash(["parkour", int(sites[id]["i0"]), pk_variant])
 	_line(id, PK_START)
 	_line(id, pk_finish())
-	_gantry(id, pk_finish() + 5.0, "OFFROAD-PARKOUR", Color(1.0, 0.7, 0.2))
-	# mud: ragged patches all over the stretch, some wide, some narrow, overlapping
+	_gantry(id, pk_finish() + 5.0, "OFFROAD · " + str(PK_VARIANTS[pk_variant]), Color(1.0, 0.7, 0.2))
+	# mud: ragged patches all over the stretch (closer together than they were), the mud slalom
+	# is one long mud bath
 	mud_spots.clear()
-	var a := PK_START + 4.0
+	var a := PK_START + 2.0
 	var n_mud := 0
-	while a < pk_finish() - 4.0:
-		var r := rng.randf_range(3.5, 8.0)
+	var dense := pk_variant == 2
+	while a < pk_finish() - 2.0:
+		var r := rng.randf_range(4.5, 9.0) if dense else rng.randf_range(3.5, 8.0)
 		_mud_patch(id, a + r * 0.6, rng.randf_range(-0.55, 0.55) * hw, r, rng, n_mud)
-		a += r * rng.randf_range(1.1, 1.9)
+		if dense:
+			_mud_patch(id, a + r * 0.9, rng.randf_range(-0.5, 0.5) * hw, r * 0.8, rng, n_mud + 1)
+		a += r * (rng.randf_range(0.6, 0.9) if dense else rng.randf_range(0.9, 1.4))
 		n_mud += 1
-	# tyre walls along the edges of the whole course, loose tyres lying about
+	# tyre walls along the edges of the whole course
 	_tyre_edges(id, PK_START + 3.0, pk_finish() - 3.0, 7.0, rng, 2, 4)
-	for m in int(14.0 * k):
-		_tyre_lying(id, rng.randf_range(PK_START + 8.0, 70.0 * k), rng.randf_range(-0.7, 0.7) * hw, rng)
-	# 1) tyre stacks, scattered in the first mud field (1–4 tyres, never in a neat row)
-	var t_along := 22.0 * k
-	for m in 9:
-		t_along += rng.randf_range(4.5, 6.5) * k
-		var lat := (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.15, 0.6) * hw
-		if m % 3 == 1:
-			_tyre_cluster(id, t_along, lat, rng)
-		else:
-			_tyre_stack(id, t_along, lat, rng.randi_range(1, 4), rng)
-		if rng.randf() < 0.4:
-			_tyre_stack(id, t_along + rng.randf_range(-1.5, 1.5), lat + rng.randf_range(1.2, 1.6) * signf(-lat), 1, rng)
-	# 2) log field: felled trunks lying every which way, thin enough to crawl over with the lift
-	var f0 := 72.0 * k
-	var f1 := 108.0 * k
-	var n_logs := int(clampf(15.0 * k, 7.0, 15.0))
-	for m in n_logs:
-		var along := lerpf(f0, f1, (m + rng.randf_range(0.1, 0.9)) / n_logs)
-		var r2 := rng.randf_range(0.13, 0.24)
-		var l := rng.randf_range(2.8, minf(6.5, hw * 1.6))
-		var yaw := rng.randf_range(-0.65, 0.65)
-		if rng.randf() < 0.2:
-			yaw = PI * 0.5 + rng.randf_range(-0.3, 0.3)   # now and then one lies along the road
-			l = minf(l, 4.0)
-		_log(id, along, rng.randf_range(-0.75, 0.75) * (hw - l * 0.3), yaw, r2, l, rng)
-	# a pile at each side of the field: two trunks with a third in the groove on top
-	for side: float in [-1.0, 1.0]:
-		var pa := rng.randf_range(f0 + 4.0, f1 - 6.0)
-		var pl := side * (hw - 1.3)
-		var pr := rng.randf_range(0.3, 0.38)
-		var pyaw := PI * 0.5 + rng.randf_range(-0.2, 0.2)
-		var plen := rng.randf_range(5.0, 7.5)
-		_log(id, pa, pl - 0.36 * pr / 0.35, pyaw, pr, plen, rng)
-		_log(id, pa + rng.randf_range(-0.4, 0.4), pl + 0.36 * pr / 0.35, pyaw + rng.randf_range(-0.06, 0.06), pr * rng.randf_range(0.9, 1.05), plen * rng.randf_range(0.8, 1.0), rng)
-		_log(id, pa + rng.randf_range(-0.8, 0.8), pl, pyaw + rng.randf_range(-0.1, 0.1), pr * 0.85, plen * rng.randf_range(0.6, 0.9), rng, pr * 1.55)
-	# 3) plank kickers: different sizes, a bit skewed, propped up by a log
-	var r_along := 118.0 * k
-	for m in 3:
-		r_along += rng.randf_range(10.0, 16.0) * k
-		var rl := rng.randf_range(5.5, 8.0)
-		var rh := rng.randf_range(0.8, 1.35)
-		var rw := rng.randf_range(3.2, minf(5.0, hw * 0.9))
-		var rlat := (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.1, 0.45) * hw
-		_ramp(id, r_along, rlat, rng.randf_range(-0.22, 0.22), rl, rh, rw, rng)
-	# 4) chicane of stacked trunks, alternating sides, not quite straight
-	var c_along := 168.0 * k
-	for m in 4:
-		var side2 := -1.0 if m % 2 == 0 else 1.0
-		var cl := hw * rng.randf_range(1.05, 1.2)
-		var cyaw := rng.randf_range(-0.18, 0.18)
-		var clat := side2 * (hw - cl * 0.5 + 0.3)
-		var cr := rng.randf_range(0.27, 0.34)
-		for j in 2:
-			_log(id, c_along + (j - 0.5) * cr * 2.02, clat + rng.randf_range(-0.3, 0.3), cyaw + rng.randf_range(-0.04, 0.04), cr, cl * rng.randf_range(0.92, 1.05), rng)
-		_log(id, c_along + rng.randf_range(-0.1, 0.1), clat + rng.randf_range(-0.5, 0.5), cyaw + rng.randf_range(-0.08, 0.08), cr * 0.9, cl * rng.randf_range(0.7, 0.95), rng, cr * 1.7)
-		c_along += rng.randf_range(9.0, 12.0) * k
+	var a0 := PK_START + 8.0
+	var a1 := pk_finish() - 6.0
+	match pk_variant:
+		0:
+			_pk_lumber(id, a0, a1, hw, k, rng)
+		1:
+			_pk_jumps(id, a0, a1, hw, k, rng)
+		2:
+			_pk_slalom(id, a0, a1, hw, k, rng)
+		3:
+			_pk_rocks(id, a0, a1, hw, k, rng)
+		_:
+			_pk_extreme(id, a0, a1, hw, k, rng)
 	# boulders along the edges
-	for m in 7:
+	for m in 9:
 		var side3 := -1.0 if rng.randf() < 0.5 else 1.0
-		_rock(id, rng.randf_range(PK_START + 10.0, pk_finish() - 8.0), side3 * rng.randf_range(hw - 1.8, hw - 0.6), rng.randf_range(0.45, 0.9), rng)
+		_rock(id, rng.randf_range(PK_START + 10.0, pk_finish() - 8.0), side3 * rng.randf_range(hw - 1.8, hw - 0.6), rng.randf_range(0.45, 0.95), rng)
 	# checkpoint arches
 	for cz in pk_checkpoints():
 		if float(cz) <= 0.0:
@@ -446,6 +412,232 @@ func _build_parkour() -> void:
 		var top := MeshKit.box_node(Vector3(hw * 2.0 + 1.0, 0.35, 0.35), hazard)
 		_course.add_child(top)
 		top.global_transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, 4.5, 0))
+
+
+## False where an obstacle would block a checkpoint's respawn spot (or the start / finish lines).
+func _pk_free(along: float, lateral: float, reach := 1.5) -> bool:
+	if along < PK_START + 5.0 or along > pk_finish() - 3.0:
+		return false
+	for cz in pk_checkpoints():
+		if float(cz) > 0.0 and absf(along - (float(cz) + 3.0)) < 4.5 + reach and absf(lateral) < 2.8 + reach:
+			return false
+	return true
+
+
+## A felled trunk, only where it keeps the respawn spots free.
+func _pk_log(id: String, along: float, lateral: float, yaw: float, r: float, length: float, rng: RandomNumberGenerator, y := 0.0) -> void:
+	if _pk_free(along, lateral, length * 0.5 * absf(cos(yaw)) + 0.5):
+		_log(id, along, lateral, yaw, r, length, rng, y)
+
+
+func _pk_ramp(id: String, along: float, lateral: float, yaw: float, rl: float, rh: float, rw: float, rng: RandomNumberGenerator) -> void:
+	if _pk_free(along, lateral, maxf(rl, rw) * 0.5):
+		_ramp(id, along, lateral, yaw, rl, rh, rw, rng)
+
+
+## A dirt hump across the road (a whoop): half buried, solid. `r` its roundness, `h` how high it stands.
+func _hump(id: String, along: float, lateral: float, width: float, r: float, h: float) -> void:
+	if not _pk_free(along, lateral, r):
+		return
+	var xf := _road_xf(id, along, lateral, 0.0, h - r)
+	var cm := CylinderMesh.new()
+	cm.top_radius = r
+	cm.bottom_radius = r
+	cm.height = width
+	cm.radial_segments = 24
+	var mi := MeshKit.mesh_instance(cm, _mat(Color(0.33, 0.24, 0.15), 0.95))
+	mi.rotation = Vector3(0, 0, PI * 0.5)
+	var root := Node3D.new()
+	_course.add_child(root)
+	root.global_transform = xf
+	root.add_child(mi)
+	var body := StaticBody3D.new()
+	body.collision_layer = Colliders.LAYER_WORLD
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = r
+	shape.height = width
+	cs.shape = shape
+	cs.rotation = Vector3(0, 0, PI * 0.5)
+	body.add_child(cs)
+	root.add_child(body)
+
+
+## A gate of two tyre stacks with a gap of `gap` metres at `lateral`.
+func _tyre_gate(id: String, along: float, lateral: float, gap: float, rng: RandomNumberGenerator) -> void:
+	for side: float in [-1.0, 1.0]:
+		var lat := lateral + side * (gap * 0.5 + 0.6)
+		if absf(lat) < float(track.half_w) - 0.6 and _pk_free(along, lat, 0.6):
+			_tyre_stack(id, along, lat, rng.randi_range(3, 5), rng)
+			_tyre_stack(id, along, lat + side * 1.2, rng.randi_range(2, 4), rng)
+
+
+## A wall of stacked tyres across the whole road: only over the top (a kicker in front of it).
+func _tyre_wall(id: String, along: float, rng: RandomNumberGenerator, high: int) -> void:
+	var hw: float = track.half_w
+	var lat := -hw + 1.4
+	while lat < hw - 1.3:
+		if _pk_free(along, lat, 0.6):
+			_tyre_stack(id, along, lat, high, rng)
+		lat += 1.2
+
+
+## A table-top: kicker up, a flat plateau, kicker down.
+func _table(id: String, along: float, lateral: float, rh: float, rw: float, top_len: float, rng: RandomNumberGenerator) -> void:
+	var rl := rh * 4.0
+	if not _pk_free(along, lateral, top_len * 0.5 + rl):
+		return
+	_ramp(id, along - top_len * 0.5 - rl * 0.5 + 0.2, lateral, 0.0, rl, rh, rw, rng)
+	_block(id, along, lateral, Vector3(rw, rh, top_len), TexKit.plank_material(), 0.0, rh * 0.5)
+	_ramp(id, along + top_len * 0.5 + rl * 0.5 - 0.2, lateral, PI, rl, rh, rw, rng)
+
+
+## 1) Lumberjack: thick trunks all the way, piles, log walls with narrow gaps.
+func _pk_lumber(id: String, a0: float, a1: float, hw: float, k: float, rng: RandomNumberGenerator) -> void:
+	var n_logs := int(clampf(34.0 * k, 12.0, 34.0))
+	for m in n_logs:
+		var along := lerpf(a0, a1, (m + rng.randf_range(0.1, 0.9)) / n_logs)
+		var l := rng.randf_range(3.2, minf(7.5, hw * 1.7))
+		var yaw := rng.randf_range(-0.7, 0.7)
+		if rng.randf() < 0.2:
+			yaw = PI * 0.5 + rng.randf_range(-0.3, 0.3)
+			l = minf(l, 4.5)
+		_pk_log(id, along, rng.randf_range(-0.75, 0.75) * (hw - l * 0.3), yaw, rng.randf_range(0.2, 0.33), l, rng)
+	# piles: two trunks with a third on top
+	for p in 4:
+		var pa := lerpf(a0, a1, (p + rng.randf_range(0.2, 0.8)) / 4.0)
+		var pl := rng.randf_range(-0.5, 0.5) * hw
+		var pr := rng.randf_range(0.3, 0.4)
+		var pyaw := rng.randf_range(-0.4, 0.4)
+		var plen := rng.randf_range(4.0, 6.0)
+		_pk_log(id, pa, pl - 0.36 * pr / 0.35, pyaw, pr, plen, rng)
+		_pk_log(id, pa, pl + 0.36 * pr / 0.35, pyaw, pr, plen * 0.9, rng)
+		_pk_log(id, pa, pl, pyaw, pr * 0.85, plen * 0.75, rng, pr * 1.55)
+	# log walls across the road with one gap of 3.4 m, the gap jumping from side to side
+	for w in 3:
+		var wa := lerpf(a0, a1, (w + 0.5) / 3.0) + rng.randf_range(-6.0, 6.0)
+		var gap_lat := (-1.0 if w % 2 == 0 else 1.0) * rng.randf_range(0.2, 0.55) * hw
+		for side: float in [-1.0, 1.0]:
+			var edge := gap_lat + side * 1.7
+			var outer := side * hw
+			var l2 := absf(outer - edge)
+			if l2 > 1.0:
+				var mid := (edge + outer) * 0.5
+				_pk_log(id, wa, mid, 0.0, 0.34, l2, rng)
+				_pk_log(id, wa + 0.66, mid, 0.0, 0.32, l2 * 0.95, rng)
+				_pk_log(id, wa + 0.33, mid, 0.0, 0.3, l2 * 0.85, rng, 0.62)
+
+
+## 2) Jumps: big kickers, a table-top, tyre walls only to be jumped.
+func _pk_jumps(id: String, a0: float, a1: float, hw: float, k: float, rng: RandomNumberGenerator) -> void:
+	var along := a0 + 6.0
+	var n := 0
+	while along < a1 - 10.0:
+		var kind := n % 4
+		var rw := rng.randf_range(3.6, minf(5.5, hw * 1.1))
+		var lat := rng.randf_range(-0.35, 0.35) * hw
+		match kind:
+			0:
+				_pk_ramp(id, along, lat, rng.randf_range(-0.15, 0.15), rng.randf_range(5.5, 7.5), rng.randf_range(1.3, 1.9), rw, rng)
+			1:
+				_table(id, along + 6.0, lat * 0.5, rng.randf_range(1.0, 1.4), rw + 0.8, rng.randf_range(4.0, 7.0), rng)
+				along += 10.0
+			2:
+				# kicker straight onto a wall of tyres: jump it (or plough through)
+				_pk_ramp(id, along, 0.0, 0.0, 6.0, rng.randf_range(1.3, 1.6), hw * 1.6, rng)
+				_tyre_wall(id, along + 8.5, rng, 2)
+				along += 6.0
+			3:
+				for j in 3:
+					_hump(id, along + j * 3.2, 0.0, hw * 2.0 - 1.5, 1.1, 0.55)
+				along += 6.0
+		along += rng.randf_range(16.0, 22.0) * k
+		n += 1
+
+
+## 3) Mud slalom: tyre gates in a tight slalom, boulders between, all in mud.
+func _pk_slalom(id: String, a0: float, a1: float, hw: float, k: float, rng: RandomNumberGenerator) -> void:
+	var along := a0 + 2.0
+	var side := 1.0
+	while along < a1:
+		var gap := rng.randf_range(3.1, 3.6)
+		_tyre_gate(id, along, side * rng.randf_range(0.35, 0.6) * (hw - 2.5), gap, rng)
+		if rng.randf() < 0.6:
+			var rl := -side * rng.randf_range(0.2, 0.6) * hw
+			if _pk_free(along + 5.0, rl, 1.0):
+				_rock(id, along + rng.randf_range(4.0, 6.0), rl, rng.randf_range(0.5, 0.9), rng)
+		if rng.randf() < 0.35:
+			_pk_log(id, along + 4.5, rng.randf_range(-0.3, 0.3) * hw, rng.randf_range(-0.5, 0.5), 0.22, rng.randf_range(2.5, 4.0), rng)
+		along += rng.randf_range(9.0, 12.0) * k
+		side = -side
+
+
+## 4) Rock garden: boulders on the road to crawl over or round, whoops between.
+func _pk_rocks(id: String, a0: float, a1: float, hw: float, k: float, rng: RandomNumberGenerator) -> void:
+	var gardens := 3
+	for g in gardens:
+		var g0 := lerpf(a0, a1, float(g) / gardens)
+		var g1 := lerpf(a0, a1, (g + 0.62) / gardens)
+		var n := int(18.0 * k)
+		for m in n:
+			var al := rng.randf_range(g0, g1)
+			var lat := rng.randf_range(-0.85, 0.85) * (hw - 1.0)
+			if _pk_free(al, lat, 1.0):
+				_rock(id, al, lat, rng.randf_range(0.45, 1.05), rng)
+		# whoops after each garden
+		var w0 := g1 + 4.0
+		var w1 := lerpf(a0, a1, (g + 1.0) / gardens) - 3.0
+		var h := w0
+		while h < w1:
+			_hump(id, h, rng.randf_range(-0.5, 0.5), hw * 2.0 - 1.4, rng.randf_range(0.9, 1.3), rng.randf_range(0.35, 0.6))
+			h += rng.randf_range(2.6, 3.6)
+
+
+## 5) Extreme: tyre stacks, a log field, big kickers, a table-top, whoops and a trunk chicane.
+func _pk_extreme(id: String, a0: float, a1: float, hw: float, k: float, rng: RandomNumberGenerator) -> void:
+	# tyre stacks and clusters
+	var t_along := a0 + 4.0
+	for m in 10:
+		t_along += rng.randf_range(3.5, 5.0) * k
+		var lat := (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.1, 0.55) * hw
+		if _pk_free(t_along, lat, 1.5):
+			if m % 3 == 1:
+				_tyre_cluster(id, t_along, lat, rng)
+			else:
+				_tyre_stack(id, t_along, lat, rng.randi_range(2, 5), rng)
+	# log field
+	var f0 := 66.0 * k
+	var f1 := 102.0 * k
+	var n_logs := int(clampf(22.0 * k, 9.0, 22.0))
+	for m in n_logs:
+		var along := lerpf(f0, f1, (m + rng.randf_range(0.1, 0.9)) / n_logs)
+		var l := rng.randf_range(3.0, minf(7.0, hw * 1.6))
+		_pk_log(id, along, rng.randf_range(-0.75, 0.75) * (hw - l * 0.3), rng.randf_range(-0.7, 0.7), rng.randf_range(0.18, 0.3), l, rng)
+	# whoops
+	var h := f1 + 4.0
+	for j in 4:
+		_hump(id, h, 0.0, hw * 2.0 - 1.4, 1.0, 0.5)
+		h += 3.0
+	# a table-top and two big kickers
+	_table(id, h + 9.0 * k, rng.randf_range(-0.2, 0.2) * hw, 1.2, minf(5.0, hw * 1.2), 5.0, rng)
+	var r_along := h + 26.0 * k
+	for m in 2:
+		_pk_ramp(id, r_along, (-1.0 if m % 2 == 0 else 1.0) * rng.randf_range(0.1, 0.4) * hw, rng.randf_range(-0.25, 0.25), rng.randf_range(5.5, 7.0), rng.randf_range(1.3, 1.7), rng.randf_range(3.2, 4.5), rng)
+		r_along += rng.randf_range(11.0, 15.0) * k
+	# a chicane of stacked trunks, narrower than the road
+	var c_along := maxf(r_along + 4.0, 168.0 * k)
+	for m in 4:
+		if c_along > a1:
+			break
+		var side2 := -1.0 if m % 2 == 0 else 1.0
+		var cl := hw * rng.randf_range(1.2, 1.35)
+		var clat := side2 * (hw - cl * 0.5 + 0.3)
+		var cr := rng.randf_range(0.3, 0.36)
+		for j in 2:
+			_pk_log(id, c_along + (j - 0.5) * cr * 2.02, clat, rng.randf_range(-0.1, 0.1), cr, cl, rng)
+		_pk_log(id, c_along, clat, 0.0, cr * 0.9, cl * 0.85, rng, cr * 1.7)
+		c_along += rng.randf_range(7.5, 10.0) * k
 
 
 ## Frame on the road surface at a point of a stretch, turned by yaw (0 = across the road).

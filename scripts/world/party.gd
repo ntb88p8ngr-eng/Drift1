@@ -581,9 +581,22 @@ func _begin_travel() -> void:
 	var g: Dictionary = GAMES[_game]
 	var id: String = g["id"]
 	var car = world.local_car
-	# the props of this minigame go up on its stretch of the track (and come down afterwards)
-	sites.build_course(id)
-	_hold(sites.start_xf(id, _slot, _ids.size()))
+	# the props of this minigame go up on its stretch of the track (and come down afterwards);
+	# the parkour: one of its five courses, the same everywhere (from the shared seed)
+	if id == "parkour":
+		sites.pk_variant = posmod(_seed, sites.PK_VARIANTS.size())
+	# the shoot-out alone with the race's bots: they all come along – with more than four cars it is
+	# fought on the long stretch (the balloon battle's) instead of the short arena
+	var site := id
+	var arena_bots: Array = []
+	if (id == "arena" or id == "balloon") and not world.online and _ids.size() <= 1:
+		for bid in world._bot_ids:
+			if world.cars.has(bid) and is_instance_valid(world.cars[bid]):
+				arena_bots.append(world.cars[bid])
+		if id == "arena" and arena_bots.size() + 1 > 4 and sites.sites.has("balloon"):
+			site = "balloon"
+	sites.build_course(site)
+	_hold(sites.start_xf(site, _slot, _ids.size()))
 	car.controls_locked = true
 	car.gear = 1
 	car.nitro = 1.0
@@ -592,7 +605,7 @@ func _begin_travel() -> void:
 	if id == "parkour":
 		# offroad: lifted, loose dirt, less grip still in the mud patches
 		car.set_lift(PARKOUR_LIFT)
-		car.surface_override = func(p: Vector3) -> Array: return [0.72, "dirt"] if sites.in_mud(p) else [0.9, "dirt"]
+		car.surface_override = func(p: Vector3) -> Array: return [0.6, "dirt"] if sites.in_mud(p) else [0.84, "dirt"]
 	else:
 		car.surface_override = func(_p: Vector3) -> Array: return [1.0, "asphalt"]
 	_mask_before = car.collision_mask
@@ -608,6 +621,9 @@ func _begin_travel() -> void:
 		_arena = PartyArena.new()
 		_arena.name = "Arena"
 		_arena.mode = "balloon" if id == "balloon" else "shoot"
+		for b in arena_bots.slice(0, 7):
+			_arena.bot_names.append(str(b.player_name))
+			_arena.bot_cars.append(str(b.car_id))
 		add_child(_arena)
 		var me: int = Net.local_id() if world.online else 1
 		_arena.setup(self, world, sites, _seed, _ids, me)
