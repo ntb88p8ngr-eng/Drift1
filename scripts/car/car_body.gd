@@ -1135,7 +1135,7 @@ func _underbody(m: Dictionary) -> void:
 	var tr := float(m["track"])
 	var af := float(m["axle_f"])
 	var ar := float(m["axle_r"])
-	var hw := float(m["half_width"]) - 0.06
+	var hw := float(m["half_width"]) - 0.16    # well inside the sills (it must not show from the side)
 	var y := float(m["base"]) + 0.03
 	var st := MeshKit.new_st()
 	var inner := tr - ww * 0.5 - 0.07          # inboard edge of the wheel arches
@@ -1157,12 +1157,13 @@ func _underbody(m: Dictionary) -> void:
 			var rr := wr + 0.07
 			var segs := 14
 			for k in segs:
-				var a0 := lerpf(-0.25, PI + 0.25, float(k) / segs)
-				var a1 := lerpf(-0.25, PI + 0.25, float(k + 1) / segs)
+				var a0 := lerpf(0.12, PI - 0.12, float(k) / segs)
+				var a1 := lerpf(0.12, PI - 0.12, float(k + 1) / segs)
 				var p0 := Vector3(0, wr + sin(a0) * rr, az + cos(a0) * rr)
 				var p1 := Vector3(0, wr + sin(a1) * rr, az + cos(a1) * rr)
-				var xo: float = cx - ww * 0.5 - 0.05
-				var xi: float = cx + ww * 0.5 + 0.05
+				# from the inner wall out to just inside the tyre's outer face (never past the fender)
+				var xo: float = cx - side * (ww * 0.5 + 0.05)
+				var xi: float = cx + side * (ww * 0.5 - 0.06)
 				MeshKit.quad(st, Vector3(xo, p0.y, p0.z), Vector3(xi, p0.y, p0.z), Vector3(xi, p1.y, p1.z), Vector3(xo, p1.y, p1.z),
 					-(p0 - Vector3(0, wr, az)).normalized())
 				# the inner wall (towards the middle of the car)
