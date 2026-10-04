@@ -47,6 +47,7 @@ var _lb_cat := 0
 var _lb_list: VBoxContainer
 var _platform_bar: HBoxContainer   # turntable controls (main menu and garage), above the corner buttons
 var _light_panel: Control
+var _sub_panel: PanelContainer     # round the sub menus' list
 var _platform_picker: ColorPickerButton
 var _view_row: HBoxContainer
 var _player_info: VBoxContainer   # driver / car / credits, top right
@@ -84,7 +85,11 @@ func _ready() -> void:
 	scroll.follow_focus = true
 	# (no scrollbar: the wheel and the focus still scroll it)
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	outer.add_child(scroll)
+	# the sub menus sit on a rounded, translucent grey panel (the main list stays bare)
+	_sub_panel = PanelContainer.new()
+	_sub_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_sub_panel.add_child(scroll)
+	outer.add_child(_sub_panel)
 	_content = VBoxContainer.new()
 	_content.add_theme_constant_override("separation", 10)
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -307,6 +312,19 @@ func _clear() -> void:
 	_back_fn = Callable()
 
 
+func _panel_style() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.13, 0.13, 0.15, 0.62)
+	sb.border_color = Color(0.6, 0.6, 0.66, 0.35)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(16)
+	sb.content_margin_left = 22
+	sb.content_margin_right = 22
+	sb.content_margin_top = 16
+	sb.content_margin_bottom = 16
+	return sb
+
+
 ## A big button pinned to the bottom right corner of the screen (Zurück / Fertig).
 func _float_button(text: String, callback: Callable) -> Button:
 	var b := UiKit.button(text, callback, 240)
@@ -333,6 +351,7 @@ func show_screen(screen: String) -> void:
 	current = screen
 	_clear()
 	_side.visible = screen != "story"
+	_sub_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new() if screen == "main" else _panel_style())
 	_player_info.visible = false      # (the main screen shows it again)
 	if screen != "story":
 		_at_pc_off()

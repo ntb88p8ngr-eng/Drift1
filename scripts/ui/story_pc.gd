@@ -34,7 +34,6 @@ var _sel := 0
 var _mono: SystemFont
 var _boot := 0.0
 var _cursor: Polygon2D
-var _code: LineEdit
 ## the terminal (Ctrl+T): a fake remote session with a few commands
 var _term: PanelContainer
 var _term_out: RichTextLabel
@@ -101,16 +100,7 @@ func _ready() -> void:
 	_start = _button("> STARTEN", func(): _select(_sel, true))
 	right.add_child(_start)
 	v.add_child(_rule())
-	# action codes (gifts, easter eggs): typed in here, at the workshop PC
-	var code_row := HBoxContainer.new()
-	code_row.add_theme_constant_override("separation", 10)
-	code_row.add_child(_label("AKTIONSCODE:", 16, DIM))
-	_code = _line_edit("Code eingeben")
-	_code.custom_minimum_size = Vector2(260, 0)
-	_code.text_submitted.connect(func(_t): _redeem(_code.text))
-	code_row.add_child(_code)
-	code_row.add_child(_button("> EINLÖSEN", func(): _redeem(_code.text)))
-	v.add_child(code_row)
+	# action codes: only through the terminal (Ctrl+T, "code <CODE>")
 	if not Net.code_result.is_connected(_on_code_result):
 		Net.code_result.connect(_on_code_result)
 	var foot := HBoxContainer.new()
@@ -160,8 +150,6 @@ void fragment() {
 # ---------------------------------------------------------------------------
 func _redeem(text: String) -> String:
 	var r: Array = Game.redeem_code(text)
-	if _code:
-		_code.text = ""
 	var msg := "> " + str(r[1])
 	_log.text = msg
 	if bool(r[0]):
