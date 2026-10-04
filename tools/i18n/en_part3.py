@@ -376,3 +376,4 @@ EN.update({
 "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Rechtsklick / Esc: abbrechen": "Click the car: stick it here (Shift+click: more) · wheel or Q / E: rotate · Shift+wheel: size · right click / Esc: cancel",
 })
 EN.update({"Zuletzt verwendet": "Recently used"})
+EN.update({"Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen · LT / RT: Größe · rechter Stick: Kamera · B: abbrechen": "Left stick: move sticker · A: stick on · X: stick on + more · LB / RB: rotate · LT / RT: size · right stick: camera · B: cancel"})

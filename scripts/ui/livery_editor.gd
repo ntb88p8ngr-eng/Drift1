@@ -35,6 +35,9 @@ var _placing := ""        # a shape picked from the grid, following the mouse ov
 var _place_rot := 0.0
 var _place_size := 0.7
 var _hint: Label
+var _pad := false          # the last input came from a gamepad: placing follows a cursor on the stick
+var _pad_cursor := Vector2.ZERO
+var _cursor: Control
 
 
 func _ready() -> void:
@@ -86,6 +89,17 @@ func _ready() -> void:
 	gen.ensure_all()
 	_refresh_list()
 	_apply()
+	# the gamepad's cursor while placing: a ring with a cross
+	_cursor = Control.new()
+	_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cursor.visible = false
+	_cursor.draw.connect(func():
+		var a := Color(1, 1, 1, 0.9)
+		_cursor.draw_arc(Vector2.ZERO, 14.0, 0.0, TAU, 32, Color(0, 0, 0, 0.5), 5.0, true)
+		_cursor.draw_arc(Vector2.ZERO, 14.0, 0.0, TAU, 32, a, 2.0, true)
+		for d in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
+			_cursor.draw_line(d * 6.0, d * 22.0, a, 2.0, true))
+	add_child(_cursor)
 
 
 func _scroll(c: Control) -> ScrollContainer:
@@ -357,6 +371,70 @@ func save() -> void:
 	Game.set_livery(str(Game.settings["car"]), layers)
 
 
+## Gamepad while placing (ahead of the menu's own focus moves): A sticks it on, X sticks it on and
+## keeps the shape, LB / RB turn it, B cancels; the sticks move the cursor and the camera, the
+## triggers set the size (see _process).
+func _input(event: InputEvent) -> void:
+	if not visible or sr == null:
+		return
+	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) > 0.3):
+		_pad = true
+	elif event is InputEventMouseMotion or event is InputEventMouseButton:
+		_pad = false
+		if _cursor and _cursor.visible:
+			_cursor.visible = false
+	if _placing == "" or not (event is InputEventJoypadButton or event is InputEventJoypadMotion):
+		return
+	get_viewport().set_input_as_handled()
+	if not (event is InputEventJoypadButton and event.pressed):
+		return
+	match (event as InputEventJoypadButton).button_index:
+		JOY_BUTTON_A:
+			_stamp(_pad_cursor, false)
+		JOY_BUTTON_X:
+			_stamp(_pad_cursor, true)
+		JOY_BUTTON_LEFT_SHOULDER:
+			_place_rot = wrapf(_place_rot - 15.0, -180.0, 180.0)
+			_preview(_pad_cursor)
+		JOY_BUTTON_RIGHT_SHOULDER:
+			_place_rot = wrapf(_place_rot + 15.0, -180.0, 180.0)
+			_preview(_pad_cursor)
+		JOY_BUTTON_B:
+			_stop_placing()
+
+
+func _process(delta: float) -> void:
+	if not visible or sr == null:
+		return
+	var dz := func(v: float) -> float: return 0.0 if absf(v) < 0.18 else v
+	# right stick: the camera round the car (always)
+	var rx: float = dz.call(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X))
+	var ry: float = dz.call(Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
+	var moved := false
+	if rx != 0.0 or ry != 0.0:
+		sr.booth_orbit(rx * 520.0 * delta, ry * 380.0 * delta)
+		moved = true
+	if _placing == "" or not _pad:
+		return
+	var vs := get_viewport_rect().size
+	var lx: float = dz.call(Input.get_joy_axis(0, JOY_AXIS_LEFT_X))
+	var ly: float = dz.call(Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
+	if lx != 0.0 or ly != 0.0:
+		_pad_cursor += Vector2(lx, ly) * 760.0 * delta
+		moved = true
+	_pad_cursor = _pad_cursor.clamp(Vector2(_panel.position.x + _panel.size.x + 20.0, 20.0), vs - Vector2(20, 20))
+	var lt := Input.get_joy_axis(0, JOY_AXIS_TRIGGER_LEFT)
+	var rt := Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT)
+	if lt > 0.1 or rt > 0.1:
+		_place_size = clampf(_place_size * (1.0 + (rt - lt) * 1.2 * delta), 0.08, 3.0)
+		moved = true
+	_cursor.visible = true
+	_cursor.position = _pad_cursor
+	_cursor.queue_redraw()
+	if moved:
+		_preview(_pad_cursor)
+
+
 ## The car under the mouse: place / drag the selected sticker; right mouse turns the camera.
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or sr == null:
@@ -430,11 +508,19 @@ func _place(pos: Vector2) -> bool:
 # --- placing straight onto the car ------------------------------------------------------------------
 func _start_placing(id: String) -> void:
 	_placing = id
-	_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Rechtsklick / Esc: abbrechen"
+	if _pad:
+		# (the cursor starts on the car's middle)
+		_pad_cursor = sr.cam.unproject_position(sr.car.global_position + Vector3(0, 0.7, 0)) if sr and sr.car else get_viewport_rect().size * 0.6
+		_hint.text = "Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen · LT / RT: Größe · rechter Stick: Kamera · B: abbrechen"
+		_preview(_pad_cursor)
+	else:
+		_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Rechtsklick / Esc: abbrechen"
 
 
 func _stop_placing() -> void:
 	_placing = ""
+	if _cursor:
+		_cursor.visible = false
 	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
 	_apply()
 

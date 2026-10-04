@@ -975,4 +975,5 @@ const EN := {
 	"Form wählen, dann aufs Auto klicken – sie hängt bis dahin halb durchsichtig am Mauszeiger.": "Pick a shape, then click the car – until then it hangs half see-through at the mouse pointer.",
 	"Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Rechtsklick / Esc: abbrechen": "Click the car: stick it here (Shift+click: more) · wheel or Q / E: rotate · Shift+wheel: size · right click / Esc: cancel",
 	"Zuletzt verwendet": "Recently used",
+	"Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen · LT / RT: Größe · rechter Stick: Kamera · B: abbrechen": "Left stick: move sticker · A: stick on · X: stick on + more · LB / RB: rotate · LT / RT: size · right stick: camera · B: cancel",
 }
