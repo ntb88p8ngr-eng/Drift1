@@ -19,7 +19,7 @@ var world   # world.gd
 
 var _root: Control
 var _radio: Control         # the car radio, small, bottom left (P)
-var _radio_box: Control     # it and its ✕
+var _radio_box: Panel       # its frame (black border) with it and the ✕
 var _radio_pill: Button     # ♪: brings it back while it is hidden
 var _radio_tapes: PopupMenu
 var _info_lines: Label
@@ -256,23 +256,37 @@ func _ready() -> void:
 	_root.add_child(_compass_label)
 
 	# --- the car radio, small in the bottom left corner: ✕ (or P) hides it, ♪ (or P) brings it back ---
-	_radio_box = Control.new()
-	_anchor(_radio_box, 0, 1, 14, -142, 380, 118)
+	_radio_box = Panel.new()
+	_anchor(_radio_box, 0, 1, 14, -146, 410, 126)
+	# a frame round it: black border, the white ✕ inside it on the right
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color(0.0, 0.0, 0.0, 0.55)
+	frame.border_color = Color(0, 0, 0, 1)
+	frame.set_border_width_all(3)
+	frame.set_corner_radius_all(6)
+	_radio_box.add_theme_stylebox_override("panel", frame)
 	_root.add_child(_radio_box)
 	_radio = RadioWidget.new()
 	_radio.floating = false
 	_radio.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_radio.offset_left = 5
+	_radio.offset_top = 5
+	_radio.offset_right = -30
+	_radio.offset_bottom = -5
 	_radio_box.add_child(_radio)
 	var close := Button.new()
 	close.text = "✕"
+	close.flat = true
 	close.tooltip_text = "Radio ausblenden (P)"
 	close.focus_mode = Control.FOCUS_NONE
-	close.add_theme_font_size_override("font_size", 14)
+	close.add_theme_font_size_override("font_size", 18)
+	for st in ["font_color", "font_hover_color", "font_pressed_color"]:
+		close.add_theme_color_override(st, Color.WHITE if st != "font_hover_color" else Color(1, 0.6, 0.6))
 	close.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	close.offset_left = -26
-	close.offset_top = -4
-	close.offset_right = 2
-	close.offset_bottom = 22
+	close.offset_left = -28
+	close.offset_top = 4
+	close.offset_right = -4
+	close.offset_bottom = 30
 	close.pressed.connect(func(): _show_radio(false))
 	_radio_box.add_child(close)
 	_radio_pill = Button.new()
