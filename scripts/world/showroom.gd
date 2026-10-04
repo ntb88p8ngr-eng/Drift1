@@ -416,7 +416,8 @@ func _widen_booth(g: Node3D) -> void:
 		(w as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(w)
 	# (static rain streaks of the model that now stand in the bigger booth)
-	var room := AABB(Vector3(6.6, 0.0, -6.6 - BOOTH_WIDEN_FAR), Vector3(7.2, 3.8, 1.0 + BOOTH_WIDEN_FAR))
+	# (the whole widened booth: both of its new sides were street before)
+	var room := AABB(Vector3(6.5, -0.5, -6.6 - BOOTH_WIDEN_FAR), Vector3(7.4, 4.6, 6.6 + BOOTH_WIDEN_FAR))
 	for n in g.find_children("*Rain_streak*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if room.has_point((mi.global_transform * mi.get_aabb()).get_center()):
