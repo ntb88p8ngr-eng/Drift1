@@ -318,8 +318,18 @@ func set_view(v: String) -> void:
 		auto_spin = true
 
 
+signal built                       # the workshop is up (it loads in slices behind a loading screen)
+var is_built := false
+
+
 func _ready() -> void:
-	if _load_workshop():
+	await _build()
+	is_built = true
+	built.emit()
+
+
+func _build() -> void:
+	if await _load_workshop():
 		return
 	var garage := _load_garage()
 	var env := Environment.new()
@@ -436,17 +446,36 @@ func _ready() -> void:
 func _load_workshop() -> bool:
 	if not ResourceLoader.exists(WORKSHOP):
 		return false
-	var scene := load(WORKSHOP) as PackedScene
+	var scene: PackedScene
+	Game.load_begin("Werkstatt", 0.0, 0.45)
+	if Game.async_loading:
+		# read from disk on a thread: the loading screen keeps turning meanwhile
+		ResourceLoader.load_threaded_request(WORKSHOP)
+		var prog := []
+		while ResourceLoader.load_threaded_get_status(WORKSHOP, prog) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			if not prog.is_empty():
+				Game.load_progress = maxf(Game.load_progress, 0.45 * float(prog[0]))
+			await get_tree().process_frame
+		scene = ResourceLoader.load_threaded_get(WORKSHOP) as PackedScene
+	else:
+		scene = load(WORKSHOP) as PackedScene
 	if scene == null:
 		return false
+	Game.load_begin("Werkstatt aufbauen", 0.45, 0.6)
+	await Game.load_tick(0.0)
 	var g := scene.instantiate() as Node3D
 	add_child(g)
 	_workshop = true
+	await Game.load_tick(0.5)
 	WorkshopTextures.apply(g)
+	await Game.load_tick(0.6)
 	_epoxy_floor(g)
 	_open_spanners(g)
+	await Game.load_tick(0.7)
 	_replace_wall_tools(g)
+	await Game.load_tick(0.8)
 	_pegboards(g)
+	await Game.load_tick(0.9)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
 	for pat in ["*Turntable_skirt_segment*", "*Skirt_hex_bolt*"]:
@@ -469,6 +498,7 @@ func _load_workshop() -> bool:
 	# the model's lightning bolt (seen through the gate) stays hidden: the flashes light the hall
 	for node in g.find_children("*Storm_lightning*", "Node3D", true, false):
 		(node as Node3D).visible = false
+	await Game.load_tick(0.95)
 	_extend_room(g)
 	_find_menu_lights(g)
 	_find_pc(g)
@@ -494,12 +524,13 @@ func _load_workshop() -> bool:
 	_build_pc_screen()
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
 	var t0 := Time.get_ticks_msec()
-	var n := MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool:
+	Game.load_begin("Werkstatt zusammenfügen", 0.6, 0.92)
+	var n: int = await MeshMerge.merge(g, func(mi: MeshInstance3D) -> bool:
 		var path := str(mi.get_path())
 		for part in STORM_PARTS:
 			if path.contains(part):
 				return true
-		return false)
+		return false, Game.async_loading)
 	print("SHOWROOM: merged %d workshop meshes in %d ms" % [n, Time.get_ticks_msec() - t0])
 	var env := Environment.new()
 	if ResourceLoader.exists(WORKSHOP_SKY):
@@ -549,12 +580,16 @@ func _load_workshop() -> bool:
 	street.name = "Street"
 	add_child(street)
 	_street = street
+	Game.load_begin("Straße und Regen", 0.92, 1.0)
+	await Game.load_tick(0.0)
 	street.build(_world_tiled(asphalt, 1.0 / 4.0) if asphalt else null)
+	await Game.load_tick(0.5)
 	var storm_fx := MenuStorm.new()
 	storm_fx.name = "Storm"
 	add_child(storm_fx)
 	# (no rain under the roofs beside the hall: the office annex on the left, the paint booth on the right)
 	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5, 7.1, 4.7)])
+	await Game.load_tick(0.9)
 	for l in g.find_children("*", "Light3D", true, false):
 		var light := l as Light3D
 		for pre in WORKSHOP_LIGHTS:
@@ -1281,6 +1316,8 @@ func rebuild_car() -> void:
 
 ## L (the "lights" key) switches the car's headlights in the menu too – on by default.
 func _unhandled_input(event: InputEvent) -> void:
+	if not is_built:
+		return
 	if event.is_action_pressed("lights") and not event.is_echo() and car and is_instance_valid(car):
 		headlights = not headlights
 		car.headlights = headlights
@@ -1391,6 +1428,8 @@ static func _spline(pts: Array, u: float) -> Vector3:
 
 
 func _process(delta: float) -> void:
+	if not is_built:
+		return            # (still loading)
 	_t += delta
 	if _shutter and not _shutter_paused and absf(_shutter_b - _shutter_want) > 0.001:
 		# rolling at an even pace, easing in the last few centimetres

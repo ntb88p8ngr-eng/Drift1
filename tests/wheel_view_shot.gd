@@ -34,6 +34,9 @@ func _ready() -> void:
 			Game.settings["car"] = a.substr(6)
 	var main := Main.new()
 	add_child(main)
+	# (the workshop builds in slices behind a loading screen first)
+	while main.menu == null:
+		await get_tree().process_frame
 	for f in 4:
 		await get_tree().process_frame
 	var sr = main.showroom

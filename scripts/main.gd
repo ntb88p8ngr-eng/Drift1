@@ -20,6 +20,7 @@ var last_config := {}
 var _replay_return := false   # leaving a replay goes back to the replay list
 var _editor_return := ""     # test drive from the world editor: back into it afterwards (map path)
 var _loading: CanvasLayer
+var _menu_loading := false      # the loading screen is up for the workshop
 
 
 func _ready() -> void:
@@ -43,10 +44,29 @@ func _ready() -> void:
 
 func show_menu(screen: String, message := "", color := UiKit.GOLD) -> void:
 	_clear_world()
+	if showroom != null and not showroom.is_built:
+		await showroom.built          # (asked again while it is still loading)
 	if showroom == null:
+		# the workshop takes a few seconds to build: a loading screen meanwhile, the build in
+		# slices so it keeps animating (no frozen window)
+		Game.load_progress = 0.0
+		Game.load_stage = ""
+		_hide_loading()
+		_loading = LoadingScreen.new()
+		_loading.track_name = "MIDNIGHT DRIFT"
+		_loading.sub_text = "Die Werkstatt wird aufgeschlossen …"
+		add_child(_loading)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		Game.async_loading = true
 		showroom = Showroom.new()
 		showroom.name = "Showroom"
 		add_child(showroom)
+		if not showroom.is_built:
+			await showroom.built
+		Game.async_loading = false
+		Game.load_progress = 1.0
+		_menu_loading = true
 	if menu == null:
 		menu = Menu.new()
 		menu.name = "Menu"
@@ -55,6 +75,11 @@ func show_menu(screen: String, message := "", color := UiKit.GOLD) -> void:
 	menu.show_screen(screen)
 	if message != "":
 		menu.show_status(message, color)
+	if _menu_loading:
+		_menu_loading = false
+		# a moment for the first frames (shaders, the probe) behind the screen, then fade it out
+		await get_tree().create_timer(0.4).timeout
+		_hide_loading()
 
 
 func refresh_showroom(full: bool) -> void:
@@ -266,7 +291,7 @@ func _smoke_test() -> void:
 		var mp: String = CarBodyScript.MODELS[cid]["path"]
 		print("SMOKE: model %s loaded=%s" % [cid, str(load(mp) != null)])
 	print("SMOKE: menu")
-	show_menu("main")
+	await show_menu("main")
 	for s in ["single", "garage", "online", "leaderboard", "options", "main"]:
 		menu.show_screen(s)
 		await get_tree().process_frame

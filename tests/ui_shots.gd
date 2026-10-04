@@ -14,6 +14,9 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(out)
 	var main := Main.new()
 	add_child(main)
+	# (the workshop builds in slices behind a loading screen first)
+	while main.menu == null:
+		await get_tree().process_frame
 	for f in 10:
 		await get_tree().process_frame
 	Game.settings["underglow"] = {Game.settings["car"]: {"on": true, "mode": 4, "speed": 1.0, "sides": {}}}

@@ -19,6 +19,9 @@ func _ready() -> void:
 	Game.persist = false
 	var main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
+	# (the workshop builds in slices behind a loading screen first)
+	while main.menu == null:
+		await get_tree().process_frame
 	for f in 30:
 		await get_tree().process_frame
 	var menu = main.menu

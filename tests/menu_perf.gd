@@ -22,11 +22,11 @@ func _process(delta: float) -> void:
 	var ms := (now - _last) / 1000.0
 	_last = now
 	_t += delta
-	if _t < 3.0:
+	if _t < 0.3:
 		return
 	_frames.append(ms)
 	if ms > 12.0:
-		print("HITCH %.1f ms at %.2f s  nodes %d  res %d" % [ms, _t, Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)]) if true else print(0, [
+		print("HITCH %.1f ms at %.2f s (%s)   nodes %d  res %d" % [ms, _t, Game.load_stage, Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)]) if true else print(0, [
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 	if _t > _secs:

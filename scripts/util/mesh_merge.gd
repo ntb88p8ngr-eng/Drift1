@@ -5,12 +5,20 @@ extends RefCounted
 
 
 ## Merges every MeshInstance3D under `root` for which `keep(mi)` is false into one MeshInstance3D
-## per material, added to `root`. Returns the number of meshes merged.
-static func merge(root: Node3D, keep: Callable) -> int:
+## per material, added to `root`. Returns the number of meshes merged. With `slices` it gives the
+## frame back now and then (Game.load_tick: a loading screen keeps animating) – call it with await.
+static func merge(root: Node3D, keep: Callable, slices := false) -> int:
 	var groups := {}            # material -> {v, n, t, uv, idx}
 	var merged := 0
 	var inv := root.global_transform.affine_inverse()
-	for node in root.find_children("*", "MeshInstance3D", true, false):
+	var all := root.find_children("*", "MeshInstance3D", true, false)
+	var seen := 0
+	for node in all:
+		seen += 1
+		if slices and seen % 40 == 0:
+			await Game.load_tick(0.85 * float(seen) / all.size())
+		if not is_instance_valid(node):
+			continue           # (freed meanwhile)
 		var mi := node as MeshInstance3D
 		if mi.mesh == null or keep.call(mi) or mi.skin != null:
 			continue
@@ -97,7 +105,11 @@ static func merge(root: Node3D, keep: Callable) -> int:
 		# the node stays (lights and other parts may hang under it), only its mesh goes
 		mi.mesh = null
 		merged += 1
+	var made := 0
 	for mat in groups:
+		made += 1
+		if slices:
+			await Game.load_tick(0.85 + 0.15 * float(made) / groups.size())
 		var g: Dictionary = groups[mat]
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)

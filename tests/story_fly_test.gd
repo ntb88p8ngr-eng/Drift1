@@ -9,6 +9,9 @@ func _ready() -> void:
 	Game.persist = false
 	var main := Main.new()
 	add_child(main)
+	# (the workshop builds in slices behind a loading screen first)
+	while main.menu == null:
+		await get_tree().process_frame
 	for f in 10:
 		await get_tree().process_frame
 	var storm = main.find_child("Storm", true, false)
