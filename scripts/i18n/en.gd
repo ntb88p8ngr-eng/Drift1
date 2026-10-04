@@ -1009,4 +1009,7 @@ const EN := {
 	"„%s“ – liegt jetzt im Schrank in der Garage": "“%s” – now in the cabinet in the garage",
 	"Radio ausblenden (P)": "Hide the radio (P)",
 	"Radio einblenden (P)": "Show the radio (P)",
+	"Spiegeln (links ↔ rechts)": "Mirror (left ↔ right)",
+	"Zurück: letzte Änderung zurücknehmen (Strg+Z)": "Back: undo the last change (Ctrl+Z)",
+	"Vor: zurückgenommene Änderung wiederholen (Strg+Y)": "Forward: redo the undone change (Ctrl+Y)",
 }

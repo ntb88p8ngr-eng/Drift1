@@ -102,7 +102,7 @@ func _ready() -> void:
 		_pages.append(p)
 	tabs.add_child(UiKit.button("Lack", func(): _show_page(0), 160))
 	tabs.add_child(UiKit.button("Sticker", func(): _show_page(1), 160))
-	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Q / E: drehen (Shift: fein) · Strg+Z / Y: zurück / vor · Strg+C / V: kopieren / einfügen · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
+	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Strg+Z / Y: zurück / vor · Strg+C / V: kopieren / einfügen · Entf: löschen · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_hint)
 	_show_page(1)
@@ -293,6 +293,11 @@ func _sticker_page() -> VBoxContainer:
 	mir.toggled.connect(func(on): _set_prop("mirror", on))
 	_ctl["mirror"] = mir
 	_props.add_child(mir)
+	var flp := CheckBox.new()
+	flp.text = "Spiegeln (links ↔ rechts)"
+	flp.toggled.connect(func(on): _set_prop("flip", on))
+	_ctl["flip"] = flp
+	_props.add_child(flp)
 	return v
 
 
@@ -492,6 +497,7 @@ func _sync_props() -> void:
 	for k in ["p", "h", "size", "stretch", "rot", "alpha"]:
 		(_ctl[k] as HSlider).value = float(l.get(k, 0.0))
 	(_ctl["mirror"] as CheckBox).button_pressed = bool(l.get("mirror", false))
+	(_ctl["flip"] as CheckBox).button_pressed = bool(l.get("flip", false))
 	_syncing = false
 
 
@@ -707,6 +713,11 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or sr == null:
 		return
+	# Entf / Delete: the selected sticker goes
+	if event is InputEventKey and event.pressed and not event.is_echo() and (event as InputEventKey).keycode == KEY_DELETE and _placing == "":
+		_del_layer()
+		get_viewport().set_input_as_handled()
+		return
 	# Strg+Z / Strg+Y: undo / redo, Strg+C / Strg+V: copy / paste the selected sticker
 	if event is InputEventKey and event.pressed and not event.is_echo() and (event as InputEventKey).is_command_or_control_pressed():
 		var key := (event as InputEventKey).keycode
@@ -897,7 +908,7 @@ func _stop_placing() -> void:
 	_placing = ""
 	if _cursor:
 		_cursor.visible = false
-	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Strg+Z / Y: zurück / vor · Strg+C / V: kopieren / einfügen · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
+	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Strg+Z / Y: zurück / vor · Strg+C / V: kopieren / einfügen · Entf: löschen · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
 	_apply()
 
 

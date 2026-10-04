@@ -3,7 +3,8 @@ extends RefCounted
 ## them in the game too). A design is a list of layers – later ones on top:
 ##   {"shape": id, "color": "#rrggbb", "side": "left"/"right"/"top"/"front"/"rear",
 ##    "p": -1..1 (along the car: front→rear, across on the front/rear), "h": 0..1 (up; across on top: -1..1),
-##    "size": metres, "stretch": log2 of width : height (0 = as drawn), "rot": degrees, "alpha": 0..1, "mirror": bool (also on the opposite side)}
+##    "size": metres, "stretch": log2 of width : height (0 = as drawn), "rot": degrees, "alpha": 0..1, "mirror": bool (also on the opposite side, as its mirror image),
+##    "flip": bool (the sticker itself mirrored left ↔ right)}
 ## Each layer is a thin skin on the body's own triangles (not the wheels), wrapped round the panel
 ## where the straight-in ray from the chosen side lands.
 
@@ -154,7 +155,7 @@ static func apply(body: Node3D, layers: Array) -> void:
 			var hit = ray_surface(surf, f[0], f[1], box.size.length())
 			if hit == null:
 				continue
-			var mesh := sticker_mesh(surf, hit[0], hit[1], f[2], float(pl[3]), s * st, s / aspect / st, k)
+			var mesh := sticker_mesh(surf, hit[0], hit[1], f[2], float(pl[3]), s * st, s / aspect / st, k, bool(pl[4]) if pl.size() > 4 else false)
 			if mesh == null:
 				continue
 			var mi := MeshInstance3D.new()
@@ -187,23 +188,25 @@ void fragment() {
 	return _sh
 
 
-## Where a layer goes: [[side, p, h, rot], …] – one, or two when mirrored.
+## Where a layer goes: [[side, p, h, rot, flipped], …] – one, or two when mirrored. The mirrored copy
+## on the other side is the mirror image ("flip" turns the sticker itself round, left ↔ right).
 static func placements(l: Dictionary) -> Array:
 	var side := str(l.get("side", "left"))
 	var p := float(l.get("p", 0.0))
 	var h := float(l.get("h", 0.5))
 	var r := float(l.get("rot", 0.0))
-	var out: Array = [[side, p, h, r]]
+	var fl := bool(l.get("flip", false))
+	var out: Array = [[side, p, h, r, fl]]
 	if bool(l.get("mirror", false)):
 		match side:
 			"left":
-				out.append(["right", p, h, -r])
+				out.append(["right", p, h, -r, not fl])
 			"right":
-				out.append(["left", p, h, -r])
+				out.append(["left", p, h, -r, not fl])
 			"top":
-				out.append(["top", p, -h, -r])
+				out.append(["top", p, -h, -r, not fl])
 			"front", "rear":
-				out.append([side, -p, h, -r])
+				out.append([side, -p, h, -r, not fl])
 	return out
 
 
@@ -390,7 +393,7 @@ static func sticker_frame(body: Node3D, l: Dictionary):
 ## The sticker as a skin on the body: the triangles round `at` that face the same way, each vertex
 ## laid out by its distance from `at` (the sticker's centre) so it wraps over curves without
 ## stretching; a hair above the paint. `up` is the image's up before turning by `rot_deg`.
-static func sticker_mesh(surf: Dictionary, at: Vector3, n: Vector3, up: Vector3, rot_deg: float, w: float, h: float, k: int) -> ArrayMesh:
+static func sticker_mesh(surf: Dictionary, at: Vector3, n: Vector3, up: Vector3, rot_deg: float, w: float, h: float, k: int, flip := false) -> ArrayMesh:
 	var v: PackedVector3Array = surf["v"]
 	var nr: PackedVector3Array = surf["n"]
 	var grid: Dictionary = surf["grid"]
@@ -445,7 +448,7 @@ static func sticker_mesh(surf: Dictionary, at: Vector3, n: Vector3, up: Vector3,
 							var sc := sqrt(rho * rho + pz * pz) / rho
 							px *= sc
 							py *= sc
-						var uv := Vector2(0.5 + px / w, 0.5 - py / h)
+						var uv := Vector2(0.5 + (-px if flip else px) / w, 0.5 - py / h)
 						uvs.append(uv)
 						lo = lo.min(uv)
 						hi = hi.max(uv)
