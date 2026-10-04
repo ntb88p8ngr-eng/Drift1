@@ -538,6 +538,16 @@ func _replace_wall_tools(g: Node3D) -> void:
 			if (o as Node3D).global_position.x > 0.0:
 				right_n += 1
 		var right_k := 0
+		# the set hangs in one straight row: one hook height, evenly spaced across the old ones' span
+		var row_top := -1e9
+		var row_x0 := 1e9
+		var row_x1 := -1e9
+		for o in olds:
+			if spanners and (o as Node3D).global_position.x > 0.0:
+				var ob := _tree_aabb(o)
+				row_top = maxf(row_top, ob.end.y)
+				row_x0 = minf(row_x0, ob.get_center().x)
+				row_x1 = maxf(row_x1, ob.get_center().x)
 		for i in olds.size():
 			var old: Node3D = olds[i]
 			var box := _tree_aabb(old)
@@ -548,11 +558,12 @@ func _replace_wall_tools(g: Node3D) -> void:
 			old.free()
 			var tool := (set_scene if in_set else scenes[i % scenes.size()] as PackedScene).instantiate() as Node3D
 			if in_set:
-				# 14 cm up to 30 cm, hanging from the same hook height (the box's top stays)
-				var want := lerpf(0.14, 0.3, float(right_k) / maxf(right_n - 1, 1))
+				# 22 cm up to 38 cm, all from one hook height, evenly spaced
+				var f := float(right_k) / maxf(right_n - 1, 1)
+				var want := lerpf(0.22, 0.38, f)
 				right_k += 1
-				var top := box.end.y
-				box = AABB(Vector3(box.position.x, top - want, box.position.z), Vector3(box.size.x, want, box.size.z))
+				var cx := lerpf(row_x0, row_x1, f)
+				box = AABB(Vector3(cx - box.size.x * 0.5, row_top - want, box.position.z), Vector3(box.size.x, want, box.size.z))
 			add_child(tool)
 			var mbox := _tree_aabb(tool)
 			if mbox.size == Vector3.ZERO:
