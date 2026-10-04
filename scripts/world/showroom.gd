@@ -178,7 +178,9 @@ func _set_shutter(b: float) -> void:
 		var sc := b + (float(i) + 0.5) * DOOR_PANEL_H
 		var p := _door_track(sc)
 		var mi := _door_panels[i] as MeshInstance3D
-		mi.transform = Transform3D(Basis(Vector3.RIGHT, p.z * _door_s), Vector3(mi.position.x, p.y, _door_z + _door_s * p.x))
+		var bb := Basis(Vector3.RIGHT, p.z * _door_s)
+		# (every other panel a few millimetres proud: overlapping faces in one plane flicker)
+		mi.transform = Transform3D(bb, Vector3(mi.position.x, p.y, _door_z + _door_s * p.x) + bb.z * (0.004 * _door_s if i % 2 == 1 else 0.0))
 	var f := clampf((b - SHUTTER_DOWN) / (SHUTTER_UP - SHUTTER_DOWN), 0.0, 1.0)
 	if _street:
 		_street.set_gate((f - 0.15) / 0.85)
@@ -832,7 +834,10 @@ func _set_booth_roller(b: float) -> void:
 		var p := _bdoor_track(b + (float(i) + 0.5) * BDOOR_PANEL_H)
 		var mi := _bdoor_panels[i] as MeshInstance3D
 		# tilting from upright to flat, out towards the hall (-x)
-		mi.transform = Transform3D(Basis(Vector3.BACK, p.z), Vector3(BDOOR_X - p.x, p.y, mi.position.z))
+		var pb := Basis(Vector3.BACK, p.z)
+		# (every other panel a few millimetres proud: where neighbours overlap their faces would
+		# lie in one plane and flicker)
+		mi.transform = Transform3D(pb, Vector3(BDOOR_X - p.x, p.y, mi.position.z) + pb.x * (0.004 if i % 2 == 1 else 0.0))
 
 
 ## The paint booth on its own render layer: the hall's lights (none of them casts shadows) shone
