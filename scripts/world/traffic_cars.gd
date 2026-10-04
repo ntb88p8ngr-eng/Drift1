@@ -98,6 +98,8 @@ var world
 var _shader: Shader
 var _mats: Array = []
 var _night := -1.0
+## >= 0: fixed night level (the main menu's street has no atmosphere to read it from)
+var night_override := -1.0
 var _counts: Array = []          # [model][tier]
 var _cam := Vector3.ZERO
 var _players: Array = []         # positions of the player and bot cars
@@ -275,6 +277,8 @@ func _process(_delta: float) -> void:
 			if is_instance_valid(car) and car.visible:
 				_players.append(car.global_position)
 	var n: float = world.atmosphere.night if world != null and world.atmosphere != null else 0.0
+	if night_override >= 0.0:
+		n = night_override
 	if absf(n - _night) > 0.01:
 		_night = n
 		for mat in _mats:

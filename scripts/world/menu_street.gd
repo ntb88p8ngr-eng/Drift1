@@ -9,6 +9,14 @@ extends Node3D
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const FlowerBeds = preload("res://scripts/world/city/flower_beds.gd")
+const TrafficCars = preload("res://scripts/world/traffic_cars.gd")
+
+## Traffic going by on the street: a few cars each way, headlights on, looping round from end to end.
+const TRAFFIC_PER_LANE := 3
+const TRAFFIC_SPAN := 300.0      # the loop along x (the street plus a bit out of sight either end)
+var _traffic                     # traffic_cars.gd (draws them)
+var _tcars: Array = []           # {lane: ±1, x, v, want, model, paint, odo, spot}
+var _trng := RandomNumberGenerator.new()
 
 const STREET_Z := -27.0    # the street's centre line (the shutter is at z = -6.5)
 const LENGTH := 260.0      # along x, centred on the driveway
@@ -80,6 +88,7 @@ func build(_asphalt: Material) -> void:
 		g += 0.9
 	_plant()
 	_yard_garden()
+	_traffic_setup()
 	_lamp(mid + 7.0, HALF + 0.55)
 	_street_props()
 
@@ -429,7 +438,87 @@ func _lamp(s: float, l: float) -> void:
 
 
 ## The old lamp now and then flickers for a moment.
+func _traffic_setup() -> void:
+	_traffic = TrafficCars.new()
+	_traffic.name = "StreetTraffic"
+	add_child(_traffic)
+	_traffic.setup(null)
+	if not _traffic.ok:
+		return
+	_traffic.night_override = 1.0
+	_trng.seed = 7071
+	for lane in [-1.0, 1.0]:
+		var x := _trng.randf_range(-TRAFFIC_SPAN * 0.5, 0.0)
+		for k in TRAFFIC_PER_LANE:
+			var c := {"lane": lane, "x": x, "v": 0.0, "want": 0.0, "model": 0, "paint": Color.WHITE, "odo": _trng.randf() * 50.0}
+			_new_car(c)
+			c["v"] = c["want"]
+			# a headlight beam that lights the wet road in front of it
+			var spot := SpotLight3D.new()
+			spot.light_color = Color(1.0, 0.95, 0.85)
+			spot.light_energy = 7.0
+			spot.spot_range = 32.0
+			spot.spot_angle = 28.0
+			spot.spot_attenuation = 0.6
+			spot.shadow_enabled = false
+			add_child(spot)
+			c["spot"] = spot
+			var tail := OmniLight3D.new()
+			tail.light_color = Color(1.0, 0.1, 0.05)
+			tail.light_energy = 0.8
+			tail.omni_range = 4.0
+			add_child(tail)
+			c["tail"] = tail
+			_tcars.append(c)
+			x += _trng.randf_range(45.0, 110.0)
+
+
+## A fresh car for the loop: another model, another paint, its own pace.
+func _new_car(c: Dictionary) -> void:
+	var pick: Array = _traffic.pick(_trng)
+	c["model"] = pick[0]
+	c["paint"] = pick[1]
+	c["want"] = _trng.randf_range(9.0, 15.0)
+
+
+func _traffic_step(delta: float) -> void:
+	if _traffic == null or not _traffic.ok:
+		return
+	for c in _tcars:
+		var lane: float = c["lane"]
+		var dir := -lane        # the near lane (+z side) runs towards -x, the far one towards +x
+		# keep a gap to the one in front in the same lane
+		var gap := 1e9
+		var lead_v := 0.0
+		for o in _tcars:
+			if o == c or float(o["lane"]) != lane:
+				continue
+			var ahead := fposmod((float(o["x"]) - float(c["x"])) * dir, TRAFFIC_SPAN)
+			if ahead < gap:
+				gap = ahead
+				lead_v = o["v"]
+		var want: float = c["want"]
+		if gap < 18.0:
+			want = minf(want, lead_v * clampf((gap - 7.0) / 11.0, 0.0, 1.0))
+		c["v"] = move_toward(float(c["v"]), want, delta * 3.0)
+		var x: float = float(c["x"]) + dir * float(c["v"]) * delta
+		# off one end: round again from the other, as a different car
+		if x > TRAFFIC_SPAN * 0.5 or x < -TRAFFIC_SPAN * 0.5:
+			x -= dir * TRAFFIC_SPAN
+			_new_car(c)
+		c["x"] = x
+		c["odo"] = float(c["odo"]) + float(c["v"]) * delta
+		var fwd := Vector3(dir, 0, 0)
+		var xf := Transform3D(Basis.looking_at(fwd, Vector3.UP), Vector3(x, 0.03, STREET_Z + lane * HALF * 0.5))
+		_traffic.add(int(c["model"]), xf, c["paint"], float(c["odo"]), float(c["v"]) < float(c["want"]) - 1.0, float(c["v"]))
+		var half: float = _traffic.half_length(int(c["model"]))
+		var spot: SpotLight3D = c["spot"]
+		spot.global_transform = Transform3D(Basis.looking_at(fwd + Vector3(0, -0.12, 0), Vector3.UP), xf.origin + fwd * (half + 0.1) + Vector3(0, 0.7, 0))
+		(c["tail"] as OmniLight3D).global_position = xf.origin - fwd * (half + 0.4) + Vector3(0, 0.7, 0)
+
+
 func _process(delta: float) -> void:
+	_traffic_step(delta)
 	if not _signals.is_empty():
 		var before := _signal_t
 		_signal_t += delta
