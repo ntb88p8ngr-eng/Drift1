@@ -53,8 +53,8 @@ func _ready() -> void:
 	sb.content_margin_bottom = 14
 	_panel.add_theme_stylebox_override("panel", sb)
 	_panel.position = Vector2(36, 30)
-	_panel.custom_minimum_size = Vector2(560, 0)
-	_panel.size = Vector2(560, get_viewport_rect().size.y - 120)
+	_panel.custom_minimum_size = Vector2(600, 0)
+	_panel.size = Vector2(600, get_viewport_rect().size.y - 120)
 	add_child(_panel)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
@@ -65,6 +65,7 @@ func _ready() -> void:
 	v.add_child(tabs)
 	var body := Control.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.clip_contents = true
 	v.add_child(body)
 	var paint := _scroll(_paint_page())
 	var stick := _scroll(_sticker_page())
@@ -168,7 +169,7 @@ func _sticker_page() -> VBoxContainer:
 	sc.custom_minimum_size = Vector2(0, 190)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_shape_grid = GridContainer.new()
-	_shape_grid.columns = 9
+	_shape_grid.columns = 8
 	_shape_grid.add_theme_constant_override("h_separation", 4)
 	_shape_grid.add_theme_constant_override("v_separation", 4)
 	sc.add_child(_shape_grid)

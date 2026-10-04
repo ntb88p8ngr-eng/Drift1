@@ -237,9 +237,10 @@ static func surface(body: Node3D) -> Dictionary:
 			for y in range(c0.y, c1.y + 1):
 				for z in range(c0.z, c1.z + 1):
 					var key := Vector3i(x, y, z)
-					if not grid.has(key):
-						grid[key] = PackedInt32Array()
-					(grid[key] as PackedInt32Array).append(t)
+					# (packed arrays are values: take it out, add, put it back)
+					var cell: PackedInt32Array = grid.get(key, PackedInt32Array())
+					cell.append(t)
+					grid[key] = cell
 	var out := {"v": v, "n": nr, "grid": grid, "box": box}
 	body.set_meta("livery_surf", out)
 	return out
