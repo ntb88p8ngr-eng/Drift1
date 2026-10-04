@@ -1172,6 +1172,7 @@ func _load_workshop() -> bool:
 	await Game.load_tick(0.8)
 	_pegboards(g)
 	_booth_setup(g)
+	_tape_cabinet()
 	await Game.load_tick(0.9)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
@@ -2132,6 +2133,7 @@ func _process(delta: float) -> void:
 	if not is_built:
 		return            # (still loading)
 	_t += delta
+	_cabinet_process(delta)
 	if _shutter and not _shutter_paused and absf(_shutter_b - _shutter_want) > 0.001:
 		# rolling at an even pace, easing in the last few centimetres
 		var d := _shutter_want - _shutter_b
@@ -2194,3 +2196,111 @@ func _process(delta: float) -> void:
 	var a := 0.6 + sin(_t * 0.12) * 0.25
 	cam.position = Vector3(sin(a) * 8.0 - 1.7, 1.75 + sin(_t * 0.2) * 0.2, cos(a) * 8.0)
 	cam.look_at(Vector3(-1.3, 0.75, 0), Vector3.UP)
+
+
+# ---------------------------------------------------------------------------
+# The tape cabinet (the car radio's cassettes)
+# ---------------------------------------------------------------------------
+## A small wooden cassette box on the workbench at the back wall, among the bits and pieces: click it
+## and its front flap drops open, the tapes found so far stand in it (their spines in the tapes'
+## colours); the menu shows them to pick one for the radio.
+const CAB_POS := Vector3(5.6, 1.58, -5.83)       # the middle of its bottom
+const CAB_SIZE := Vector3(0.46, 0.24, 0.24)
+var _cab: Node3D
+var _cab_door: Node3D
+var _cab_mat: StandardMaterial3D
+var _cab_spines: Node3D
+var _cab_open := 0.0
+var _cab_want := 0.0
+var _cab_hover := false
+
+
+func _tape_cabinet() -> void:
+	_cab = Node3D.new()
+	_cab.name = "TapeCabinet"
+	add_child(_cab)
+	_cab.position = CAB_POS
+	_cab_mat = TexKit.std(Color(0.28, 0.16, 0.09), 0.55, 0.0)
+	_cab_mat.emission_enabled = true
+	_cab_mat.emission = Color(0.7, 0.35, 1.0)
+	_cab_mat.emission_energy_multiplier = 0.0
+	var inner := TexKit.std(Color(0.08, 0.06, 0.05), 0.8, 0.0)
+	var w := CAB_SIZE.x
+	var h := CAB_SIZE.y
+	var d := CAB_SIZE.z
+	var t := 0.015
+	# the box: bottom, top, sides, back (open at the front)
+	_cab.add_child(MeshKit.box_node(Vector3(w, t, d), _cab_mat, Vector3(0, t * 0.5, 0)))
+	_cab.add_child(MeshKit.box_node(Vector3(w + 0.01, t, d + 0.01), _cab_mat, Vector3(0, h - t * 0.5, 0)))
+	for sx in [-1.0, 1.0]:
+		_cab.add_child(MeshKit.box_node(Vector3(t, h, d), _cab_mat, Vector3(sx * (w - t) * 0.5, h * 0.5, 0)))
+	_cab.add_child(MeshKit.box_node(Vector3(w, h, t), inner, Vector3(0, h * 0.5, -(d - t) * 0.5)))
+	# the flap, hinged at the bottom front edge, with a brass knob and a little label
+	_cab_door = Node3D.new()
+	_cab_door.position = Vector3(0, t, d * 0.5)
+	_cab.add_child(_cab_door)
+	_cab_door.add_child(MeshKit.box_node(Vector3(w - 0.004, h - t * 2.0, t), _cab_mat, Vector3(0, (h - t * 2.0) * 0.5, -t * 0.5)))
+	var brass := TexKit.std(Color(0.8, 0.62, 0.25), 0.35, 0.8)
+	_cab_door.add_child(MeshKit.box_node(Vector3(0.03, 0.02, 0.015), brass, Vector3(0, h - t * 2.0 - 0.035, 0.008)))
+	var label := MeshKit.box_node(Vector3(0.12, 0.035, 0.002), TexKit.std(Color(0.92, 0.88, 0.75), 0.8, 0.0), Vector3(0, (h - t * 2.0) * 0.5 - 0.02, 0.001))
+	_cab_door.add_child(label)
+	var lt := Label3D.new()
+	lt.text = "TAPES"
+	lt.font_size = 22
+	lt.pixel_size = 0.001
+	lt.modulate = Color(0.15, 0.1, 0.08)
+	lt.outline_size = 0
+	lt.position = Vector3(0, (h - t * 2.0) * 0.5 - 0.02, 0.0025)
+	_cab_door.add_child(lt)
+	_cab_spines = Node3D.new()
+	_cab.add_child(_cab_spines)
+	refresh_cabinet()
+
+
+## The tapes standing in it: one spine each (the tapes found so far).
+func refresh_cabinet() -> void:
+	if _cab_spines == null:
+		return
+	for c in _cab_spines.get_children():
+		c.queue_free()
+	var ids: Array = Radio.owned_tapes()
+	var all: Dictionary = Radio.tapes()
+	for i in mini(ids.size(), 12):
+		var col: Color = all.get(ids[i], {}).get("color", Color(0.8, 0.8, 0.8))
+		var m := TexKit.std(col.darkened(0.15), 0.5, 0.0)
+		var sp := MeshKit.box_node(Vector3(0.016, 0.11, 0.07), m, Vector3(-CAB_SIZE.x * 0.5 + 0.03 + i * 0.033, 0.07, 0.02))
+		_cab_spines.add_child(sp)
+		var shell := MeshKit.box_node(Vector3(0.0165, 0.1, 0.02), TexKit.std(Color(0.08, 0.08, 0.09), 0.4, 0.0), Vector3(-CAB_SIZE.x * 0.5 + 0.03 + i * 0.033, 0.07, -0.035))
+		_cab_spines.add_child(shell)
+
+
+## Whether the screen point is on the cabinet.
+func cabinet_hit(screen: Vector2) -> bool:
+	if _cab == null or cam == null or not _cab.is_visible_in_tree():
+		return false
+	var o := cam.project_ray_origin(screen)
+	var dn := cam.project_ray_normal(screen)
+	var box := AABB(CAB_POS - Vector3(CAB_SIZE.x * 0.5, 0, CAB_SIZE.z * 0.5), CAB_SIZE).grow(0.03)
+	return box.intersects_ray(o, dn) != null
+
+
+func cabinet_hover(on: bool) -> void:
+	_cab_hover = on
+
+
+func open_cabinet(open: bool) -> void:
+	_cab_want = 1.0 if open else 0.0
+	if open:
+		refresh_cabinet()
+
+
+func _cabinet_process(delta: float) -> void:
+	if _cab == null:
+		return
+	if absf(_cab_open - _cab_want) > 0.001:
+		_cab_open = move_toward(_cab_open, _cab_want, delta * 2.5)
+		var e := _cab_open * _cab_open * (3.0 - 2.0 * _cab_open)
+		_cab_door.rotation.x = e * deg_to_rad(95.0)
+	# a faint glow while the mouse is on it (it is easy to miss)
+	var want := (0.25 + 0.12 * sin(_t * 5.0)) if _cab_hover else 0.0
+	_cab_mat.emission_energy_multiplier = lerpf(_cab_mat.emission_energy_multiplier, want, 1.0 - exp(-delta * 10.0))

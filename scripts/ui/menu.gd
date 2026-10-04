@@ -163,6 +163,10 @@ func _ready() -> void:
 	_tape_menu = PopupMenu.new()
 	_tape_menu.add_theme_font_size_override("font_size", 20)
 	_tape_menu.id_pressed.connect(_on_tape_picked)
+	_tape_menu.popup_hide.connect(func():
+		var sr = _showroom()
+		if sr and sr.has_method("open_cabinet"):
+			sr.open_cabinet(false))
 	_root.add_child(_tape_menu)
 	_status = UiKit.label("", 17, UiKit.GOLD)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -532,6 +536,20 @@ func _focus_first() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# the tape cabinet on the workbench (main menu, garage): the mouse on it glows it, a click opens it
+	if (current == "main" or current == "garage") and event is InputEventMouse:
+		var sr = _showroom()
+		if sr and sr.has_method("cabinet_hit"):
+			var on: bool = sr.cabinet_hit((event as InputEventMouse).position)
+			sr.cabinet_hover(on)
+			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND if on else Input.CURSOR_ARROW)
+			if on and event is InputEventMouseButton and (event as InputEventMouseButton).pressed \
+					and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+				sr.open_cabinet(true)
+				Radio.click_sound(true)
+				open_tapes((event as InputEventMouse).position)
+				get_viewport().set_input_as_handled()
+				return
 	# (B) on the gamepad or Esc: back (the screen's Zurück / Fertig / Verlassen)
 	if event.is_action_pressed("ui_cancel") and _back_fn.is_valid():
 		get_viewport().set_input_as_handled()
