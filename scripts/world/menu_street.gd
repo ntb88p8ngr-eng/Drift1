@@ -365,40 +365,51 @@ func _brick_wall() -> void:
 	_graffiti(z + 0.16, h)
 
 
-## Sprayed tags on the street side of the brick wall: big outlined letters in a few colours, some
-## tilted, with paint blobs round them.
-const TAGS := ["DRIFT", "KAIDO", "JDM", "MIDNIGHT", "R34", "SKRRT", "NO GRIP", "TOUGE", "NOS", "BOOST", "旋", "夜"]
+## Sprayed tags on the street side of the brick wall, in graffiti lettering (OFL fonts in
+## assets/fonts/graffiti: a wildstyle hand, a dripping one and a sprayed one), every piece its own
+## size – small throw-ups to big pieces as tall as the wall – some tilted.
+const TAGS := ["DRIFT", "KAIDO", "JDM", "MIDNIGHT", "R34", "SKRRT", "NO GRIP", "TOUGE", "NOS", "BOOST",
+	"SIDEWAYS", "SMOKE", "2JZ", "KING", "OLF", "RB26", "NIGHT", "TOKYO"]
 const TAG_COLS := [[Color(1.0, 0.25, 0.6), Color(0.1, 0.05, 0.2)], [Color(0.2, 0.9, 1.0), Color(0.05, 0.1, 0.35)],
 	[Color(1.0, 0.85, 0.1), Color(0.55, 0.1, 0.05)], [Color(0.55, 1.0, 0.25), Color(0.05, 0.2, 0.1)],
-	[Color(0.95, 0.95, 0.95), Color(0.85, 0.1, 0.1)], [Color(0.75, 0.4, 1.0), Color(0.1, 0.0, 0.15)]]
+	[Color(0.95, 0.95, 0.95), Color(0.85, 0.1, 0.1)], [Color(0.75, 0.4, 1.0), Color(0.1, 0.0, 0.15)],
+	[Color(1.0, 0.5, 0.1), Color(0.0, 0.0, 0.0)], [Color(0.1, 0.1, 0.1), Color(0.95, 0.95, 0.9)]]
+const GRAFFITI_FONTS := ["res://assets/fonts/graffiti/SedgwickAveDisplay-Regular.ttf",
+	"res://assets/fonts/graffiti/SedgwickAveDisplay-Regular.ttf",
+	"res://assets/fonts/graffiti/RubikWetPaint-Regular.ttf", "res://assets/fonts/graffiti/RubikSprayPaint-Regular.ttf"]
 
 
 func _graffiti(z: float, h: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 6611
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Impact", "Arial Black", "DejaVu Sans", "Noto Sans CJK JP", "sans-serif"])
-	font.font_weight = 900
-	font.font_italic = true
+	var fonts: Array = []
+	for f in GRAFFITI_FONTS:
+		if ResourceLoader.exists(f):
+			fonts.append(load(f))
+	if fonts.is_empty():
+		return
 	var x := -60.0
 	while x < 60.0:
 		var t := Label3D.new()
 		t.text = TAGS[rng.randi() % TAGS.size()]
 		var cols: Array = TAG_COLS[rng.randi() % TAG_COLS.size()]
-		t.font = font
-		t.font_size = 160
-		t.pixel_size = rng.randf_range(0.0045, 0.0075)
+		t.font = fonts[rng.randi() % fonts.size()]
+		t.font_size = 128
+		# from a small tag (a hand's height) to a piece filling the wall
+		var big := pow(rng.randf(), 1.6)
+		t.pixel_size = lerpf(0.0018, 0.0125, big)
+		var tall := 128.0 * t.pixel_size
 		t.modulate = cols[0]
 		t.outline_modulate = cols[1]
-		t.outline_size = 34
+		t.outline_size = int(lerpf(10.0, 30.0, big))
 		t.shaded = true
 		t.double_sided = false
 		t.alpha_cut = Label3D.ALPHA_CUT_DISCARD
-		t.position = Vector3(x + rng.randf_range(-1.0, 1.0), rng.randf_range(0.7, h - 0.8), z)
-		t.rotation = Vector3(0, 0, rng.randf_range(-0.18, 0.18))
-		t.scale = Vector3(rng.randf_range(1.0, 1.35), 1.0, 1.0)
+		t.position = Vector3(x, clampf(rng.randf_range(0.5, h - 0.4), tall * 0.45 + 0.1, h - tall * 0.4), z)
+		t.rotation = Vector3(0, 0, rng.randf_range(-0.22, 0.22))
+		t.scale = Vector3(rng.randf_range(0.9, 1.3), 1.0, 1.0)
 		add_child(t)
-		x += rng.randf_range(5.0, 9.0)
+		x += rng.randf_range(2.0, 4.0) + tall * float(t.text.length()) * 0.35
 
 
 ## Albedo + normal map of a running-bond brick wall: 4 bricks × 14 courses per tile (0.96 × 1 m).
