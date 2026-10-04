@@ -1,5 +1,6 @@
 extends Node3D
-## Underglow: neon tubes along the whole front, rear and both sides of the car. Each tube lights a
+## Underglow: neon tubes under the car – across the front behind the bumper, across the rear, and
+## along both sides between the wheels. Each tube lights a
 ## continuous strip of ground (an emissive decal the length of that side) plus the underbody (two
 ## soft lights per side). The flasher mode makes every lit side flash together, in sync, at the set
 ## tempo; holding the flash key (N) strobes all tubes, whatever the mode.
@@ -42,10 +43,15 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 	var af: float = float(dims.get("axle_f", -1.3))
 	var ar: float = float(dims.get("axle_r", 1.3))
 	var y: float = float(dims.get("base", 0.15)) + 0.02
-	var zf := af + signf(af) * 0.62
-	var zr := ar + signf(ar) * 0.5
-	var zc := (zf + zr) * 0.5
-	var side_len := absf(zr - zf) - 0.35
+	var wr: float = float(dims.get("wheel_r", 0.33))
+	var ww: float = float(dims.get("wheel_w", 0.24))
+	# under the car, out of sight of the wheels: the front and rear tubes just ahead of / behind the
+	# tyres (behind the bumpers), the side tubes between the wheel arches, inside the tyres' line
+	var zf := af + signf(af) * (wr + 0.12)
+	var zr := ar + signf(ar) * (wr + 0.12)
+	var zc := (af + ar) * 0.5
+	var side_len := maxf(absf(ar - af) - 2.0 * (wr + 0.16), 0.4)
+	var xs := maxf(tr - ww * 0.5 - 0.04, 0.3)
 	var sides: Dictionary = cfg.get("sides", {})
 	for i in SIDES.size():
 		var sd: Dictionary = sides.get(SIDES[i], {})
@@ -62,15 +68,15 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 		match i:
 			0:
 				pos = Vector3(0, y, zf)
-				length = tr * 1.85
+				length = tr * 1.7
 			1:
 				pos = Vector3(0, y, zr)
-				length = tr * 1.75
+				length = tr * 1.7
 			2:
-				pos = Vector3(-tr - 0.02, y, zc)
+				pos = Vector3(-xs, y, zc)
 				length = side_len
 			_:
-				pos = Vector3(tr + 0.02, y, zc)
+				pos = Vector3(xs, y, zc)
 				length = side_len
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -152,7 +158,7 @@ func setup(p_cfg: Dictionary, dims: Dictionary, lights: bool) -> void:
 			var sb: Dictionary = _strips[idx[cx[0]]]
 			var sz := minf(float(sa["across"]), float(sb["across"]))
 			d.size = Vector3(sz, 1.0, sz)
-			d.position = Vector3(float(cx[1]) * (tr + 0.02 + float(sb["out"])), y - 0.45, float(cz[1]) + signf(float(cz[1])) * float(sa["out"]))
+			d.position = Vector3(float(cx[1]) * (xs + float(sb["out"])), y - 0.45, float(cz[1]) + signf(float(cz[1])) * float(sa["out"]))
 			add_child(d)
 			_corners.append({"decal": d, "a": idx[cz[0]], "b": idx[cx[0]]})
 

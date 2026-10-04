@@ -733,8 +733,17 @@ func _new_car(c: Dictionary) -> void:
 	c["want"] = _trng.randf_range(9.0, 15.0)
 
 
+## The shutter is down: the street isn't seen, its cars wait where they are (none drawn, no new ones).
+var traffic_on := true
+
+
 func _traffic_step(delta: float) -> void:
 	if _traffic == null or not _traffic.ok:
+		return
+	if not traffic_on:
+		for c in _tcars:
+			(c["spot"] as Node3D).visible = false
+			(c["tail"] as Node3D).visible = false
 		return
 	for c in _tcars:
 		var lane: float = c["lane"]
@@ -765,6 +774,8 @@ func _traffic_step(delta: float) -> void:
 		_traffic.add(int(c["model"]), xf, c["paint"], float(c["odo"]), float(c["v"]) < float(c["want"]) - 1.0, float(c["v"]))
 		var half: float = _traffic.half_length(int(c["model"]))
 		var spot: SpotLight3D = c["spot"]
+		spot.visible = true
+		(c["tail"] as Node3D).visible = true
 		spot.global_transform = Transform3D(Basis.looking_at(fwd + Vector3(0, -0.12, 0), Vector3.UP), xf.origin + fwd * (half + 0.1) + Vector3(0, 0.7, 0))
 		(c["tail"] as OmniLight3D).global_position = xf.origin - fwd * (half + 0.4) + Vector3(0, 0.7, 0)
 

@@ -181,6 +181,7 @@ func _set_shutter(b: float) -> void:
 	var f := clampf((b - SHUTTER_DOWN) / (SHUTTER_UP - SHUTTER_DOWN), 0.0, 1.0)
 	if _street:
 		_street.set_gate((f - 0.15) / 0.85)
+		_street.traffic_on = f > 0.02          # (a closed shutter: the street's traffic waits)
 	if _trolley:
 		# the carriage pulls the top panel: it stays at the door's top edge
 		var top := _door_track(b + DOOR_PANELS * DOOR_PANEL_H)

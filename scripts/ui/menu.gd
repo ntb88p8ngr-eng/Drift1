@@ -206,6 +206,16 @@ func _build_platform_bar() -> void:
 		b.add_theme_font_size_override("font_size", 22)
 		if d == 0.0:
 			b.name = "Pause"
+			# drawn, not the ⏸ glyph (that one comes as a blue emoji): two white bars, or a play triangle
+			b.text = ""
+			b.set_meta("spinning", true)
+			b.draw.connect(func():
+				var c := b.size * 0.5
+				if bool(b.get_meta("spinning", true)):
+					b.draw_rect(Rect2(c + Vector2(-7, -9), Vector2(5, 18)), Color.WHITE)
+					b.draw_rect(Rect2(c + Vector2(2, -9), Vector2(5, 18)), Color.WHITE)
+				else:
+					b.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -10), c + Vector2(10, 0), c + Vector2(-6, 10)]), Color.WHITE))
 			b.pressed.connect(func():
 				var sr = _showroom()
 				if sr:
@@ -330,7 +340,8 @@ func _sync_platform_buttons() -> void:
 	var sr = _showroom()
 	var pause := _platform_bar.get_node_or_null("Pause") as Button
 	if sr and pause:
-		pause.text = "⏸" if sr.auto_spin else "▶"
+		pause.set_meta("spinning", bool(sr.auto_spin))
+		pause.queue_redraw()
 
 
 func show_status(text: String, color := UiKit.GOLD) -> void:

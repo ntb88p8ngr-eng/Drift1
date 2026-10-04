@@ -9,6 +9,7 @@ const TILE := Vector2(318, 118)
 const GAP := Vector2(22, 16)
 const COLS := 2
 const SKEW := 0.16
+const LEAN := TILE.y * SKEW * 0.5 + 6.0     # room for a slanted tile's lower corner on the left
 
 signal page_changed(page: int)
 
@@ -32,7 +33,7 @@ func setup(pages: Array, names: Array) -> void:
 	for p in pages:
 		rows = maxi(rows, ceili(float(p.size()) / COLS))
 	# (the rows step to the right like the slant: the lowest row of the tallest page sets the width)
-	var pw := COLS * TILE.x + (COLS - 1) * GAP.x + TILE.y * SKEW + (rows - 1) * (TILE.y + GAP.y) * SKEW * 0.5 + 12.0
+	var pw := LEAN + COLS * TILE.x + (COLS - 1) * GAP.x + TILE.y * SKEW + (rows - 1) * (TILE.y + GAP.y) * SKEW * 0.5 + 12.0
 	var ph := rows * TILE.y + (rows - 1) * GAP.y
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 12)
@@ -95,7 +96,8 @@ func setup(pages: Array, names: Array) -> void:
 			# a slanted column: each row a little further right, like the tiles' own slant
 			var r := k / COLS
 			var c := k % COLS
-			t.position = Vector2(c * (TILE.x + GAP.x) + (rows - 1 - r) * (TILE.y + GAP.y) * SKEW * 0.5, r * (TILE.y + GAP.y))
+			# (+ the slant's overhang: the lowest row's bottom-left corner reaches left of the tile's box)
+			t.position = Vector2(LEAN + c * (TILE.x + GAP.x) + (rows - 1 - r) * (TILE.y + GAP.y) * SKEW * 0.5, r * (TILE.y + GAP.y))
 			holder.add_child(t)
 			tiles.append(t)
 			t.focus_entered.connect(func(): set_page(pi))
