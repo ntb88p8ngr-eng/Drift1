@@ -319,6 +319,46 @@ static func _bary(p: Vector3, a: Vector3, b: Vector3, c: Vector3) -> Vector3:
 	return Vector3(1.0 - y - z, y, z)
 
 
+## The sticker's image axes on the surface: [right, up] (seen from outside), turned by rot_deg.
+static func axes(n: Vector3, up: Vector3, rot_deg: float) -> Array:
+	var u := up - n * n.dot(up)
+	if u.length_squared() < 1e-4:
+		u = Vector3(0, 0, -1) - n * n.dot(Vector3(0, 0, -1))
+	u = u.normalized()
+	var r := (-n).cross(u).normalized()
+	var rb := Basis(n, deg_to_rad(rot_deg))
+	return [rb * r, rb * u]
+
+
+## Width and height of a layer's sticker in metres (size, stretch and the picture's aspect).
+static func extent(l: Dictionary) -> Vector2:
+	var tex := texture(str(l.get("shape", "")))
+	var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0) if tex else 1.0
+	var s := float(l.get("size", 0.7))
+	var st := pow(2.0, clampf(float(l.get("stretch", 0.0)), -3.0, 3.0) * 0.5)
+	return Vector2(s * st, s / aspect / st)
+
+
+## Size and stretch for a wanted width × height (the inverse of extent()).
+static func size_for(l: Dictionary, w: float, h: float) -> Vector2:
+	var tex := texture(str(l.get("shape", "")))
+	var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0) if tex else 1.0
+	var s := sqrt(maxf(w * h * aspect, 1e-6))
+	return Vector2(s, clampf(2.0 * log(maxf(w / s, 1e-4)) / log(2.0), -3.0, 3.0))
+
+
+## Where the layer's (first) sticker sits, body space: [centre, normal, right, up, extent] or null.
+static func sticker_frame(body: Node3D, l: Dictionary):
+	var surf := surface(body)
+	var box: AABB = surf["box"]
+	var f := frame(str(l.get("side", "left")), float(l.get("p", 0.0)), float(l.get("h", 0.5)), box)
+	var hit = ray_surface(surf, f[0], f[1], box.size.length())
+	if hit == null:
+		return null
+	var ax := axes(hit[1], f[2], float(l.get("rot", 0.0)))
+	return [hit[0], hit[1], ax[0], ax[1], extent(l)]
+
+
 ## The sticker as a skin on the body: the triangles round `at` that face the same way, each vertex
 ## laid out by its distance from `at` (the sticker's centre) so it wraps over curves without
 ## stretching; a hair above the paint. `up` is the image's up before turning by `rot_deg`.
@@ -326,14 +366,9 @@ static func sticker_mesh(surf: Dictionary, at: Vector3, n: Vector3, up: Vector3,
 	var v: PackedVector3Array = surf["v"]
 	var nr: PackedVector3Array = surf["n"]
 	var grid: Dictionary = surf["grid"]
-	var u := up - n * n.dot(up)
-	if u.length_squared() < 1e-4:
-		u = Vector3(0, 0, -1) - n * n.dot(Vector3(0, 0, -1))
-	u = u.normalized()
-	var r := (-n).cross(u).normalized()
-	var rb := Basis(n, deg_to_rad(rot_deg))
-	r = rb * r
-	u = rb * u
+	var ax := axes(n, up, rot_deg)
+	var r: Vector3 = ax[0]
+	var u: Vector3 = ax[1]
 	var rad := 0.5 * sqrt(w * w + h * h) + 0.02
 	var c0 := Vector3i(((at - Vector3.ONE * rad) / CELL).floor())
 	var c1 := Vector3i(((at + Vector3.ONE * rad) / CELL).floor())

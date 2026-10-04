@@ -981,4 +981,5 @@ const EN := {
 	"Breite ↔ Höhe": "Width ↔ height",
 	"Einfarbig – in der gewählten Farbe": "One colour – in the colour picked",
 	"Vollfarbe – im Original": "Full colour – as the original",
+	"Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom": "Click the car: place / drag a sticker · drag a corner: scale (Shift: keep proportions) · right mouse button: turn the camera · wheel: zoom",
 }

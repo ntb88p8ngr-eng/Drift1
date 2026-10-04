@@ -40,6 +40,9 @@ var _hint: Label
 var _pad := false          # the last input came from a gamepad: placing follows a cursor on the stick
 var _pad_cursor := Vector2.ZERO
 var _cursor: Control
+var _handles: Control      # the selected sticker's outline with a handle on each corner
+var _corners: Array = []   # their screen points (empty: none shown)
+var _corner_drag := -1
 
 
 func _ready() -> void:
@@ -80,7 +83,7 @@ func _ready() -> void:
 		_pages.append(p)
 	tabs.add_child(UiKit.button("Lack", func(): _show_page(0), 160))
 	tabs.add_child(UiKit.button("Sticker", func(): _show_page(1), 160))
-	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
+	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_hint)
 	_show_page(1)
@@ -102,6 +105,12 @@ func _ready() -> void:
 		for d in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
 			_cursor.draw_line(d * 6.0, d * 22.0, a, 2.0, true))
 	add_child(_cursor)
+	_handles = Control.new()
+	_handles.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_handles.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_handles.draw.connect(_draw_handles)
+	add_child(_handles)
+	move_child(_handles, 0)
 
 
 func _scroll(c: Control) -> ScrollContainer:
@@ -422,6 +431,7 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if not visible or sr == null:
 		return
+	_update_handles()
 	var dz := func(v: float) -> float: return 0.0 if absf(v) < 0.18 else v
 	# right stick: the camera round the car (always)
 	var rx: float = dz.call(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X))
@@ -501,11 +511,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
 			sr.booth_zoom(1.08)
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed and _corner_at(mb.position) >= 0:
+				_corner_drag = _corner_at(mb.position)
+				get_viewport().set_input_as_handled()
+				return
+			if not mb.pressed and _corner_drag >= 0:
+				_corner_drag = -1
+				return
 			_dragging = mb.pressed and _place(mb.position)
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if _orbit:
 			sr.booth_orbit(mm.relative.x, mm.relative.y)
+		elif _corner_drag >= 0:
+			_drag_corner(mm.position, mm.shift_pressed)
 		elif _dragging:
 			_place(mm.position)
 
@@ -527,6 +546,72 @@ func _place(pos: Vector2) -> bool:
 	return true
 
 
+# --- corner handles: drag a corner to scale (Shift: keep the proportions) ---------------------------
+func _update_handles() -> void:
+	var pts: Array = []
+	if sel >= 0 and sel < layers.size() and _placing == "" and sr.car and is_instance_valid(sr.car):
+		var fr = Livery.sticker_frame(sr.car.body, layers[sel])
+		if fr != null:
+			var xf: Transform3D = sr.car.body.global_transform
+			var e: Vector2 = fr[4] * 0.5
+			for c in [Vector2(-1, 1), Vector2(1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+				var q: Vector3 = xf * (fr[0] + fr[2] * e.x * c.x + fr[3] * e.y * c.y + fr[1] * 0.01)
+				if sr.cam.is_position_behind(q):
+					pts = []
+					break
+				pts.append(sr.cam.unproject_position(q))
+	if pts != _corners:
+		_corners = pts
+		_handles.queue_redraw()
+
+
+func _draw_handles() -> void:
+	if _corners.size() != 4:
+		return
+	var line := PackedVector2Array(_corners + [_corners[0]])
+	_handles.draw_polyline(line, Color(0, 0, 0, 0.5), 3.0, true)
+	_handles.draw_polyline(line, Color(1, 1, 1, 0.85), 1.5, true)
+	for i in 4:
+		var q: Vector2 = _corners[i]
+		var on := i == _corner_drag
+		_handles.draw_rect(Rect2(q - Vector2(7, 7), Vector2(14, 14)), UiKit.ACCENT if on else Color.WHITE)
+		_handles.draw_rect(Rect2(q - Vector2(7, 7), Vector2(14, 14)), Color(0, 0, 0, 0.7), false, 1.5)
+
+
+func _corner_at(pos: Vector2) -> int:
+	for i in _corners.size():
+		if (pos - (_corners[i] as Vector2)).length() < 13.0:
+			return i
+	return -1
+
+
+## The corner follows the mouse on the sticker's plane; the opposite corner stays mirrored about the
+## centre (the sticker grows / shrinks round its middle).
+func _drag_corner(pos: Vector2, keep: bool) -> void:
+	var fr = Livery.sticker_frame(sr.car.body, layers[sel])
+	var ray = sr.booth_ray(pos)
+	if fr == null or ray == null:
+		return
+	var hit = Plane(fr[1], fr[0]).intersects_ray(ray[0], ray[1])
+	if hit == null:
+		return
+	var o: Vector3 = (hit as Vector3) - fr[0]
+	var w := maxf(absf(o.dot(fr[2])) * 2.0, 0.04)
+	var h := maxf(absf(o.dot(fr[3])) * 2.0, 0.04)
+	var l: Dictionary = layers[sel]
+	if keep:
+		var e: Vector2 = fr[4]
+		var k := maxf(w / maxf(e.x, 1e-4), h / maxf(e.y, 1e-4))
+		l["size"] = clampf(float(l.get("size", 0.7)) * k, 0.05, 4.0)
+	else:
+		var ss := Livery.size_for(l, w, h)
+		l["size"] = clampf(ss.x, 0.05, 4.0)
+		l["stretch"] = ss.y
+	_sync_props()
+	_apply()
+	_handles.queue_redraw()
+
+
 # --- placing straight onto the car ------------------------------------------------------------------
 func _start_placing(id: String) -> void:
 	_placing = id
@@ -543,7 +628,7 @@ func _stop_placing() -> void:
 	_placing = ""
 	if _cursor:
 		_cursor.visible = false
-	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
+	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
 	_apply()
 
 
