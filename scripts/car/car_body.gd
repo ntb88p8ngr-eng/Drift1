@@ -1144,8 +1144,8 @@ func _underbody(m: Dictionary) -> void:
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y, (af + gap + ar - gap) * 0.5)), Vector3(hw * 2.0, 0.03, (ar - gap) - (af + gap)))
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.02, af)), Vector3(inner * 2.0, 0.03, gap * 2.0))
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.02, ar)), Vector3(inner * 2.0, 0.03, gap * 2.0))
-	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.03, (_front + af - gap) * 0.5)), Vector3(hw * 1.9, 0.03, absf(af - gap - _front) - 0.15))
-	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.05, (_rear + ar + gap) * 0.5)), Vector3(hw * 1.9, 0.03, absf(_rear - ar - gap) - 0.12))
+	# (nothing ahead of the front wheels or behind the rear ones: under the overhangs a flat plate
+	# stuck out of the bumpers)
 	# the transmission tunnel and the sump, the fuel tank in front of the rear axle
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.06, (af + ar) * 0.5)), Vector3(0.3, 0.1, ar - af - 0.6))
 	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, y + 0.02, af + 0.15)), Vector3(0.45, 0.12, 0.6))
