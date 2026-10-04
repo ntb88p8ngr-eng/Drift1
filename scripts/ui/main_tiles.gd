@@ -29,7 +29,8 @@ func setup(pages: Array, names: Array) -> void:
 	var rows := 0
 	for p in pages:
 		rows = maxi(rows, ceili(float(p.size()) / COLS))
-	var pw := COLS * TILE.x + (COLS - 1) * GAP.x + TILE.y * SKEW + 8.0
+	# (the rows step to the right like the slant: the lowest row of the tallest page sets the width)
+	var pw := COLS * TILE.x + (COLS - 1) * GAP.x + TILE.y * SKEW + (rows - 1) * (TILE.y + GAP.y) * SKEW * 0.5 + 12.0
 	var ph := rows * TILE.y + (rows - 1) * GAP.y
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 12)
@@ -208,7 +209,6 @@ func _tile(title: String, sub: String, icon: String, cb: Callable) -> Button:
 	b.custom_minimum_size = TILE
 	b.size = TILE
 	b.pressed.connect(cb)
-	b.tooltip_text = sub
 	var base := StyleBoxFlat.new()
 	base.bg_color = Color(0.07, 0.06, 0.11, 0.82)
 	base.border_color = Color(0.62, 0.32, 1.0, 0.45)
@@ -241,10 +241,12 @@ func _tile(title: String, sub: String, icon: String, cb: Callable) -> Button:
 	ic.size = Vector2(46, 46)
 	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(ic)
-	var t := UiKit.label(title, 25, UiKit.TEXT)
-	t.position = Vector2(94, TILE.y * 0.5 - 30.0)
+	var t := UiKit.label(title, 27, UiKit.TEXT)
+	t.position = Vector2(94, TILE.y * 0.5 - (30.0 if sub != "" else 19.0))
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(t)
+	if sub == "":
+		return b
 	var s := UiKit.label(sub, 14, UiKit.TEXT_DIM)
 	s.position = Vector2(95, TILE.y * 0.5 + 6.0)
 	s.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -340,6 +342,12 @@ class MenuIcon extends Control:
 					st.append(m + Vector2(cos(t), sin(t)) * (19.0 if k % 2 == 0 else 8.0))
 				draw_polyline(st, c, w)
 				draw_circle(m, 3, a)
+			"booth":       # a spray can with its mist
+				draw_rect(Rect2(12, 16, 16, 26), c, false, w)
+				draw_rect(Rect2(15, 10, 10, 6), c)
+				draw_line(Vector2(25, 12), Vector2(30, 12), c, 2.5)
+				for k in 6:
+					draw_circle(Vector2(34 + (k % 3) * 4, 6 + (k / 3) * 5 + (k % 3)), 1.8, a)
 			"quit":        # power
 				draw_arc(m, 17, -PI * 0.3, PI * 1.3, 32, c, w)
 				draw_line(m + Vector2(0, -21), m + Vector2(0, -4), a, w)

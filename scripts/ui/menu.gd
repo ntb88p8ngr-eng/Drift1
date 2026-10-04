@@ -69,7 +69,7 @@ func _ready() -> void:
 	var margin := MarginContainer.new()
 	margin.anchor_bottom = 1.0
 	margin.anchor_right = 0.0
-	margin.offset_right = 760
+	margin.offset_right = 820
 	margin.add_theme_constant_override("margin_left", 48)
 	margin.add_theme_constant_override("margin_top", 36)
 	margin.add_theme_constant_override("margin_bottom", 36)
@@ -355,7 +355,7 @@ func show_screen(screen: String) -> void:
 		Net.stop_lan_scan()
 	current = screen
 	_clear()
-	_side.visible = screen != "story"
+	_side.visible = screen != "story" and screen != "booth"
 	_sub_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new() if screen == "main" else _panel_style())
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER if screen == "main" else ScrollContainer.SCROLL_MODE_AUTO
 	_player_info.visible = false      # (the main screen shows it again)
@@ -376,6 +376,8 @@ func show_screen(screen: String) -> void:
 	match screen:
 		"story":
 			_build_story()
+		"booth":
+			_build_booth()
 		"single":
 			_build_single()
 		"garage":
@@ -544,24 +546,25 @@ func _forward_mouse(pos: Vector2):
 func _build_main() -> void:
 	var tut_new := not bool(Game.settings.get("tutorial_done", false))
 	var play := [
-		["Story-Mode", "Am PC in der Werkstatt", "story", func(): show_screen("story")],
-		["Online-Modus", "Lobbys, Server, Freunde", "online", func(): show_screen("online")],
-		["Einzelspieler", "Rennen, Drift, Party, frei", "single", func(): show_screen("single")],
+		["Story-Mode", "", "story", func(): show_screen("story")],
+		["Online-Modus", "Lobbys, Server", "online", func(): show_screen("online")],
+		["Einzelspieler", "Rennen, Drift, Party", "single", func(): show_screen("single")],
 		["Garage", "Autos, Lack, Tuning", "garage", func():
 			_return_to = "main"
 			show_screen("garage")],
-		[Game.t("Tutorial") + ("  ★" if tut_new else ""), "Steuerung lernen, Grüne Hölle", "tutorial", _ask_tutorial],
-		["Replays", "Gespeicherte Fahrten", "replays", func(): show_screen("replays")],
+		[Game.t("Tutorial") + ("  ★" if tut_new else ""), "Steuerung lernen", "tutorial", _ask_tutorial],
+		["Lack & Sticker", "Lackierkabine: Decals bauen", "booth", func(): show_screen("booth")],
 	]
 	var more := [
+		["Replays", "Gespeicherte Fahrten", "replays", func(): show_screen("replays")],
 		["Welt-Editor", "Eigene Karten bauen", "editor", func(): show_screen("editor")],
 		["Leaderboard", "Bestzeiten und Punkte", "leaderboard", func(): show_screen("leaderboard")],
 		["Steuerung", "Tastatur und Gamepad", "controls", func(): show_screen("controls")],
 		["Optionen", "Grafik, Audio, Spiel", "options", func():
 			_opts_return = "main"
 			show_screen("options")],
-		["Credits", "Wer das gebaut hat", "credits", func(): show_screen("credits")],
-		["Beenden", "Ab ins Bett", "quit", func(): get_tree().quit()],
+		["Credits", "", "credits", func(): show_screen("credits")],
+		["Beenden", "", "quit", func(): get_tree().quit()],
 	]
 	if bool(Game.settings.get("admin_mode", false)):
 		more.insert(4, ["Admin", "Werkzeuge mit Passwort", "admin", func():
@@ -571,6 +574,46 @@ func _build_main() -> void:
 	tiles.page = 0
 	_add(tiles)
 	_fill_player_info()
+
+
+## Lack & Sticker: the car drives into the paint booth, then the editor; "Fertig" saves and the
+## car backs out onto the platform.
+var _booth_ui: Control
+
+
+func _build_booth() -> void:
+	var sr = _showroom()
+	if sr == null:
+		show_screen("main")
+		return
+	_platform_bar.get_parent().visible = false
+	var wait := UiKit.label("Das Auto fährt in die Lackierkabine …", 22, UiKit.TEXT)
+	wait.position = Vector2(48, 40)
+	_root.add_child(wait)
+	sr.enter_booth()
+	if sr.booth != "inside":
+		await sr.booth_ready
+	wait.queue_free()
+	if current != "booth":
+		return
+	_booth_ui = load("res://scripts/ui/livery_editor.gd").new()
+	_booth_ui.main = main
+	_booth_ui.sr = sr
+	_root.add_child(_booth_ui)
+	_float_button("✔  Fertig", _leave_booth)
+
+
+func _leave_booth() -> void:
+	var sr = _showroom()
+	if _booth_ui:
+		_booth_ui.save()
+		_booth_ui.queue_free()
+		_booth_ui = null
+	_clear()
+	if sr and sr.booth == "inside":
+		sr.leave_booth()
+		await sr.booth_left
+	show_screen("main")
 
 
 ## Driver, car and credits: top right on the main screen.

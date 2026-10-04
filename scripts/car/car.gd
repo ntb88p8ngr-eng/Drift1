@@ -248,6 +248,9 @@ func _ready() -> void:
 	if rims_cfg.is_empty() and not is_remote and not is_bot:
 		rims_cfg = Game.get_rims(car_id)
 	body.apply_rims(rims_cfg)
+	# the player's stickers from the paint booth (own car and the menu's display car)
+	if not is_remote and not is_bot:
+		load("res://scripts/car/livery.gd").apply(body, Game.get_livery(car_id))
 
 	_setup_physics()
 	_setup_wheels()

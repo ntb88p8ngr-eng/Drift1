@@ -25,7 +25,7 @@ const GARAGE_INFO := "res://assets/env/garage.json"
 const WORKSHOP := "res://assets/main_menu/Midnight_Drift_Garage_Detailed.glb"
 const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City_Skybox/Midnight_City_Panorama.png"
 ## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
-const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning", "Office_door_leaf", "Partially_closed_garage_shutter"]
+const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning", "Office_door_leaf", "Partially_closed_garage_shutter", "Paint_booth_door_leaf"]
 const DECK_Y := 0.465            # top of the turntable deck (the old garage; the new one measures it)
 const FOG_GREY := Color(0.075, 0.08, 0.095)     # a dark rainy night
 const PLATFORM_SCALE := 0.78     # the workshop's platform, a size smaller
@@ -85,6 +85,20 @@ var _shutter_paused := false
 var _door_panels: Array = []        # MeshInstance3D, bottom first
 var _door_z := 0.0                  # the door's plane
 var _door_s := 1.0                  # into the hall along z
+## the paint booth (Lack & Sticker): the car turns on the platform, the booth's doors swing open, it
+## rolls in; the camera inside orbits it. booth: "" / "in" (on the way) / "inside" / "out"
+signal booth_ready
+signal booth_left
+const BOOTH_C := Vector3(10.05, 0.034, -4.1)
+var booth := ""
+var _booth_doors: Array = []        # [node, base transform, hinge, swing sign]
+var _booth_door_open := 0.0
+var _booth_door_want := 0.0
+var _booth_cam_on := false
+var _booth_yaw := 1.0
+var _booth_pitch := 0.35
+var _booth_dist := 3.5
+var _car_local := Transform3D.IDENTITY
 var _street: Node3D                 # menu_street.gd (its yard gate opens with the shutter)
 var _trolley: Node3D                # the opener's carriage on its rail (moves with the shutter)
 var _trolley_a := Vector3.ZERO      # its place with the shutter down / up
@@ -291,6 +305,203 @@ func _shutter_opener(door: AABB) -> void:
 	_trolley.position = Vector3(cx, my - 0.04, _door_z + s * 0.35)
 
 
+# ---------------------------------------------------------------------------
+# The paint booth
+# ---------------------------------------------------------------------------
+## Its doors swing (outwards, both leaves), the way in is cleared of the floor clutter, white neon
+## tubes run the whole length of its ceiling.
+func _booth_setup(g: Node3D) -> void:
+	for n in g.find_children("Paint_booth_door_leaf*", "Node3D", true, false):
+		if not (n.get_parent() and String(n.get_parent().name).begins_with("Paint_booth_door_leaf")):
+			var box := _tree_aabb(n as Node3D)
+			# the hinge: the edge away from the opening's middle (z = -4.15), at the frame
+			var hz := box.position.z if box.get_center().z < -4.15 else box.end.z
+			var sign_ := -1.0 if box.get_center().z < -4.15 else 1.0
+			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_])
+	# (the portable worklight panels in the booth stood in front of its camera: the neon tubes light it)
+	for n in g.find_children("Booth_worklight*", "Node3D", false, false) + g.find_children("Booth_worklight*", "Node3D", true, false):
+		if is_instance_valid(n) and not n.is_queued_for_deletion() and not String(n.get_parent().name).begins_with("Booth_worklight"):
+			n.queue_free()
+	for nm in ["Radial_car_tyre_stack_001", "Loose_carton_005", "Axle_jack_stand_001", "Air_hose_on_floor_002"]:
+		var n := g.find_child(nm, true, false)
+		if n:
+			n.queue_free()
+	for nm in ["Vertical_shop_air_compressor_001", "Receiver_fabrication_detail_001", "Vertical_compressor_mechanisms_001"]:
+		var n := g.find_child(nm, true, false) as Node3D
+		if n:
+			n.global_position += Vector3(0, 0, 0.95)
+	# the neon tubes: across the booth every 42 cm, each the full length of the room
+	var tube := StandardMaterial3D.new()
+	tube.albedo_color = Color(1, 1, 1)
+	tube.emission_enabled = true
+	tube.emission = Color(0.95, 0.97, 1.0)
+	tube.emission_energy_multiplier = 1.6
+	var cap := TexKit.std(Color(0.7, 0.7, 0.72), 0.4, 0.6)
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.022
+	cm.bottom_radius = 0.022
+	cm.height = 6.3
+	cm.radial_segments = 10
+	var z := -6.0
+	while z <= -2.2:
+		var t := MeshInstance3D.new()
+		t.mesh = cm
+		t.material_override = tube
+		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		t.global_transform = Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(10.05, 3.4, z))
+		add_child(t)
+		for ex in [6.95, 13.15]:
+			add_child(MeshKit.box_node(Vector3(0.06, 0.08, 0.07), cap, Vector3(ex, 3.43, z)))
+		z += 0.42
+	for x in [7.8, 10.05, 12.3]:
+		var l := OmniLight3D.new()
+		l.position = Vector3(x, 3.0, -4.1)
+		l.omni_range = 5.0
+		l.light_energy = 0.45
+		l.light_color = Color(0.96, 0.97, 1.0)
+		add_child(l)
+
+
+## The way from the platform into the booth: a cubic Bézier (start, two handles, the booth's middle).
+func _booth_path(start: Vector3) -> Array:
+	var p2 := Vector3(5.4, BOOTH_C.y, BOOTH_C.z)
+	var dir := Vector3(p2.x - start.x, 0, p2.z - start.z).normalized()
+	return [start, start + dir * 2.6, p2, BOOTH_C]
+
+
+static func _bez(p: Array, t: float) -> Vector3:
+	var u := 1.0 - t
+	return u * u * u * p[0] + 3.0 * u * u * t * p[1] + 3.0 * u * t * t * p[2] + t * t * t * p[3]
+
+
+## Into the booth: the platform turns the car towards it, the doors open, it rolls off – the picture
+## cuts to the camera in the booth – and stops in the middle; the doors close behind it.
+func enter_booth() -> void:
+	if booth != "" or car == null or _booth_doors.is_empty():
+		return
+	booth = "in"
+	_booth_door_want = 1.0
+	var path := _booth_path(car.global_position)
+	var dir: Vector3 = path[1] - path[0]
+	var want := atan2(-dir.x, -dir.z)
+	auto_spin = false
+	manual_dir = 0.0
+	set_view("overview")
+	auto_spin = false
+	_target = _angle + fposmod(want - _angle, TAU)
+	while not is_equal_approx(_angle, _target) or _booth_door_open < 0.97:
+		await get_tree().process_frame
+	_car_local = car.transform
+	var gx := car.global_transform
+	turntable.remove_child(car)
+	add_child(car)
+	car.global_transform = gx
+	_booth_yaw = 1.0
+	_booth_pitch = 0.33
+	_booth_dist = 3.6
+	_booth_cam_on = true
+	await _roll(path, 6.5, false)
+	_booth_door_want = 0.0
+	booth = "inside"
+	booth_ready.emit()
+
+
+## Out again: the doors open, the car backs out onto the platform (the picture cuts back to the
+## hall), the platform turns on.
+func leave_booth() -> void:
+	if booth != "inside":
+		return
+	booth = "out"
+	_booth_door_want = 1.0
+	while _booth_door_open < 0.97:
+		await get_tree().process_frame
+	_booth_cam_on = false
+	cam.h_offset = 0.0
+	var o := _overview_cam()
+	_cam_pos = o[0]
+	_cam_at = o[1]
+	var path := _booth_path(turntable.global_transform * _car_local.origin)
+	await _roll(path, 6.0, true)
+	remove_child(car)
+	turntable.add_child(car)
+	car.transform = _car_local
+	_booth_door_want = 0.0
+	_target = NAN
+	auto_spin = true
+	booth = ""
+	booth_left.emit()
+
+
+## Rolls the car along the path (backwards: from its end to its start, reversing), the wheels
+## turning with the distance and the front ones steering with the bend.
+func _roll(path: Array, dur: float, backwards: bool) -> void:
+	var t := 0.0
+	var prev: Vector3 = car.global_position
+	var prev_yaw := NAN
+	var wr := float(car.body.wheel_r) if car.body.get("wheel_r") != null else 0.33
+	while t < 1.0:
+		await get_tree().process_frame
+		if car == null or not is_instance_valid(car):
+			return
+		t = minf(t + get_process_delta_time() / dur, 1.0)
+		var s := t * t * (3.0 - 2.0 * t)
+		var u := 1.0 - s if backwards else s
+		var pos := _bez(path, u)
+		var tan := _bez(path, minf(u + 0.01, 1.0)) - _bez(path, maxf(u - 0.01, 0.0))
+		tan.y = 0.0
+		if tan.length() < 0.0001:
+			continue
+		car.global_transform = Transform3D(Basis.looking_at(tan.normalized(), Vector3.UP), pos)
+		var ds := pos.distance_to(prev)
+		prev = pos
+		var yaw := atan2(tan.x, tan.z)
+		var steer := 0.0
+		if not is_nan(prev_yaw) and ds > 0.0005:
+			steer = clampf(wrapf(yaw - prev_yaw, -PI, PI) / ds * 2.7, -0.6, 0.6)
+		prev_yaw = yaw
+		for i in car.body.wheel_nodes.size():
+			var wn: Array = car.body.wheel_nodes[i]
+			(wn[1] as Node3D).rotate_object_local(Vector3.RIGHT, (ds / wr) * (1.0 if backwards else -1.0))
+			if i < 2:
+				(wn[0] as Node3D).rotation.y = lerpf((wn[0] as Node3D).rotation.y, steer * (-1.0 if backwards else 1.0), 0.2)
+	for i in mini(2, car.body.wheel_nodes.size()):
+		(car.body.wheel_nodes[i][0] as Node3D).rotation.y = 0.0
+
+
+## The camera in the booth: orbiting the car (booth_orbit / booth_zoom), always inside the booth,
+## the car framed in the right half of the picture (the editor covers the left).
+func _booth_camera() -> void:
+	var target := BOOTH_C + Vector3(0, 0.7, 0)
+	if car and is_instance_valid(car) and booth == "in":
+		target = car.global_position + Vector3(0, 0.7, 0)
+	var off := Vector3(sin(_booth_yaw) * cos(_booth_pitch), sin(_booth_pitch), cos(_booth_yaw) * cos(_booth_pitch)) * _booth_dist
+	var p := BOOTH_C + Vector3(0, 0.7, 0) + off
+	p = Vector3(clampf(p.x, 7.0, 13.2), clampf(p.y, 0.3, 3.25), clampf(p.z, -6.05, -2.15))
+	cam.global_position = p
+	cam.look_at(target, Vector3.UP)
+	cam.fov = 70.0
+	cam.h_offset = -0.55 if booth == "inside" else 0.0
+
+
+func booth_orbit(dx: float, dy: float) -> void:
+	_booth_yaw -= dx * 0.008
+	_booth_pitch = clampf(_booth_pitch + dy * 0.006, 0.05, 1.2)
+
+
+func booth_zoom(f: float) -> void:
+	_booth_dist = clampf(_booth_dist * f, 2.2, 5.0)
+
+
+## A ray from the screen into the car's body space: [from, dir] or null.
+func booth_ray(screen: Vector2):
+	if car == null or not is_instance_valid(car):
+		return null
+	var inv := car.body.global_transform.affine_inverse()
+	var o := cam.project_ray_origin(screen)
+	var d := cam.project_ray_normal(screen)
+	return [inv * o, (inv.basis * d).normalized()]
+
+
 ## A coil spring along x (radius r, length l).
 static func _spring_mesh(r: float, l: float) -> ArrayMesh:
 	var pts: Array = []
@@ -475,6 +686,7 @@ func _load_workshop() -> bool:
 	_replace_wall_tools(g)
 	await Game.load_tick(0.8)
 	_pegboards(g)
+	_booth_setup(g)
 	await Game.load_tick(0.9)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
@@ -1447,6 +1659,17 @@ func _process(delta: float) -> void:
 		var e := _door_open * _door_open * (3.0 - 2.0 * _door_open)
 		_office_door.global_transform = Transform3D(Basis.IDENTITY, DOOR_HINGE) * Transform3D(Basis(Vector3.UP, e * DOOR_SWING), Vector3.ZERO) \
 			* Transform3D(Basis.IDENTITY, -DOOR_HINGE) * _office_door_base
+	if not _booth_doors.is_empty() and absf(_booth_door_open - _booth_door_want) > 0.001:
+		_booth_door_open = move_toward(_booth_door_open, _booth_door_want, delta * 0.8)
+		var e := _booth_door_open * _booth_door_open * (3.0 - 2.0 * _booth_door_open)
+		for d in _booth_doors:
+			var h: Vector3 = d[2]
+			(d[0] as Node3D).global_transform = Transform3D(Basis.IDENTITY, h) * Transform3D(Basis(Vector3.UP, e * float(d[3]) * PI * 0.5), Vector3.ZERO) \
+				* Transform3D(Basis.IDENTITY, -h) * (d[1] as Transform3D)
+	if _booth_cam_on:
+		_turn_platform(delta)
+		_booth_camera()
+		return
 	if _workshop:
 		_turn_platform(delta)
 		# overview: a slow sweep from outside the open front, the whole workshop and the shutter onto

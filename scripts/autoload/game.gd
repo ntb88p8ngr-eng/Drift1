@@ -808,6 +808,19 @@ func get_paint(paint_id: String, custom_html: String = "", finish: String = "glo
 
 
 ## Rims per car: {style: car_body.gd RIM_STYLES index (0 = the car's own), color: RIM_COLORS index}
+## The car's stickers (livery.gd layers).
+func get_livery(car_id: String) -> Array:
+	var all: Dictionary = settings.get("liveries", {})
+	return (all.get(car_id, []) as Array).duplicate(true)
+
+
+func set_livery(car_id: String, layers: Array) -> void:
+	if not (settings.get("liveries") is Dictionary):
+		settings["liveries"] = {}
+	settings["liveries"][car_id] = layers.duplicate(true)
+	save_settings()
+
+
 func get_rims(car_id: String) -> Dictionary:
 	var all: Dictionary = settings.get("rims", {})
 	var r: Dictionary = all.get(car_id, {})
