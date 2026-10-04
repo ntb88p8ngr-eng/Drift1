@@ -22,6 +22,7 @@ var _spinners: Array = []             # [node, axis, speed]
 var _jacks: Array = []                # [beam node, phase]
 var _blink: Array = []                # [material, phase]
 var _t := 0.0
+var ranch_xf = null                    # where the ranch stands (+Z: its gate side)
 
 
 func build(p_track, p_terrain, p_scenery, p_rect: Rect2) -> void:
@@ -55,6 +56,7 @@ func build(p_track, p_terrain, p_scenery, p_rect: Rect2) -> void:
 			_shack()
 	for i in 3:
 		_barn()
+	_ranch()
 	await Game.load_tick()
 	for i in 3:
 		_water_tower()
@@ -314,6 +316,233 @@ func _shack(xf = null) -> void:
 	_count("shacks")
 
 
+## A big ranch: a fenced yard behind a log gate with its sign, the two-storey ranch house with a
+## porch all round, a big red barn with a hayloft, a stable with its stalls, a round corral, grain
+## silos, a windpump, a water tower, hay bales, a tractor and a water trough.
+func _ranch() -> void:
+	var xf = _site(46.0, 14.0, 260.0, 160)
+	if xf == null:
+		xf = _site(36.0, 10.0, 300.0, 160)
+	if xf == null:
+		return
+	var half := 34.0
+	ranch_xf = xf
+	print("RANCH at ", (xf as Transform3D).origin)
+	var st := MeshKit.new_st()
+	var wood := Color(0.46, 0.34, 0.22)
+	var log := Color(0.38, 0.27, 0.17)
+	var white := Color(0.88, 0.86, 0.8)
+	var red := Color(0.55, 0.12, 0.08)
+	var roof := Color(0.32, 0.3, 0.3)
+	var glass := Color(0.12, 0.15, 0.18)
+	# --- the fence round the yard (posts, three rails), the gate in the front side ---
+	var gate_w := 8.0
+	for side in 4:
+		var a: Vector3
+		var b: Vector3
+		match side:
+			0: a = Vector3(-half, 0, half); b = Vector3(half, 0, half)
+			1: a = Vector3(half, 0, half); b = Vector3(half, 0, -half)
+			2: a = Vector3(half, 0, -half); b = Vector3(-half, 0, -half)
+			_: a = Vector3(-half, 0, -half); b = Vector3(-half, 0, half)
+		var n := int(a.distance_to(b) / 3.0)
+		for k in n:
+			var p0 := a.lerp(b, float(k) / n)
+			var p1 := a.lerp(b, float(k + 1) / n)
+			var mid := (p0 + p1) * 0.5
+			if side == 0 and absf(mid.x) < gate_w * 0.5:
+				continue
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, p0 + Vector3(0, 0.75, 0)), Vector3(0.2, 1.6, 0.2), wood)
+			var dir := (p1 - p0).normalized()
+			var rb := Basis(Vector3.UP, atan2(-dir.z, dir.x))
+			for ry in [0.45, 0.85, 1.25]:
+				MeshKit.box(st, Transform3D(rb, mid + Vector3(0, ry, 0)), Vector3(p0.distance_to(p1), 0.14, 0.07), wood * 0.92)
+		# solid: one long box per side (the front in two, either side of the gate)
+		if side == 0:
+			for sx in [-1.0, 1.0]:
+				var w := half - gate_w * 0.5
+				Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(sx * (gate_w * 0.5 + w * 0.5), 0.8, half)), Vector3(w, 1.6, 0.3))
+		else:
+			var c := (a + b) * 0.5
+			var size := Vector3(absf(b.x - a.x) + 0.3, 1.6, absf(b.z - a.z) + 0.3)
+			Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, c + Vector3(0, 0.8, 0)), size)
+	# the log gate with the ranch's name
+	for sx in [-1.0, 1.0]:
+		_part(st, xf, Vector3(sx * (gate_w * 0.5 + 0.3), 3.2, half), Vector3(0.6, 6.4, 0.6), log)
+	_part(st, xf, Vector3(0, 6.2, half), Vector3(gate_w + 2.4, 0.55, 0.55), log, false)
+	_part(st, xf, Vector3(0, 5.2, half + 0.05), Vector3(6.4, 1.3, 0.12), Color(0.3, 0.2, 0.12), false)
+	for sx in [-1.0, 1.0]:
+		_part(st, xf, Vector3(sx * 2.6, 5.9, half + 0.05), Vector3(0.06, 0.5, 0.06), Color(0.2, 0.2, 0.2), false)
+	# a cattle skull over the sign (a few boxes)
+	_part(st, xf, Vector3(0, 6.75, half + 0.1), Vector3(0.5, 0.45, 0.2), white, false)
+	_part(st, xf, Vector3(0, 6.85, half + 0.1), Vector3(1.6, 0.12, 0.12), white, false)
+	for sx in [-1.0, 1.0]:
+		_part(st, xf, Vector3(sx * 0.85, 7.0, half + 0.1), Vector3(0.1, 0.35, 0.1), white, false)
+	_label("BROKEN SPUR RANCH", xf * Transform3D(Basis.IDENTITY, Vector3(0, 5.2, half + 0.12)), 64, Color(0.95, 0.8, 0.55), Color(0.1, 0.05, 0.02, 0.9))
+	var back_l := _label("BROKEN SPUR RANCH", xf * Transform3D(Basis(Vector3.UP, PI), Vector3(0, 5.2, half - 0.06)), 64, Color(0.95, 0.8, 0.55), Color(0.1, 0.05, 0.02, 0.9))
+	back_l.double_sided = false
+	# the drive: packed dirt from the gate to the house
+	_part(st, xf, Vector3(0, 0.02, half * 0.5 + 4.0), Vector3(5.0, 0.06, half - 6.0), Color(0.55, 0.42, 0.3), false)
+	# --- the ranch house: two storeys, a porch all round on the ground floor, the roof over it ---
+	var hc := Vector3(0, 0, 2.0)
+	var hw := 16.0
+	var hd := 10.0
+	_part(st, xf, hc + Vector3(0, 3.2, 0), Vector3(hw, 6.4, hd), white)
+	_part(st, xf, hc + Vector3(0, 0.2, 0), Vector3(hw + 5.0, 0.4, hd + 5.0), wood * 0.8, false)        # porch deck
+	_part(st, xf, hc + Vector3(0, 3.1, 0), Vector3(hw + 5.0, 0.2, hd + 5.0), roof, false)              # porch roof
+	for px in [-1.0, -0.5, 0.0, 0.5, 1.0]:
+		for pz in [-1.0, 1.0]:
+			_part(st, xf, hc + Vector3(px * (hw * 0.5 + 2.2), 1.65, pz * (hd * 0.5 + 2.2)), Vector3(0.22, 2.9, 0.22), white, false)
+	for pz in [-0.5, 0.0, 0.5]:
+		for px in [-1.0, 1.0]:
+			_part(st, xf, hc + Vector3(px * (hw * 0.5 + 2.2), 1.65, pz * (hd * 0.5 + 2.2)), Vector3(0.22, 2.9, 0.22), white, false)
+	# the railing along the porch's front, open at the steps
+	for sx in [-1.0, 1.0]:
+		_part(st, xf, hc + Vector3(sx * (hw * 0.25 + 2.0), 1.0, hd * 0.5 + 2.4), Vector3(hw * 0.5 - 1.0, 0.1, 0.1), white, false)
+	_part(st, xf, hc + Vector3(0, 0.1, hd * 0.5 + 3.0), Vector3(3.0, 0.2, 1.0), wood * 0.75, false)      # steps
+	# windows (warm at night) and the front door
+	var win := _glow(Color(1.0, 0.82, 0.5), 0.05, 1.8)
+	var wst := MeshKit.new_st()
+	for fl in [1.6, 4.6]:
+		for wx in [-6.0, -3.5, 3.5, 6.0]:
+			MeshKit.box(wst, Transform3D(Basis.IDENTITY, hc + Vector3(wx, fl, hd * 0.5 + 0.03)), Vector3(1.2, 1.4, 0.05), Color.WHITE)
+			MeshKit.box(wst, Transform3D(Basis.IDENTITY, hc + Vector3(wx, fl, -hd * 0.5 - 0.03)), Vector3(1.2, 1.4, 0.05), Color.WHITE)
+		for wz in [-2.5, 2.5]:
+			for sx in [-1.0, 1.0]:
+				MeshKit.box(wst, Transform3D(Basis.IDENTITY, hc + Vector3(sx * (hw * 0.5 + 0.03), fl, wz)), Vector3(0.05, 1.4, 1.2), Color.WHITE)
+	MeshKit.box(wst, Transform3D(Basis.IDENTITY, hc + Vector3(0, 4.6, hd * 0.5 + 0.03)), Vector3(1.2, 1.4, 0.05), Color.WHITE)
+	wst.generate_normals()
+	var wmi := MeshKit.mesh_instance(MeshKit.commit(wst, win), null, false)
+	add_child(wmi)
+	wmi.global_transform = xf
+	for wx in [-6.0, -3.5, 3.5, 6.0]:
+		for fl in [1.6, 4.6]:
+			_part(st, xf, hc + Vector3(wx, fl, hd * 0.5 + 0.06), Vector3(1.45, 0.12, 0.06), Color(0.25, 0.32, 0.3), false)
+	_part(st, xf, hc + Vector3(0, 1.2, hd * 0.5 + 0.04), Vector3(1.3, 2.4, 0.06), Color(0.32, 0.18, 0.1), false)
+	_mesh(st, xf)
+	var hst := MeshKit.new_st()
+	_roof(hst, Vector3.ZERO, hw, hd, 3.2, roof)
+	_part(hst, xf, Vector3(5.0, 2.2, -1.5), Vector3(1.2, 4.0, 1.2), Color(0.5, 0.3, 0.22), false)       # chimney
+	_mesh(hst, xf * Transform3D(Basis.IDENTITY, hc + Vector3(0, 6.4, 0)))
+	_night_light(xf * (hc + Vector3(0, 2.7, hd * 0.5 + 2.0)), Color(1.0, 0.8, 0.5), 1.6, 12.0)
+	# rocking chairs and a bench on the porch
+	var pst := MeshKit.new_st()
+	for cx in [-4.5, -3.0, 4.0]:
+		_part(pst, xf, hc + Vector3(cx, 0.65, hd * 0.5 + 1.2), Vector3(0.6, 0.08, 0.6), wood, false)
+		_part(pst, xf, hc + Vector3(cx, 1.05, hd * 0.5 + 0.95), Vector3(0.6, 0.8, 0.08), wood, false)
+		_part(pst, xf, hc + Vector3(cx, 0.4, hd * 0.5 + 1.2), Vector3(0.5, 0.45, 0.5), wood * 0.8, false)
+	_mesh(pst, xf)
+	# --- the big barn (doors to the yard), a hayloft door up in its gable ---
+	var bxf: Transform3D = xf * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-20.0, 0, -14.0))
+	var bst := MeshKit.new_st()
+	_part(bst, bxf, Vector3(0, 4.0, 0), Vector3(14.0, 8.0, 22.0), red)
+	# the white trim round the edges and the big doors with their X braces
+	for c in [Vector3(-6.95, 4.0, 10.95), Vector3(6.95, 4.0, 10.95)]:
+		_part(bst, bxf, c, Vector3(0.3, 8.0, 0.3), white, false)
+	_part(bst, bxf, Vector3(0, 7.9, 11.02), Vector3(14.2, 0.3, 0.1), white, false)
+	for dx in [-1.0, 1.0]:
+		var dc := Vector3(dx * 2.0, 2.6, 11.03)
+		_part(bst, bxf, dc, Vector3(3.8, 5.2, 0.08), Color(0.45, 0.1, 0.07), false)
+		_part(bst, bxf, dc + Vector3(0, 0, 0.03), Vector3(3.9, 0.22, 0.05), white, false)
+		_part(bst, bxf, dc + Vector3(0, 2.5, 0.03), Vector3(3.9, 0.22, 0.05), white, false)
+		_part(bst, bxf, dc + Vector3(dx * 1.85, 0, 0.03), Vector3(0.22, 5.2, 0.05), white, false)
+		_part(bst, bxf, dc + Vector3(0, 0, 0.04), Vector3(0.18, 6.2, 0.04), white, false, 0.62)
+		_part(bst, bxf, dc + Vector3(0, 0, 0.04), Vector3(0.18, 6.2, 0.04), white, false, -0.62)
+	_part(bst, bxf, Vector3(0, 9.3, 11.34), Vector3(2.4, 2.0, 0.08), Color(0.3, 0.08, 0.05), false)
+	_part(bst, bxf, Vector3(0, 10.6, 11.6), Vector3(0.25, 0.25, 1.4), Color(0.35, 0.33, 0.3), false)     # hay hoist beam
+	_mesh(bst, bxf)
+	var brst := MeshKit.new_st()
+	_roof(brst, Vector3.ZERO, 22.0, 14.0, 5.0, roof)
+	_mesh(brst, bxf * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 8.0, 0)))
+	_night_light(bxf * Vector3(0, 7.2, 12.0), Color(1.0, 0.85, 0.6), 1.4, 14.0)
+	# --- the stable: a long low building, a stall door every 3 m, a lean-to roof ---
+	var sxf: Transform3D = xf * Transform3D(Basis.IDENTITY, Vector3(16.0, 0, -24.0))
+	var sst := MeshKit.new_st()
+	_part(sst, sxf, Vector3(0, 1.8, 0), Vector3(24.0, 3.6, 7.0), wood)
+	_part(sst, sxf, Vector3(0, 3.75, 1.2), Vector3(25.0, 0.25, 10.0), roof, false)
+	for k in 8:
+		var x := -10.5 + k * 3.0
+		_part(sst, sxf, Vector3(x, 0.75, 3.52), Vector3(1.6, 1.5, 0.08), Color(0.3, 0.2, 0.12), false)
+		_part(sst, sxf, Vector3(x, 2.2, 3.52), Vector3(1.6, 1.2, 0.04), Color(0.06, 0.05, 0.04), false)
+		_part(sst, sxf, Vector3(x, 0.75, 3.57), Vector3(1.5, 0.12, 0.04), white, false, 0.75)
+	for k in 5:
+		_part(sst, sxf, Vector3(-12.0 + k * 6.0, 1.8, 6.0), Vector3(0.2, 3.6, 0.2), wood * 0.9, false)
+	_mesh(sst, sxf)
+	# --- the round corral: posts in a ring, three rails ---
+	var cc := Vector3(19.0, 0, 14.0)
+	var cr := 9.0
+	var cst := MeshKit.new_st()
+	var segs := 22
+	for k in segs:
+		var a0 := TAU * k / segs
+		var a1 := TAU * (k + 1) / segs
+		var p0 := cc + Vector3(cos(a0), 0, sin(a0)) * cr
+		var p1 := cc + Vector3(cos(a1), 0, sin(a1)) * cr
+		var mid := (p0 + p1) * 0.5
+		var rb := Basis(Vector3.UP, -(a0 + a1) * 0.5 + PI * 0.5)
+		MeshKit.box(cst, Transform3D(Basis.IDENTITY, p0 + Vector3(0, 0.8, 0)), Vector3(0.22, 1.7, 0.22), log)
+		for ry in [0.5, 0.95, 1.4]:
+			MeshKit.box(cst, Transform3D(rb, mid + Vector3(0, ry, 0)), Vector3(p0.distance_to(p1) + 0.05, 0.14, 0.08), wood)
+		Colliders.add_box(self, xf * Transform3D(rb, mid + Vector3(0, 0.8, 0)), Vector3(p0.distance_to(p1) + 0.1, 1.6, 0.3))
+	# sand inside, a water trough by it
+	MeshKit.box(cst, Transform3D(Basis.IDENTITY, cc + Vector3(0, 0.02, 0)), Vector3(cr * 1.7, 0.05, cr * 1.7), Color(0.72, 0.6, 0.45))
+	_mesh(cst, xf)
+	var tst := MeshKit.new_st()
+	_part(tst, xf, cc + Vector3(-cr - 2.5, 0.4, 0), Vector3(1.0, 0.8, 3.0), Color(0.45, 0.47, 0.5))
+	_mesh(tst, xf, true)
+	var water := MeshKit.box_node(Vector3(0.8, 0.02, 2.8), TexKit.std(Color(0.2, 0.35, 0.4), 0.05, 0.0))
+	add_child(water)
+	water.global_transform = xf * Transform3D(Basis.IDENTITY, cc + Vector3(-cr - 2.5, 0.75, 0))
+	# --- grain silos with domed tops ---
+	var silo_mat := TexKit.std(Color(0.72, 0.72, 0.7), 0.35, 0.6)
+	for sp in [Vector3(-27.0, 0, -28.0), Vector3(-20.5, 0, -29.0)]:
+		var silo := MeshKit.cyl_node(2.8, 2.8, 13.0, silo_mat, Vector3.ZERO, Vector3.ZERO, 24)
+		add_child(silo)
+		silo.global_transform = xf * Transform3D(Basis.IDENTITY, sp + Vector3(0, 6.5, 0))
+		var dome := MeshKit.cyl_node(0.4, 2.9, 1.8, silo_mat, Vector3.ZERO, Vector3.ZERO, 24)
+		add_child(dome)
+		dome.global_transform = xf * Transform3D(Basis.IDENTITY, sp + Vector3(0, 13.9, 0))
+		Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, sp + Vector3(0, 6.5, 0)), Vector3(4.6, 13.0, 4.6))
+	# --- a windpump and a water tower inside the fence ---
+	_windpump(xf * Transform3D(Basis.IDENTITY, Vector3(-26.0, 0, 22.0)))
+	_water_tower(xf * Transform3D(Basis(Vector3.UP, PI * 0.25), Vector3(27.0, 0, -6.0)))
+	# --- round hay bales (some stacked) and square ones by the barn ---
+	var hay := TexKit.std(Color(0.78, 0.64, 0.32), 0.95, 0.0)
+	for k in 9:
+		var bp := Vector3(-9.0 + (k % 5) * 1.9, 0.75, -27.0 + (k / 5) * 2.2)
+		var bale := MeshKit.cyl_node(0.75, 0.75, 1.4, hay, Vector3.ZERO, Vector3.ZERO, 16)
+		add_child(bale)
+		bale.global_transform = xf * Transform3D(Basis(Vector3.FORWARD, PI * 0.5), bp)
+	Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(-5.2, 0.75, -26.0)), Vector3(9.5, 1.5, 4.0))
+	var sqst := MeshKit.new_st()
+	for k in 10:
+		var lvl := 0 if k < 5 else (1 if k < 8 else 2)
+		var i := k if k < 5 else (k - 5 if k < 8 else k - 8)
+		_part(sqst, xf, Vector3(-11.0 + i * 1.25 + lvl * 0.6, 0.3 + lvl * 0.6, -6.0), Vector3(1.2, 0.58, 0.8), Color(0.82, 0.7, 0.4) * rng.randf_range(0.9, 1.05), false)
+	_mesh(sqst, xf)
+	Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(-8.5, 0.9, -6.0)), Vector3(6.4, 1.8, 0.9))
+	# --- an old tractor in front of the barn ---
+	var trxf: Transform3D = xf * Transform3D(Basis(Vector3.UP, 0.4), Vector3(-4.5, 0, -13.0))
+	var trst := MeshKit.new_st()
+	var green := Color(0.15, 0.4, 0.15)
+	_part(trst, trxf, Vector3(0, 1.3, 0.6), Vector3(1.1, 0.9, 2.4), green)                                    # bonnet
+	_part(trst, trxf, Vector3(0, 1.6, -1.0), Vector3(1.4, 0.3, 1.0), green, false)                         # seat deck
+	_part(trst, trxf, Vector3(0, 2.05, -1.2), Vector3(0.5, 0.15, 0.5), Color(0.1, 0.1, 0.1), false)        # seat
+	_part(trst, trxf, Vector3(0.15, 2.3, 0.4), Vector3(0.12, 1.2, 0.12), Color(0.2, 0.2, 0.2), false)      # exhaust
+	_part(trst, trxf, Vector3(0, 1.9, -0.3), Vector3(0.06, 0.6, 0.06), Color(0.2, 0.2, 0.2), false, 0.5)   # wheel column
+	_mesh(trst, trxf)
+	var tyre := TexKit.std(Color(0.08, 0.08, 0.08), 0.9, 0.0)
+	var rim := TexKit.std(Color(0.85, 0.7, 0.15), 0.5, 0.3)
+	for w in [[Vector3(-0.95, 0.85, -1.0), 0.85, 0.5], [Vector3(0.95, 0.85, -1.0), 0.85, 0.5], [Vector3(-0.75, 0.45, 1.4), 0.45, 0.3], [Vector3(0.75, 0.45, 1.4), 0.45, 0.3]]:
+		var t := MeshKit.cyl_node(w[1], w[1], w[2], tyre, Vector3.ZERO, Vector3.ZERO, 18)
+		add_child(t)
+		t.global_transform = trxf * Transform3D(Basis(Vector3.FORWARD, PI * 0.5), w[0])
+		var hub := MeshKit.cyl_node(float(w[1]) * 0.55, float(w[1]) * 0.55, float(w[2]) + 0.02, rim, Vector3.ZERO, Vector3.ZERO, 14)
+		add_child(hub)
+		hub.global_transform = t.global_transform
+	_count("ranch")
+
+
 func _barn() -> void:
 	var xf = _site(12.0, 20.0, 150.0)
 	if xf == null:
@@ -331,8 +560,9 @@ func _barn() -> void:
 	_count("barns")
 
 
-func _water_tower() -> void:
-	var xf = _site(6.0, 15.0, 200.0)
+func _water_tower(xf = null) -> void:
+	if xf == null:
+		xf = _site(6.0, 15.0, 200.0)
 	if xf == null:
 		return
 	var st := MeshKit.new_st()
@@ -355,8 +585,9 @@ func _water_tower() -> void:
 	_count("water_towers")
 
 
-func _windpump() -> void:
-	var xf = _site(3.0, 12.0, 200.0)
+func _windpump(xf = null) -> void:
+	if xf == null:
+		xf = _site(3.0, 12.0, 200.0)
 	if xf == null:
 		return
 	var st := MeshKit.new_st()

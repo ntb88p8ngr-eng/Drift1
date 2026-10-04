@@ -33,6 +33,12 @@ func _ready() -> void:
 		"start": [s - t * 14.0 + Vector3(0, 3.5, 0), s + t * 30.0 + Vector3(0, 1.0, 0)],
 		"aerial": [c + Vector3(tr.bounds.size.x * 0.55, maxf(tr.bounds.size.x, tr.bounds.size.y) * 0.6, tr.bounds.size.y * 0.75), c],
 	}
+	var town = world.find_child("Town", true, false)
+	if town and town.get("ranch_xf") != null:
+		var rx: Transform3D = town.ranch_xf
+		views["ranch"] = [rx * Vector3(30, 22, 70), rx * Vector3(0, 2, 0)]
+		views["ranch_gate"] = [rx * Vector3(-6, 4, 52), rx * Vector3(0, 3, 0)]
+		views["ranch_barn"] = [rx * Vector3(8, 6, -2), rx * Vector3(-18, 4, -16)]
 	for k in args:
 		if str(k).begins_with("cam"):
 			var v: PackedFloat64Array = str(args[k]).split_floats(",")

@@ -472,6 +472,8 @@ func _widen_booth(g: Node3D) -> void:
 		_spray_guns(rack)
 	var trolley := g.find_child("Paint_mixing_trolley_001", true, false) as Node3D
 	if trolley:
+		# into the back corner on the near side (back wall and side wall 10-15 cm off)
+		trolley.global_position = Vector3(13.4 + BOOTH_LONGER - 0.6, trolley.global_position.y, -2.01 + BOOTH_WIDEN - 0.42)
 		_paint_can_labels(trolley)
 
 
