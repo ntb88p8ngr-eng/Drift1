@@ -269,7 +269,9 @@ func setup_heavy(env: Environment, hall: Rect2, roofs: Array = []) -> void:
 	_window.spot_range = 70.0
 	_window.spot_angle = 17.0
 	_window.spot_attenuation = 0.4
-	_window.shadow_enabled = true
+	# (no shadow map: rendering one for each flash over the whole workshop made the menu hitch;
+	# the window's shape comes from the projector)
+	_window.shadow_enabled = false
 	_window.light_projector = _window_texture()
 	_window.visible = false
 	add_child(_window)
@@ -285,6 +287,10 @@ func setup_heavy(env: Environment, hall: Rect2, roofs: Array = []) -> void:
 	_apply_volume()
 	Game.settings_changed.connect(_apply_volume)
 	_next = 2.0
+	# the thunder is synthesised: done in the background now, not on the first clap (a hitch)
+	WorkerThreadPool.add_task(func():
+		Sfx.get_sound("thunder_near")
+		Sfx.get_sound("thunder_far"))
 
 
 func _apply_volume() -> void:

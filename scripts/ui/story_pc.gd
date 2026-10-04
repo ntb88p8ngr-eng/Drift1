@@ -299,6 +299,7 @@ func _term_submit(line: String) -> void:
 				"  whoami            wer bin ich",
 				"  status            Version, Credits, Auto",
 				"  garage            deine Autos",
+				"  garage rm car \"Name\"  ein Auto aus der Garage entfernen",
 				"  story             die Story-Teile",
 				"  ls                Dateien",
 				"  cat <datei>       Datei anzeigen",
@@ -318,8 +319,11 @@ func _term_submit(line: String) -> void:
 			_term_print("Credits: %s" % Game.format_points(int(Game.settings.get("credits", 0))))
 			_term_print("Auto:    %s" % car_name)
 		"garage", "cars":
-			for c in Game.settings.get("owned_cars", []):
-				if Game.CARS.has(str(c)):
+			if parts.size() >= 3 and parts[1].to_lower() == "rm" and parts[2].to_lower() == "car":
+				_term_rm_car(" ".join(parts.slice(3)).strip_edges().trim_prefix("\"").trim_suffix("\""))
+				return
+			for c in Game.CAR_ORDER:
+				if Game.owns_car(str(c)):
 					_term_print("  %-8s %s" % [str(c), str(Game.CARS[str(c)]["name"])])
 		"story":
 			for p in PARTS:
@@ -354,6 +358,47 @@ func _term_submit(line: String) -> void:
 			_term_print("%s ist nicht in der sudoers-Datei. Dieser Vorfall wird gemeldet." % _user())
 		_:
 			_term_print("%s: Befehl nicht gefunden – 'help' zeigt alle Befehle." % cmd)
+
+
+## "garage rm car <name or id>": the car is no longer owned (the last one stays).
+func _term_rm_car(q: String) -> void:
+	if q == "":
+		_term_print("Benutzung: garage rm car \"Name\"")
+		return
+	var owned: Array = Game.settings.get("owned_cars", [])
+	var hits: Array = []
+	for c in Game.CAR_ORDER:
+		if not Game.owns_car(str(c)):
+			continue
+		var id := str(c)
+		var nm := str(Game.CARS[id]["name"]) if Game.CARS.has(id) else id
+		if id.to_lower() == q.to_lower() or nm.to_lower() == q.to_lower():
+			hits = [id]
+			break
+		if q.to_lower() in nm.to_lower() or q.to_lower() in id.to_lower():
+			hits.append(id)
+	if hits.is_empty():
+		_term_print("garage: kein Auto '%s' in deiner Garage" % q)
+		return
+	if hits.size() > 1:
+		_term_print("garage: '%s' ist nicht eindeutig: %s" % [q, ", ".join(hits)])
+		return
+	var id: String = hits[0]
+	if Game.car_price(id) == 0:
+		_term_print("garage: %s ist ein Gratis-Auto und bleibt in der Garage." % str(Game.CARS[id]["name"]))
+		return
+	owned.erase(id)
+	Game.settings["owned_cars"] = owned
+	# the codes that gave it can be redeemed again
+	var red: Array = Game.settings.get("redeemed_codes", [])
+	for code in Game.BUILTIN_CODES:
+		if str(Game.BUILTIN_CODES[code].get("car", "")) == id:
+			red.erase(code)
+	if str(Game.settings.get("car", "")) == id:
+		Game.settings["car"] = str(Game.garage_cars()[0])
+	Game.save_settings()
+	_term_print("%s aus der Garage entfernt." % (str(Game.CARS[id]["name"]) if Game.CARS.has(id) else id))
+	code_redeemed.emit()       # (the menu shows the car / credits again)
 
 
 ## Ctrl+T opens and closes the terminal (only that way).

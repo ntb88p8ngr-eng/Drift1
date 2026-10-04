@@ -27,7 +27,7 @@ const WORKSHOP_SKY := "res://assets/main_menu/Midnight_City_Skybox/Midnight_City
 ## the model's own animated storm parts (rain sheets, the lightning bolt): not merged
 const STORM_PARTS := ["Turntable_ROTATE", "GLB_Rain", "Storm_lightning", "Office_door_leaf", "Partially_closed_garage_shutter"]
 const DECK_Y := 0.465            # top of the turntable deck (the old garage; the new one measures it)
-const FOG_GREY := Color(0.2, 0.21, 0.23)
+const FOG_GREY := Color(0.075, 0.08, 0.095)     # a dark rainy night
 const PLATFORM_SCALE := 0.78     # the workshop's platform, a size smaller
 ## glTF light intensities come in far too strong for Godot: energy per light name prefix
 const WORKSHOP_LIGHTS := {"Overhead": 0.55, "Honeycomb": 0.6, "Booth": 0.5, "Office": 0.5, "Workbench": 0.7, "Neon": 1.4}
@@ -68,16 +68,23 @@ var _light_base := {}
 var _ceiling_extra: Array = []    # [material, base emission] – the warm fixtures, dimmed with the ceiling
 var _probe: ReflectionProbe       # the floor's mirror image: re-shot whenever the lights change
 var _probe_t := -1.0
-## the roller shutter: its lower edge (m above the floor), where it is going, the model's transform
-const SHUTTER_TOP := 4.53
-const SHUTTER_B0 := 2.91           # its lower edge in the model
-const SHUTTER_DOWN := 0.02
-const SHUTTER_UP := 4.28           # rolled right up: only the last slats show under the drum
+## the garage door: a sectional door whose panels run up the opening, round a bend under the
+## ceiling and on back into the hall along the rails. Its state is how far it has been lifted (m
+## along that track); the model's own roller shutter stays hidden.
+const SHUTTER_DOWN := 0.0
+const DOOR_V := 3.4                 # the straight upright run of the track
+const DOOR_R := 0.45                # the bend's radius
+const DOOR_Y := DOOR_V + DOOR_R     # the horizontal run's height (under the light panels at 4.02)
+const DOOR_PANELS := 7
+const DOOR_PANEL_H := 0.62
+const SHUTTER_UP := DOOR_V + DOOR_R * PI * 0.5 + 0.15     # open: the bottom edge round the bend
 var _shutter: Node3D
-var _shutter_base := Transform3D.IDENTITY
 var _shutter_b := 1.5
 var _shutter_want := 1.5
 var _shutter_paused := false
+var _door_panels: Array = []        # MeshInstance3D, bottom first
+var _door_z := 0.0                  # the door's plane
+var _door_s := 1.0                  # into the hall along z
 var _street: Node3D                 # menu_street.gd (its yard gate opens with the shutter)
 var _trolley: Node3D                # the opener's carriage on its rail (moves with the shutter)
 var _trolley_a := Vector3.ZERO      # its place with the shutter down / up
@@ -144,33 +151,56 @@ func toggle_shutter() -> void:
 	_shutter_want = SHUTTER_UP if _shutter_b <= SHUTTER_DOWN + 0.01 else SHUTTER_DOWN
 
 
-## The shutter with its lower edge at `b`: the slats squeezed up under the roll at the top.
+## The door lifted `b` metres along its track: each panel where its stretch of track is, turned
+## with the bend.
 func _set_shutter(b: float) -> void:
 	_shutter_b = b
-	if _shutter == null:
-		return
-	var k := (SHUTTER_TOP - b) / (SHUTTER_TOP - SHUTTER_B0)
-	_shutter.global_transform = Transform3D(Basis.from_scale(Vector3(1.0, k, 1.0)), Vector3(0, SHUTTER_TOP * (1.0 - k), 0)) * _shutter_base
+	for i in _door_panels.size():
+		var sc := b + (float(i) + 0.5) * DOOR_PANEL_H
+		var p := _door_track(sc)
+		var mi := _door_panels[i] as MeshInstance3D
+		mi.transform = Transform3D(Basis(Vector3.RIGHT, p.z * _door_s), Vector3(mi.position.x, p.y, _door_z + _door_s * p.x))
+	var f := clampf((b - SHUTTER_DOWN) / (SHUTTER_UP - SHUTTER_DOWN), 0.0, 1.0)
 	if _street:
-		_street.set_gate((b - SHUTTER_DOWN - 0.6) / (SHUTTER_UP - SHUTTER_DOWN - 0.6))
+		_street.set_gate((f - 0.15) / 0.85)
 	if _trolley:
-		_trolley.position = _trolley_a.lerp(_trolley_b, clampf((b - SHUTTER_DOWN) / (SHUTTER_UP - SHUTTER_DOWN), 0.0, 1.0))
+		# the carriage pulls the top panel: it stays at the door's top edge
+		var top := _door_track(b + DOOR_PANELS * DOOR_PANEL_H)
+		_trolley.position.z = _door_z + _door_s * maxf(top.x - 0.12, 0.35)
 
 
-## The shutter's top works, as in a real garage: the roller drum in its housing above the opening,
-## the torsion spring shaft, the guide rails running back under the ceiling on both sides, and the
-## opener – its motor hung from the ceiling, a T-rail out to the door and a carriage that travels
-## along it while the door moves.
+## A point `sd` metres along the door's track: (inwards from the opening, height, panel tilt).
+static func _door_track(sd: float) -> Vector3:
+	if sd <= DOOR_V:
+		return Vector3(0.0, sd, 0.0)
+	var arc := DOOR_R * PI * 0.5
+	if sd <= DOOR_V + arc:
+		var a := (sd - DOOR_V) / DOOR_R
+		return Vector3(DOOR_R * (1.0 - cos(a)), DOOR_V + DOOR_R * sin(a), a)
+	return Vector3(DOOR_R + sd - DOOR_V - arc, DOOR_Y, PI * 0.5)
+
+
+## The sectional door and its works, as in a real garage: the panels (in the shutter's own
+## material), the tracks bending from the uprights into the ceiling rails on both sides, the torsion
+## spring shaft over the opening, and the opener – its motor hung from the ceiling, a T-rail out to
+## the door and a carriage that travels along it with the door's top edge.
 func _shutter_opener(door: AABB) -> void:
-	# (the honeycomb light panels hang at 4.02 m, the door header comes down to 4.24 m: all of it
-	# hangs below them, where it can be seen)
+	# (the honeycomb light panels hang at 4.02 m: all of it runs below them, where it can be seen)
 	var ceil_y := 4.02
 	var cz := door.get_center().z
 	var s := -signf(cz) if absf(cz) > 0.01 else -1.0      # into the hall
+	_door_s = s
+	_door_z = cz + s * 0.07
 	var x0 := door.position.x
 	var x1 := door.end.x
 	var cx := (x0 + x1) * 0.5
 	var w := x1 - x0
+	var panel_mat: Material = null
+	for n in _shutter.find_children("*", "MeshInstance3D", true, false) + [_shutter]:
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh:
+			panel_mat = (n as MeshInstance3D).get_active_material(0)
+			break
+	_shutter.visible = false
 	var steel := StandardMaterial3D.new()
 	steel.albedo_color = Color(0.55, 0.56, 0.58)
 	steel.metallic = 0.85
@@ -186,60 +216,75 @@ func _shutter_opener(door: AABB) -> void:
 	red.albedo_color = Color(0.45, 0.06, 0.05)
 	red.roughness = 0.4
 	var root := Node3D.new()
-	root.name = "ShutterOpener"
+	root.name = "GarageDoor"
 	add_child(root)
 	var add := func(size: Vector3, mat: Material, pos: Vector3) -> MeshInstance3D:
 		var mi := MeshKit.box_node(size, mat, pos)
 		root.add_child(mi)
 		return mi
-	# the drum housing over the opening (the rolled-up shutter sits in it) and its end plates
-	var hz := cz + s * 0.32
-	add.call(Vector3(w + 0.1, 0.4, 0.5), black, Vector3(cx, 4.1, hz))
-	for e in [x0 - 0.08, x1 + 0.08]:
-		add.call(Vector3(0.06, 0.46, 0.58), steel, Vector3(e, 4.1, hz))
-	# the torsion spring shaft just inside, with its two black springs
-	var sz := cz + s * 0.72
-	var sy := 3.84
+	# the panels: a ribbed face, a groove along each joint
+	# (opaque: the model's shutter material lets the street show through)
+	if panel_mat is BaseMaterial3D:
+		var pm := (panel_mat as BaseMaterial3D).duplicate() as BaseMaterial3D
+		pm.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		pm.albedo_color.a = 1.0
+		pm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		panel_mat = pm
+	else:
+		panel_mat = TexKit.std(Color(0.12, 0.12, 0.13), 0.5, 0.6)
+	for i in DOOR_PANELS:
+		var st := MeshKit.new_st()
+		MeshKit.box(st, Transform3D.IDENTITY, Vector3(w + 0.04, DOOR_PANEL_H - 0.012, 0.045))
+		for r in [-0.18, 0.0, 0.18]:
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, r, -s * 0.026)), Vector3(w, 0.03, 0.008))
+		var mi := MeshKit.mesh_instance(MeshKit.commit(st, panel_mat))
+		mi.position.x = cx
+		root.add_child(mi)
+		_door_panels.append(mi)
+	# the tracks: up the sides, round the bend and back along the ceiling, hung from it
+	var run := DOOR_R + SHUTTER_UP + DOOR_PANELS * DOOR_PANEL_H - DOOR_V - DOOR_R * PI * 0.5 + 0.2
+	for e in [x0 - 0.05, x1 + 0.05]:
+		for k in 6:
+			var a0 := float(k) / 6.0 * PI * 0.5
+			var a1 := float(k + 1) / 6.0 * PI * 0.5
+			var am := (a0 + a1) * 0.5
+			var p := Vector3(DOOR_R * (1.0 - cos(am)), DOOR_V + DOOR_R * sin(am), am)
+			var seg := MeshKit.box_node(Vector3(0.06, DOOR_R * (a1 - a0) + 0.01, 0.09), steel, Vector3.ZERO)
+			seg.transform = Transform3D(Basis(Vector3.RIGHT, p.z * s), Vector3(e, p.y, _door_z + s * p.x))
+			root.add_child(seg)
+		add.call(Vector3(0.06, 0.09, run - DOOR_R), steel, Vector3(e, DOOR_Y, _door_z + s * (DOOR_R + run) * 0.5))
+		for d in [1.8, run - 0.2]:
+			add.call(Vector3(0.04, ceil_y - DOOR_Y, 0.04), steel, Vector3(e, (DOOR_Y + ceil_y) * 0.5, _door_z + s * d))
+	# the torsion spring shaft over the opening, with its two black springs
+	var sz := cz + s * 0.3
+	var sy := 4.12
 	add.call(Vector3(w + 0.3, 0.05, 0.05), steel, Vector3(cx, sy, sz))
 	for f in [0.3, 0.7]:
 		var sp := MeshKit.mesh_instance(_spring_mesh(0.07, 0.75), black)
 		sp.position = Vector3(lerpf(x0, x1, f), sy, sz)
 		root.add_child(sp)
-	# the horizontal guide rails along both sides, back under the ceiling, hung on angle brackets
-	var rail_len := 3.6
-	var ry := 3.9
-	for e in [x0 + 0.05, x1 - 0.05]:
-		add.call(Vector3(0.06, 0.1, rail_len), steel, Vector3(e, ry, cz + s * (0.5 + rail_len * 0.5)))
-		for d in [1.6, rail_len + 0.4]:
-			add.call(Vector3(0.04, ceil_y - ry, 0.04), steel, Vector3(e, (ry + ceil_y) * 0.5, cz + s * d))
-		add.call(Vector3(0.05, 0.05, 0.9), steel, Vector3(e, ceil_y - 0.05, cz + s * (rail_len + 0.1)))
-	# the opener: motor unit, the T-rail to the door, its ceiling hangers and the carriage
-	var my := 3.84
-	var mz := cz + s * 4.4
-	add.call(Vector3(0.42, 0.2, 0.55), shell, Vector3(cx, my, mz))
-	add.call(Vector3(0.36, 0.17, 0.05), red, Vector3(cx, my - 0.01, mz - s * 0.29))
+	# the opener: motor unit beyond the door's travel, the T-rail over the door, the carriage
+	var my := 3.96
+	var mz := _door_z + s * (run + 0.5)
+	add.call(Vector3(0.42, 0.2, 0.55), shell, Vector3(cx, my - 0.05, mz))
+	add.call(Vector3(0.36, 0.17, 0.05), red, Vector3(cx, my - 0.06, mz - s * 0.29))
 	var lamp := StandardMaterial3D.new()
 	lamp.albedo_color = Color(1, 0.9, 0.7)
 	lamp.emission_enabled = true
 	lamp.emission = Color(1, 0.85, 0.6)
 	lamp.emission_energy_multiplier = 0.6
-	add.call(Vector3(0.3, 0.03, 0.3), lamp, Vector3(cx, my - 0.11, mz))
+	add.call(Vector3(0.3, 0.03, 0.3), lamp, Vector3(cx, my - 0.16, mz))
 	for hx in [-0.15, 0.15]:
-		add.call(Vector3(0.03, ceil_y - my, 0.03), steel, Vector3(cx + hx, (my + ceil_y) * 0.5, mz))
-	var rail_a := cz + s * 0.75
+		add.call(Vector3(0.03, ceil_y - my + 0.05, 0.03), steel, Vector3(cx + hx, (my + ceil_y) * 0.5, mz))
+	var rail_a := _door_z + s * 0.3
 	var rail_b := mz - s * 0.27
-	add.call(Vector3(0.05, 0.06, absf(rail_b - rail_a)), black, Vector3(cx, my, (rail_a + rail_b) * 0.5))
-	add.call(Vector3(0.03, ceil_y - my, 0.03), steel, Vector3(cx, (my + ceil_y) * 0.5, cz + s * 1.6))
-	# carriage + the bent arm down to the shutter's top (the arm goes with the carriage)
+	add.call(Vector3(0.05, 0.035, absf(rail_b - rail_a)), black, Vector3(cx, my, (rail_a + rail_b) * 0.5))
 	_trolley = Node3D.new()
 	root.add_child(_trolley)
-	var tr := MeshKit.box_node(Vector3(0.1, 0.08, 0.2), steel, Vector3.ZERO)
-	_trolley.add_child(tr)
-	var cord := MeshKit.box_node(Vector3(0.01, 0.45, 0.01), red, Vector3(0, -0.25, 0))
-	_trolley.add_child(cord)
-	_trolley_a = Vector3(cx, my - 0.05, cz + s * 0.95)
-	_trolley_b = Vector3(cx, my - 0.05, cz + s * 3.6)
-	_trolley.position = _trolley_a
+	_trolley.add_child(MeshKit.box_node(Vector3(0.1, 0.05, 0.2), steel, Vector3.ZERO))
+	# the arm down to the top panel
+	_trolley.add_child(MeshKit.box_node(Vector3(0.03, 0.1, 0.03), steel, Vector3(0, -0.07, 0)))
+	_trolley.position = Vector3(cx, my - 0.04, _door_z + s * 0.35)
 
 
 ## A coil spring along x (radius r, length l).
@@ -407,7 +452,6 @@ func _load_workshop() -> bool:
 	# menu's button rolls it right down or up (toggle_shutter)
 	_shutter = g.find_child("*Partially_closed_garage_shutter*", true, false) as Node3D
 	if _shutter:
-		_shutter_base = _shutter.global_transform
 		_shutter_opener(_tree_aabb(_shutter))
 		_set_shutter(_shutter_b)
 	# a smaller platform (its turning deck and the fixed neon ring round it)
@@ -460,7 +504,7 @@ func _load_workshop() -> bool:
 		var sky_mat := ShaderMaterial.new()
 		sky_mat.shader = _upper_sky_shader()
 		sky_mat.set_shader_parameter("panorama", load(WORKSHOP_SKY))
-		sky_mat.set_shader_parameter("energy", 0.62)
+		sky_mat.set_shader_parameter("energy", 0.32)
 		sky_mat.set_shader_parameter("horizon", FOG_GREY)
 		var sky := Sky.new()
 		sky.sky_material = sky_mat
