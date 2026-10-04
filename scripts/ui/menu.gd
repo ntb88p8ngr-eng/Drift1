@@ -81,7 +81,7 @@ func _ready() -> void:
 	margin.add_child(outer)
 	var t := UiKit.title("MIDNIGHT DRIFT", 64)
 	outer.add_child(t)
-	outer.add_child(UiKit.label(Game.t("v%s  ·  Drift-Racing mit Online-Lobbys") % Game.VERSION, 16, UiKit.TEXT_DIM))
+	outer.add_child(UiKit.label("v%s" % Game.VERSION, 16, UiKit.TEXT_DIM))
 	outer.add_child(UiKit.spacer(10))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL

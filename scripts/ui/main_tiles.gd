@@ -18,6 +18,8 @@ var _names: Array = []
 var _strip: Control
 var _clip: Control
 var _dots: HBoxContainer
+var _prev: Button
+var _next: Button
 var _title: Label
 var _tw: Tween
 var _drag_from := NAN
@@ -41,14 +43,35 @@ func setup(pages: Array, names: Array) -> void:
 	_title = UiKit.label("", 15, UiKit.TEXT_DIM)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_title)
-	var prev := _arrow("‹", func(): set_page(page - 1))
+	# the pager: one slanted bar like the tiles – chevron, the page bars, chevron
+	var pager := PanelContainer.new()
+	var psb := StyleBoxFlat.new()
+	psb.bg_color = Color(0.07, 0.06, 0.11, 0.82)
+	psb.border_color = Color(0.62, 0.32, 1.0, 0.45)
+	psb.border_width_left = 3
+	psb.border_width_right = 1
+	psb.border_width_top = 1
+	psb.border_width_bottom = 1
+	psb.set_corner_radius_all(3)
+	psb.skew = Vector2(SKEW, 0)
+	psb.content_margin_left = 10
+	psb.content_margin_right = 10
+	psb.content_margin_top = 4
+	psb.content_margin_bottom = 4
+	pager.add_theme_stylebox_override("panel", psb)
+	var ph_box := HBoxContainer.new()
+	ph_box.add_theme_constant_override("separation", 10)
+	ph_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	pager.add_child(ph_box)
+	_prev = _arrow(-1, func(): set_page(page - 1))
 	_dots = HBoxContainer.new()
-	_dots.add_theme_constant_override("separation", 8)
+	_dots.add_theme_constant_override("separation", 6)
 	_dots.alignment = BoxContainer.ALIGNMENT_CENTER
-	var next := _arrow("›", func(): set_page(page + 1))
-	top.add_child(prev)
-	top.add_child(_dots)
-	top.add_child(next)
+	_next = _arrow(1, func(): set_page(page + 1))
+	ph_box.add_child(_prev)
+	ph_box.add_child(_dots)
+	ph_box.add_child(_next)
+	top.add_child(pager)
 	v.add_child(top)
 	_clip = Control.new()
 	_clip.clip_contents = true
@@ -78,7 +101,8 @@ func setup(pages: Array, names: Array) -> void:
 			t.focus_entered.connect(func(): set_page(pi))
 		_pages.append([holder, tiles])
 		var dot := Button.new()
-		dot.custom_minimum_size = Vector2(14, 14)
+		dot.custom_minimum_size = Vector2(16, 8)
+		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		dot.focus_mode = Control.FOCUS_NONE
 		dot.tooltip_text = str(names[pi]) if pi < names.size() else ""
 		dot.pressed.connect(func(): set_page(pi))
@@ -122,11 +146,30 @@ func _show_page(p: int, animate: bool) -> void:
 			(t as Button).mouse_filter = Control.MOUSE_FILTER_STOP if i == p else Control.MOUSE_FILTER_IGNORE
 	for i in _dots.get_child_count():
 		var d := _dots.get_child(i) as Button
+		var on := i == p
 		var sb := StyleBoxFlat.new()
-		sb.set_corner_radius_all(7)
-		sb.bg_color = UiKit.ACCENT if i == p else Color(1, 1, 1, 0.22)
-		for st in ["normal", "hover", "pressed", "focus"]:
+		sb.set_corner_radius_all(2)
+		sb.skew = Vector2(SKEW * 2.0, 0)
+		sb.bg_color = UiKit.ACCENT if on else Color(1, 1, 1, 0.2)
+		if on:
+			sb.shadow_color = Color(UiKit.ACCENT.r, UiKit.ACCENT.g, UiKit.ACCENT.b, 0.55)
+			sb.shadow_size = 5
+		var hov := sb.duplicate() as StyleBoxFlat
+		if not on:
+			hov.bg_color = Color(1, 1, 1, 0.45)
+		for st in ["normal", "pressed", "focus"]:
 			d.add_theme_stylebox_override(st, sb)
+		d.add_theme_stylebox_override("hover", hov)
+		var w := 40.0 if on else 16.0
+		if animate:
+			create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).tween_property(d, "custom_minimum_size:x", w, 0.25)
+		else:
+			d.custom_minimum_size.x = w
+	if _prev:
+		_prev.disabled = p <= 0
+		_next.disabled = p >= _pages.size() - 1
+		_prev.queue_redraw()
+		_next.queue_redraw()
 	_title.text = ""          # (no page name – the dots show the page)
 
 
@@ -194,13 +237,28 @@ func _unhandled_input(event: InputEvent) -> void:
 				set_page(page + (1 if dx < 0.0 else -1))
 
 
-func _arrow(text: String, cb: Callable) -> Button:
+## A chevron button (dir -1: back, 1: on), drawn – dimmed at the first / last page.
+func _arrow(dir: int, cb: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(38, 30)
-	b.add_theme_font_size_override("font_size", 22)
+	b.custom_minimum_size = Vector2(30, 30)
+	b.flat = true
+	var hov := StyleBoxFlat.new()
+	hov.bg_color = Color(0.62, 0.32, 1.0, 0.28)
+	hov.set_corner_radius_all(3)
+	hov.skew = Vector2(SKEW, 0)
+	var none := StyleBoxEmpty.new()
+	b.add_theme_stylebox_override("normal", none)
+	b.add_theme_stylebox_override("focus", none)
+	b.add_theme_stylebox_override("disabled", none)
+	b.add_theme_stylebox_override("hover", hov)
+	b.add_theme_stylebox_override("pressed", hov)
 	b.pressed.connect(cb)
+	b.draw.connect(func():
+		var c := b.size * 0.5
+		var col := Color(1, 1, 1, 0.22) if b.disabled else (Color.WHITE if b.is_hovered() else Color(0.85, 0.8, 1.0))
+		var w := 5.0 * dir
+		b.draw_polyline(PackedVector2Array([c + Vector2(-w, -8), c + Vector2(w, 0), c + Vector2(-w, 8)]), col, 2.5, true))
 	return b
 
 
