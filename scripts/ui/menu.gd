@@ -1006,8 +1006,86 @@ func _build_replays() -> void:
 		var del := UiKit.button("Löschen", func():
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 			show_screen("replays"), 120)
-		_add(UiKit.row([UiKit.label(text, 16), UiKit.button("▶ Abspielen", func(): main.start_replay(path), 160), del]))
+		var exp_b := UiKit.button("Exportieren", func(): _export_replay(path), 130)
+		exp_b.tooltip_text = "Als Datei speichern – zum Weitergeben (in einem anderen Spiel unter „Replay importieren“)"
+		_add(UiKit.row([UiKit.label(text, 16), UiKit.button("▶ Abspielen", func(): _replay_dialog(path, h), 160), exp_b, del]))
+	_add(UiKit.button("Replay importieren …", _import_replay, 260))
 	_float_button("◀  Zurück", func(): show_screen("main"))
+
+
+## Before playing: time of day and weather – as recorded ([ORIGINAL]) or anything else.
+func _replay_dialog(path: String, h: Dictionary) -> void:
+	var d := ConfirmationDialog.new()
+	d.title = Game.t("Replay abspielen")
+	d.ok_button_text = Game.t("▶ Abspielen")
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	var tods: Array = []
+	var tod_names: Array = []
+	var orig_t := str(h.get("time_of_day", "day"))
+	for tt in Game.TIMES_OF_DAY:
+		tods.append(str(tt["id"]))
+		tod_names.append(Game.t(str(tt["name"])) + ("   [ORIGINAL]" if str(tt["id"]) == orig_t else ""))
+	var ws: Array = []
+	var w_names: Array = []
+	var orig_w := str(h.get("weather", "dry"))
+	for w in Game.WEATHER_MODES:
+		ws.append(str(w["id"]))
+		w_names.append(Game.t(str(w["name"])) + ("   [ORIGINAL]" if str(w["id"]) == orig_w else ""))
+	var pick := {"time_of_day": orig_t, "weather": orig_w}
+	v.add_child(UiKit.labeled("Tageszeit", UiKit.option(tod_names, maxi(tods.find(orig_t), 0), func(i): pick["time_of_day"] = tods[i], 300), 140))
+	v.add_child(UiKit.labeled("Wetter", UiKit.option(w_names, maxi(ws.find(orig_w), 0), func(i): pick["weather"] = ws[i], 300), 140))
+	d.add_child(v)
+	d.confirmed.connect(func():
+		d.queue_free()
+		main.start_replay(path, pick))
+	d.canceled.connect(func(): d.queue_free())
+	_root.add_child(d)
+	d.popup_centered(Vector2i(520, 220))
+
+
+## A replay out as a file (to give to somebody).
+func _export_replay(path: String) -> void:
+	var dlg := FileDialog.new()
+	dlg.access = FileDialog.ACCESS_FILESYSTEM
+	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	dlg.use_native_dialog = true
+	dlg.filters = PackedStringArray(["*.mdreplay ; Midnight-Drift-Replay"])
+	dlg.current_file = path.get_file()
+	dlg.size = Vector2i(900, 600)
+	add_child(dlg)
+	dlg.file_selected.connect(func(p: String):
+		if not p.ends_with(".mdreplay"):
+			p += ".mdreplay"
+		var err := DirAccess.copy_absolute(ProjectSettings.globalize_path(path), p)
+		show_status((Game.t("Exportiert: ") + p) if err == OK else Game.t("Konnte nicht gespeichert werden"), UiKit.GOOD if err == OK else UiKit.BAD))
+	dlg.popup_centered()
+
+
+## A replay file from elsewhere into the list.
+func _import_replay() -> void:
+	var dlg := FileDialog.new()
+	dlg.access = FileDialog.ACCESS_FILESYSTEM
+	dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	dlg.use_native_dialog = true
+	dlg.filters = PackedStringArray(["*.mdreplay ; Midnight-Drift-Replay"])
+	dlg.size = Vector2i(900, 600)
+	add_child(dlg)
+	dlg.file_selected.connect(func(p: String):
+		var r := Replay.read_file(p, false)
+		if r.is_empty():
+			show_status(Game.t("Kein gültiges Replay: ") + p.get_file(), UiKit.BAD)
+			return
+		DirAccess.make_dir_recursive_absolute(Replay.DIR)
+		var to := Replay.DIR.path_join(p.get_file())
+		var n := 1
+		while FileAccess.file_exists(to):
+			to = Replay.DIR.path_join("%s_%d.mdreplay" % [p.get_file().get_basename(), n])
+			n += 1
+		DirAccess.copy_absolute(p, ProjectSettings.globalize_path(to))
+		show_screen("replays")
+		show_status(Game.t("Importiert: ") + str((r[0] as Dictionary).get("name", p.get_file())), UiKit.GOOD))
+	dlg.popup_centered()
 
 
 ## A .dmap file from elsewhere into the saved maps.

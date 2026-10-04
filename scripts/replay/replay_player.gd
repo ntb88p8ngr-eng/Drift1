@@ -105,6 +105,26 @@ func _process(delta: float) -> void:
 		_time_l.text = "%s / %s   ×%s" % [Game.format_time(t), Game.format_time(duration), str(speed)]
 	if _slider and not _scrubbing:
 		_slider.set_value_no_signal(t)
+	_auto_hide_bar(delta / maxf(Engine.time_scale, 0.01))
+
+
+## The bottom bar goes quickly when the mouse is away from it and comes back as soon as it is down
+## there again (it stays while the camera settings are open or the time line is being dragged).
+var _bar_away := 0.0
+
+
+func _auto_hide_bar(dt: float) -> void:
+	if _bar == null or not ui.visible:
+		return
+	var vp := get_viewport()
+	var near := vp.get_mouse_position().y > vp.get_visible_rect().size.y - 130.0
+	if near or _scrubbing or (_settings and _settings.visible):
+		_bar_away = 0.0
+	else:
+		_bar_away += dt
+	var want := 1.0 if _bar_away < 0.9 else 0.0
+	_bar.modulate.a = move_toward(_bar.modulate.a, want, dt * (8.0 if want > 0.5 else 4.0))
+	_bar.visible = _bar.modulate.a > 0.01
 
 
 ## The sample index at or before time `tt`.

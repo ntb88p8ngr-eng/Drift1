@@ -1016,4 +1016,10 @@ const EN := {
 	"Willkommen bei Midnight Drift!\n\nSoll das Autoradio Musik spielen?\n(Es lässt sich jederzeit oben rechts bedienen – oder mit ♪ Radio ausblenden.)": "Welcome to Midnight Drift!\n\nShould the car radio play music?\n(It can be used any time in the top right corner – or hidden with ♪ Radio.)",
 	"Ja, Musik an": "Yes, music on",
 	"Nein, danke": "No, thanks",
+	"Replay abspielen": "Play replay",
+	"Exportieren": "Export",
+	"Als Datei speichern – zum Weitergeben (in einem anderen Spiel unter „Replay importieren“)": "Save as a file – to pass on (in another game under “Import replay”)",
+	"Replay importieren …": "Import replay …",
+	"Konnte nicht gespeichert werden": "Could not be saved",
+	"Kein gültiges Replay: ": "Not a valid replay: ",
 }

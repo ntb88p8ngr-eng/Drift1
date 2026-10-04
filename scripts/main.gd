@@ -154,12 +154,20 @@ func start_editor(base_track: String, map_path := "") -> void:
 
 
 ## Watches a saved replay: the world as it was, the cars driven by the recording.
-func start_replay(path: String) -> void:
+func start_replay(path: String, over := {}) -> void:
 	var r := Replay.read_file(path, false)
 	if r.is_empty():
 		show_menu("replays", "Replay nicht lesbar", UiKit.BAD)
 		return
-	var h: Dictionary = r[0]
+	var h: Dictionary = (r[0] as Dictionary).duplicate()
+	# another time of day / weather than recorded (chosen in the replays list)
+	if over.has("time_of_day") and str(over["time_of_day"]) != str(h.get("time_of_day", "")):
+		h["time_of_day"] = over["time_of_day"]
+		h.erase("hour")
+		h["day_cycle"] = 0
+	if over.has("weather") and str(over["weather"]) != str(h.get("weather", "")):
+		h["weather"] = over["weather"]
+		h["storm"] = false
 	_start_world({"track": str(h.get("track", "ridge")), "map": str(h.get("map", "")), "mode": "replay", "replay": path,
 		"laps": 1, "time_of_day": str(h.get("time_of_day", "day")), "hour": float(h.get("hour", 12.0)),
 		"weather": str(h.get("weather", "dry")), "day_cycle": int(h.get("day_cycle", 0)), "storm": bool(h.get("storm", false)),
