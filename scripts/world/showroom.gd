@@ -95,7 +95,8 @@ const BOOTH_WIDEN_FAR := 1.5        # … and its far side wall the other way (-
 ## the room the booth camera stays in (x, y, z ranges; clear of the walls)
 const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8 - BOOTH_WIDEN_FAR), Vector3(5.6, 2.75, 4.94 + BOOTH_WIDEN_FAR))
 var booth := ""
-var _booth_doors: Array = []        # [node, base transform, hinge, swing sign]
+var _booth_doors: Array = []        # (unused: the booth has a sectional door now)
+var _bdoor_panels: Array = []       # the booth's sectional door, bottom panel first
 var _booth_door_open := 0.0
 var _booth_door_want := 0.0
 var _booth_cam_on := false
@@ -316,17 +317,11 @@ func _shutter_opener(door: AABB) -> void:
 ## Its doors swing (outwards, both leaves), the way in is cleared of the floor clutter, white neon
 ## tubes run the whole length of its ceiling.
 func _booth_setup(g: Node3D) -> void:
+	# a sectional door like the one at the front instead of the two hinged leaves: it runs up the
+	# opening and bends away under the hall's ceiling
 	for n in g.find_children("Paint_booth_door_leaf*", "Node3D", true, false):
-		if not (n.get_parent() and String(n.get_parent().name).begins_with("Paint_booth_door_leaf")):
-			var box := _tree_aabb(n as Node3D)
-			# the hinge: the edge away from the opening's middle (z = -4.15), at the frame
-			var hz := box.position.z if box.get_center().z < -4.15 else box.end.z
-			# the near leaf swings out into the hall (the compressor is out of its way); the far one swings
-			# into the booth – out in the hall the drawer cabinet stands right in its path – into the
-			# room the widened booth has on that side
-			var far := box.get_center().z < -4.15
-			var sign_ := 1.0
-			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_, deg_to_rad(92.0) if far else deg_to_rad(100.0)])
+		(n as Node3D).visible = false
+	_booth_roller(g)
 	_widen_booth(g)
 	# (the portable worklight panels in the booth stood in front of its camera: the neon tubes light it)
 	for n in g.find_children("Booth_worklight*", "Node3D", false, false) + g.find_children("Booth_worklight*", "Node3D", true, false):
@@ -552,7 +547,7 @@ static func _bez(p: Array, t: float) -> Vector3:
 ## Into the booth: the platform turns the car towards it, the doors open, it rolls off – the picture
 ## cuts to the camera in the booth – and stops in the middle; the doors close behind it.
 func enter_booth() -> void:
-	if booth != "" or car == null or _booth_doors.is_empty():
+	if booth != "" or car == null or _bdoor_panels.is_empty():
 		return
 	booth = "in"
 	_booth_door_want = 1.0
@@ -758,6 +753,86 @@ static func _blocks(img: Image, x: int, y: int, rows: Array, px: int, col: Color
 		for i in row.length():
 			if row[i] == "#":
 				img.fill_rect(Rect2i(x + i * px, y + j * px, px, px), col)
+
+
+# --- the booth's sectional door --------------------------------------------------------------------
+const BDOOR_X := 6.64               # its plane: on the hall side of the frame
+const BDOOR_Z0 := -6.13             # the opening between the frame's stiles
+const BDOOR_Z1 := -2.07
+const BDOOR_V := 3.3                # the straight upright run
+const BDOOR_R := 0.35               # the bend
+const BDOOR_PANELS := 11
+const BDOOR_PANEL_H := 0.31
+const BDOOR_UP := BDOOR_V + BDOOR_R * PI * 0.5 + 0.12      # open: its bottom edge round the bend
+
+
+## A point on the track, s metres along it from the floor: [out into the hall, height, panel tilt].
+static func _bdoor_track(sd: float) -> Vector3:
+	if sd <= BDOOR_V:
+		return Vector3(0.0, sd, 0.0)
+	var arc := BDOOR_R * PI * 0.5
+	if sd <= BDOOR_V + arc:
+		var a := (sd - BDOOR_V) / BDOOR_R
+		return Vector3(BDOOR_R * (1.0 - cos(a)), BDOOR_V + BDOOR_R * sin(a), a)
+	return Vector3(BDOOR_R + sd - BDOOR_V - arc, BDOOR_V + BDOOR_R, PI * 0.5)
+
+
+func _booth_roller(g: Node3D) -> void:
+	# the same panels as the big door at the front (its material), the same ribs and grooves
+	var panel_mat: Material = null
+	var front := g.find_child("*Partially_closed_garage_shutter*", true, false)
+	if front:
+		for n in front.find_children("*", "MeshInstance3D", true, false) + [front]:
+			if n is MeshInstance3D and (n as MeshInstance3D).mesh:
+				panel_mat = (n as MeshInstance3D).get_active_material(0)
+				break
+	if panel_mat is BaseMaterial3D:
+		var pm := (panel_mat as BaseMaterial3D).duplicate() as BaseMaterial3D
+		pm.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		pm.albedo_color.a = 1.0
+		pm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		panel_mat = pm
+	else:
+		panel_mat = TexKit.std(Color(0.12, 0.12, 0.13), 0.5, 0.6)
+	var steel := TexKit.std(Color(0.55, 0.56, 0.58), 0.35, 0.85)
+	var root := Node3D.new()
+	root.name = "BoothDoor"
+	add_child(root)
+	var w := BDOOR_Z1 - BDOOR_Z0
+	var cz := (BDOOR_Z0 + BDOOR_Z1) * 0.5
+	for i in BDOOR_PANELS:
+		var st := MeshKit.new_st()
+		MeshKit.box(st, Transform3D.IDENTITY, Vector3(0.045, BDOOR_PANEL_H + 0.05, w + 0.04))
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(-0.026, 0.0, 0.0)), Vector3(0.008, 0.03, w))
+		var mi := MeshKit.mesh_instance(MeshKit.commit(st, panel_mat))
+		mi.position.z = cz
+		root.add_child(mi)
+		_bdoor_panels.append(mi)
+	# the tracks either side: up the frame, round the bend, back under the hall's ceiling, hung from it
+	var run := BDOOR_R + BDOOR_UP + BDOOR_PANELS * BDOOR_PANEL_H - BDOOR_V - BDOOR_R * PI * 0.5 + 0.2
+	for ez in [BDOOR_Z0 - 0.05, BDOOR_Z1 + 0.05]:
+		root.add_child(MeshKit.box_node(Vector3(0.09, BDOOR_V, 0.06), steel, Vector3(BDOOR_X, BDOOR_V * 0.5, ez)))
+		for k in 6:
+			var a0 := float(k) / 6.0 * PI * 0.5
+			var a1 := float(k + 1) / 6.0 * PI * 0.5
+			var am := (a0 + a1) * 0.5
+			var seg := MeshKit.box_node(Vector3(0.09, BDOOR_R * (a1 - a0) + 0.01, 0.06), steel, Vector3.ZERO)
+			seg.transform = Transform3D(Basis(Vector3.BACK, am), Vector3(BDOOR_X - BDOOR_R * (1.0 - cos(am)), BDOOR_V + BDOOR_R * sin(am), ez))
+			root.add_child(seg)
+		root.add_child(MeshKit.box_node(Vector3(run - BDOOR_R, 0.09, 0.06), steel, Vector3(BDOOR_X - (BDOOR_R + run) * 0.5, BDOOR_V + BDOOR_R, ez)))
+		for d in [1.4, run - 0.2]:
+			var top := 4.4
+			root.add_child(MeshKit.box_node(Vector3(0.04, top - BDOOR_V - BDOOR_R, 0.04), steel, Vector3(BDOOR_X - d, (top + BDOOR_V + BDOOR_R) * 0.5, ez)))
+	_set_booth_roller(0.0)
+
+
+## The door with its bottom edge `b` metres up the track (0 = shut).
+func _set_booth_roller(b: float) -> void:
+	for i in _bdoor_panels.size():
+		var p := _bdoor_track(b + (float(i) + 0.5) * BDOOR_PANEL_H)
+		var mi := _bdoor_panels[i] as MeshInstance3D
+		# tilting from upright to flat, out towards the hall (-x)
+		mi.transform = Transform3D(Basis(Vector3.BACK, p.z), Vector3(BDOOR_X - p.x, p.y, mi.position.z))
 
 
 ## The paint booth on its own render layer: the hall's lights (none of them casts shadows) shone
@@ -2008,13 +2083,10 @@ func _process(delta: float) -> void:
 		var e := _door_open * _door_open * (3.0 - 2.0 * _door_open)
 		_office_door.global_transform = Transform3D(Basis.IDENTITY, DOOR_HINGE) * Transform3D(Basis(Vector3.UP, e * DOOR_SWING), Vector3.ZERO) \
 			* Transform3D(Basis.IDENTITY, -DOOR_HINGE) * _office_door_base
-	if not _booth_doors.is_empty() and absf(_booth_door_open - _booth_door_want) > 0.001:
-		_booth_door_open = move_toward(_booth_door_open, _booth_door_want, delta * 0.8)
+	if not _bdoor_panels.is_empty() and absf(_booth_door_open - _booth_door_want) > 0.001:
+		_booth_door_open = move_toward(_booth_door_open, _booth_door_want, delta * 0.55)
 		var e := _booth_door_open * _booth_door_open * (3.0 - 2.0 * _booth_door_open)
-		for d in _booth_doors:
-			var h: Vector3 = d[2]
-			(d[0] as Node3D).global_transform = Transform3D(Basis.IDENTITY, h) * Transform3D(Basis(Vector3.UP, e * float(d[3]) * float(d[4])), Vector3.ZERO) \
-				* Transform3D(Basis.IDENTITY, -h) * (d[1] as Transform3D)
+		_set_booth_roller(e * BDOOR_UP)
 	if _booth_cam_on:
 		_turn_platform(delta)
 		_booth_camera()
