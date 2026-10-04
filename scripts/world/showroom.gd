@@ -395,6 +395,10 @@ func _widen_booth(g: Node3D) -> void:
 					lm = lm.duplicate()
 					lm.resource_name = "Booth_LED_diffuser"
 					mi.set_surface_override_material(si, lm)
+		if nm.contains("Booth_floor"):
+			# (a hair above the hall's floor: where the two overlap at the door they lay in one plane
+			# and flickered)
+			mi.global_position.y += 0.004
 		if nm.contains("Door_frame") or nm.contains("Filter"):
 			continue
 		if nm.contains("Extraction"):
