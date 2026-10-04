@@ -264,8 +264,7 @@ func _ready() -> void:
 		_start_countdown()
 	# the map's hidden cassette (for the car radio), while it is not found yet
 	if mode in ["free", "race", "drift", "graffiti"] and not party_sites:
-		var tape = CassettePickup.for_world(self)
-		if tape:
+		for tape in CassettePickup.for_world(self):
 			add_child(tape)
 	_collect_view_ranges()
 	Game.settings_changed.connect(_apply_view_ranges)

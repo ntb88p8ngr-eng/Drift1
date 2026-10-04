@@ -50,8 +50,6 @@ const MORE := [
 
 ## Cassettes that can be found. `stream` = what the tape plays when user://cassettes/<id>/ holds no files.
 const TAPES := {
-	# the game's own tape (real tracks in the game): in the cabinet from the start
-	"kassette1": {"title": "Kassette 1", "color": Color(0.95, 0.85, 0.2), "stream": "", "dir": "res://assets/audio/Kassette1"},
 	"garage_mix": {"title": "Garage Mix", "color": Color(0.85, 0.12, 0.1), "stream": "https://ice2.somafm.com/u80s-128-mp3"},
 	"night_run": {"title": "Night Run", "color": Color(0.12, 0.3, 0.85), "stream": "https://ice2.somafm.com/metal-128-mp3"},
 	"desert_tape": {"title": "Desert Tape", "color": Color(0.9, 0.6, 0.15), "stream": "https://ice2.somafm.com/bootliquor-128-mp3"},
@@ -366,9 +364,37 @@ func station() -> Dictionary:
 	return l[clampi(int(preset[band]), 0, l.size() - 1)] if l.size() > 0 else {}
 
 
+## The game's own tapes: every folder res://assets/audio/Kassette<N> (its tracks in order) – all of them
+## found on the maps (cassette_pickup.gd).
+const GAME_TAPE_DIR := "res://assets/audio"
+const GAME_TAPE_COLORS := [Color(0.95, 0.85, 0.2), Color(0.2, 0.85, 0.95), Color(0.95, 0.35, 0.6), Color(0.45, 0.95, 0.35),
+	Color(0.7, 0.45, 1.0), Color(1.0, 0.55, 0.15)]
+static var _game_tapes := {}
+
+
+static func game_tapes() -> Dictionary:
+	if not _game_tapes.is_empty():
+		return _game_tapes
+	var d := DirAccess.open(GAME_TAPE_DIR)
+	if d == null:
+		return _game_tapes
+	for sub in d.get_directories():
+		if not sub.to_lower().begins_with("kassette"):
+			continue
+		var num := sub.substr(8).strip_edges()
+		var n := int(num) if num.is_valid_int() else 0
+		_game_tapes[sub.to_lower()] = {"title": "Kassette %s" % (num if num != "" else "?"), "num": n,
+			"color": GAME_TAPE_COLORS[posmod(n - 1, GAME_TAPE_COLORS.size())], "stream": "", "dir": GAME_TAPE_DIR.path_join(sub)}
+	return _game_tapes
+
+
 ## All tapes there are: id -> {title, color, stream, files}. The found ones are Game.settings["cassettes"].
 func tapes() -> Dictionary:
 	var out := {}
+	for id in game_tapes():
+		var gt: Dictionary = game_tapes()[id].duplicate()
+		gt["files"] = _files_in(str(gt["dir"]))
+		out[id] = gt
 	for id in TAPES:
 		var d: Dictionary = TAPES[id].duplicate()
 		d["files"] = _files_in(TAPE_DIR + id)
@@ -386,12 +412,12 @@ func tapes() -> Dictionary:
 	return out
 
 
-## The tapes in the cabinet: the found ones, the game's own one and the player's own ones.
+## The tapes in the cabinet: the found ones and the player's own ones.
 func owned_tapes() -> Array:
 	var all := tapes()
 	var out: Array = []
 	for id in all:
-		if bool(all[id].get("own", false)) or id == "kassette1" or (Game.settings.get("cassettes", []) as Array).has(id):
+		if bool(all[id].get("own", false)) or (Game.settings.get("cassettes", []) as Array).has(id):
 			out.append(id)
 	return out
 
@@ -399,7 +425,7 @@ func owned_tapes() -> Array:
 ## A tape was found (for later: pick-ups on the maps).
 func find_tape(id: String) -> bool:
 	var have: Array = Game.settings.get("cassettes", [])
-	if have.has(id) or not TAPES.has(id):
+	if have.has(id) or not (TAPES.has(id) or game_tapes().has(id)):
 		return false
 	have.append(id)
 	Game.settings["cassettes"] = have
