@@ -594,7 +594,7 @@ func _build_main() -> void:
 		["Credits", "", "credits", func(): show_screen("credits")],
 	]
 	if bool(Game.settings.get("admin_mode", false)):
-		more.insert(4, ["Admin", "Werkzeuge mit Passwort", "admin", func():
+		more.insert(4, ["Admin", "", "admin", func():
 			load("res://scripts/admin/admin_ui.gd").with_password(self, func(): show_screen("admin"))])
 	var tiles := MainTiles.new()
 	tiles.setup([play, more], ["SPIELEN", "MEHR"])
