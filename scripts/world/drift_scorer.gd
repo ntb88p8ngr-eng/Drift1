@@ -59,7 +59,7 @@ func update(car, delta: float, space: PhysicsDirectSpaceState3D) -> void:
 	angle = car.drift_angle_deg()
 	var spd: float = car.speed
 	var surface: String = car.surface_name
-	var on_track := surface == "asphalt" or surface == "curb"
+	var on_track := surface == "asphalt" or surface == "curb" or surface == "sand_road"
 	var ok: bool = spd > MIN_SPEED and angle > MIN_ANGLE and angle < MAX_ANGLE and int(car.grounded_wheels) >= 3 and float(car.forward_speed) > 2.0
 	if chain > 0.0 and not on_track:
 		_offroad_time += delta
@@ -158,7 +158,7 @@ func _update_tricks(car, delta: float, on_track: bool, spd: float, ang: float) -
 func _wheels_on_track(car) -> bool:
 	for w in car.wheels:
 		var sname := str(w["surface"])
-		if bool(w["grounded"]) and sname != "asphalt" and sname != "curb":
+		if bool(w["grounded"]) and sname != "asphalt" and sname != "curb" and sname != "sand_road":
 			return false
 	return true
 

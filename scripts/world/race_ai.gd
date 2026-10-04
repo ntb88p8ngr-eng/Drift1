@@ -229,7 +229,7 @@ func _bot_finished(b: Dictionary) -> void:
 ## Stuck, off the road or the wrong way round for too long: back onto the road.
 func _watchdog(b: Dictionary, delta: float) -> void:
 	var car = b["car"]
-	if world.state != "running":
+	if world.state != "running" and world.state != "finished":
 		return
 	var tr = world.track
 	var i: int = maxi(car.track_hint, 0)
@@ -251,7 +251,8 @@ func _watchdog(b: Dictionary, delta: float) -> void:
 # ---------------------------------------------------------------------------
 func _drive(b: Dictionary) -> Array:
 	var car = b["car"]
-	if world.state != "running" or bool(b["finished"]) and car.speed < 3.0:
+	# (after the flag they drive on round the lap – a cool-down lap – instead of stopping on the line)
+	if world.state != "running" and world.state != "finished":
 		return [0.0, 0.0, 0.0, true]
 	var lv: Dictionary = b.get("p", LEVELS[clampi(level, 0, LEVELS.size() - 1)])
 	var tr = world.track
@@ -379,9 +380,9 @@ func _drive(b: Dictionary) -> Array:
 				straight = false
 				break
 		nitro = straight
-	if bool(b["finished"]):
-		thr = 0.0
-		brk = 0.4
+	if bool(b["finished"]) or world.state == "finished":
+		# cooling down: an easy pace, no nitro
+		thr = minf(thr, 0.45 if v < 22.0 else 0.0)
 		nitro = false
 	return [thr, brk, steer, false, nitro]
 

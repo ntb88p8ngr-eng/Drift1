@@ -1200,7 +1200,7 @@ func surface_at(pos: Vector3, idx: int) -> Array:
 	var lat := absf(side_d)
 	var hw_i: float = hws[idx] if idx < hws.size() else half_w
 	if lat <= hw_i and sand.size() > idx and sand[idx] > 0.5:
-		return [0.76 * (1.0 - 0.1 * wetness), "sand"]
+		return [0.76 * (1.0 - 0.1 * wetness), "sand_road"]      # (the lap itself: drifting counts here)
 	if lat <= hw_i:
 		var g := 1.0 - 0.18 * wetness
 		var pd := puddle_at(pos, idx)

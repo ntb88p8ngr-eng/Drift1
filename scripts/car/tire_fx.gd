@@ -318,7 +318,7 @@ func _process(delta: float) -> void:
 		elif grounded and offroad and speed > 6.0:
 			on = true
 			ratio = clampf(speed / 40.0 + slip / 15.0, 0.1, 0.8)
-			pm.color = Color(0.55, 0.47, 0.35) if surf == "grass" else (Color(0.8, 0.58, 0.4) if surf == "sand" else Color(0.7, 0.7, 0.68))
+			pm.color = Color(0.55, 0.47, 0.35) if surf == "grass" else (Color(0.8, 0.58, 0.4) if surf == "sand" or surf == "sand_road" else Color(0.7, 0.7, 0.68))
 		elif grounded and slip > threshold:
 			on = true
 			ratio = clampf((slip - threshold) / 9.0, 0.15, 1.0)
