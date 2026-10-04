@@ -362,6 +362,43 @@ func _brick_wall() -> void:
 	# a concrete coping on top
 	var cap := MeshKit.box_node(Vector3(len, 0.08, 0.42), TexKit.std(Color(0.32, 0.31, 0.3), 0.8), Vector3(0, h + 0.04, z))
 	add_child(cap)
+	_graffiti(z + 0.16, h)
+
+
+## Sprayed tags on the street side of the brick wall: big outlined letters in a few colours, some
+## tilted, with paint blobs round them.
+const TAGS := ["DRIFT", "KAIDO", "JDM", "MIDNIGHT", "R34", "SKRRT", "NO GRIP", "TOUGE", "NOS", "BOOST", "旋", "夜"]
+const TAG_COLS := [[Color(1.0, 0.25, 0.6), Color(0.1, 0.05, 0.2)], [Color(0.2, 0.9, 1.0), Color(0.05, 0.1, 0.35)],
+	[Color(1.0, 0.85, 0.1), Color(0.55, 0.1, 0.05)], [Color(0.55, 1.0, 0.25), Color(0.05, 0.2, 0.1)],
+	[Color(0.95, 0.95, 0.95), Color(0.85, 0.1, 0.1)], [Color(0.75, 0.4, 1.0), Color(0.1, 0.0, 0.15)]]
+
+
+func _graffiti(z: float, h: float) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 6611
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Impact", "Arial Black", "DejaVu Sans", "Noto Sans CJK JP", "sans-serif"])
+	font.font_weight = 900
+	font.font_italic = true
+	var x := -60.0
+	while x < 60.0:
+		var t := Label3D.new()
+		t.text = TAGS[rng.randi() % TAGS.size()]
+		var cols: Array = TAG_COLS[rng.randi() % TAG_COLS.size()]
+		t.font = font
+		t.font_size = 160
+		t.pixel_size = rng.randf_range(0.0045, 0.0075)
+		t.modulate = cols[0]
+		t.outline_modulate = cols[1]
+		t.outline_size = 34
+		t.shaded = true
+		t.double_sided = false
+		t.alpha_cut = Label3D.ALPHA_CUT_DISCARD
+		t.position = Vector3(x + rng.randf_range(-1.0, 1.0), rng.randf_range(0.7, h - 0.8), z)
+		t.rotation = Vector3(0, 0, rng.randf_range(-0.18, 0.18))
+		t.scale = Vector3(rng.randf_range(1.0, 1.35), 1.0, 1.0)
+		add_child(t)
+		x += rng.randf_range(5.0, 9.0)
 
 
 ## Albedo + normal map of a running-bond brick wall: 4 bricks × 14 courses per tile (0.96 × 1 m).

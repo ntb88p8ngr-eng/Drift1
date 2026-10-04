@@ -75,8 +75,8 @@ const SHUTTER_DOWN := 0.0
 const DOOR_V := 3.4                 # the straight upright run of the track
 const DOOR_R := 0.45                # the bend's radius
 const DOOR_Y := DOOR_V + DOOR_R     # the horizontal run's height (under the light panels at 4.02)
-const DOOR_PANELS := 7
-const DOOR_PANEL_H := 0.62
+const DOOR_PANELS := 14
+const DOOR_PANEL_H := 0.31
 const SHUTTER_UP := DOOR_V + DOOR_R * PI * 0.5 + 0.15     # open: the bottom edge round the bend
 var _shutter: Node3D
 var _shutter_b := 1.5
@@ -234,13 +234,17 @@ func _shutter_opener(door: AABB) -> void:
 		panel_mat = TexKit.std(Color(0.12, 0.12, 0.13), 0.5, 0.6)
 	for i in DOOR_PANELS:
 		var st := MeshKit.new_st()
-		MeshKit.box(st, Transform3D.IDENTITY, Vector3(w + 0.04, DOOR_PANEL_H - 0.012, 0.045))
-		for r in [-0.18, 0.0, 0.18]:
-			MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, r, -s * 0.026)), Vector3(w, 0.03, 0.008))
+		# (a little taller than its stretch of track: the panels overlap, no light between them,
+		# not even round the bend)
+		MeshKit.box(st, Transform3D.IDENTITY, Vector3(w + 0.04, DOOR_PANEL_H + 0.05, 0.045))
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 0.0, -s * 0.026)), Vector3(w, 0.03, 0.008))
 		var mi := MeshKit.mesh_instance(MeshKit.commit(st, panel_mat))
 		mi.position.x = cx
 		root.add_child(mi)
 		_door_panels.append(mi)
+	# the header seal: a fixed panel in the opening above the door's bend (it closes the top of
+	# the opening, the door turns in behind it)
+	add.call(Vector3(w + 0.12, 4.4 - (DOOR_V - 0.1), 0.05), panel_mat, Vector3(cx, (4.4 + DOOR_V - 0.1) * 0.5, _door_z - s * 0.05))
 	# the tracks: up the sides, round the bend and back along the ceiling, hung from it
 	var run := DOOR_R + SHUTTER_UP + DOOR_PANELS * DOOR_PANEL_H - DOOR_V - DOOR_R * PI * 0.5 + 0.2
 	for e in [x0 - 0.05, x1 + 0.05]:
