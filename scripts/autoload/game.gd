@@ -248,6 +248,7 @@ var settings := {
 	"abs": true,
 	"esp": false,
 	"weather_volume": 0.6,
+	"menu_sfx_volume": 0.35,       # the main menu's storm (rain, thunder): quiet unless turned up
 	"menu_lights": {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"},
 	"handbrake_strength": 0.75,
 	"slide": 0.5,

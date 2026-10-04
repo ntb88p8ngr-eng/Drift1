@@ -4,7 +4,7 @@ extends Node3D
 ## paint), rain around the hall and wet asphalt outside the gate.
 ## setup_heavy(): for a garage with its own street outside and a photo panorama as sky – a
 ## cloudburst (dense rain, splashes on the ground), the panorama flashing with the lightning, the
-## rain's roar and thunder rolling in a moment after each strike (weather volume setting).
+## rain's roar and thunder rolling in a moment after each strike (its own volume: main-menu sounds).
 
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
@@ -294,7 +294,7 @@ func setup_heavy(env: Environment, hall: Rect2, roofs: Array = []) -> void:
 
 
 func _apply_volume() -> void:
-	var v := float(Game.settings.get("weather_volume", 1.0))
+	var v := float(Game.settings.get("menu_sfx_volume", 0.35))
 	if _rain_player:
 		_rain_player.volume_db = linear_to_db(maxf(v, 0.001)) - 6.0
 
@@ -546,8 +546,9 @@ func _process(delta: float) -> void:
 		_strike()
 	if _thunder_at >= 0.0 and _t >= _thunder_at:
 		_thunder_at = -1.0
-		var v := float(Game.settings.get("weather_volume", 1.0))
-		Sfx.play(self, "thunder_near" if _thunder_near else "thunder_far", linear_to_db(maxf(v, 0.001)) + (2.0 if _thunder_near else -3.0), null, randf_range(0.85, 1.1))
+		var v := float(Game.settings.get("menu_sfx_volume", 0.35))
+		if v > 0.01:
+			Sfx.play(self, "thunder_near" if _thunder_near else "thunder_far", linear_to_db(v) + (-2.0 if _thunder_near else -6.0), null, randf_range(0.85, 1.1))
 	var f := 0.0
 	var b := 0.0
 	for p in _pulses:

@@ -153,6 +153,10 @@ static func audio_page() -> VBoxContainer:
 		Game.save_settings())
 	wv.tooltip_text = "Lautstärke von Regen und Wetter (ganz links = aus)."
 	v.add_child(UiKit.labeled("Wetter / Regen", wv))
+	var mv := UiKit.slider(0, 1.5, 0.05, float(Game.settings.get("menu_sfx_volume", 0.35)), func(x):
+		Game.set_setting("menu_sfx_volume", x))
+	mv.tooltip_text = "Regen und Donner im Hauptmenü (ganz links = aus)."
+	v.add_child(UiKit.labeled("Hauptmenü-Geräusche", mv))
 	v.add_child(UiKit.sep())
 	# --- devices ---
 	var outs := _device_list(AudioServer.get_output_device_list())
