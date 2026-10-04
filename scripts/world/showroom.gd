@@ -415,6 +415,7 @@ func _widen_booth(g: Node3D) -> void:
 	var near := MeshKit.box_node(Vector3(0.04, 3.5, BOOTH_WIDEN + 0.1), walls, Vector3(6.97, 1.75, -2.02 + (BOOTH_WIDEN + 0.1) * 0.5))
 	var far := MeshKit.box_node(Vector3(0.12, 3.56, BOOTH_WIDEN_FAR + 0.2), walls, Vector3(6.85, 1.78, -6.15 - (BOOTH_WIDEN_FAR + 0.2) * 0.5))
 	for w in [near, far]:
+		w.add_to_group("booth_part")
 		(w as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(w)
 	# (static rain streaks of the model that now stand in the bigger booth)
@@ -759,6 +760,29 @@ static func _blocks(img: Image, x: int, y: int, rows: Array, px: int, col: Color
 				img.fill_rect(Rect2i(x + i * px, y + j * px, px, px), col)
 
 
+## The paint booth on its own render layer: the hall's lights (none of them casts shadows) shone
+## straight through its walls; now only the booth's own lights (and a car's) reach inside.
+const BOOTH_LAYER := 2
+
+
+func _booth_light_layer(g: Node3D) -> void:
+	var annex := g.find_child("Paint_booth_annex_001", true, false)
+	var parts: Array = get_tree().get_nodes_in_group("booth_part")
+	if annex:
+		parts.append_array(annex.find_children("*", "GeometryInstance3D", true, false))
+	for n in parts:
+		if is_instance_valid(n) and n is GeometryInstance3D:
+			(n as GeometryInstance3D).layers = BOOTH_LAYER
+	var room := BOOTH_ROOM.grow(0.6)
+	for l in find_children("*", "Light3D", true, false):
+		var light := l as Light3D
+		if car and is_instance_valid(car) and car.is_ancestor_of(light):
+			continue
+		if room.has_point(light.global_position):
+			continue          # (the booth's own: its neon, its lamps)
+		light.light_cull_mask &= ~BOOTH_LAYER
+
+
 ## The booth's walls: white enamelled sandwich panels – a seam every metre, a fine stucco
 ## profile and a little orange peel in the enamel (world triplanar, so stretched walls keep the scale).
 func _booth_wall_material() -> StandardMaterial3D:
@@ -1063,7 +1087,7 @@ func _load_workshop() -> bool:
 		for part in STORM_PARTS:
 			if path.contains(part):
 				return true
-		return false, Game.async_loading)
+		return path.contains("Paint_booth_annex"), Game.async_loading)     # (the booth keeps its own light layer)
 	print("SHOWROOM: merged %d workshop meshes in %d ms" % [n, Time.get_ticks_msec() - t0])
 	var env := Environment.new()
 	if ResourceLoader.exists(WORKSHOP_SKY):
@@ -1134,6 +1158,7 @@ func _load_workshop() -> bool:
 	for l in _ceiling_lights + _platform_lights:
 		_light_base[l] = (l as Light3D).light_energy
 	apply_menu_lights()
+	_booth_light_layer(g)
 	for c in g.find_children("*", "Camera3D", true, false):
 		(c as Camera3D).current = false
 	# the car is not parented to the deck (its node carries a mirroring axis swap, which would turn
