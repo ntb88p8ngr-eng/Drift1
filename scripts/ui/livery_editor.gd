@@ -31,6 +31,10 @@ var _syncing := false
 var _dragging := false
 var _orbit := false
 var _custom: ColorPickerButton
+var _placing := ""        # a shape picked from the grid, following the mouse over the car
+var _place_rot := 0.0
+var _place_size := 0.7
+var _hint: Label
 
 
 func _ready() -> void:
@@ -70,7 +74,9 @@ func _ready() -> void:
 		_pages.append(p)
 	tabs.add_child(UiKit.button("Lack", func(): _show_page(0), 160))
 	tabs.add_child(UiKit.button("Sticker", func(): _show_page(1), 160))
-	v.add_child(UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM))
+	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_hint)
 	_show_page(1)
 	# the shapes are drawn once (into user://decals)
 	var gen := DecalShapes.new()
@@ -107,10 +113,28 @@ func _paint_page() -> VBoxContainer:
 	for p in Game.PAINTS:
 		var b := _swatch_button(p["color"], func():
 			Game.set_setting("paint", p["id"])
+			_remember_paint()
 			main.refresh_showroom(false), 110, 40)
 		b.tooltip_text = str(p["name"])
 		grid.add_child(b)
 	v.add_child(grid)
+	# the colours used last (newest first)
+	var recent: Array = Game.settings.get("recent_paints", [])
+	if not recent.is_empty():
+		v.add_child(UiKit.label("Zuletzt verwendet", 16, UiKit.TEXT_DIM))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		for r in recent:
+			var pid: String = str(r[0])
+			var html: String = str(r[1])
+			var b := _swatch_button(Color.from_string(html, Color.WHITE), func():
+				if pid == "custom":
+					Game.settings["custom_color"] = html
+				Game.set_setting("paint", pid)
+				_remember_paint()
+				main.refresh_showroom(false), 44, 36)
+			row.add_child(b)
+		v.add_child(row)
 	var cp := ColorPickerButton.new()
 	cp.custom_minimum_size = Vector2(160, 40)
 	cp.edit_alpha = false
@@ -119,6 +143,7 @@ func _paint_page() -> VBoxContainer:
 		Game.settings["custom_color"] = c.to_html(false)
 		Game.set_setting("paint", "custom")
 		main.refresh_showroom(false))
+	cp.popup_closed.connect(_remember_paint)
 	v.add_child(UiKit.labeled("Eigene Farbe", cp, 180))
 	var fin_names: Array = []
 	var fin_idx := 0
@@ -217,7 +242,7 @@ func _swatch_button(c: Color, cb: Callable, w: float, h: float) -> Button:
 
 
 func _fill_shapes() -> void:
-	_shape_note.text = "Form wählen – sie gilt für den gewählten Sticker (oder „+ Sticker“)."
+	_shape_note.text = "Form wählen, dann aufs Auto klicken – sie hängt bis dahin halb durchsichtig am Mauszeiger."
 	for c in _shape_grid.get_children():
 		c.queue_free()
 	for s in Livery.shapes():
@@ -230,10 +255,7 @@ func _fill_shapes() -> void:
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.pressed.connect(func():
 			shape = id
-			if sel >= 0:
-				_set_prop("shape", id)
-			else:
-				_add_layer())
+			_start_placing(id))
 		_shape_grid.add_child(b)
 	_apply()
 
@@ -338,6 +360,37 @@ func save() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or sr == null:
 		return
+	if _placing != "":
+		if event is InputEventMouseMotion:
+			_preview((event as InputEventMouseMotion).position)
+			if _orbit:
+				sr.booth_orbit(event.relative.x, event.relative.y)
+			return
+		if event is InputEventMouseButton and event.pressed:
+			var mb := event as InputEventMouseButton
+			match mb.button_index:
+				MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+					if mb.shift_pressed:
+						_place_size = clampf(_place_size * (1.08 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 0.92), 0.08, 3.0)
+					else:
+						_place_rot = wrapf(_place_rot + (15.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -15.0), -180.0, 180.0)
+					_preview(mb.position)
+				MOUSE_BUTTON_LEFT:
+					_stamp(mb.position, mb.shift_pressed)
+				MOUSE_BUTTON_RIGHT:
+					_stop_placing()
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventKey and event.pressed:
+			var k := (event as InputEventKey).keycode
+			if k == KEY_Q or k == KEY_E:
+				_place_rot = wrapf(_place_rot + (-15.0 if k == KEY_Q else 15.0), -180.0, 180.0)
+				_preview(get_viewport().get_mouse_position())
+				get_viewport().set_input_as_handled()
+			elif k == KEY_ESCAPE:
+				_stop_placing()
+				get_viewport().set_input_as_handled()
+			return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -375,3 +428,73 @@ func _place(pos: Vector2) -> bool:
 	_sync_props()
 	_apply()
 	return true
+
+
+# --- placing straight onto the car ------------------------------------------------------------------
+func _start_placing(id: String) -> void:
+	_placing = id
+	_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Rechtsklick / Esc: abbrechen"
+
+
+func _stop_placing() -> void:
+	_placing = ""
+	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
+	_apply()
+
+
+## The layer the picked shape would become under the mouse (null: not over the car).
+func _ghost(pos: Vector2):
+	var ray = sr.booth_ray(pos)
+	if ray == null:
+		return null
+	var hit = Livery.pick_any(Livery.body_box(sr.car.body), ray[0], ray[1])
+	if hit == null:
+		return null
+	var l := Livery.new_layer(_placing, color)
+	l["side"] = hit[0]
+	l["p"] = hit[1]
+	l["h"] = hit[2]
+	l["rot"] = _place_rot
+	l["size"] = _place_size
+	l["mirror"] = false
+	return l
+
+
+## Shows it half see-through on the car.
+func _preview(pos: Vector2) -> void:
+	var g = _ghost(pos)
+	if g == null:
+		_apply()
+		return
+	g["alpha"] = 0.5
+	if sr and sr.car and is_instance_valid(sr.car):
+		Livery.apply(sr.car.body, layers + [g])
+
+
+## Sticks it on (Shift: keep the shape for the next one).
+func _stamp(pos: Vector2, keep: bool) -> void:
+	var g = _ghost(pos)
+	if g == null:
+		return
+	layers.append(g)
+	sel = layers.size() - 1
+	_refresh_list()
+	if keep:
+		_preview(pos)
+	else:
+		_stop_placing()
+
+
+## The paint now on the car goes to the front of the "last used" row (8 at most).
+func _remember_paint() -> void:
+	var pid := str(Game.settings.get("paint", "red"))
+	var col: Color = Game.get_paint(pid, str(Game.settings.get("custom_color", "")), "gloss")["color"]
+	var entry := [pid, "#" + col.to_html(false)]
+	var recent: Array = Game.settings.get("recent_paints", [])
+	for r in recent.duplicate():
+		if str(r[1]) == entry[1]:
+			recent.erase(r)
+	recent.push_front(entry)
+	Game.settings["recent_paints"] = recent.slice(0, 8)
+	Game.save_settings()
+

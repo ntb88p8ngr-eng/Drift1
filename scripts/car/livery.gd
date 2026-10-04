@@ -204,3 +204,30 @@ static func pick(side: String, box: AABB, from: Vector3, dir: Vector3):
 		"rear":
 			return [inverse_lerp(a.x, e.x, q.x) * 2.0 - 1.0, inverse_lerp(a.y, e.y, q.y)]
 	return null
+
+
+## The surface of the car under a ray (body space): [side, p, h] of the nearest side plane it hits
+## inside the car's outline, or null.
+static func pick_any(box: AABB, from: Vector3, dir: Vector3):
+	var best: Variant = null
+	var best_d := INF
+	for side in SIDES:
+		var f := frame(side, 0.0, 0.5, box)
+		var d: Vector3 = f[1]
+		if d.dot(dir) <= 0.05:
+			continue          # (a side facing away from the camera)
+		var hit = Plane(-d, f[0]).intersects_ray(from, dir)
+		if hit == null:
+			continue
+		var got: Variant = pick(side, box, from, dir)
+		if not (got is Array):
+			continue
+		var ph: Array = got
+		if absf(float(ph[0])) > 1.0 or float(ph[1]) > 1.0 or float(ph[1]) < (-1.0 if side == "top" else 0.0):
+			continue
+		var dist := from.distance_to(hit as Vector3)
+		if dist < best_d:
+			best_d = dist
+			best = [side, float(ph[0]), float(ph[1])]
+	return best
+

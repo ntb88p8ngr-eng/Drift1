@@ -290,10 +290,19 @@ class MenuIcon extends Control:
 				for k in pts.size():
 					pts[k] = Vector2(2.0 * m.x - pts[k].x, pts[k].y)
 				draw_polyline(pts, c, 2.0)
-			"garage":      # a wrench
-				draw_line(Vector2(10, 38), Vector2(30, 18), c, 6.0)
-				draw_arc(Vector2(33, 14), 9, PI * 0.15, PI * 1.85, 20, c, w)
-				draw_circle(Vector2(10, 38), 4, a)
+			"garage":      # two open-end spanners crossed
+				for k in 2:
+					var sgn := 1.0 if k == 0 else -1.0
+					var lo := Vector2(23 - sgn * 13, 41)
+					var hi := Vector2(23 + sgn * 10, 15)
+					draw_line(lo, hi, c, 6.0)
+					draw_circle(lo, 3.0, c)
+					var jc := hi + Vector2(sgn * 3.5, -4.0)
+					# the jaw: a thick ring open towards the outer corner
+					if k == 0:
+						draw_arc(jc, 6.0, 0.0, PI * 1.5, 18, c, 5.0)
+					else:
+						draw_arc(jc, 6.0, -PI * 0.5, PI, 18, c, 5.0)
 			"tutorial":    # a chequered flag
 				draw_line(Vector2(8, 6), Vector2(8, 42), c, w)
 				for r in 3:
