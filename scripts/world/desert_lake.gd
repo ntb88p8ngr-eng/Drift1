@@ -68,31 +68,39 @@ func _water_surfaces() -> void:
 	var st := MeshKit.new_st()
 	# the lake: a disc at its level
 	var c: Vector2 = water.center
-	var segs := 64
+	var segs := 160
 	for k in segs:
 		var a0 := TAU * k / segs
 		var a1 := TAU * (k + 1) / segs
-		var r: float = water.radius + 1.0
+		# (its uneven shore: a little over it, the banks rise out of the water)
+		var r0: float = water.lake_r_at(a0) + 3.0
+		var r1: float = water.lake_r_at(a1) + 3.0
 		var p0 := Vector3(c.x, water.level, c.y)
-		var p1 := Vector3(c.x + cos(a0) * r, water.level, c.y + sin(a0) * r)
-		var p2 := Vector3(c.x + cos(a1) * r, water.level, c.y + sin(a1) * r)
+		var p1 := Vector3(c.x + cos(a0) * r0, water.level, c.y + sin(a0) * r0)
+		var p2 := Vector3(c.x + cos(a1) * r1, water.level, c.y + sin(a1) * r1)
 		MeshKit.tri(st, p0, p1, p2, Vector3.UP, Vector3.UP, Vector3.UP, Vector2(p0.x, p0.z), Vector2(p1.x, p1.z), Vector2(p2.x, p2.z), Vector3.UP)
 	# the rivers: ribbons following their level (a step at the dam)
 	for k in water.rivers.size():
 		var pts: PackedVector2Array = water.rivers[k]["pts"]
 		var ss: PackedFloat32Array = water.rivers[k]["s"]
-		var half: float = water.RIVER_W * 0.5 + 1.0
+		var half: float = water.RIVER_W * 0.5 + 3.5
+		# (one side direction per point, shared by the quads either side of it: per-segment
+		# normals left wedge-shaped gaps in every bend)
+		var sides := PackedVector2Array()
+		for i in pts.size():
+			var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
+			sides.append(Vector2(-t.y, t.x) * half)
 		for i in pts.size() - 1:
 			var a := pts[i]
 			var b := pts[i + 1]
-			var t := (b - a).normalized()
-			var n := Vector2(-t.y, t.x) * half
+			var n := sides[i]
+			var nb := sides[i + 1]
 			var ya: float = water.river_level(k, ss[i])
 			var yb: float = water.river_level(k, ss[i + 1])
 			if k == 1 and ss[i] < water.dam_s and ss[i + 1] >= water.dam_s:
 				yb = ya          # (the fall itself is drawn at the dam)
 			MeshKit.quad(st, Vector3(a.x - n.x, ya, a.y - n.y), Vector3(a.x + n.x, ya, a.y + n.y),
-				Vector3(b.x + n.x, yb, b.y + n.y), Vector3(b.x - n.x, yb, b.y - n.y), Vector3.UP,
+				Vector3(b.x + nb.x, yb, b.y + nb.y), Vector3(b.x - nb.x, yb, b.y - nb.y), Vector3.UP,
 				Vector2(a.x, a.y), Vector2(b.x, b.y), Vector2(b.x, b.y), Vector2(a.x, a.y))
 	var mi := MeshKit.mesh_instance(MeshKit.commit(st, mat), null, false)
 	mi.name = "Water"

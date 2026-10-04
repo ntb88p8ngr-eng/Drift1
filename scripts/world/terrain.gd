@@ -611,7 +611,8 @@ func _splat_fn(x: float, z: float, d: float) -> Color:
 			var rv: Vector2 = track.water.river_at(x, z)
 			var dc := Vector2(x, z).distance_to(track.water.center)
 			dirt = maxf(dirt, 1.0 - smoothstep(9.0, 16.0, rv.x))
-			dirt = maxf(dirt, 1.0 - smoothstep(float(track.water.radius) + 2.0, float(track.water.radius) + 9.0, dc))
+			var lr: float = track.water.lake_r(x, z)
+			dirt = maxf(dirt, 1.0 - smoothstep(lr + 2.0, lr + 9.0, dc))
 	var forest := forest_density(x, z, d) * (1.0 - paved)
 	var mn := _n_meadow.get_noise_2d(x, z) * 0.9 + 0.2
 	if big:

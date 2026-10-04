@@ -238,18 +238,21 @@ func _hoodoos() -> void:
 			continue
 		scenery.occupy(p, 5.0)
 		var y: float = p.y - 0.6
-		var w := rng.randf_range(2.2, 3.4)
+		var w := rng.randf_range(2.8, 3.8)
 		var parts := rng.randi_range(3, 5)
+		var h0 := rng.randf_range(2.6, 3.4)
+		# biggest at the bottom, each stone smaller than the one under it, and sitting down into it
+		# (the rock meshes are rounder than their box: stacked edge to edge they floated)
 		for k in parts:
-			var hk := rng.randf_range(2.4, 4.0)
-			var wk := w * (1.0 - 0.13 * k) * rng.randf_range(0.9, 1.05)
+			var f := 1.0 - 0.17 * k
+			var hk := h0 * (1.0 - 0.12 * k) * rng.randf_range(0.92, 1.05)
+			var wk := w * f * rng.randf_range(0.92, 1.03)
 			if k == parts - 1:
-				wk = w * 0.95        # the cap rock
-				hk *= 0.6
-			var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(wk, hk, wk * rng.randf_range(0.85, 1.1)))
-			var off := Vector3(rng.randf_range(-0.2, 0.2), 0, rng.randf_range(-0.2, 0.2))
-			_rock([23, 37, 53][k % 3], Transform3D(b, Vector3(p.x, y + hk * 0.55, p.z) + off), true)
-			y += hk * 1.15
+				hk *= 0.75       # the cap: small and flat
+			var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(wk, hk, wk * rng.randf_range(0.85, 1.05)))
+			var off := Vector3(rng.randf_range(-0.12, 0.12), 0, rng.randf_range(-0.12, 0.12)) * f
+			_rock([23, 37, 53][k % 3], Transform3D(b, Vector3(p.x, y + hk * 0.5, p.z) + off), true)
+			y += hk * 0.78
 		stats["hoodoos"] = int(stats.get("hoodoos", 0)) + 1
 
 

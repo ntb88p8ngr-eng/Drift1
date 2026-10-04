@@ -399,23 +399,138 @@ func _pump_jack() -> void:
 		return
 	var st := MeshKit.new_st()
 	var dark := Color(0.18, 0.18, 0.2)
-	_part(st, xf, Vector3(0, 0.2, 0), Vector3(2.0, 0.4, 7.0), Color(0.45, 0.44, 0.42))
-	_part(st, xf, Vector3(0, 2.2, 0), Vector3(0.5, 3.6, 0.5), dark)
-	_part(st, xf, Vector3(0, 1.2, -2.6), Vector3(1.2, 1.6, 1.2), dark)     # motor
-	_part(st, xf, Vector3(0, 1.2, 2.8), Vector3(0.25, 2.4, 0.25), dark, false)   # well
+	var steel := Color(0.42, 0.43, 0.45)
+	var yellow := Color(0.78, 0.56, 0.1)
+	var concrete := Color(0.5, 0.49, 0.46)
+	const PIVOT := Vector3(0, 4.3, 0)
+	const SHAFT := Vector3(0, 1.75, -2.5)
+	# the concrete pad, the steel skid on it
+	_part(st, xf, Vector3(0, 0.15, 0.2), Vector3(2.6, 0.3, 8.8), concrete)
+	for sx in [-0.8, 0.8]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(sx, 0.42, -0.4)), Vector3(0.22, 0.24, 6.6), dark)
+	for z in [-3.2, -1.2, 0.8, 2.2]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 0.42, z)), Vector3(1.8, 0.2, 0.18), dark)
+	# the Samson post: an A-frame of four legs up to the saddle bearing, braced, with a ladder
+	for sx in [-0.85, 0.85]:
+		for sz in [-0.9, 0.9]:
+			_strut(st, Vector3(sx, 0.5, sz), PIVOT + Vector3(sx * 0.25, -0.25, 0), 0.16, yellow)
+		_strut(st, Vector3(sx, 1.6, -0.62), Vector3(sx, 1.6, 0.62), 0.08, yellow)
+		_strut(st, Vector3(sx * 0.7, 2.8, -0.38), Vector3(sx * 0.7, 2.8, 0.38), 0.08, yellow)
+	for sz in [-0.9, 0.9]:
+		_strut(st, Vector3(-0.85, 0.6, sz), Vector3(0.85, 2.2, sz * 0.6), 0.07, yellow)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, PIVOT + Vector3(0, -0.2, 0)), Vector3(0.9, 0.22, 0.5), dark)   # saddle bearing
+	for k in 12:
+		var y := 0.7 + k * 0.28
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(1.05 - y * 0.04, y, 1.0 - y * 0.16)), Vector3(0.04, 0.04, 0.42), steel)
+	_strut(st, Vector3(1.0, 0.5, 1.08), Vector3(0.88, 3.8, 0.42), 0.05, steel)
+	_strut(st, Vector3(1.0, 0.5, 0.68), Vector3(0.88, 3.8, 0.02), 0.05, steel)
+	# the gear reducer on its pedestal, the motor with its belt guard
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 0.75, -2.5)), Vector3(1.0, 0.7, 1.3), dark)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, SHAFT + Vector3(0, -0.15, 0)), Vector3(1.2, 1.0, 1.5), Color(0.25, 0.3, 0.32))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, SHAFT + Vector3(0, 0.4, 0)), Vector3(1.3, 0.12, 1.6), Color(0.25, 0.3, 0.32))
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 0.9, -4.0)), Vector3(0.75, 0.75, 0.9), Color(0.15, 0.3, 0.5))   # motor
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0.55, 1.3, -3.25)), Vector3(0.12, 1.3, 1.9), yellow)                # belt guard
+	# the wellhead: casing, tee, valves with hand wheels, the flow line along the ground
+	var wz := 3.75
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 0.6, wz)), Vector3(0.45, 0.6, 0.45), dark)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, 1.1, wz)), Vector3(0.28, 0.6, 0.28), steel)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0.35, 1.0, wz)), Vector3(0.6, 0.18, 0.18), steel)          # tee
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0.0, 1.45, wz)), Vector3(0.22, 0.2, 0.22), dark)           # stuffing box
+	for vx in [0.45, 0.9]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(vx, 1.0, wz)), Vector3(0.16, 0.3, 0.3), Color(0.6, 0.12, 0.08))
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(vx, 1.25, wz)), Vector3(0.04, 0.2, 0.04), steel)
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(vx, 1.36, wz)), Vector3(0.3, 0.03, 0.3), Color(0.6, 0.12, 0.08))
+	_strut(st, Vector3(1.05, 1.0, wz), Vector3(1.05, 0.25, wz + 0.4), 0.12, steel)
+	_strut(st, Vector3(1.05, 0.2, wz + 0.4), Vector3(6.0, 0.2, wz + 2.5), 0.12, steel)
 	_mesh(st, xf, true)
-	# the walking beam, nodding
+	Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, 2.0, 0)), Vector3(2.0, 4.0, 2.0))
+	Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.2, -3.0)), Vector3(1.4, 2.0, 2.6))
+	# moving parts: the walking beam with the horse head (nodding), the cranks with their
+	# counterweights (turning), the pitman arms between them, the bridle and the polished rod
+	var root := Node3D.new()
+	add_child(root)
+	root.global_transform = xf
 	var pivot := Node3D.new()
-	add_child(pivot)
-	pivot.global_transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, 4.1, 0))
+	pivot.position = PIVOT
+	root.add_child(pivot)
 	var bst := MeshKit.new_st()
-	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0, 0, 0.3)), Vector3(0.5, 0.6, 6.0), Color(0.75, 0.55, 0.1))
-	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0, -0.6, 3.3)), Vector3(0.6, 1.6, 0.5), Color(0.7, 0.5, 0.1))   # horse head
-	bst.generate_normals()
+	# an I-beam: flanges and web
+	for fy in [-0.28, 0.28]:
+		MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0, fy, 0.35)), Vector3(0.45, 0.06, 6.4), yellow)
+	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0, 0, 0.35)), Vector3(0.08, 0.56, 6.4), yellow)
+	# the horse head: a curved face round the pivot (radius R) so the bridle hangs straight
+	var R := 3.55
+	for k in 9:
+		var a0 := lerpf(-0.42, 0.42, float(k) / 9.0)
+		var a1 := lerpf(-0.42, 0.42, float(k + 1) / 9.0)
+		var am := (a0 + a1) * 0.5
+		var c := Vector3(0, sin(am) * R, cos(am) * R)
+		MeshKit.box(bst, Transform3D(Basis(Vector3.RIGHT, -am), c), Vector3(0.7, (a1 - a0) * R + 0.02, 0.12), yellow)
+		MeshKit.box(bst, Transform3D(Basis(Vector3.RIGHT, -am), c - Vector3(0, sin(am), cos(am)) * 0.35), Vector3(0.12, (a1 - a0) * R + 0.02, 0.6), yellow)
+	# the equalizer bar at the tail
+	MeshKit.box(bst, Transform3D(Basis.IDENTITY, Vector3(0, -0.35, -2.75)), Vector3(1.5, 0.2, 0.3), dark)
 	var beam := MeshKit.mesh_instance(MeshKit.commit(bst, _metal))
 	pivot.add_child(beam)
-	_jacks.append([beam, rng.randf() * TAU])
+	var crank := Node3D.new()
+	crank.position = SHAFT
+	root.add_child(crank)
+	var cst := MeshKit.new_st()
+	for sx in [-0.72, 0.72]:
+		MeshKit.box(cst, Transform3D(Basis.IDENTITY, Vector3(sx, 0, 0.35)), Vector3(0.14, 0.3, 1.2), dark)          # crank arm
+		MeshKit.box(cst, Transform3D(Basis.IDENTITY, Vector3(sx, 0, -0.55)), Vector3(0.22, 0.9, 0.8), Color(0.55, 0.12, 0.08))   # counterweight
+	MeshKit.box(cst, Transform3D.IDENTITY, Vector3(1.6, 0.14, 0.14), steel)
+	crank.add_child(MeshKit.mesh_instance(MeshKit.commit(cst, _metal)))
+	var pitmen: Array = []
+	for sx in [-0.72, 0.72]:
+		var pm := MeshKit.box_node(Vector3(0.1, 0.1, 1.0), _metal, Vector3.ZERO)
+		root.add_child(pm)
+		pitmen.append([pm, sx])
+	var bridle := MeshKit.box_node(Vector3(0.03, 1.0, 0.03), _metal, Vector3.ZERO)
+	root.add_child(bridle)
+	var carrier := MeshKit.box_node(Vector3(0.5, 0.08, 0.12), _metal, Vector3.ZERO)
+	root.add_child(carrier)
+	var rod := MeshKit.box_node(Vector3(0.05, 1.0, 0.05), TexKit.chrome(), Vector3.ZERO)
+	root.add_child(rod)
+	_jacks.append({"pivot": pivot, "crank": crank, "pitmen": pitmen, "bridle": bridle, "carrier": carrier, "rod": rod,
+		"phase": rng.randf() * TAU, "R": R, "well": Vector3(0, 1.55, PIVOT.z + R)})
 	_count("pump_jacks")
+
+
+## A square strut from a to b in a building's frame.
+static func _strut(st: SurfaceTool, a: Vector3, b: Vector3, w: float, col: Color) -> void:
+	var d := b - a
+	var up := Vector3.UP if absf(d.normalized().y) < 0.95 else Vector3.FORWARD
+	MeshKit.box(st, Transform3D(Basis.looking_at(d.normalized(), up), (a + b) * 0.5), Vector3(w, w, d.length()), col)
+
+
+## A pump jack at crank angle `phi`: the beam nods with it, the pitman arms join crank pins and
+## beam tail, the bridle and rod follow the horse head.
+func _jack_pose(j: Dictionary, phi: float) -> void:
+	var pivot: Node3D = j["pivot"]
+	var crank: Node3D = j["crank"]
+	var th := sin(phi) * 0.3
+	pivot.rotation.x = th
+	crank.rotation.x = phi
+	var tail: Vector3 = pivot.transform * Vector3(0, -0.35, -2.75)
+	for pm in j["pitmen"]:
+		var sx: float = pm[1]
+		var pin: Vector3 = crank.transform * Vector3(sx, 0, 0.85)
+		var top := Vector3(sx, tail.y, tail.z)
+		var d := top - pin
+		(pm[0] as Node3D).transform = Transform3D(Basis.looking_at(d.normalized(), Vector3.RIGHT) * Basis.from_scale(Vector3(1, 1, d.length())), (pin + top) * 0.5)
+	# the bridle hangs from the horse head's face (always above the well), its length paid out by
+	# the head's turn
+	var R: float = j["R"]
+	var well: Vector3 = j["well"]
+	var hang_top: float = pivot.position.y
+	var car_y: float = well.y + 1.4 - R * th
+	var bridle: Node3D = j["bridle"]
+	bridle.position = Vector3(0, (hang_top + car_y) * 0.5, well.z)
+	bridle.scale = Vector3(1, hang_top - car_y, 1)
+	(j["carrier"] as Node3D).position = Vector3(0, car_y, well.z)
+	var rod: Node3D = j["rod"]
+	rod.position = Vector3(0, (car_y + well.y) * 0.5, well.z)
+	rod.scale = Vector3(1, maxf(car_y - well.y, 0.05), 1)
 
 
 func _wreck() -> void:
@@ -633,6 +748,6 @@ func _process(delta: float) -> void:
 	for s in _spinners:
 		(s[0] as Node3D).rotate_object_local(s[1], float(s[2]) * delta)
 	for j in _jacks:
-		(j[0] as Node3D).rotation.x = sin(_t * 1.6 + float(j[1])) * 0.32
+		_jack_pose(j, _t * 1.6 + float(j["phase"]))
 	for b in _blink:
 		(b[0] as StandardMaterial3D).emission_energy_multiplier = 4.0 if fmod(_t + float(b[1]), 1.6) < 0.5 else 0.2

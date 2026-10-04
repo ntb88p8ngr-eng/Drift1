@@ -47,6 +47,18 @@ func _init(d: Dictionary) -> void:
 	_raster()
 
 
+## The lake's shore distance from the centre towards (x, z): an uneven, bay-and-point shoreline
+## (always well inside the ring road).
+func lake_r(x: float, z: float) -> float:
+	var a := atan2(z - center.y, x - center.x)
+	return lake_r_at(a)
+
+
+func lake_r_at(a: float) -> float:
+	var k := 1.0 + 0.13 * sin(3.0 * a + 1.3) + 0.08 * sin(5.0 * a + 0.4) + 0.05 * sin(8.0 * a + 2.1) + 0.03 * sin(13.0 * a + 0.7)
+	return minf(radius * k, ring_r - ring_w * 0.5 - 7.0)
+
+
 ## The river from the shore at angle `a` outwards, meandering gently.
 func _river_path(a: float, length: float, seed_value: int) -> Dictionary:
 	var dir := Vector2(cos(a), sin(a))
@@ -57,10 +69,11 @@ func _river_path(a: float, length: float, seed_value: int) -> Dictionary:
 	var pts := PackedVector2Array()
 	var ss := PackedFloat32Array()
 	var s := 0.0
-	var prev := center + dir * (radius - 6.0)
+	var r0 := lake_r_at(a) - 6.0
+	var prev := center + dir * r0
 	while s <= length:
 		var wig := (sin(s / 70.0 + ph) * 14.0 + sin(s / 23.0 + ph * 2.0) * 3.0) * smoothstep(20.0, 90.0, s)
-		var p := center + dir * (radius - 6.0 + s) + perp * wig
+		var p := center + dir * (r0 + s) + perp * wig
 		pts.append(p)
 		ss.append(float(ss[ss.size() - 1]) + prev.distance_to(p) if ss.size() > 0 else 0.0)
 		prev = p
@@ -154,17 +167,20 @@ func calm(x: float, z: float) -> float:
 func carve(x: float, z: float) -> float:
 	var c := INF
 	var dc := Vector2(x, z).distance_to(center)
-	if dc < radius + 8.0:
-		c = level - 3.0 + 4.8 * smoothstep(radius - 12.0, radius + 5.0, dc)
+	var lr := lake_r(x, z)
+	if dc < lr + 8.0:
+		c = level - 3.0 + 4.8 * smoothstep(lr - 12.0, lr + 5.0, dc)
 	var r := river_at(x, z)
 	if r.x < RIVER_W * 0.5 + 10.0:
-		c = minf(c, r.y - 1.8 + 6.0 * smoothstep(RIVER_W * 0.5 - 3.0, RIVER_W * 0.5 + 7.0, r.x))
+		# a real channel: 2.6 m deep in the middle, the banks coming up out of the water a couple
+		# of metres beyond its edge (the water ribbon reaches under them)
+		c = minf(c, r.y - 2.6 + 6.8 * smoothstep(RIVER_W * 0.5 - 1.0, RIVER_W * 0.5 + 6.0, r.x))
 	return c
 
 
 ## Wet or water within `margin` metres (keeps buildings, cacti and rocks out of it).
 func wet(x: float, z: float, margin: float) -> bool:
-	if Vector2(x, z).distance_to(center) < radius + margin:
+	if Vector2(x, z).distance_to(center) < lake_r(x, z) + margin:
 		return true
 	return river_at(x, z).x < RIVER_W * 0.5 + margin
 

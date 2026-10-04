@@ -13,12 +13,15 @@ uniform sampler2D day_tex : source_color, filter_linear_mipmap_anisotropic;
 uniform sampler2D night_tex : source_color, filter_linear_mipmap_anisotropic;
 uniform float night = 0.0;
 varying float lit;
+varying vec2 crop;
 void vertex() {
 	lit = INSTANCE_CUSTOM.r;      // 1: the lights go on at night in this one
+	crop = INSTANCE_CUSTOM.gb;    // the part of the picture that shows (cut to the window's shape)
 }
 void fragment() {
-	vec3 d = texture(day_tex, UV).rgb;
-	vec3 n = texture(night_tex, UV).rgb;
+	vec2 uv = 0.5 + (UV - 0.5) * crop;
+	vec3 d = texture(day_tex, uv).rgb;
+	vec3 n = texture(night_tex, uv).rgb;
 	float on = night * lit;
 	ALBEDO = mix(d, n * 0.25, on) * mix(1.0, 0.45, night * (1.0 - lit));
 	EMISSION = n * on * 1.5;
@@ -104,10 +107,12 @@ func build(spots: Array) -> void:
 		for k in list.size():
 			var xf: Transform3D = list[k][0]
 			var size: Vector2 = list[k][1]
-			# the picture's own proportions: as wide as the bay, centred in the floor's height
-			size.y = minf(size.y, size.x / float(pics[i][2]))
+			# the whole window filled: the picture cut (centred) to the window's proportions
+			var pa := float(pics[i][2])
+			var wa := size.x / maxf(size.y, 0.01)
+			var crop := Vector2(wa / pa, 1.0) if pa > wa else Vector2(1.0, pa / wa)
 			mm.set_instance_transform(k, Transform3D(xf.basis * Basis.from_scale(Vector3(size.x, size.y, 1.0)), xf.origin))
-			mm.set_instance_custom_data(k, Color(float(list[k][3]), 0, 0, 1))
+			mm.set_instance_custom_data(k, Color(float(list[k][3]), crop.x, crop.y, 1))
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = _mats[i]

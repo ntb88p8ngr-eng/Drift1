@@ -389,6 +389,13 @@ func _lay_on_hills() -> void:
 			var i := k % n
 			var j := (k + 1) % n
 			ys[i] = clampf(ys[i], ys[j] - g, ys[j] + g)
+	# last: the bridges at their height once more and the approaches raised to meet them (the
+	# limiter above could pull a bridge down to the water)
+	_keep_bridges(ys)
+	for k in range(1, 2 * n):
+		ys[k % n] = maxf(ys[k % n], ys[(k - 1) % n] - g)
+	for k in range(2 * n - 2, -1, -1):
+		ys[k % n] = maxf(ys[k % n], ys[(k + 1) % n] - g)
 	for i in n:
 		samples[i].y = ys[i]
 	var steep := 0.0
