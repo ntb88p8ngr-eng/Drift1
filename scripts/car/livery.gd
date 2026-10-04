@@ -8,20 +8,37 @@ extends RefCounted
 ## where the straight-in ray from the chosen side lands.
 
 const SIDES := ["left", "right", "top", "front", "rear"]
-const StickerPack = preload("res://scripts/car/sticker_pack.gd")
 const SIDE_NAMES := {"left": "Links", "right": "Rechts", "top": "Oben (Haube, Dach)", "front": "Front", "rear": "Heck"}
 
 ## The shapes: [id, name] – the basic shapes, a tree, a unicorn, digits, letters, the graffiti pieces.
 static func shapes() -> Array:
-	var out: Array = [["circle", "Kreis"], ["ring", "Ring"], ["square", "Quadrat"], ["frame", "Rahmen"],
+	var out: Array = [
+		# basic shapes
+		["circle", "Kreis"], ["ring", "Ring"], ["square", "Quadrat"], ["frame", "Rahmen"],
 		["triangle", "Dreieck"], ["diamond", "Raute"], ["pentagon", "Fünfeck"], ["hexagon", "Sechseck"],
-		["star", "Stern"], ["burst", "Zacken-Stern"], ["heart", "Herz"], ["cross", "Kreuz"], ["arrow", "Pfeil"],
-		["chevron", "Winkel"], ["stripe", "Streifen"], ["stripes2", "Doppelstreifen"], ["bolt", "Blitz"],
-		["flame", "Flamme"], ["moon", "Mond"], ["checker", "Zielflagge"], ["tree", "Baum"], ["unicorn", "Einhorn"]]
-	for c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-		out.append(["ch_" + c, c])
-	for n in StickerPack.NAMES:
-		out.append(["st_" + n, "Sticker"])
+		["star", "Stern"], ["star_outline", "Stern (Umriss)"], ["star4", "Funkelstern"], ["compass", "Kompassstern"],
+		["burst", "Zacken-Stern"], ["sun_ring", "Strahlenkranz"], ["sparkles", "Funkeln"], ["heart", "Herz"],
+		["cross", "Kreuz"], ["iron_cross", "Eisernes Kreuz"], ["moon", "Mond"],
+		# racing marks
+		["arrow", "Pfeil"], ["arrow_outline", "Pfeil (Umriss)"], ["chevron", "Winkel"], ["chevron2", "Doppelwinkel"],
+		["chevron3", "Dreifachwinkel"], ["stripe", "Streifen"], ["stripes2", "Doppelstreifen"], ["slash3", "Schrägstreifen"],
+		["speed", "Speed-Streifen"], ["checker", "Zielflagge"], ["checker_strip", "Karo-Band"], ["flag", "Rennflagge"],
+		["flags_crossed", "Gekreuzte Flaggen"], ["bolt", "Blitz"], ["lightning", "Blitzschlag"], ["flame", "Flamme"],
+		["flames_side", "Seitenflammen"], ["swoosh", "Swoosh"], ["comet", "Komet"], ["claws", "Krallen"],
+		["tribal", "Tribal"], ["splat", "Farbklecks"], ["drips", "Tropfen"],
+		# number plates (for a number on top)
+		["plate_circle", "Startnummer rund"], ["plate_oval", "Startnummer oval"], ["plate_round", "Startnummer eckig"],
+		["plate_para", "Startnummer schräg"], ["plate_diamond", "Startnummer Raute"], ["shield", "Wappen"],
+		["shield_frame", "Wappen (Umriss)"],
+		# emblems
+		["skull", "Totenkopf"], ["crown", "Krone"], ["wing", "Flügel"], ["wings", "Flügelpaar"],
+		["wings_badge", "Flügel-Emblem"], ["laurel", "Lorbeerkranz"], ["trophy", "Pokal"], ["crosshair", "Fadenkreuz"],
+		["target", "Zielscheibe"], ["gear", "Zahnrad"], ["wrenches", "Schraubenschlüssel"], ["spade", "Pik"],
+		["club", "Kreuz (Karte)"], ["biohazard", "Biohazard"], ["mountains", "Berge"], ["tree", "Baum"], ["unicorn", "Einhorn"]]
+	# digits and letters in three styles: heavy, racing italic, outline
+	for pre in [["ch_", ""], ["chi_", " kursiv"], ["cho_", " Umriss"]]:
+		for c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+			out.append([pre[0] + c, c + pre[1]])
 	for k in range(1, 7):
 		if ResourceLoader.exists(graffiti_path(k)):
 			out.append(["graffiti_%d" % k, "Graffiti %d" % k])
@@ -38,7 +55,7 @@ static func graffiti_path(k: int) -> String:
 	return "res://assets/main_menu/workshop_tex/Grafitti (%d).png" % k
 
 
-const CACHE := "user://decals/"
+const CACHE := "user://decals_v2/"      # (v2: drawn at 512 px, smooth edges)
 static var _tex := {}
 
 
@@ -52,10 +69,6 @@ static func texture(id: String) -> Texture2D:
 		var p := graffiti_path(int(id.trim_prefix("graffiti_")))
 		if ResourceLoader.exists(p):
 			t = load(p)
-	elif id.begins_with("st_"):
-		var sp := "res://assets/stickers/%s.png" % id.trim_prefix("st_")
-		if ResourceLoader.exists(sp):
-			t = load(sp)
 	elif FileAccess.file_exists(CACHE + id + ".png"):
 		var img := Image.load_from_file(CACHE + id + ".png")
 		if img:
