@@ -91,8 +91,9 @@ signal booth_ready
 signal booth_left
 const BOOTH_C := Vector3(10.05, 0.034, -3.9)
 const BOOTH_WIDEN := 1.5            # the booth's near side wall moved out this far (z)
+const BOOTH_WIDEN_FAR := 1.5        # … and its far side wall the other way (-z)
 ## the room the booth camera stays in (x, y, z ranges; clear of the walls)
-const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8), Vector3(5.6, 2.75, 4.94))
+const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8 - BOOTH_WIDEN_FAR), Vector3(5.6, 2.75, 4.94 + BOOTH_WIDEN_FAR))
 var booth := ""
 var _booth_doors: Array = []        # [node, base transform, hinge, swing sign]
 var _booth_door_open := 0.0
@@ -348,7 +349,7 @@ func _booth_setup(g: Node3D) -> void:
 	cm.bottom_radius = 0.022
 	cm.height = 6.3
 	cm.radial_segments = 10
-	var z := -6.0
+	var z := -6.0 - BOOTH_WIDEN_FAR
 	while z <= -2.2 + BOOTH_WIDEN:
 		var t := MeshInstance3D.new()
 		t.mesh = cm
@@ -375,21 +376,41 @@ func _widen_booth(g: Node3D) -> void:
 	if annex == null:
 		return
 	var z0 := -6.35
-	var k := (4.5 + BOOTH_WIDEN) / 4.5
+	var k := (4.5 + BOOTH_WIDEN + BOOTH_WIDEN_FAR) / 4.5
+	var walls := _booth_wall_material()
 	for c in annex.get_children():
 		if not (c is MeshInstance3D):
 			continue
 		var mi := c as MeshInstance3D
 		var bb: AABB = mi.global_transform * mi.get_aabb()
 		var nm := String(mi.name)
-		if nm.contains("Door_frame") or nm.contains("Filter") or nm.contains("Extraction"):
+		if (nm.contains("wall") or nm.contains("ceiling_0")) and not nm.contains("LED"):
+			mi.material_override = walls
+		if nm.contains("Door_frame") or nm.contains("Filter"):
+			continue
+		if nm.contains("Extraction"):
 			continue
 		if bb.size.z > 3.0:
-			# spans the booth: stretched from its far wall
-			mi.global_transform = Transform3D(Basis.IDENTITY, Vector3(0, 0, z0)) * Transform3D(Basis.from_scale(Vector3(1, 1, k)), Vector3.ZERO) \
+			# spans the booth: stretched both ways from its far wall
+			mi.global_transform = Transform3D(Basis.IDENTITY, Vector3(0, 0, z0 - BOOTH_WIDEN_FAR)) * Transform3D(Basis.from_scale(Vector3(1, 1, k)), Vector3.ZERO) \
 				* Transform3D(Basis.IDENTITY, Vector3(0, 0, -z0)) * mi.global_transform
 		elif bb.get_center().z > -2.6:
 			mi.global_position += Vector3(0, 0, BOOTH_WIDEN)
+		elif bb.get_center().z < -5.6:
+			mi.global_position -= Vector3(0, 0, BOOTH_WIDEN_FAR)
+	# the front wall either side of the door: the hall's plaster wall showed through on the near side,
+	# on the far side there was none yet
+	var near := MeshKit.box_node(Vector3(0.04, 3.5, BOOTH_WIDEN + 0.1), walls, Vector3(6.97, 1.75, -2.02 + (BOOTH_WIDEN + 0.1) * 0.5))
+	var far := MeshKit.box_node(Vector3(0.12, 3.56, BOOTH_WIDEN_FAR + 0.2), walls, Vector3(6.85, 1.78, -6.15 - (BOOTH_WIDEN_FAR + 0.2) * 0.5))
+	for w in [near, far]:
+		(w as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		add_child(w)
+	# (static rain streaks of the model that now stand in the bigger booth)
+	var room := AABB(Vector3(6.6, 0.0, -6.6 - BOOTH_WIDEN_FAR), Vector3(7.2, 3.8, 1.0 + BOOTH_WIDEN_FAR))
+	for n in g.find_children("*Rain_streak*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if room.has_point((mi.global_transform * mi.get_aabb()).get_center()):
+			mi.visible = false
 	for nm in ["Spray_gun_wall_rack_001", "Paint_mixing_trolley_001"]:
 		var n := g.find_child(nm, true, false) as Node3D
 		if n:
@@ -638,6 +659,49 @@ func booth_ray(screen: Vector2):
 	var o := cam.project_ray_origin(screen)
 	var d := cam.project_ray_normal(screen)
 	return [inv * o, (inv.basis * d).normalized()]
+
+
+## The booth's walls: white enamelled sandwich panels – a seam every metre, a fine stucco
+## profile and a little orange peel in the enamel (world triplanar, so stretched walls keep the scale).
+func _booth_wall_material() -> StandardMaterial3D:
+	var n := 512
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var hgt := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var fine := FastNoiseLite.new()
+	fine.seed = 31
+	fine.frequency = 0.09
+	var coarse := FastNoiseLite.new()
+	coarse.seed = 7
+	coarse.frequency = 0.012
+	for y in n:
+		for x in n:
+			var peel := fine.get_noise_2d(x, y) * 0.5 + 0.5
+			var cloud := coarse.get_noise_2d(x, y)
+			var e := 0.5 + 0.18 * (peel - 0.5) + 0.06 * sin(float(y) / n * TAU * 16.0)   # stucco ribs
+			var v := 0.9 + 0.035 * cloud + 0.02 * (peel - 0.5)
+			var sx := mini(x, n - x)         # the panel seam at the tile edge
+			if sx < 3:
+				v *= 0.72
+				e = 0.15
+			elif sx < 6:
+				v *= 1.03
+				e = 0.62
+			img.set_pixel(x, y, Color(v, v, v * 1.01))
+			hgt.set_pixel(x, y, Color(e, e, e))
+	img.generate_mipmaps()
+	hgt.bump_map_to_normal_map(5.0)
+	hgt.generate_mipmaps()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.normal_enabled = true
+	m.normal_texture = ImageTexture.create_from_image(hgt)
+	m.normal_scale = 0.6
+	m.roughness = 0.42
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE * 1.0
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	return m
 
 
 ## A coil spring along x (radius r, length l).
@@ -938,7 +1002,7 @@ func _load_workshop() -> bool:
 	storm_fx.name = "Storm"
 	add_child(storm_fx)
 	# (no rain under the roofs beside the hall: the office annex on the left, the paint booth on the right)
-	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5, 7.1, 4.7 + BOOTH_WIDEN)])
+	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5 - BOOTH_WIDEN_FAR, 7.1, 4.7 + BOOTH_WIDEN + BOOTH_WIDEN_FAR)])
 	await Game.load_tick(0.9)
 	for l in g.find_children("*", "Light3D", true, false):
 		var light := l as Light3D

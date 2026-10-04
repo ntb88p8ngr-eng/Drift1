@@ -415,16 +415,12 @@ func _place(pos: Vector2) -> bool:
 	var ray = sr.booth_ray(pos)
 	if ray == null:
 		return false
-	var box := Livery.body_box(sr.car.body)
-	var hit = Livery.pick(str(layers[sel]["side"]), box, ray[0], ray[1])
+	var hit = Livery.pick_surface(sr.car.body, ray[0], ray[1])
 	if hit == null:
-		return false
-	if absf(float(hit[0])) > 1.1 or absf(float(hit[1])) > 1.3:
 		return false          # (beside the car)
-	var p := clampf(float(hit[0]), -1.0, 1.0)
-	var h := clampf(float(hit[1]), -1.0, 1.0)
-	layers[sel]["p"] = p
-	layers[sel]["h"] = h
+	layers[sel]["side"] = hit[0]
+	layers[sel]["p"] = hit[1]
+	layers[sel]["h"] = hit[2]
 	_sync_props()
 	_apply()
 	return true
@@ -447,7 +443,7 @@ func _ghost(pos: Vector2):
 	var ray = sr.booth_ray(pos)
 	if ray == null:
 		return null
-	var hit = Livery.pick_any(Livery.body_box(sr.car.body), ray[0], ray[1])
+	var hit = Livery.pick_surface(sr.car.body, ray[0], ray[1])
 	if hit == null:
 		return null
 	var l := Livery.new_layer(_placing, color)

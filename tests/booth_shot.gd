@@ -1,4 +1,5 @@
 extends Node
+const Livery = preload("res://scripts/car/livery.gd")
 ## The paint booth: the car drives in, a few stickers go on, a picture from the booth camera.
 ## Run: godot --path . res://tests/booth_shot.tscn -- --out=/tmp/booth.png [--mid=/tmp/mid.png]
 
@@ -41,7 +42,12 @@ func _ready() -> void:
 		]
 		ed.sel = 0
 		ed._refresh_list()
+		var ta := Time.get_ticks_usec()
 		ed._apply()
+		print("LIVERY first apply ms: ", (Time.get_ticks_usec() - ta) / 1000.0)
+		ta = Time.get_ticks_usec()
+		ed._apply()
+		print("LIVERY apply ms: ", (Time.get_ticks_usec() - ta) / 1000.0, "  tris: ", (Livery.surface(sr.car.body)["v"] as PackedVector3Array).size() / 3)
 	for f in 20:
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(out)
