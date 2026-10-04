@@ -95,8 +95,8 @@ func _water_surfaces() -> void:
 			var b := pts[i + 1]
 			var n := sides[i]
 			var nb := sides[i + 1]
-			var ya: float = water.river_level(k, ss[i])
-			var yb: float = water.river_level(k, ss[i + 1])
+			var ya: float = _below_banks(water.river_level(k, ss[i]), a, n / half)
+			var yb: float = _below_banks(water.river_level(k, ss[i + 1]), b, nb / half)
 			if k == 1 and ss[i] < water.dam_s and ss[i + 1] >= water.dam_s:
 				yb = ya          # (the fall itself is drawn at the dam)
 			MeshKit.quad(st, Vector3(a.x - n.x, ya, a.y - n.y), Vector3(a.x + n.x, ya, a.y + n.y),
@@ -106,6 +106,17 @@ func _water_surfaces() -> void:
 	mi.name = "Water"
 	add_child(mi)
 	stats["water"] = true
+
+
+## The river's surface at a point never above its banks (the ground beside the road can lie lower
+## than the river's own level): a little under the lower bank top there.
+func _below_banks(y: float, p: Vector2, side: Vector2) -> float:
+	var reach: float = water.RIVER_W * 0.5 + 1.5
+	var lo := INF
+	for sgn in [-1.0, 1.0]:
+		var q: Vector2 = p + side * reach * sgn
+		lo = minf(lo, float(terrain.height_at(q.x, q.y)))
+	return minf(y, lo - 0.35)
 
 
 # ---------------------------------------------------------------------------

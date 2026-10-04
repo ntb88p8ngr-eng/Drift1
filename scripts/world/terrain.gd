@@ -906,7 +906,7 @@ func _build_chunk(x0: int, z0: int, w: int, h: int, stride := 1, range_begin := 
 				var vi := p.y * stride_v + p.x
 				var top: Vector3 = verts[vi]
 				verts.append(top)
-				verts.append(top - Vector3(0, 6.0, 0))
+				verts.append(top - Vector3(0, SKIRT, 0))
 				norms.append(Vector3.UP)
 				norms.append(Vector3.UP)
 				cols.append(cols[vi])
@@ -934,6 +934,10 @@ func _build_chunk(x0: int, z0: int, w: int, h: int, stride := 1, range_begin := 
 
 
 ## Coarse terrain around the inner grid out to the horizon (mountains / sea floor).
+## How far the skirts reach down (steep hills at the seams need them deep).
+const SKIRT := 6.0
+
+
 func _build_outer() -> void:
 	var ext := extent()
 	var oc := BIG_OUTER_CELL if big else OUTER_CELL
@@ -965,15 +969,58 @@ func _build_outer() -> void:
 			var paved := 1.0 if z > _quay_z - 34.0 and track_id == "harbor" else 0.0
 			cols.append(Color(paved, 0.0, clampf(f * 1.3, 0.0, 1.0), 0.3 * (1.0 - f)))
 	var idx := PackedInt32Array()
+	var covered := func(i: int, j: int) -> bool:
+		if i < 0 or j < 0 or i >= n - 1 or j >= n - 1:
+			return false
+		var cx0 := o.x + i * oc
+		var cz0 := o.y + j * oc
+		return cx0 >= ext.position.x - 0.1 and cz0 >= ext.position.y - 0.1 and cx0 + oc <= ext.end.x + 0.1 and cz0 + oc <= ext.end.y + 0.1
+	# the cells along the inner grid's border are built in 4 m steps: their edge there follows the
+	# inner mesh's edge exactly (no slit, no wall at the seam); the correction fades out across the
+	# cell, so its other edges stay straight like their 24 m neighbours'
+	var sub := int(round(oc / CELL))
 	for j in n - 1:
 		for i in n - 1:
+			if covered.call(i, j):
+				continue          # (the inner grid is there)
+			var a := j * n + i
+			var sl: bool = covered.call(i - 1, j)
+			var sr: bool = covered.call(i + 1, j)
+			var sd: bool = covered.call(i, j - 1)
+			var su: bool = covered.call(i, j + 1)
+			if not (sl or sr or sd or su):
+				idx.append_array(PackedInt32Array([a, a + 1, a + n + 1, a, a + n + 1, a + n]))
+				continue
+			var h00 := hs[a]
+			var h10 := hs[a + 1]
+			var h01 := hs[a + n]
+			var h11 := hs[a + n + 1]
 			var x0 := o.x + i * oc
 			var z0 := o.y + j * oc
-			# skip cells covered by the inner grid
-			if x0 >= ext.position.x - 0.1 and z0 >= ext.position.y - 0.1 and x0 + oc <= ext.end.x + 0.1 and z0 + oc <= ext.end.y + 0.1:
-				continue
-			var a := j * n + i
-			idx.append_array(PackedInt32Array([a, a + 1, a + n + 1, a, a + n + 1, a + n]))
+			var base := verts.size()
+			for vv in sub + 1:
+				for uu in sub + 1:
+					var tx := float(uu) / sub
+					var tz := float(vv) / sub
+					var x := x0 + uu * CELL
+					var z := z0 + vv * CELL
+					var y := lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
+					if sl:
+						y += (_grid_h(x0, z) - lerpf(h00, h01, tz)) * (1.0 - tx)
+					if sr:
+						y += (_grid_h(x0 + oc, z) - lerpf(h10, h11, tz)) * tx
+					if sd:
+						y += (_grid_h(x, z0) - lerpf(h00, h10, tx)) * (1.0 - tz)
+					if su:
+						y += (_grid_h(x, z0 + oc) - lerpf(h01, h11, tx)) * tz
+					verts.append(Vector3(x, y, z))
+					norms.append(norms[a].lerp(norms[a + 1], tx).lerp(norms[a + n].lerp(norms[a + n + 1], tx), tz).normalized())
+					cols.append(cols[a].lerp(cols[a + 1], tx).lerp(cols[a + n].lerp(cols[a + n + 1], tx), tz))
+			var sn := sub + 1
+			for vv in sub:
+				for uu in sub:
+					var q := base + vv * sn + uu
+					idx.append_array(PackedInt32Array([q, q + 1, q + sn + 1, q, q + sn + 1, q + sn]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -988,6 +1035,11 @@ func _build_outer() -> void:
 	mi.name = "TerrainOuter"
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(mi)
+
+
+## The inner mesh's height, also right on its far borders (height_at hands those to the outer ring).
+func _grid_h(x: float, z: float) -> float:
+	return height_at(clampf(x, origin.x, origin.x + (nx - 1) * CELL - 0.001), clampf(z, origin.y, origin.y + (nz - 1) * CELL - 0.001))
 
 
 static func _on_rect_edge(r: Rect2, x: float, z: float) -> bool:

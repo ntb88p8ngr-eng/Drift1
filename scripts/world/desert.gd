@@ -12,6 +12,7 @@ const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const CityFog = preload("res://scripts/world/city/city_fog.gd")
 const DesertTown = preload("res://scripts/world/desert_town.gd")
 const DesertLake = preload("res://scripts/world/desert_lake.gd")
+const Palms = preload("res://scripts/world/palms.gd")
 
 const PACK := "res://assets/props/street_pack/"
 const PROP_CELL := 8.0
@@ -22,9 +23,9 @@ const SANDSTONE_SHADER := """
 shader_type spatial;
 render_mode diffuse_burley;
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform vec3 col_a : source_color = vec3(0.6, 0.3, 0.17);
-uniform vec3 col_b : source_color = vec3(0.78, 0.5, 0.3);
-uniform vec3 col_c : source_color = vec3(0.42, 0.2, 0.12);
+uniform vec3 col_a : source_color = vec3(0.54, 0.34, 0.22);
+uniform vec3 col_b : source_color = vec3(0.7, 0.52, 0.36);
+uniform vec3 col_c : source_color = vec3(0.37, 0.24, 0.16);
 varying vec3 wp;
 varying vec3 wn;
 void vertex() {
@@ -32,7 +33,7 @@ void vertex() {
 	wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 void fragment() {
-	// layered sandstone: wavy strata in red, orange and dark rust, fine grain, sand dust on top
+	// layered sandstone: wavy strata in brown, tan and dark umber, fine grain, sand dust on top
 	float n = texture(noise_tex, wp.xz * 0.05 + vec2(wp.y * 0.02, 0.0)).r;
 	float band = fract(wp.y * 0.42 + n * 0.9);
 	vec3 c = mix(col_a, col_b, smoothstep(0.2, 0.5, band));
@@ -84,6 +85,13 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	add_child(town)
 	await town.build(track, terrain, scenery, rect)
 	stats.merge(town.stats)
+	# palms by the water (after the buildings: they keep clear of them)
+	var palms := Palms.new()
+	palms.name = "Palms"
+	add_child(palms)
+	palms.build(track, terrain, scenery)
+	stats["palms"] = palms.count
+	await Game.load_tick()
 	_street_signs()
 	_arch()
 	await Game.load_tick()
@@ -277,26 +285,76 @@ func _arch() -> void:
 	var c: Vector3 = track.samples[best]
 	var r: Vector3 = track.rights[best]
 	var t: Vector3 = track.tangents[best]
+	t = Vector3(t.x, 0, t.z).normalized()
+	r = Vector3(r.x, 0, r.z).normalized()
 	var span: float = float(track.hws[best]) + 5.5
 	var top := span + 5.0
-	var yaw := atan2(t.x, t.z)
-	for k in 13:
-		var a := PI * float(k) / 12.0          # from the left pillar over the road to the right one
+	# one solid band of rock: swept along the arch from one foot (in the ground) over the road to the
+	# other, thick legs, a thinner span, lumpy all over
+	var gl: float = terrain.height_at((c - r * span).x, (c - r * span).z)
+	var gr: float = terrain.height_at((c + r * span).x, (c + r * span).z)
+	var noise := FastNoiseLite.new()
+	noise.seed = 913
+	noise.frequency = 0.35
+	var steps := 40
+	var ring_n := 14
+	var spine: Array = []
+	for k in steps + 1:
+		var a := PI * float(k) / steps
 		var lat := -cos(a) * span
-		var h := sin(a) * top
-		var p := c + r * lat
-		p.y = terrain.height_at(p.x, p.z) + h
-		var s := 3.4 if k == 0 or k == 12 else 2.6
-		var b := Basis(Vector3.UP, yaw + rng.randf_range(-0.2, 0.2)).scaled(Vector3(s * 1.1, s, s * 1.4))
-		_rock([11, 23, 37][k % 3], Transform3D(b, p), h < 4.5)
-	# the pillars down to the ground
-	for side in [-1.0, 1.0]:
-		var p: Vector3 = c + r * span * side
+		var ground := lerpf(gl, gr, (lat / span + 1.0) * 0.5)
+		# legs steep, the crown round; the feet sink 2 m into the sand
+		var h := pow(sin(a), 0.55) * top - 2.0 * (1.0 - sin(a))
+		spine.append(c + r * lat + Vector3(0, ground - c.y + h, 0))
+	var st := MeshKit.new_st()
+	var rings: Array = []
+	for k in steps + 1:
+		var p: Vector3 = spine[k]
+		var fwd: Vector3 = ((spine[mini(k + 1, steps)] as Vector3) - (spine[maxi(k - 1, 0)] as Vector3)).normalized()
+		var side := t
+		var nrm := fwd.cross(side).normalized()
+		var leg := pow(absf(cos(PI * float(k) / steps)), 2.0)        # 1 at the feet, 0 at the crown
+		var w := lerpf(2.4, 4.2, leg)          # along the road
+		var th := lerpf(1.7, 3.0, leg)         # through the band
+		var ring := PackedVector3Array()
+		for j in ring_n:
+			var a := TAU * j / ring_n
+			var q := p + side * cos(a) * w + nrm * sin(a) * th
+			q += (q - p).normalized() * noise.get_noise_3dv(q) * 0.9
+			ring.append(q)
+		rings.append(ring)
+	for k in steps:
+		var r0: PackedVector3Array = rings[k]
+		var r1: PackedVector3Array = rings[k + 1]
+		for j in ring_n:
+			var j1 := (j + 1) % ring_n
+			MeshKit.quad(st, r0[j], r0[j1], r1[j1], r1[j], (r0[j] + r1[j1]) * 0.5 - (spine[k] as Vector3))
+	st.generate_normals()
+	var mesh := MeshKit.commit(st, _stone)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = _stone
+	mi.visibility_range_end = 1200.0
+	add_child(mi)
+	var body := StaticBody3D.new()
+	body.name = "Arch"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta("surface", "wall")
+	var cs := CollisionShape3D.new()
+	cs.shape = mesh.create_trimesh_shape()
+	body.add_child(cs)
+	add_child(body)
+	# boulders heaped round both feet
+	for sgn in [-1.0, 1.0]:
+		var p: Vector3 = c + r * span * sgn
 		var g: float = terrain.height_at(p.x, p.z)
 		for j in 3:
-			var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(3.6, 2.6, 4.0))
-			_rock([41, 53, 11][j], Transform3D(b, Vector3(p.x, g + 1.0 + j * 2.2, p.z)), true)
-		scenery.occupy(p, 4.5)
+			var off: Vector3 = r * sgn * rng.randf_range(1.5, 3.5) + t * rng.randf_range(-3.0, 3.0)
+			var s := rng.randf_range(1.6, 2.6)
+			var bb := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * 1.2, s * 0.8, s))
+			_rock([41, 53, 11][j], Transform3D(bb, Vector3(p.x, g - 0.3, p.z) + off), true)
+		scenery.occupy(p, 5.0)
 	stats["arch"] = best
 
 

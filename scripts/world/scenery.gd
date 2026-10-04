@@ -49,6 +49,10 @@ var desert: Node3D            # desert.gd on the desert maps
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
 var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
+## kind -> [[a, b, c, d (only x / z count), lift, uv a, uv b, uv c, uv d], …]: the ground's height is
+## taken at the end (_finish_ground), when nothing levels the terrain any more
+var _ground_quads := {}
+var _ground_walls := {}           # kind -> [[a, b, lift, outward], …]: the slab's edge down into the ground
 var _ground_paints: Array = []    # [pos, radius, splat colour]: no grass under them
 var lamp_lights: Array = []
 var _debris: Array = []         # snapped lamp posts (debris.gd)
@@ -1576,6 +1580,25 @@ const GROUND_PAINT := {"asphalt": Color(0.85, 0.2, 0.0, 0.0), "paving": Color(0.
 	"gravel": Color(0.45, 0.9, 0.1, 0.0), "line": Color(0.85, 0.2, 0.0, 0.0)}
 
 
+## Paved ground is a slab this thick (its edges go down into the ground, no paper-thin sheet).
+const PAVE_LIFT := 0.07
+const PAVE_DEPTH := 0.35
+
+
+func _ground_quad(kind: String, q: Array, lift: float, uvs: Array) -> void:
+	if not _ground_quads.has(kind):
+		_ground_quads[kind] = []
+	(_ground_quads[kind] as Array).append([q[0], q[1], q[2], q[3], lift] + uvs)
+
+
+func _ground_wall(kind: String, a: Vector3, b: Vector3, lift: float, outward: Vector3) -> void:
+	if kind != "asphalt" and kind != "paving":
+		return
+	if not _ground_walls.has(kind):
+		_ground_walls[kind] = []
+	(_ground_walls[kind] as Array).append([a, b, lift, outward])
+
+
 func _ground_st(kind: String) -> SurfaceTool:
 	if not _ground_sts.has(kind):
 		_ground_sts[kind] = MeshKit.new_st()
@@ -1598,9 +1621,8 @@ func add_path(pts: Array, width: float, kind: String, paint := true) -> void:
 		for j in n:
 			dense.append(a.lerp(b, float(j) / n))
 	dense.append(pts[pts.size() - 1])
-	var st := _ground_st(kind)
 	var u := 0.0
-	var lift := 0.04 if kind != "paving" else 0.045
+	var lift := PAVE_LIFT if kind == "asphalt" else (PAVE_LIFT + 0.005 if kind == "paving" else 0.04)
 	for k in dense.size() - 1:
 		var a: Vector3 = dense[k]
 		var b: Vector3 = dense[k + 1]
@@ -1617,13 +1639,16 @@ func add_path(pts: Array, width: float, kind: String, paint := true) -> void:
 			var w0 := -width * 0.5 + width * sgi / strips
 			var w1 := -width * 0.5 + width * (sgi + 1) / strips
 			var q := [a + side * w0, a + side * w1, b + side * w1, b + side * w0]
-			for m in 4:
-				var qv: Vector3 = q[m]
-				qv.y = _ground_y(qv, lift)
-				q[m] = qv
 			var u0 := (w0 + width * 0.5) * 0.5
 			var u1 := (w1 + width * 0.5) * 0.5
-			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(u0, u), Vector2(u1, u), Vector2(u1, u + l * 0.5), Vector2(u0, u + l * 0.5))
+			_ground_quad(kind, q, lift, [Vector2(u0, u), Vector2(u1, u), Vector2(u1, u + l * 0.5), Vector2(u0, u + l * 0.5)])
+		# the slab's sides (and its ends)
+		_ground_wall(kind, a - side * width * 0.5, b - side * width * 0.5, lift, -side)
+		_ground_wall(kind, a + side * width * 0.5, b + side * width * 0.5, lift, side)
+		if k == 0:
+			_ground_wall(kind, a - side * width * 0.5, a + side * width * 0.5, lift, -dir)
+		if k == dense.size() - 2:
+			_ground_wall(kind, b - side * width * 0.5, b + side * width * 0.5, lift, dir)
 		u += l * 0.5
 		# without paint the ground is still marked under the path (no grass through it), but only
 		# well inside its edges
@@ -1634,7 +1659,8 @@ func add_path(pts: Array, width: float, kind: String, paint := true) -> void:
 
 ## A flat rectangle on the ground (car parks), size = (x, z) in the frame xf.
 func add_ground_patch(xf: Transform3D, size: Vector2, kind: String, paint := true, lift := 0.04) -> void:
-	var st := _ground_st(kind)
+	if kind == "asphalt" or kind == "paving":
+		lift = maxf(lift, PAVE_LIFT)
 	var nx := maxi(int(size.x / 1.5), 1)
 	var nz := maxi(int(size.y / 1.5), 1)
 	for iz in nz:
@@ -1644,30 +1670,59 @@ func add_ground_patch(xf: Transform3D, size: Vector2, kind: String, paint := tru
 			var z0 := -size.y * 0.5 + size.y * iz / nz
 			var z1 := -size.y * 0.5 + size.y * (iz + 1) / nz
 			var q := [xf * Vector3(x0, 0, z0), xf * Vector3(x1, 0, z0), xf * Vector3(x1, 0, z1), xf * Vector3(x0, 0, z1)]
-			for m in 4:
-				var qv: Vector3 = q[m]
-				qv.y = _ground_y(qv, lift)
-				q[m] = qv
-			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, Vector2(x0, z0) * 0.5, Vector2(x1, z0) * 0.5, Vector2(x1, z1) * 0.5, Vector2(x0, z1) * 0.5)
+			_ground_quad(kind, q, lift, [Vector2(x0, z0) * 0.5, Vector2(x1, z0) * 0.5, Vector2(x1, z1) * 0.5, Vector2(x0, z1) * 0.5])
 			_ground_paints.append([(q[0] + q[2]) * 0.5, 2.0 if paint else 0.6, GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0)), not paint])
+			# the slab's rim
+			if iz == 0:
+				_ground_wall(kind, q[0], q[1], lift, -xf.basis.z.normalized())
+			if iz == nz - 1:
+				_ground_wall(kind, q[3], q[2], lift, xf.basis.z.normalized())
+			if ix == 0:
+				_ground_wall(kind, q[0], q[3], lift, -xf.basis.x.normalized())
+			if ix == nx - 1:
+				_ground_wall(kind, q[1], q[2], lift, xf.basis.x.normalized())
 
 
 ## A painted line on the ground along the frame's z axis.
 func add_ground_line(xf: Transform3D, length: float) -> void:
-	var st := _ground_st("line")
 	var n := maxi(int(length), 1)
 	for k in n:
 		var z0 := -length * 0.5 + length * k / n
 		var z1 := -length * 0.5 + length * (k + 1) / n
 		var q := [xf * Vector3(-0.06, 0, z0), xf * Vector3(0.06, 0, z0), xf * Vector3(0.06, 0, z1), xf * Vector3(-0.06, 0, z1)]
-		for m in 4:
-			var qv: Vector3 = q[m]
-			qv.y = _ground_y(qv, 0.05)
-			q[m] = qv
-		MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP)
+		_ground_quad("line", q, PAVE_LIFT + 0.015, [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 
 
 func _finish_ground() -> void:
+	# the ground is final now: lay the slabs on it
+	for kind in _ground_quads:
+		var st := _ground_st(kind)
+		for e in _ground_quads[kind]:
+			var q: Array = []
+			for m in 4:
+				var qv: Vector3 = e[m]
+				qv.y = _ground_y(qv, float(e[4]))
+				q.append(qv)
+			MeshKit.quad(st, q[0], q[1], q[2], q[3], Vector3.UP, e[5], e[6], e[7], e[8])
+	for kind in _ground_walls:
+		var st := _ground_st(kind)
+		for e in _ground_walls[kind]:
+			var a: Vector3 = e[0]
+			var b: Vector3 = e[1]
+			var lift: float = e[2]
+			var n := maxi(int(ceil(Vector2(b.x - a.x, b.z - a.z).length() / 1.5)), 1)
+			for j in n:
+				var p0 := a.lerp(b, float(j) / n)
+				var p1 := a.lerp(b, float(j + 1) / n)
+				var t0 := Vector3(p0.x, _ground_y(p0, lift), p0.z)
+				var t1 := Vector3(p1.x, _ground_y(p1, lift), p1.z)
+				var b0 := Vector3(p0.x, _ground_y(p0, -PAVE_DEPTH), p0.z)
+				var b1 := Vector3(p1.x, _ground_y(p1, -PAVE_DEPTH), p1.z)
+				var out: Vector3 = e[3]
+				MeshKit.quad(st, t0, b0, b1, t1, out, Vector2(0, 0), Vector2(0, 0.2), Vector2(0.5, 0.2), Vector2(0.5, 0))
+				MeshKit.quad(st, t1, b1, b0, t0, out, Vector2(0, 0), Vector2(0, 0.2), Vector2(0.5, 0.2), Vector2(0.5, 0))
+	_ground_quads.clear()
+	_ground_walls.clear()
 	for kind in _ground_sts:
 		var m := StandardMaterial3D.new()
 		match kind:

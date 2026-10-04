@@ -216,12 +216,12 @@ func _gas_station(xf = null) -> void:
 	_part(st, xf, Vector3(0, 4.75, 2.0), Vector3(16.2, 0.25, 9.2), red, false)
 	for px in [-6.5, 6.5]:
 		for pz in [-1.5, 5.5]:
-			_part(st, xf, Vector3(px, 2.4, pz), Vector3(0.35, 4.8, 0.35), white)
+			_part(st, xf, Vector3(px, 1.9, pz), Vector3(0.35, 5.8, 0.35), white)
 	for px in [-3.5, 0.0, 3.5]:
-		_part(st, xf, Vector3(px, 0.15, 2.0), Vector3(1.2, 0.3, 4.0), Color(0.5, 0.5, 0.48))                 # island
+		_part(st, xf, Vector3(px, -0.2, 2.0), Vector3(1.2, 1.0, 4.0), Color(0.5, 0.5, 0.48))                 # island
 		_part(st, xf, Vector3(px, 1.0, 2.0), Vector3(0.7, 1.6, 0.5), red)                                    # pump
 	# the price sign on a pole by the road
-	_part(st, xf, Vector3(9.5, 4.0, 8.0), Vector3(0.35, 8.0, 0.35), Color(0.4, 0.4, 0.4))
+	_part(st, xf, Vector3(9.5, 3.5, 7.6), Vector3(0.35, 9.0, 0.35), Color(0.4, 0.4, 0.4))      # (behind the sign, into the ground)
 	_part(st, xf, Vector3(9.5, 7.6, 8.0), Vector3(3.2, 2.2, 0.3), red, false)
 	_mesh(st, xf)
 	_label("GAS\n$ 3.99", xf * Transform3D(Basis.IDENTITY, Vector3(9.5, 7.6, 8.17)), 64, Color(1, 0.95, 0.8))
@@ -613,11 +613,16 @@ func _billboards() -> void:
 		var xf := Transform3D(Basis.looking_at(-face, Vector3.UP), p)
 		var st := MeshKit.new_st()
 		var bb: Array = BILLBOARDS[k]
+		# the posts reach down to the ground under each of them (it slopes), into it a little
 		for s in [-2.6, 2.6]:
-			_part(st, xf, Vector3(s, 3.0, -0.2), Vector3(0.3, 6.0, 0.3), Color(0.35, 0.28, 0.2))
+			var foot: Vector3 = xf * Vector3(s, 0, -0.2)
+			var gy: float = minf(terrain.height_at(foot.x, foot.z) - p.y, 0.0) - 0.6
+			_part(st, xf, Vector3(s, (gy + 4.8) * 0.5, -0.2), Vector3(0.3, 4.8 - gy, 0.3), Color(0.35, 0.28, 0.2))
 		_part(st, xf, Vector3(0, 6.6, 0), Vector3(8.0, 3.6, 0.25), bb[1], true)
 		_mesh(st, xf)
 		_label(str(bb[0]), xf * Transform3D(Basis.IDENTITY, Vector3(0, 6.6, 0.14)), 82, bb[2], Color(0, 0, 0, 0))
+		# printed on the back as well
+		_label(str(bb[0]), xf * Transform3D(Basis(Vector3.UP, PI), Vector3(0, 6.6, -0.14)), 82, bb[2], Color(0, 0, 0, 0))
 		_night_light(xf * Vector3(0, 9.0, 1.5), Color(1.0, 0.9, 0.7), 1.0, 9.0)
 		_count("billboards")
 

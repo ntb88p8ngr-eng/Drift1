@@ -66,7 +66,7 @@ const DEFS := {
 			Vector2(140, 180), Vector2(105, 210), Vector2(55, 195), Vector2(45, 150), Vector2(80, 110),
 			Vector2(80, 60), Vector2(45, 55), Vector2(10, 40)],
 		# (bundled in one corner of the map: the inner loops on the east side, short asphalt between)
-		"sand": [[27, 32], [33, 38], [39, 44]],
+		"sand": [[27, 44]],          # (one stretch: the short asphalt bits between used to show)
 		# rolling desert hills the road runs over: [big swell amplitude, small amplitude] (m)
 		"hills": [18.0, 4.0],
 		# the lake in the middle (ring road and buildings round it), a river in and out of it (the

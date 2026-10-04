@@ -35,6 +35,7 @@ var stats := {}
 ## Parked cars: [MultiMesh, index, Transform3D, custom, kind, static body, awake] by grid cell.
 var _cars := {}
 var _awake: Array = []          # the parked cars that became bodies (speed-capped)
+var _settle_frames := 0         # parked cars all become real bodies a few physics frames in
 
 
 func _ready() -> void:
@@ -91,6 +92,24 @@ func _wake_cars() -> void:
 						_wake(e)
 
 
+func _wake_all() -> void:
+	var t = world.get("terrain") if world else null
+	for list in _cars.values():
+		for e in list:
+			if bool(e[6]):
+				continue
+			if t != null:
+				var xf: Transform3D = e[2]
+				var o := xf.origin
+				o.y = maxf(o.y - 0.6, float(t.height_at(o.x, o.z))) + 0.03
+				xf.origin = o
+				e[2] = xf
+			_wake(e)
+			var b: RigidBody3D = _awake[_awake.size() - 1]
+			b.can_sleep = true
+	stats["cars_woken"] = int(stats.get("cars_woken", 0))
+
+
 func _wake(e: Array) -> void:
 	e[6] = true
 	var mm: MultiMesh = e[0]
@@ -135,6 +154,12 @@ func _physics_process(delta: float) -> void:
 	if world == null:
 		return
 	if not _cars.is_empty():
+		# every parked car is a real body from the start: it sits on the ground it is parked on (and
+		# rolls / tips like one), not where the lot was before the ground was shaped round it
+		if _settle_frames < 3:
+			_settle_frames += 1
+			if _settle_frames == 3:
+				_wake_all()
 		_wake_cars()
 	if _grid.is_empty():
 		return
