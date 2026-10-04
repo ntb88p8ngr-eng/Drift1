@@ -709,13 +709,14 @@ func _traffic_setup() -> void:
 			# a headlight beam that lights the wet road in front of it
 			var spot := SpotLight3D.new()
 			spot.light_color = Color(1.0, 0.95, 0.85)
-			spot.light_energy = 7.0
-			spot.spot_range = 32.0
-			spot.spot_angle = 28.0
+			spot.light_energy = 12.0
+			spot.spot_range = 40.0
+			spot.spot_angle = 34.0
 			spot.spot_attenuation = 0.6
 			spot.shadow_enabled = false
 			add_child(spot)
 			c["spot"] = spot
+			c["beam"] = _beam_node()
 			var tail := OmniLight3D.new()
 			tail.light_color = Color(1.0, 0.1, 0.05)
 			tail.light_energy = 0.8
@@ -724,6 +725,75 @@ func _traffic_setup() -> void:
 			c["tail"] = tail
 			_tcars.append(c)
 			x += _trng.randf_range(45.0, 110.0)
+
+
+## The light of a car's headlamps you can see in the wet air: two cones fading out ahead, a glow on
+## each lamp. -Z of the node points the way the car drives.
+var _beam_mat: ShaderMaterial
+var _flare_mat: StandardMaterial3D
+
+
+func _beam_node() -> Node3D:
+	if _beam_mat == null:
+		var sh := Shader.new()
+		sh.code = """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+varying float along;
+void vertex() { along = UV.y; }
+void fragment() {
+	// bright at the lamp (narrow end), gone after a few metres; softer towards the cone's edge
+	float f = pow(1.0 - along, 2.2);
+	float edge = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	ALBEDO = vec3(1.0, 0.93, 0.8) * f * 0.16 * smoothstep(0.0, 0.6, edge);
+}
+"""
+		_beam_mat = ShaderMaterial.new()
+		_beam_mat.shader = sh
+		var grad := Gradient.new()
+		grad.set_color(0, Color(1, 0.95, 0.85, 1))
+		grad.set_color(1, Color(1, 0.95, 0.85, 0))
+		var gt := GradientTexture2D.new()
+		gt.gradient = grad
+		gt.fill = GradientTexture2D.FILL_RADIAL
+		gt.fill_from = Vector2(0.5, 0.5)
+		gt.fill_to = Vector2(1.0, 0.5)
+		gt.width = 64
+		gt.height = 64
+		_flare_mat = StandardMaterial3D.new()
+		_flare_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_flare_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_flare_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_flare_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		_flare_mat.albedo_texture = gt
+		_flare_mat.albedo_color = Color(1.0, 0.95, 0.85, 0.9)
+	var root := Node3D.new()
+	add_child(root)
+	for sx in [-0.62, 0.62]:
+		var cone := CylinderMesh.new()
+		cone.top_radius = 0.09
+		cone.bottom_radius = 1.9
+		cone.height = 11.0
+		cone.radial_segments = 16
+		cone.rings = 1
+		cone.cap_top = false
+		cone.cap_bottom = false
+		var mi := MeshInstance3D.new()
+		mi.mesh = cone
+		mi.material_override = _beam_mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# the cylinder's top (narrow) at the lamp, its length forwards and a little down
+		mi.transform = Transform3D(Basis(Vector3.RIGHT, -PI * 0.5 + 0.07), Vector3(sx, 0.0, 0.0)) * Transform3D(Basis.IDENTITY, Vector3(0, -5.5, 0))
+		root.add_child(mi)
+		var q := QuadMesh.new()
+		q.size = Vector2(0.9, 0.9)
+		var fl := MeshInstance3D.new()
+		fl.mesh = q
+		fl.material_override = _flare_mat
+		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fl.position = Vector3(sx, 0.0, -0.05)
+		root.add_child(fl)
+	return root
 
 
 ## A fresh car for the loop: another model, another paint, its own pace.
@@ -745,6 +815,7 @@ func _traffic_step(delta: float) -> void:
 		for c in _tcars:
 			(c["spot"] as Node3D).visible = false
 			(c["tail"] as Node3D).visible = false
+			(c["beam"] as Node3D).visible = false
 		return
 	for c in _tcars:
 		var lane: float = c["lane"]
@@ -779,6 +850,9 @@ func _traffic_step(delta: float) -> void:
 		(c["tail"] as Node3D).visible = true
 		spot.global_transform = Transform3D(Basis.looking_at(fwd + Vector3(0, -0.12, 0), Vector3.UP), xf.origin + fwd * (half + 0.1) + Vector3(0, 0.7, 0))
 		(c["tail"] as OmniLight3D).global_position = xf.origin - fwd * (half + 0.4) + Vector3(0, 0.7, 0)
+		var beam: Node3D = c["beam"]
+		beam.visible = true
+		beam.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), xf.origin + fwd * (half - 0.05) + Vector3(0, 0.66, 0))
 
 
 func _process(delta: float) -> void:
