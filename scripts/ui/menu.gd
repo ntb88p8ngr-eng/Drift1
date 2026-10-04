@@ -112,12 +112,12 @@ func _ready() -> void:
 	_build_platform_bar()
 	# quitting: a round power button, always in the bottom left corner of the main screen
 	_quit_btn = Button.new()
-	_quit_btn.custom_minimum_size = Vector2(76, 76)
+	_quit_btn.custom_minimum_size = Vector2(230, 76)
 	_quit_btn.tooltip_text = "Beenden"
 	_quit_btn.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_quit_btn.offset_left = 40
 	_quit_btn.offset_top = -112
-	_quit_btn.offset_right = 116
+	_quit_btn.offset_right = 270
 	_quit_btn.offset_bottom = -36
 	for k in ["normal", "hover", "pressed", "focus"]:
 		var sb := StyleBoxFlat.new()
@@ -134,6 +134,10 @@ func _ready() -> void:
 	qi.size = Vector2(46, 46)
 	qi.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_quit_btn.add_child(qi)
+	var ql := UiKit.label("Beenden", 26, UiKit.TEXT)
+	ql.position = Vector2(80, 20)
+	ql.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quit_btn.add_child(ql)
 	_quit_btn.pressed.connect(func(): get_tree().quit())
 	_root.add_child(_quit_btn)
 	_player_info = VBoxContainer.new()
