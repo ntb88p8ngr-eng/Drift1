@@ -342,12 +342,14 @@ class MenuIcon extends Control:
 					st.append(m + Vector2(cos(t), sin(t)) * (19.0 if k % 2 == 0 else 8.0))
 				draw_polyline(st, c, w)
 				draw_circle(m, 3, a)
-			"booth":       # a spray can with its mist
-				draw_rect(Rect2(12, 16, 16, 26), c, false, w)
-				draw_rect(Rect2(15, 10, 10, 6), c)
-				draw_line(Vector2(25, 12), Vector2(30, 12), c, 2.5)
-				for k in 6:
-					draw_circle(Vector2(34 + (k % 3) * 4, 6 + (k / 3) * 5 + (k % 3)), 1.8, a)
+			"booth":       # a paint brush with a fresh stroke of paint
+				var stroke := PackedVector2Array([Vector2(4, 42), Vector2(10, 33), Vector2(19, 30), Vector2(24, 35), Vector2(18, 41), Vector2(9, 44)])
+				draw_colored_polygon(stroke, a)
+				# bristles, ferrule, handle (diagonal up to the right)
+				draw_colored_polygon(PackedVector2Array([Vector2(14, 34), Vector2(22, 26), Vector2(28, 32), Vector2(20, 40)]), c)
+				draw_colored_polygon(PackedVector2Array([Vector2(22, 26), Vector2(26, 22), Vector2(32, 28), Vector2(28, 32)]), Color(c, 0.6))
+				draw_line(Vector2(29, 25), Vector2(42, 12), c, 5.0)
+				draw_circle(Vector2(42, 12), 2.5, c)
 			"quit":        # power
 				draw_arc(m, 17, -PI * 0.3, PI * 1.3, 32, c, w)
 				draw_line(m + Vector2(0, -21), m + Vector2(0, -4), a, w)
