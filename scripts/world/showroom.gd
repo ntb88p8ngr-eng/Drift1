@@ -321,9 +321,12 @@ func _booth_setup(g: Node3D) -> void:
 			var box := _tree_aabb(n as Node3D)
 			# the hinge: the edge away from the opening's middle (z = -4.15), at the frame
 			var hz := box.position.z if box.get_center().z < -4.15 else box.end.z
-			var sign_ := -1.0 if box.get_center().z < -4.15 else 1.0
-			# (the left leaf stops before the drawer cabinet beside it)
-			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_, 0.9 if sign_ < 0.0 else deg_to_rad(100.0)])
+			# the near leaf swings out into the hall (the compressor is out of its way); the far one swings
+			# into the booth – out in the hall the drawer cabinet stands right in its path – into the
+			# room the widened booth has on that side
+			var far := box.get_center().z < -4.15
+			var sign_ := 1.0
+			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_, deg_to_rad(92.0) if far else deg_to_rad(100.0)])
 	_widen_booth(g)
 	# (the portable worklight panels in the booth stood in front of its camera: the neon tubes light it)
 	for n in g.find_children("Booth_worklight*", "Node3D", false, false) + g.find_children("Booth_worklight*", "Node3D", true, false):
