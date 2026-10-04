@@ -985,4 +985,7 @@ const EN := {
 	"Regen und Donner im Hauptmenü (ganz links = aus).": "Rain and thunder in the main menu (far left = off).",
 	"Hauptmenü-Geräusche": "Main-menu sounds",
 	"Sticker – Zahlen, Embleme, Streifen, Schriften (in der gewählten Farbe)": "Stickers – numbers, emblems, stripes, lettering (in the colour picked)",
+	"Sticker-Design": "Sticker design",
+	"Neu": "New",
+	"Name": "Name",
 }

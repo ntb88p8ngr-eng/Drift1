@@ -1101,6 +1101,14 @@ func _build_garage() -> void:
 		Game.set_rims(str(Game.settings["car"]), r2)
 		main.refresh_showroom(true)
 		_show_wheels(), 280), rim_col])))
+	# the saved sticker designs of this car (made in the paint booth): which one is on it
+	var dsg: Dictionary = Game.livery_designs(str(Game.settings["car"]))
+	var dnames: Array = []
+	for e in dsg["list"]:
+		dnames.append(str(e["name"]))
+	_add(UiKit.labeled("Sticker-Design", UiKit.option(dnames, int(dsg["active"]), func(i):
+		Game.select_design(str(Game.settings["car"]), i)
+		main.refresh_showroom(true), 280)))
 	_add(UiKit.labeled("Getriebe", UiKit.option(["Automatik (Standard)", "Manuell (E/Q schalten)"], 0 if Game.settings["transmission"] == "auto" else 1, func(i):
 		Game.set_setting("transmission", "auto" if i == 0 else "manual"))))
 	_car_desc = UiKit.label("", 16, UiKit.TEXT_DIM)

@@ -810,15 +810,63 @@ func get_paint(paint_id: String, custom_html: String = "", finish: String = "glo
 
 ## Rims per car: {style: car_body.gd RIM_STYLES index (0 = the car's own), color: RIM_COLORS index}
 ## The car's stickers (livery.gd layers).
+## Sticker designs: several per car, one of them on the car ("livery_designs": {car: {"active",
+## "list": [{"name", "layers"}]}}). An older single livery becomes "Design 1".
+func livery_designs(car_id: String) -> Dictionary:
+	if not (settings.get("livery_designs") is Dictionary):
+		settings["livery_designs"] = {}
+	var all: Dictionary = settings["livery_designs"]
+	if not all.has(car_id):
+		var old: Array = (settings.get("liveries", {}) as Dictionary).get(car_id, [])
+		all[car_id] = {"active": 0, "list": [{"name": "Design 1", "layers": old.duplicate(true)}]}
+	var d: Dictionary = all[car_id]
+	if (d.get("list", []) as Array).is_empty():
+		d["list"] = [{"name": "Design 1", "layers": []}]
+	d["active"] = clampi(int(d.get("active", 0)), 0, (d["list"] as Array).size() - 1)
+	return d
+
+
 func get_livery(car_id: String) -> Array:
-	var all: Dictionary = settings.get("liveries", {})
-	return (all.get(car_id, []) as Array).duplicate(true)
+	var d := livery_designs(car_id)
+	return ((d["list"] as Array)[int(d["active"])]["layers"] as Array).duplicate(true)
 
 
 func set_livery(car_id: String, layers: Array) -> void:
-	if not (settings.get("liveries") is Dictionary):
-		settings["liveries"] = {}
-	settings["liveries"][car_id] = layers.duplicate(true)
+	var d := livery_designs(car_id)
+	(d["list"] as Array)[int(d["active"])]["layers"] = layers.duplicate(true)
+	save_settings()
+
+
+func select_design(car_id: String, i: int) -> void:
+	var d := livery_designs(car_id)
+	d["active"] = clampi(i, 0, (d["list"] as Array).size() - 1)
+	save_settings()
+
+
+## A new design (empty, or a copy of the given layers) – it becomes the active one; its index.
+func add_design(car_id: String, design_name: String, layers: Array = []) -> int:
+	var d := livery_designs(car_id)
+	(d["list"] as Array).append({"name": design_name, "layers": layers.duplicate(true)})
+	d["active"] = (d["list"] as Array).size() - 1
+	save_settings()
+	return int(d["active"])
+
+
+func rename_design(car_id: String, i: int, design_name: String) -> void:
+	var d := livery_designs(car_id)
+	if i >= 0 and i < (d["list"] as Array).size() and design_name.strip_edges() != "":
+		(d["list"] as Array)[i]["name"] = design_name.strip_edges()
+		save_settings()
+
+
+func delete_design(car_id: String, i: int) -> void:
+	var d := livery_designs(car_id)
+	var l: Array = d["list"]
+	if i >= 0 and i < l.size():
+		l.remove_at(i)
+	if l.is_empty():
+		l.append({"name": "Design 1", "layers": []})
+	d["active"] = clampi(int(d["active"]) - (1 if int(d["active"]) >= i and int(d["active"]) > 0 else 0), 0, l.size() - 1)
 	save_settings()
 
 

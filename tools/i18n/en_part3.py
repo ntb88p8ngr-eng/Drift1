@@ -382,3 +382,4 @@ EN.update({"Einfarbig – in der gewählten Farbe": "One colour – in the colou
 EN.update({"Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom": "Click the car: place / drag a sticker · drag a corner: scale (Shift: keep proportions) · right mouse button: turn the camera · wheel: zoom"})
 EN.update({"Regen und Donner im Hauptmenü (ganz links = aus).": "Rain and thunder in the main menu (far left = off).", "Hauptmenü-Geräusche": "Main-menu sounds"})
 EN.update({"Sticker – Zahlen, Embleme, Streifen, Schriften (in der gewählten Farbe)": "Stickers – numbers, emblems, stripes, lettering (in the colour picked)"})
+EN.update({"Sticker-Design": "Sticker design", "Neu": "New", "Name": "Name"})

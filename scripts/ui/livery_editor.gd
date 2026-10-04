@@ -43,6 +43,8 @@ var _cursor: Control
 var _handles: Control      # the selected sticker's outline with a handle on each corner
 var _corners: Array = []   # their screen points (empty: none shown)
 var _corner_drag := -1
+var _designs: OptionButton
+var _design_name: LineEdit
 
 
 func _ready() -> void:
@@ -68,6 +70,23 @@ func _ready() -> void:
 	v.add_theme_constant_override("separation", 8)
 	_panel.add_child(v)
 	v.add_child(UiKit.title("LACK & STICKER", 34))
+	# the saved designs of this car: pick one to work on (it goes on the car), new, copy, rename, delete
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 6)
+	_designs = OptionButton.new()
+	_designs.custom_minimum_size = Vector2(150, 40)
+	_designs.item_selected.connect(_pick_design)
+	drow.add_child(_designs)
+	_design_name = LineEdit.new()
+	_design_name.custom_minimum_size = Vector2(130, 40)
+	_design_name.placeholder_text = "Name"
+	_design_name.text_submitted.connect(func(_t): _rename_design())
+	_design_name.focus_exited.connect(_rename_design)
+	drow.add_child(_design_name)
+	drow.add_child(UiKit.button("Neu", func(): _new_design(false), 64))
+	drow.add_child(UiKit.button("Kopie", func(): _new_design(true), 74))
+	drow.add_child(UiKit.button("Löschen", _delete_design, 90))
+	v.add_child(drow)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 8)
 	v.add_child(tabs)
@@ -93,6 +112,7 @@ func _ready() -> void:
 	gen.done.connect(_fill_shapes)
 	gen.ensure_all()
 	_refresh_list()
+	_refresh_designs()
 	_apply()
 	# the gamepad's cursor while placing: a ring with a cross
 	_cursor = Control.new()
@@ -387,6 +407,56 @@ func _sync_props() -> void:
 func _apply() -> void:
 	if sr and sr.car and is_instance_valid(sr.car):
 		Livery.apply(sr.car.body, layers)
+
+
+# --- designs --------------------------------------------------------------------------------------
+func _car_id() -> String:
+	return str(Game.settings["car"])
+
+
+func _refresh_designs() -> void:
+	var d: Dictionary = Game.livery_designs(_car_id())
+	_designs.clear()
+	for e in d["list"]:
+		_designs.add_item(str(e["name"]))
+	_designs.select(int(d["active"]))
+	_design_name.text = str((d["list"] as Array)[int(d["active"])]["name"])
+
+
+## Another design onto the car (the one being worked on is kept first).
+func _pick_design(i: int) -> void:
+	save()
+	Game.select_design(_car_id(), i)
+	layers = Game.get_livery(_car_id())
+	sel = layers.size() - 1
+	_refresh_list()
+	_refresh_designs()
+	_apply()
+
+
+func _new_design(copy: bool) -> void:
+	save()
+	var n: int = (Game.livery_designs(_car_id())["list"] as Array).size() + 1
+	Game.add_design(_car_id(), ("Kopie von %s" % _design_name.text) if copy else ("Design %d" % n), layers if copy else [])
+	layers = Game.get_livery(_car_id())
+	sel = layers.size() - 1
+	_refresh_list()
+	_refresh_designs()
+	_apply()
+
+
+func _rename_design() -> void:
+	Game.rename_design(_car_id(), _designs.selected, _design_name.text)
+	_refresh_designs()
+
+
+func _delete_design() -> void:
+	Game.delete_design(_car_id(), _designs.selected)
+	layers = Game.get_livery(_car_id())
+	sel = layers.size() - 1
+	_refresh_list()
+	_refresh_designs()
+	_apply()
 
 
 func save() -> void:
