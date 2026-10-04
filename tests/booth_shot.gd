@@ -51,6 +51,25 @@ func _ready() -> void:
 	for f in 20:
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(out)
+	if ed:
+		# the placing preview: a star half see-through under a point on the car
+		var vs := get_viewport().get_visible_rect().size
+		var spot := Vector2.ZERO
+		for k in 400:
+			var q := Vector2(vs.x * (0.5 + 0.4 * randf()), vs.y * (0.3 + 0.6 * randf()))
+			var r = sr.booth_ray(q)
+			if r != null and Livery.pick_surface(sr.car.body, r[0], r[1]) != null:
+				spot = q
+				break
+		ed._start_placing("star")
+		ed._place_size = 0.8
+		ed._preview(spot)
+		print("GHOST at ", spot, " -> ", ed._ghost(spot))
+		for f in 6:
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png(out.replace(".png", "_ghost.png"))
+		ed._stamp(spot, false)
+		print("STAMPED layers: ", ed.layers.size())
 	print("CAM ", sr.cam.global_position, " car ", sr.car.global_position)
 	if ed:
 		ed.visible = false
