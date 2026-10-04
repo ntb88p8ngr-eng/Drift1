@@ -83,7 +83,7 @@ const FAR_GROUND := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_disabled;
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform float edge_z = -30.0;     // where the asphalt ends (the ground fades in beyond it)
+uniform float edge_z = -30.0;     // where the street ends (the far ground fades in beyond it)
 uniform float fade = 9.0;
 varying vec3 wpos;
 void vertex() {
@@ -93,11 +93,12 @@ void fragment() {
 	float n1 = texture(noise_tex, wpos.xz * 0.05).r;
 	float n2 = texture(noise_tex, wpos.xz * 0.43).r;
 	float d = edge_z - wpos.z;
-	// wet, dark verge: a little moss-grey, puddles that shine
-	vec3 grass = mix(vec3(0.055, 0.06, 0.05), vec3(0.08, 0.085, 0.065), smoothstep(0.3, 0.7, n1)) * (0.8 + 0.4 * n2);
-	ALBEDO = grass;
-	ROUGHNESS = mix(0.35, 0.85, smoothstep(0.35, 0.6, n1));
-	SPECULAR = 0.5;
+	// black asphalt on out to the trees (only a faint sheen: a shiny wet surface mirrored the pale sky
+	// and turned it grey)
+	vec3 asphalt = vec3(0.035, 0.035, 0.038) * (0.8 + 0.4 * n2) * (0.9 + 0.2 * n1);
+	ALBEDO = asphalt;
+	ROUGHNESS = mix(0.6, 0.9, smoothstep(0.35, 0.6, n1));
+	SPECULAR = 0.25;
 	// a ragged edge that fades in over a few metres
 	ALPHA = smoothstep(0.0, fade, d + (n2 - 0.5) * 3.0 + (n1 - 0.5) * 4.0);
 }
