@@ -127,7 +127,7 @@ func _show_page(p: int, animate: bool) -> void:
 		sb.bg_color = UiKit.ACCENT if i == p else Color(1, 1, 1, 0.22)
 		for st in ["normal", "hover", "pressed", "focus"]:
 			d.add_theme_stylebox_override(st, sb)
-	_title.text = ("%s   ·   %d / %d" % [str(_names[p]), p + 1, _pages.size()]) if p < _names.size() else ""
+	_title.text = ""          # (no page name – the dots show the page)
 
 
 ## Left / right off the edge of a page's grid leads onto the next page.
