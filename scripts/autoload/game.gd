@@ -213,6 +213,7 @@ var settings := {
 	"custom_map": "",     # world editor map to race on (user://maps/*.dmap), "" = the original track
 	"party_games": 3,
 	"party_coins": 5,
+	"party_coins_city": false,      # Neo Tokyo: coins spread over the whole city (not just the route)
 	"time_of_day": "dusk",
 	"master_volume": 0.8,
 	"audio_output": "Default",

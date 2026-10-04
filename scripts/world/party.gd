@@ -43,6 +43,8 @@ var sites: PartySites
 var games_total := 3
 var games_played := 0
 var coin_count := 5
+## Neo Tokyo: coins on all the city's streets (setting), otherwise only on the race route
+var spread_city := false
 var seed_base := 0
 
 var state := "idle"          # idle, announce, travel, play, wait, results, back
@@ -102,6 +104,7 @@ func setup(p_world: Node3D, p_sites: PartySites, cfg: Dictionary) -> void:
 	sites = p_sites
 	games_total = clampi(int(cfg.get("party_games", 3)), 1, 20)
 	coin_count = clampi(int(cfg.get("party_coins", 5)), 1, 20)
+	spread_city = bool(cfg.get("party_coins_city", false))
 	seed_base = int(cfg.get("weather_seed", 1)) * 7919 + 17
 
 
@@ -187,6 +190,19 @@ func _place_coin(i: int) -> void:
 	r.seed = hash([seed_base, i, int(c["gen"])])
 	var tr = world.track
 	var n: int = tr.sample_count()
+	var net = _city_net()
+	if net != null and not net.streets.is_empty() and r.randf() < 0.75:
+		# out in the city: somewhere along a random street (the same street net on every machine)
+		var s: Dictionary = net.streets[r.randi() % net.streets.size()]
+		var pts: PackedVector2Array = s["pts"]
+		if pts.size() >= 2:
+			var j := r.randi() % (pts.size() - 1)
+			var q := pts[j].lerp(pts[j + 1], r.randf())
+			var t := (pts[j + 1] - pts[j]).normalized()
+			q += Vector2(-t.y, t.x) * r.randf_range(-0.25, 0.25) * float(s["w"])
+			(c["node"] as Node3D).global_position = Vector3(q.x, 1.3, q.y)
+			(c["node"] as Node3D).visible = bool(c["active"])
+			return
 	# spread the coins around the lap, away from the start line
 	var base := (float(i) + r.randf_range(0.15, 0.85)) / float(coin_count)
 	var idx := int(base * n) % n
@@ -194,6 +210,16 @@ func _place_coin(i: int) -> void:
 	var xf: Transform3D = tr.transform_at(idx, lat, 1.3)
 	(c["node"] as Node3D).global_position = xf.origin
 	(c["node"] as Node3D).visible = bool(c["active"])
+
+
+## The city's street net when the coins may go all over Neo Tokyo, else null.
+func _city_net():
+	if not spread_city or not Game.is_city(str(world.track.track_id)):
+		return null
+	var sc = world.get("scenery")
+	if sc == null or sc.city == null:
+		return null
+	return sc.city.net
 
 
 ## The HUD's mission compass points at the nearest coin while one can be taken.

@@ -80,6 +80,7 @@ static func offline_config() -> Dictionary:
 		"party": bool(Game.settings.get("party", false)),
 		"party_games": int(Game.settings.get("party_games", 3)),
 		"party_coins": int(Game.settings.get("party_coins", 5)),
+		"party_coins_city": bool(Game.settings.get("party_coins_city", false)),
 		"time_of_day": Game.settings["time_of_day"],
 		"weather": Game.settings["weather"],
 		"day_cycle": int(Game.settings["day_cycle"]),

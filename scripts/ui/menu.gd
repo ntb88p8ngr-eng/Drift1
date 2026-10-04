@@ -1734,6 +1734,10 @@ func _party_rows(src: Dictionary, set_fn: Callable) -> VBoxContainer:
 	details.add_child(UiKit.labeled("Münzen", UiKit.row([UiKit.slider(1, 15, 1, float(src.get("party_coins", 5)), func(v):
 		c_label.text = str(int(v))
 		set_fn.call("party_coins", int(v)), 220), c_label])))
+	var spread := UiKit.option(["Nur auf der Strecke", "In der ganzen Stadt"], 1 if bool(src.get("party_coins_city", false)) else 0, func(i):
+		set_fn.call("party_coins_city", i == 1))
+	spread.tooltip_text = "Neo Tokyo: Münzen nur auf der Rennstrecke (Standard) oder über alle Straßen der Stadt verteilt."
+	details.add_child(UiKit.labeled("Münzen (Neo Tokyo)", spread))
 	box.add_child(details)
 	return box
 
