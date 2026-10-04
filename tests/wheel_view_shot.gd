@@ -1,7 +1,7 @@
 extends Node
 ## One shot of a main menu view (default the rim view, "wheels"), with the menu drawn over it;
 ## --shutter rolls the shutter down first.
-## Run: godot --path . res://tests/wheel_view_shot.tscn -- --out=/tmp/wheel.png [--view=overview] [--shutter] [--car=m3e46] [--open] [--cam=x,y,z,lx,ly,lz]
+## Run: godot --path . res://tests/wheel_view_shot.tscn -- --out=/tmp/wheel.png [--view=overview] [--shutter] [--car=m3e46] [--open] [--cam=x,y,z,lx,ly,lz] [--flash] [--hide=pattern]
 
 const Main = preload("res://scripts/main.gd")
 
@@ -14,6 +14,7 @@ func _ready() -> void:
 	var open_up := false
 	var cam_at: Array = []
 	var hide_name := ""
+	var flash := false
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out = a.substr(6)
@@ -23,6 +24,8 @@ func _ready() -> void:
 			shutter = true
 		if a == "--open":
 			open_up = true
+		if a == "--flash":
+			flash = true
 		if a.begins_with("--hide="):
 			hide_name = a.substr(7)
 		if a.begins_with("--cam="):
@@ -57,6 +60,15 @@ func _ready() -> void:
 		sr.cam.global_position = Vector3(cam_at[0], cam_at[1], cam_at[2])
 		sr.cam.look_at(Vector3(cam_at[3], cam_at[4], cam_at[5]), Vector3.UP)
 		for f in 4:
+			await get_tree().process_frame
+	if flash:
+		# a lightning strike, caught at its brightest
+		var storm = main.find_child("Storm", true, false)
+		if storm:
+			storm.set_process(false)
+			storm._strike()
+			storm._process(0.001)
+			await get_tree().process_frame
 			await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()

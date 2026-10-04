@@ -213,6 +213,9 @@ var _pano_energy := 1.0
 var _rain_player: AudioStreamPlayer
 var _thunder_at := -1.0
 var _thunder_near := false
+## heavy: the flash comes in as a window: a spot from behind the camera (the hall's open front)
+## with a window-pane shape, throwing the car's shadow into the room
+var _window: SpotLight3D
 
 
 ## hall: floor rectangle of the garage (x/z) – rain falls only outside of it.
@@ -256,10 +259,23 @@ func setup_heavy(env: Environment, hall: Rect2, roofs: Array = []) -> void:
 	light = DirectionalLight3D.new()
 	light.light_color = Color(0.72, 0.78, 1.0)
 	light.light_energy = 0.0
-	light.shadow_enabled = true
-	light.directional_shadow_max_distance = 60.0
+	light.shadow_enabled = false
 	light.visible = false
 	add_child(light)
+	_window = SpotLight3D.new()
+	_window.name = "LightningWindow"
+	_window.light_color = Color(0.74, 0.8, 1.0)
+	_window.light_energy = 0.0
+	_window.spot_range = 70.0
+	_window.spot_angle = 17.0
+	_window.spot_attenuation = 0.4
+	_window.shadow_enabled = true
+	_window.light_projector = _window_texture()
+	_window.visible = false
+	add_child(_window)
+	# high behind the camera, out in front of the open hall, looking in and down
+	var from := Vector3(hall.get_center().x + 3.0, 9.0, hall.end.y + 22.0)
+	_window.global_transform = Transform3D(Basis.looking_at(Vector3(hall.get_center().x, 0.3, hall.get_center().y - 1.0) - from, Vector3.UP), from)
 	_build_rain(hall, 2.6, 30.0)
 	_build_splashes(hall)
 	_rain_player = AudioStreamPlayer.new()
@@ -479,6 +495,21 @@ func _build_rain(hall: Rect2, density := 1.0, reach := 14.0) -> void:
 		add_child(p)
 
 
+## The window the lightning shines through: four panes in a frame, soft at the edges.
+static func _window_texture() -> ImageTexture:
+	var n := 256
+	var img := Image.create(n, n, false, Image.FORMAT_L8)
+	for y in n:
+		for x in n:
+			var u := float(x) / (n - 1)
+			var v := float(y) / (n - 1)
+			var inside := smoothstep(0.04, 0.1, u) * smoothstep(0.96, 0.9, u) * smoothstep(0.04, 0.1, v) * smoothstep(0.96, 0.9, v)
+			# the cross bars (glazing bars) between the panes
+			var bar := maxf(1.0 - smoothstep(0.018, 0.03, absf(u - 0.5)), 1.0 - smoothstep(0.018, 0.03, absf(v - 0.5)))
+			img.set_pixel(x, y, Color(inside * (1.0 - bar), 0, 0))
+	return ImageTexture.create_from_image(img)
+
+
 func _strike() -> void:
 	var az := randf() * TAU
 	var el := randf_range(0.18, 0.5)
@@ -522,7 +553,14 @@ func _process(delta: float) -> void:
 		sky_mat.set_shader_parameter("bolt", b)
 	if _pano:
 		_pano.set_shader_parameter("energy", _pano_energy * (1.0 + f * 3.5))
-	light.visible = f > 0.01
-	light.light_energy = f * 2.2
+	if _window:
+		# the room lights up only in the window's shape (a faint fill elsewhere)
+		_window.visible = f > 0.01
+		_window.light_energy = f * 16.0
+		light.visible = f > 0.01
+		light.light_energy = f * 0.25
+	else:
+		light.visible = f > 0.01
+		light.light_energy = f * 2.2
 	for m in _rain_mats:
 		(m as StandardMaterial3D).albedo_color = Color(0.6 + f * 0.4, 0.65 + f * 0.35, 0.75 + f * 0.25, _rain_alpha + f * 0.35)
