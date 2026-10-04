@@ -102,7 +102,7 @@ func _ready() -> void:
 		_pages.append(p)
 	tabs.add_child(UiKit.button("Lack", func(): _show_page(0), 160))
 	tabs.add_child(UiKit.button("Sticker", func(): _show_page(1), 160))
-	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Q / E: drehen (Shift: fein) · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
+	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Q / E: drehen (Shift: fein) · Strg+Z / Y: zurück / vor · Strg+C / V: kopieren / einfügen · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_hint)
 	_show_page(1)
@@ -243,6 +243,15 @@ func _sticker_page() -> VBoxContainer:
 	v.add_child(UiKit.label("Ebenen (oben = zuletzt aufgeklebt)", 20, UiKit.GOLD))
 	var btns := HBoxContainer.new()
 	btns.add_theme_constant_override("separation", 6)
+	# back / forward through the changes (Strg+Z / Strg+Y)
+	var undo := UiKit.button("↶", _undo, 48)
+	undo.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	undo.tooltip_text = "Zurück: letzte Änderung zurücknehmen (Strg+Z)"
+	btns.add_child(undo)
+	var redo := UiKit.button("↷", _redo_step, 48)
+	redo.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	redo.tooltip_text = "Vor: zurückgenommene Änderung wiederholen (Strg+Y)"
+	btns.add_child(redo)
 	btns.add_child(UiKit.button("+ Sticker", _add_layer, 120))
 	btns.add_child(UiKit.button("Kopie", _dup_layer, 80))
 	btns.add_child(UiKit.button("▲", func(): _move(1), 44))
@@ -487,8 +496,85 @@ func _sync_props() -> void:
 
 
 func _apply() -> void:
+	_remember_state()
 	if sr and sr.car and is_instance_valid(sr.car):
 		Livery.apply(sr.car.body, layers)
+
+
+# --- undo / copy & paste --------------------------------------------------------------------------
+var _hist: Array = []          # earlier states of the layers (newest last)
+var _redo: Array = []
+var _last_state = null         # the layers as they were after the last change
+var _last_key := ""            # car + design the history belongs to
+var _last_t := 0.0
+var _last_sel := -1
+var _clip = null               # the copied sticker (Strg+C)
+
+
+## Every change goes on the history (a slider drag counts as one change: steps within 0.6 s of
+## each other on the same sticker are one).
+func _remember_state() -> void:
+	var key := "%s/%d" % [_car_id(), int(Game.livery_designs(_car_id())["active"])]
+	if key != _last_key:
+		_last_key = key
+		_hist.clear()
+		_redo.clear()
+		_last_state = layers.duplicate(true)
+		return
+	if _last_state != null and layers == _last_state:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if not (now - _last_t < 0.6 and sel == _last_sel and _last_state != null and (_last_state as Array).size() == layers.size()) or _hist.is_empty():
+		_hist.append(_last_state)
+		if _hist.size() > 80:
+			_hist.pop_front()
+	_redo.clear()
+	_last_t = now
+	_last_sel = sel
+	_last_state = layers.duplicate(true)
+
+
+func _restore(state: Array) -> void:
+	layers = state.duplicate(true)
+	_last_state = layers.duplicate(true)
+	_last_t = 0.0
+	sel = mini(sel, layers.size() - 1)
+	if sel < 0 and layers.size() > 0:
+		sel = layers.size() - 1
+	_refresh_list()
+	if sr and sr.car and is_instance_valid(sr.car):
+		Livery.apply(sr.car.body, layers)
+
+
+func _undo() -> void:
+	if _hist.is_empty():
+		return
+	_redo.append(layers.duplicate(true))
+	_restore(_hist.pop_back())
+
+
+func _redo_step() -> void:
+	if _redo.is_empty():
+		return
+	_hist.append(layers.duplicate(true))
+	_restore(_redo.pop_back())
+
+
+func _copy() -> void:
+	if sel >= 0:
+		_clip = (layers[sel] as Dictionary).duplicate(true)
+
+
+## The copied sticker as a new layer on top, a little further along (so it does not hide the first).
+func _paste() -> void:
+	if _clip == null:
+		return
+	var l: Dictionary = (_clip as Dictionary).duplicate(true)
+	l["p"] = clampf(float(l.get("p", 0.0)) + 0.1, -1.0, 1.0)
+	_clip = l.duplicate(true)       # pasting again: the next one further on
+	layers.append(l)
+	sel = layers.size() - 1
+	_changed(true)
 
 
 # --- designs --------------------------------------------------------------------------------------
@@ -621,6 +707,23 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or sr == null:
 		return
+	# Strg+Z / Strg+Y: undo / redo, Strg+C / Strg+V: copy / paste the selected sticker
+	if event is InputEventKey and event.pressed and not event.is_echo() and (event as InputEventKey).is_command_or_control_pressed():
+		var key := (event as InputEventKey).keycode
+		var done := true
+		if key == KEY_Z and (event as InputEventKey).shift_pressed or key == KEY_Y:
+			_redo_step()
+		elif key == KEY_Z:
+			_undo()
+		elif key == KEY_C:
+			_copy()
+		elif key == KEY_V:
+			_paste()
+		else:
+			done = false
+		if done:
+			get_viewport().set_input_as_handled()
+			return
 	if _placing != "":
 		if event is InputEventMouseMotion:
 			_preview((event as InputEventMouseMotion).position)
@@ -794,7 +897,7 @@ func _stop_placing() -> void:
 	_placing = ""
 	if _cursor:
 		_cursor.visible = false
-	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
+	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Strg+Z / Y: zurück / vor · Strg+C / V: kopieren / einfügen · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
 	_apply()
 
 
