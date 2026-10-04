@@ -89,7 +89,7 @@ var _door_s := 1.0                  # into the hall along z
 ## rolls in; the camera inside orbits it. booth: "" / "in" (on the way) / "inside" / "out"
 signal booth_ready
 signal booth_left
-const BOOTH_C := Vector3(10.05, 0.034, -3.8)
+const BOOTH_C := Vector3(10.05, 0.034, -3.9)
 const BOOTH_WIDEN := 1.5            # the booth's near side wall moved out this far (z)
 ## the room the booth camera stays in (x, y, z ranges; clear of the walls)
 const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8), Vector3(5.6, 2.75, 4.94))
@@ -321,7 +321,7 @@ func _booth_setup(g: Node3D) -> void:
 			var hz := box.position.z if box.get_center().z < -4.15 else box.end.z
 			var sign_ := -1.0 if box.get_center().z < -4.15 else 1.0
 			# (the left leaf stops before the drawer cabinet beside it)
-			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_, 0.9 if sign_ < 0.0 else PI * 0.5])
+			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_, 0.9 if sign_ < 0.0 else deg_to_rad(100.0)])
 	_widen_booth(g)
 	# (the portable worklight panels in the booth stood in front of its camera: the neon tubes light it)
 	for n in g.find_children("Booth_worklight*", "Node3D", false, false) + g.find_children("Booth_worklight*", "Node3D", true, false):
@@ -496,7 +496,9 @@ static func _tube_l(st: SurfaceTool, pts: Array, r: float, col: Color, inv: Tran
 
 ## The way from the platform into the booth: a cubic Bézier (start, two handles, the booth's middle).
 func _booth_path(start: Vector3) -> Array:
-	var p2 := Vector3(5.4, BOOTH_C.y, BOOTH_C.z)
+	# (straight through the doorway from 4.6 m on: clear of both open leaves – checked against the car's
+	# corners all along the way)
+	var p2 := Vector3(4.6, BOOTH_C.y, BOOTH_C.z)
 	var dir := Vector3(p2.x - start.x, 0, p2.z - start.z).normalized()
 	return [start, start + dir * 2.6, p2, BOOTH_C]
 
