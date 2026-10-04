@@ -2,8 +2,12 @@ extends Node
 ## Global game state: settings, car/paint catalogue, input map and the local leaderboard.
 
 signal settings_changed
+signal language_changed
 
 const VERSION := "0.0.7"
+const EnTexts = preload("res://scripts/i18n/en.gd")
+## Languages: [locale, name in that language]
+const LANGUAGES := [["de", "Deutsch"], ["en", "English"]]
 const SETTINGS_PATH := "user://settings.json"
 const LEADERBOARD_PATH := "user://leaderboard.json"
 const LEADERBOARD_SIZE := 10
@@ -195,6 +199,7 @@ const STEER_KIT := [0.0, 7.0, 14.0, 22.0]
 
 var settings := {
 	"player_name": "Driver",
+	"language": "de",          # de (the source texts) / en (scripts/i18n/en.gd)
 	"car": "r34",
 	"paint": "red",
 	"custom_color": "",
@@ -317,6 +322,7 @@ func load_tick(frac := -1.0) -> void:
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_input()
+	_setup_translations()
 	load_settings()
 	load_leaderboard()
 	apply_settings()
@@ -465,7 +471,7 @@ func binding_text(action: String, pad: bool) -> String:
 			names.append(OS.get_keycode_string(kc))
 		elif pad and ev is InputEventJoypadButton:
 			var bi: int = (ev as InputEventJoypadButton).button_index
-			names.append(PAD_BUTTONS.get(bi, "Taste %d" % bi))
+			names.append(PAD_BUTTONS.get(bi, t("Taste %d") % bi))
 		elif pad and ev is InputEventJoypadMotion:
 			names.append(axis_name((ev as InputEventJoypadMotion).axis, (ev as InputEventJoypadMotion).axis_value))
 	return " / ".join(names) if not names.is_empty() else "–"
@@ -479,7 +485,7 @@ static func axis_name(axis: int, value: float) -> String:
 		JOY_AXIS_LEFT_Y: return "Linker Stick ↑" if value < 0.0 else "Linker Stick ↓"
 		JOY_AXIS_RIGHT_X: return "Rechter Stick ←" if value < 0.0 else "Rechter Stick →"
 		JOY_AXIS_RIGHT_Y: return "Rechter Stick ↑" if value < 0.0 else "Rechter Stick ↓"
-	return "Achse %d" % axis
+	return t("Achse %d") % axis
 
 
 const CONTROLS_HELP := [
@@ -579,6 +585,9 @@ func set_setting(key: String, value) -> void:
 
 
 func apply_settings() -> void:
+	if TranslationServer.get_locale() != str(settings.get("language", "de")):
+		TranslationServer.set_locale(str(settings.get("language", "de")))
+		language_changed.emit()
 	var vol := clampf(float(settings["master_volume"]), 0.0, 1.0)
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(vol, 0.0001)))
 	AudioServer.set_bus_mute(0, vol <= 0.001)
@@ -856,7 +865,7 @@ func buy_tuning(car_id: String, category: String) -> String:
 	if cost < 0:
 		return "Maximale Stufe erreicht."
 	if int(settings["credits"]) < cost:
-		return "Nicht genug Credits (%s benötigt)." % format_points(cost)
+		return t("Nicht genug Credits (%s benötigt).") % format_points(cost)
 	settings["credits"] = int(settings["credits"]) - cost
 	var all: Dictionary = settings["tuning"]
 	var t: Dictionary = all.get(car_id, {})
@@ -979,7 +988,7 @@ func buy_car(car_id: String) -> String:
 	if price < 0:
 		return "Nicht käuflich"
 	if int(settings["credits"]) < price:
-		return "Nicht genug Credits (%s fehlen)" % format_points(price - int(settings["credits"]))
+		return t("Nicht genug Credits (%s fehlen)") % format_points(price - int(settings["credits"]))
 	settings["credits"] = int(settings["credits"]) - price
 	settings["owned_cars"].append(car_id)
 	save_settings()
@@ -1028,7 +1037,7 @@ func apply_code_reward(code: String, e: Dictionary) -> Array:
 	if code != "":
 		settings["redeemed_codes"].append(code)
 	save_settings()
-	return [true, "Eingelöst: " + (", ".join(got) if not got.is_empty() else "nichts Neues")]
+	return [true, t("Eingelöst: ") + (", ".join(got) if not got.is_empty() else "nichts Neues")]
 
 
 func add_credits(amount: int) -> void:
@@ -1038,28 +1047,43 @@ func add_credits(amount: int) -> void:
 	save_settings()
 
 
+## The UI's German text in the chosen language (Labels and Buttons do this on their own; this is
+## for texts that are formatted or drawn).
+static func t(text: String) -> String:
+	return String(TranslationServer.translate(text))
+
+
+func _setup_translations() -> void:
+	var tr_en := Translation.new()
+	tr_en.locale = "en"
+	for k in EnTexts.EN:
+		tr_en.add_message(k, EnTexts.EN[k])
+	TranslationServer.add_translation(tr_en)
+	TranslationServer.set_locale("de")
+
+
 func track_name(track_id: String) -> String:
-	for t in TRACKS:
-		if t["id"] == track_id:
-			return t["name"]
+	for tk in TRACKS:
+		if tk["id"] == track_id:
+			return t(tk["name"])
 	return track_id
 
 
 func mode_name(mode_id: String) -> String:
 	if mode_id == "tutorial":
-		return "Tutorial"
+		return t("Tutorial")
 	if mode_id == "editor":
-		return "Welt-Editor"
+		return t("Welt-Editor")
 	for m in MODES:
 		if m["id"] == mode_id:
-			return m["name"]
+			return t(m["name"])
 	return mode_id
 
 
 func weather_name(weather_id: String) -> String:
 	for w in WEATHER_MODES:
 		if w["id"] == weather_id:
-			return w["name"]
+			return t(w["name"])
 	return weather_id
 
 
@@ -1068,9 +1092,9 @@ func day_cycle_name(minutes: int) -> String:
 
 
 func time_name(tod_id: String) -> String:
-	for t in TIMES_OF_DAY:
-		if t["id"] == tod_id:
-			return t["name"]
+	for tt in TIMES_OF_DAY:
+		if tt["id"] == tod_id:
+			return t(tt["name"])
 	return tod_id
 
 

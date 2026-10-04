@@ -58,6 +58,8 @@ var _at_pc := false         # story mode: the camera is at the office PC, its sc
 
 
 func _ready() -> void:
+	# a new language: the current screen is built again (formatted texts too)
+	Game.language_changed.connect(func(): show_screen.call_deferred(current))
 	layer = 2
 	_root = Control.new()
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -78,7 +80,7 @@ func _ready() -> void:
 	margin.add_child(outer)
 	var t := UiKit.title("MIDNIGHT DRIFT", 64)
 	outer.add_child(t)
-	outer.add_child(UiKit.label("v%s  ·  Drift-Racing mit Online-Lobbys" % Game.VERSION, 16, UiKit.TEXT_DIM))
+	outer.add_child(UiKit.label(Game.t("v%s  ·  Drift-Racing mit Online-Lobbys") % Game.VERSION, 16, UiKit.TEXT_DIM))
 	outer.add_child(UiKit.spacer(10))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -548,7 +550,7 @@ func _build_main() -> void:
 		["Garage", "Autos, Lack, Tuning", "garage", func():
 			_return_to = "main"
 			show_screen("garage")],
-		["Tutorial" + ("  ★" if tut_new else ""), "Steuerung lernen, Grüne Hölle", "tutorial", _ask_tutorial],
+		[Game.t("Tutorial") + ("  ★" if tut_new else ""), "Steuerung lernen, Grüne Hölle", "tutorial", _ask_tutorial],
 		["Replays", "Gespeicherte Fahrten", "replays", func(): show_screen("replays")],
 	]
 	var more := [
@@ -579,9 +581,9 @@ func _fill_player_info() -> void:
 		c.queue_free()
 	var car: Dictionary = Game.get_car(Game.settings["car"])
 	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
-	for l in [UiKit.label("Fahrer: %s" % Game.settings["player_name"], 18, UiKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT),
-			UiKit.label("Auto: %s – %s" % [car["name"], paint["name"]], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT),
-			UiKit.label("Credits: %s" % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)]:
+	for l in [UiKit.label(Game.t("Fahrer: %s") % Game.settings["player_name"], 18, UiKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT),
+			UiKit.label(Game.t("Auto: %s – %s") % [Game.t(car["name"]), Game.t(paint["name"])], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT),
+			UiKit.label(Game.t("Credits: %s") % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)]:
 		_player_info.add_child(l)
 
 
@@ -608,7 +610,7 @@ func _build_editor() -> void:
 		var path: String = m[0]
 		var del := UiKit.button("Löschen", func():
 			var dlg := ConfirmationDialog.new()
-			dlg.dialog_text = "Karte „%s“ löschen?" % m[1]
+			dlg.dialog_text = Game.t("Karte „%s“ löschen?") % m[1]
 			add_child(dlg)
 			dlg.confirmed.connect(func():
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
@@ -770,13 +772,13 @@ func _import_map() -> void:
 	dlg.file_selected.connect(func(p: String):
 		var m = MapData.load_file(p)
 		if m == null:
-			show_status("Keine gültige Karte: " + p.get_file(), UiKit.BAD)
+			show_status(Game.t("Keine gültige Karte: ") + p.get_file(), UiKit.BAD)
 			return
 		DirAccess.make_dir_recursive_absolute(MapData.MAP_DIR)
 		var to := MapData.MAP_DIR.path_join(p.get_file())
 		DirAccess.copy_absolute(p, ProjectSettings.globalize_path(to))
 		show_screen("editor")
-		show_status("Importiert: " + m.map_name))
+		show_status(Game.t("Importiert: ") + m.map_name))
 	dlg.popup_centered()
 
 
@@ -828,7 +830,7 @@ func _build_single() -> void:
 	var gt_idx := maxi(Game.GRAFFITI_MINUTES.find(int(Game.settings.get("graffiti_minutes", 5))), 0)
 	var gt_names: Array = []
 	for m in Game.GRAFFITI_MINUTES:
-		gt_names.append("%d Minuten" % m)
+		gt_names.append(Game.t("%d Minuten") % m)
 	var graffiti_row := UiKit.labeled("Graffiti-Zeit", UiKit.option(gt_names, gt_idx, func(i):
 		Game.set_setting("graffiti_minutes", Game.GRAFFITI_MINUTES[i])))
 	var laps_label := UiKit.label("%d" % int(Game.settings["laps"]), 19)
@@ -942,7 +944,7 @@ func _build_garage() -> void:
 		var id: String = cars[i]
 		var label: String = Game.CARS[id]["name"]
 		if not Game.owns_car(id):
-			label = "🔒 %s – %s Cr" % [label, Game.format_points(Game.car_price(id))]
+			label = Game.t("🔒 %s – %s Cr") % [label, Game.format_points(Game.car_price(id))]
 		elif bool(Game.CARS[id].get("egg", false)):
 			label = "★ " + label
 		car_names.append(label)
@@ -1061,14 +1063,14 @@ func _update_buy_row(car_id: String) -> void:
 	if Game.owns_car(car_id):
 		return
 	var price := Game.car_price(car_id)
-	_buy_row.add_child(UiKit.label("Noch nicht gekauft – du hast %s Cr" % Game.format_points(int(Game.settings["credits"])), 17, UiKit.TEXT_DIM))
-	_buy_row.add_child(UiKit.button("Kaufen für %s Cr" % Game.format_points(price), func():
+	_buy_row.add_child(UiKit.label(Game.t("Noch nicht gekauft – du hast %s Cr") % Game.format_points(int(Game.settings["credits"])), 17, UiKit.TEXT_DIM))
+	_buy_row.add_child(UiKit.button(Game.t("Kaufen für %s Cr") % Game.format_points(price), func():
 		var err := Game.buy_car(car_id)
 		if err != "":
 			show_status(err, UiKit.BAD)
 			return
 		show_screen("garage")
-		show_status("%s gekauft!" % Game.CARS[car_id]["name"], UiKit.GOOD), 300))
+		show_status(Game.t("%s gekauft!") % Game.CARS[car_id]["name"], UiKit.GOOD), 300))
 
 
 func _update_car_info() -> void:
@@ -1081,11 +1083,11 @@ func _update_car_info() -> void:
 	_update_tuning(car_id)
 	var kw := float(car["torque"]) * float(car["redline"]) * 0.62 / 9549.0
 	var stats := [
-		["Leistung", clampf(kw / 330.0, 0.1, 1.0), "%d PS" % int(kw * 1.36)],
+		["Leistung", clampf(kw / 330.0, 0.1, 1.0), Game.t("%d PS") % int(kw * 1.36)],
 		["Gewicht", clampf(1.0 - (float(car["mass"]) - 900.0) / 800.0, 0.1, 1.0), "%d kg" % int(car["mass"])],
 		["Grip", clampf((float(car["grip"]) - 0.9) / 0.25, 0.1, 1.0), ""],
 		["Turbo", clampf(float(car["turbo"]) / 0.6, 0.0, 1.0), "Sauger" if float(car["turbo"]) <= 0.0 else "Twin-Turbo"],
-		["Antrieb", float(car["rear_split"]), "%d %% hinten" % int(float(car["rear_split"]) * 100.0)],
+		["Antrieb", float(car["rear_split"]), Game.t("%d %% hinten") % int(float(car["rear_split"]) * 100.0)],
 	]
 	for s in stats:
 		var bar := ProgressBar.new()
@@ -1124,7 +1126,7 @@ func _build_online() -> void:
 
 	_add(UiKit.label("Lobby erstellen (du bist der Host / Server)", 22, UiKit.ACCENT.lightened(0.3)))
 	var lobby_name := LineEdit.new()
-	lobby_name.placeholder_text = "%s's Lobby" % Game.settings["player_name"]
+	lobby_name.placeholder_text = Game.t("%s's Lobby") % Game.settings["player_name"]
 	lobby_name.text = str(Game.settings.get("lobby_name", ""))
 	lobby_name.custom_minimum_size = Vector2(300, 42)
 	_add(UiKit.labeled("Lobby-Name", lobby_name))
@@ -1232,7 +1234,7 @@ func _refresh_lan() -> void:
 		return
 	for key in Net.lan_lobbies.keys():
 		var info: Dictionary = Net.lan_lobbies[key]
-		var text := "%s%s  –  %s  –  %d/%d Spieler%s" % ["🔒 " if info.get("locked", false) else "", info.get("name", "Lobby"),
+		var text := Game.t("%s%s  –  %s  –  %d/%d Spieler%s") % ["🔒 " if info.get("locked", false) else "", info.get("name", "Lobby"),
 			Game.track_name(str(info.get("track", ""))), int(info.get("players", 0)), int(info.get("max", 8)),
 			"  (Rennen läuft)" if info.get("in_race", false) else ""]
 		var ip: String = info.get("ip", "")
@@ -1324,7 +1326,7 @@ func _refresh_invite(host: bool) -> void:
 		big.add_theme_font_override("font", UiKit.title_font())
 		_invite_box.add_child(UiKit.row([UiKit.label("Code für Freunde:", 18), big, UiKit.button("Kopieren", func():
 			DisplayServer.clipboard_set(sc)
-			show_status("Code %s kopiert – Freunde geben ihn unter Online → „Mit Code beitreten“ ein." % sc), 130)], 14))
+			show_status(Game.t("Code %s kopiert – Freunde geben ihn unter Online → „Mit Code beitreten“ ein.") % sc), 130)], 14))
 		_invite_box.add_child(UiKit.label("Keine Portfreigabe nötig. Nur an Mitspieler weitergeben.", 15, UiKit.TEXT_DIM))
 	var adv := CheckButton.new()
 	adv.text = "Erweitert: langer Einladungs-Code / Adresse (falls der Code nicht klappt)"
@@ -1368,14 +1370,14 @@ func _refresh_invite(host: bool) -> void:
 		DisplayServer.clipboard_set(code)
 		show_status("Einladungs-Code kopiert – nur an Mitspieler weitergeben (enthält IP & Passwort)."), 130)])))
 	var v6_host := Net.public_ip.contains(":")
-	_invite_box.add_child(UiKit.row([UiKit.label("Adresse im Code: %s (%s)" % [Net.public_ip, "IPv6" if v6_host else "IPv4"], 15, UiKit.TEXT_DIM),
+	_invite_box.add_child(UiKit.row([UiKit.label(Game.t("Adresse im Code: %s (%s)") % [Net.public_ip, "IPv6" if v6_host else "IPv4"], 15, UiKit.TEXT_DIM),
 		UiKit.button("Andere Adresse", func():
 			Net.public_ip = ""
 			_refresh_lobby(), 180)], 10))
 	if v6_host:
-		_invite_box.add_child(UiKit.label("IPv6: Im Router die Freigabe für UDP-Port %d auf genau diese Adresse bzw. diesen PC setzen (FritzBox: Internet → Freigaben → Gerät → „IPv6 freigeben“ + Port), Windows-Firewall für das Spiel erlauben. Mitspieler brauchen selbst IPv6." % port, 15, UiKit.TEXT_DIM))
+		_invite_box.add_child(UiKit.label(Game.t("IPv6: Im Router die Freigabe für UDP-Port %d auf genau diese Adresse bzw. diesen PC setzen (FritzBox: Internet → Freigaben → Gerät → „IPv6 freigeben“ + Port), Windows-Firewall für das Spiel erlauben. Mitspieler brauchen selbst IPv6.") % port, 15, UiKit.TEXT_DIM))
 	elif port > 0 and Net.upnp_message.begins_with("Kein UPnP"):
-		_invite_box.add_child(UiKit.label("Ohne UPnP: Port %d/UDP im Router auf diesen PC weiterleiten." % port, 16, UiKit.TEXT_DIM))
+		_invite_box.add_child(UiKit.label(Game.t("Ohne UPnP: Port %d/UDP im Router auf diesen PC weiterleiten.") % port, 16, UiKit.TEXT_DIM))
 
 
 func _refresh_lobby() -> void:
@@ -1386,9 +1388,9 @@ func _refresh_lobby() -> void:
 		return
 	var host := Net.is_host()
 	var info_lines: Array = []
-	info_lines.append("Lobby: %s" % Net.lobby.get("name", "…"))
+	info_lines.append(Game.t("Lobby: %s") % Net.lobby.get("name", "…"))
 	if host:
-		info_lines.append("Du hostest diese Lobby (Port %d/UDP, verschlüsselt%s). Im LAN erscheint sie automatisch in der Liste." % [
+		info_lines.append(Game.t("Du hostest diese Lobby (Port %d/UDP, verschlüsselt%s). Im LAN erscheint sie automatisch in der Liste.") % [
 			int(Net.lobby.get("port", Net.DEFAULT_PORT)), ", mit Passwort" if Net.password != "" else ", OHNE Passwort"])
 		if Net.upnp_message != "":
 			info_lines.append(Net.upnp_message)
@@ -1439,7 +1441,7 @@ func _refresh_lobby() -> void:
 		if str(lobby.get("mode", "")) == "graffiti":
 			var gnames: Array = []
 			for m in Game.GRAFFITI_MINUTES:
-				gnames.append("%d Minuten" % m)
+				gnames.append(Game.t("%d Minuten") % m)
 			var gi := maxi(Game.GRAFFITI_MINUTES.find(int(lobby.get("graffiti_minutes", 5))), 0)
 			_lobby_settings.add_child(UiKit.labeled("Graffiti-Zeit", UiKit.option(gnames, gi, func(i):
 				Net.host_set_option("graffiti_minutes", Game.GRAFFITI_MINUTES[i]))))
@@ -1476,15 +1478,15 @@ func _refresh_lobby() -> void:
 		coll.tooltip_text = "Im Geister-Modus fahren alle durcheinander hindurch, die anderen Autos sind halbtransparent."
 		_lobby_settings.add_child(UiKit.labeled("Kollisionen", coll))
 	else:
-		_lobby_settings.add_child(UiKit.label("Strecke: %s" % Game.track_name(str(lobby.get("track", "ridge"))), 18))
-		var len_text := ("Zeit: %d Minuten" % int(lobby.get("graffiti_minutes", 5))) if str(lobby.get("mode", "")) == "graffiti" else ("Runden: %d" % int(lobby.get("laps", 3)))
-		_lobby_settings.add_child(UiKit.label("Modus: %s  ·  %s" % [Game.mode_name(str(lobby.get("mode", "race"))), len_text], 18))
-		_lobby_settings.add_child(UiKit.label("Tageszeit: %s  ·  Kollisionen: %s" % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))
-		_lobby_settings.add_child(UiKit.label("Wetter: %s  ·  Tagesverlauf: %s" % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
+		_lobby_settings.add_child(UiKit.label(Game.t("Strecke: %s") % Game.track_name(str(lobby.get("track", "ridge"))), 18))
+		var len_text := (Game.t("Zeit: %d Minuten") % int(lobby.get("graffiti_minutes", 5))) if str(lobby.get("mode", "")) == "graffiti" else (Game.t("Runden: %d") % int(lobby.get("laps", 3)))
+		_lobby_settings.add_child(UiKit.label(Game.t("Modus: %s  ·  %s") % [Game.mode_name(str(lobby.get("mode", "race"))), len_text], 18))
+		_lobby_settings.add_child(UiKit.label(Game.t("Tageszeit: %s  ·  Kollisionen: %s") % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))
+		_lobby_settings.add_child(UiKit.label(Game.t("Wetter: %s  ·  Tagesverlauf: %s") % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
 		if str(lobby.get("mode", "")) == "race" and int(lobby.get("bots", 0)) > 0:
-			_lobby_settings.add_child(UiKit.label("KI-Gegner: %d  ·  %s" % [int(lobby.get("bots", 0)), RaceAI.LEVELS[clampi(int(lobby.get("bot_level", 1)), 0, 3)]["name"]], 18))
+			_lobby_settings.add_child(UiKit.label(Game.t("KI-Gegner: %d  ·  %s") % [int(lobby.get("bots", 0)), RaceAI.LEVELS[clampi(int(lobby.get("bot_level", 1)), 0, 3)]["name"]], 18))
 		if bool(lobby.get("party", false)) and str(lobby.get("track", "")) != "gruene_hoelle":
-			_lobby_settings.add_child(UiKit.label("★ Party-Modus: %d Minispiele, %d Münzen" % [int(lobby.get("party_games", 3)), int(lobby.get("party_coins", 5))], 18, UiKit.GOLD))
+			_lobby_settings.add_child(UiKit.label(Game.t("★ Party-Modus: %d Minispiele, %d Münzen") % [int(lobby.get("party_games", 3)), int(lobby.get("party_coins", 5))], 18, UiKit.GOLD))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
 	_ready_btn.visible = not host
 	_ready_btn.text = "Nicht bereit" if me_ready else "Bereit"
@@ -1575,7 +1577,7 @@ func _gearing_text(car_id: String) -> String:
 		ratios.append("%.2f" % float(gears[i]))
 		var v := float(gb["redline"]) / 60.0 * TAU * r / (float(gears[i]) * fd)
 		speeds.append("%d" % int(v * (3.6 if kmh else 2.237)))
-	return "Übersetzung  %s  ·  Achse %.2f\nBis Drehzahlgrenze (%d U/min): %s %s" % [" / ".join(ratios), fd, int(gb["redline"]), " / ".join(speeds), "km/h" if kmh else "mph"]
+	return Game.t("Übersetzung  %s  ·  Achse %.2f\nBis Drehzahlgrenze (%d U/min): %s %s") % [" / ".join(ratios), fd, int(gb["redline"]), " / ".join(speeds), "km/h" if kmh else "mph"]
 
 
 func _update_tuning(car_id: String) -> void:
@@ -1583,7 +1585,7 @@ func _update_tuning(car_id: String) -> void:
 		return
 	for c in _tuning_box.get_children():
 		c.queue_free()
-	_tuning_box.add_child(UiKit.label("Credits: %s   ·   verdienen durch Driftpunkte und Rennen" % Game.format_points(int(Game.settings["credits"])), 17, UiKit.GOLD))
+	_tuning_box.add_child(UiKit.label(Game.t("Credits: %s   ·   verdienen durch Driftpunkte und Rennen") % Game.format_points(int(Game.settings["credits"])), 17, UiKit.GOLD))
 	var t := Game.get_tuning(car_id)
 	for cat in Game.TUNING:
 		var cid: String = cat["id"]
@@ -1596,13 +1598,13 @@ func _update_tuning(car_id: String) -> void:
 		var lvl_l := UiKit.label("%s  %s" % [stars, Game.TUNING_LEVELS[lvl]], 18, UiKit.ACCENT.lightened(0.4))
 		lvl_l.custom_minimum_size = Vector2(150, 0)
 		var cost := Game.tuning_cost(car_id, cid)
-		var buy_text := "Max" if cost < 0 else "Upgrade (%s)" % Game.format_points(cost)
+		var buy_text := "Max" if cost < 0 else Game.t("Upgrade (%s)") % Game.format_points(cost)
 		var buy := UiKit.button(buy_text, func():
 			var err := Game.buy_tuning(car_id, cid)
 			if err != "":
 				show_status(err, UiKit.BAD)
 			else:
-				show_status("%s verbessert!" % cat["name"], UiKit.GOOD)
+				show_status(Game.t("%s verbessert!") % cat["name"], UiKit.GOOD)
 				Net.update_local_info()
 			_update_tuning(car_id), 200)
 		buy.disabled = cost < 0
@@ -1619,7 +1621,7 @@ func _update_tuning(car_id: String) -> void:
 			_tuning_box.add_child(gl)
 		elif cid == "steering":
 			var lock := float(Game.get_car(car_id)["steer_lock"]) + float(Game.STEER_KIT[lvl])
-			_tuning_box.add_child(UiKit.label("Lenkeinschlag: %d°" % int(lock), 14, UiKit.ACCENT.lightened(0.45)))
+			_tuning_box.add_child(UiKit.label(Game.t("Lenkeinschlag: %d°") % int(lock), 14, UiKit.ACCENT.lightened(0.45)))
 	# Burble-Tune: software map, free to switch
 	var bl := Game.get_burble(car_id)
 	var b_name := UiKit.label("Burble-Tune", 19)
@@ -1630,7 +1632,7 @@ func _update_tuning(car_id: String) -> void:
 		b_desc.text = str(Game.BURBLE_DESC[i])
 		Net.update_local_info(), 200)
 	b_opt.tooltip_text = "Fehlzündungen im Schiebebetrieb (Blubbern, Knallen, Flammen) – kostenlos umstellbar."
-	var b_def := UiKit.label("Werkseinstellung: %s" % Game.BURBLE_LEVELS[int(Game.get_car(car_id).get("burble", 1))], 14, UiKit.TEXT_DIM)
+	var b_def := UiKit.label(Game.t("Werkseinstellung: %s") % Game.BURBLE_LEVELS[int(Game.get_car(car_id).get("burble", 1))], 14, UiKit.TEXT_DIM)
 	_tuning_box.add_child(UiKit.row([b_name, b_opt, b_def], 10))
 	_tuning_box.add_child(b_desc)
 	# throttle response: free fine tuning of how eagerly the engine revs up with the throttle

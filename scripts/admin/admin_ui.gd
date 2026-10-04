@@ -99,7 +99,7 @@ static func build_screen(add: Callable, refresh: Callable, status: Callable) -> 
 			if nm == "":
 				return
 			BotProfiles.save_profile(nm, editing[0])
-			status.call("Persönlichkeit „%s“ gespeichert" % nm)
+			status.call(Game.t("Persönlichkeit „%s“ gespeichert") % nm)
 			refresh.call(), 140),
 		UiKit.button("Löschen", func():
 			if BotProfiles.BUILTIN.has(name_edit.text):
@@ -173,7 +173,7 @@ static func build_screen(add: Callable, refresh: Callable, status: Callable) -> 
 			codes[code] = {"credits": int(cr_e.value), "car": str(car_ids[car_sel[0]])}
 			Game.settings["admin_codes"] = codes
 			Game.save_settings()
-			status.call("Code %s angelegt" % code)
+			status.call(Game.t("Code %s angelegt") % code)
 			refresh.call(), 130)]))
 	for code in Game.settings["admin_codes"]:
 		var e: Dictionary = Game.settings["admin_codes"][code]

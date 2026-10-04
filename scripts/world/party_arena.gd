@@ -345,7 +345,7 @@ func _damage(victim: int, by: int, dir: Vector3) -> void:
 	if mode == "balloon":
 		_pop(victim, by, int(f["hp"]))
 		if victim == me:
-			world.hud.show_message("PENG!" if int(f["hp"]) > 0 else "RAUS!", ("noch %d Ballon%s" % [f["hp"], "" if int(f["hp"]) == 1 else "s"]) if int(f["hp"]) > 0 else "alle Ballons geplatzt", _bad(), 1.2)
+			world.hud.show_message("PENG!" if int(f["hp"]) > 0 else "RAUS!", (Game.t("noch %d Ballon%s") % [f["hp"], "" if int(f["hp"]) == 1 else "s"]) if int(f["hp"]) > 0 else "alle Ballons geplatzt", _bad(), 1.2)
 		if fighters.has(by) and (by == me or is_bot(by)):
 			_credit_pop(by, victim)
 		elif world.online:
@@ -353,7 +353,7 @@ func _damage(victim: int, by: int, dir: Vector3) -> void:
 		if int(f["hp"]) <= 0:
 			if victim == me:
 				car.controls_locked = true
-			_feed("%s  ✖  %s ist raus" % [_name(by), _name(victim)])
+			_feed(Game.t("%s  ✖  %s ist raus") % [_name(by), _name(victim)])
 		return
 	if victim == me:
 		world.hud.show_message("TREFFER!", "%d / %d" % [maxi(int(f["hp"]), 0), MAX_HP], _bad(), 0.8)
@@ -364,7 +364,7 @@ func _damage(victim: int, by: int, dir: Vector3) -> void:
 	_boom(car.global_position)
 	if victim == me:
 		car.controls_locked = true
-		world.hud.show_message("ABGESCHOSSEN", "von %s" % _name(by), _bad(), 1.6)
+		world.hud.show_message("ABGESCHOSSEN", Game.t("von %s") % _name(by), _bad(), 1.6)
 	if fighters.has(by) and (by == me or is_bot(by)):
 		_credit(by, victim)
 	elif world.online:
@@ -475,7 +475,7 @@ func on_msg(from: int, msg: Dictionary) -> void:
 			if by2 == me and fighters.has(me):
 				_credit_pop(me, from)
 			if int(msg.get("n", 0)) <= 0:
-				_feed("%s  ✖  %s ist raus" % [_name(by2), _name(from)])
+				_feed(Game.t("%s  ✖  %s ist raus") % [_name(by2), _name(from)])
 
 
 func _name(id: int) -> String:

@@ -149,7 +149,7 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 	var err := peer.create_server(port, maxi(max_players - (0 if dedicated else 1), 1))
 	if err != OK:
 		peer = null
-		return "Server konnte nicht gestartet werden – ist Port %d schon belegt?" % port
+		return Game.t("Server konnte nicht gestartet werden – ist Port %d schon belegt?") % port
 	err = peer.host.dtls_server_setup(tls)
 	if err != OK:
 		peer.close()
@@ -162,7 +162,7 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 	is_online = true
 	in_race = false
 	lobby = {
-		"name": lobby_name if lobby_name.strip_edges() != "" else "%s's Lobby" % Game.settings["player_name"],
+		"name": lobby_name if lobby_name.strip_edges() != "" else Game.t("%s's Lobby") % Game.settings["player_name"],
 		"port": port,
 		"max_players": max_players,
 		"track": Game.settings["track"],
@@ -215,7 +215,7 @@ func join_lobby(address: String, port: int, lobby_password: String, host_cert: S
 	var err := peer.create_client(address, port, 0, 0, 0, local_port)
 	if err != OK:
 		peer = null
-		return "Verbindung zu %s:%d konnte nicht aufgebaut werden." % [address, port]
+		return Game.t("Verbindung zu %s:%d konnte nicht aufgebaut werden.") % [address, port]
 	# encrypted before the first packet leaves (the host proves itself with the password, see _on_auth_packet)
 	err = peer.host.dtls_client_setup(address, TLSOptions.client(cert, HOST_CN))
 	if err != OK:
@@ -783,7 +783,7 @@ func _on_peer_disconnected(id: int) -> void:
 	if players.has(id):
 		var who: String = players[id].get("name", "Spieler")
 		players.erase(id)
-		chat_received.emit("Lobby", "%s hat die Lobby verlassen." % who)
+		chat_received.emit("Lobby", Game.t("%s hat die Lobby verlassen.") % who)
 	peer_left.emit(id)
 	if is_host():
 		_loaded.erase(id)
@@ -825,7 +825,7 @@ func _register(info: Dictionary) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if str(info.get("version", "")) != Game.VERSION:
-		_kicked.rpc_id(id, "Versionskonflikt: Host hat %s, du hast %s." % [Game.VERSION, info.get("version", "?")])
+		_kicked.rpc_id(id, Game.t("Versionskonflikt: Host hat %s, du hast %s.") % [Game.VERSION, info.get("version", "?")])
 		_disconnect_later(id)
 		return
 	if in_race:
@@ -836,7 +836,7 @@ func _register(info: Dictionary) -> void:
 	info["name"] = str(info.get("name", "Driver")).substr(0, 20)
 	players[id] = info
 	_broadcast_lobby()
-	_chat_all("Lobby", "%s ist beigetreten." % info["name"])
+	_chat_all("Lobby", Game.t("%s ist beigetreten.") % info["name"])
 
 
 func _disconnect_later(id: int) -> void:
@@ -1303,11 +1303,11 @@ func _upnp_worker(port: int) -> void:
 		var r: int = upnp.add_port_mapping(port, port, "Midnight Drift", "UDP")
 		if r == UPNP.UPNP_RESULT_SUCCESS:
 			ok = true
-			msg = "UPnP aktiv – Port %d offen." % port
+			msg = Game.t("UPnP aktiv – Port %d offen.") % port
 		else:
-			msg = "UPnP: Portfreigabe fehlgeschlagen (Code %d). Port %d/UDP ggf. manuell freigeben." % [r, port]
+			msg = Game.t("UPnP: Portfreigabe fehlgeschlagen (Code %d). Port %d/UDP ggf. manuell freigeben.") % [r, port]
 	else:
-		msg = "Kein UPnP-Router gefunden – für Internet-Spiele Port %d/UDP im Router freigeben." % port
+		msg = Game.t("Kein UPnP-Router gefunden – für Internet-Spiele Port %d/UDP im Router freigeben.") % port
 	call_deferred("_upnp_done", ok, msg, upnp if ok else null, port)
 
 

@@ -240,10 +240,10 @@ func toggle_terminal() -> void:
 	_term_in.editable = false
 	_term_queue = [
 		[0.0, "$ ssh %s@%s" % [_user(), TERM_HOST]],
-		[0.35, "Verbinde mit %s (185.%d.%d.%d) Port 22 …" % [TERM_HOST, randi() % 200 + 20, randi() % 250, randi() % 250]],
+		[0.35, Game.t("Verbinde mit %s (185.%d.%d.%d) Port 22 …") % [TERM_HOST, randi() % 200 + 20, randi() % 250, randi() % 250]],
 		[0.5, "Schlüsselaustausch: curve25519 … ok"],
-		[0.35, "Host-Fingerabdruck SHA256:%s bestätigt." % Marshalls.raw_to_base64(Game.VERSION.sha256_buffer()).substr(0, 22)],
-		[0.45, "Angemeldet als %s." % _user()],
+		[0.35, Game.t("Host-Fingerabdruck SHA256:%s bestätigt.") % Marshalls.raw_to_base64(Game.VERSION.sha256_buffer()).substr(0, 22)],
+		[0.45, Game.t("Angemeldet als %s.") % _user()],
 		[0.25, ""],
 		[0.1, "  __  __ ____        _   _ _____ _____"],
 		[0.05, " |  \\/  |  _ \\      | \\ | | ____|_   _|"],
@@ -459,7 +459,7 @@ func _process(delta: float) -> void:
 	_boot += delta
 	modulate.a = clampf(_boot / 0.35, 0.0, 1.0) * (0.75 + 0.25 * float(int(_boot * 30.0) % 3 != 0)) if _boot < 0.5 else 1.0
 	if _boot > 0.9 and _log.text.ends_with("…"):
-		_log.text = "> %d Story-Teile gefunden. Auswahl mit ↑ ↓, Enter startet." % PARTS.size()
+		_log.text = Game.t("> %d Story-Teile gefunden. Auswahl mit ↑ ↓, Enter startet.") % PARTS.size()
 	if _boot > 1.0 and _term_queue.is_empty():
 		set_process(false)
 
@@ -476,7 +476,7 @@ func _select(i: int, start: bool) -> void:
 		if p["ready"]:
 			part_chosen.emit(str(p["id"]))
 		else:
-			_log.text = "> \"%s\" wird noch gebaut. Bald verfügbar." % str(p["title"]).get_slice(" – ", 0)
+			_log.text = Game.t("> \"%s\" wird noch gebaut. Bald verfügbar.") % str(p["title"]).get_slice(" – ", 0)
 
 
 func _refresh_list() -> void:

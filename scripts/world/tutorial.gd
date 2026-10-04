@@ -481,9 +481,9 @@ func _drive(_dt: float) -> void:
 	var to_go := Site.EXIT_P - _progress
 	var d_camp: float = Vector2(car.global_position.x - site.camp.x, car.global_position.z - site.camp.z).length()
 	if to_go > 0.0 and to_go < 4000.0:
-		_objective.text = "ZIEL: Waldweg vor dem Adenauer Forst  ·  %.1f km" % (to_go / 1000.0)
+		_objective.text = Game.t("ZIEL: Waldweg vor dem Adenauer Forst  ·  %.1f km") % (to_go / 1000.0)
 	else:
-		_objective.text = "ZIEL: Kenji am Wohnwagen  ·  %d m" % int(d_camp)
+		_objective.text = Game.t("ZIEL: Kenji am Wohnwagen  ·  %d m") % int(d_camp)
 	# the mission compass in the HUD
 	if world.hud != null:
 		var tr = world.track
@@ -619,7 +619,7 @@ func _finish() -> void:
 	Game.settings["tutorial_done"] = true
 	Game.add_credits(REWARD)
 	Game.save_settings()
-	_title_show("TUTORIAL ABGESCHLOSSEN", "+%s Credits   ·   Fortsetzung folgt …" % Game.format_points(REWARD))
+	_title_show("TUTORIAL ABGESCHLOSSEN", Game.t("+%s Credits   ·   Fortsetzung folgt …") % Game.format_points(REWARD))
 	_skip.text = ""
 	var btn := UiKit.button("Hauptmenü", func(): world.request_main_menu(), 260)
 	btn.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)

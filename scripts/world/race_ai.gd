@@ -53,7 +53,7 @@ static func make_roster(count: int, seed_v: int, tuning: Dictionary = {}) -> Arr
 		var all_p := BotProfiles.all_names()
 		if pers == "" or not all_p.has(pers):
 			pers = str(all_p[r.randi() % all_p.size()])
-		out.append({"id": BOT_ID0 + k, "name": "KI " + str(names[ni]), "car": str(cars[r.randi() % cars.size()]),
+		out.append({"id": BOT_ID0 + k, "name": Game.t("KI ") + str(names[ni]), "car": str(cars[r.randi() % cars.size()]),
 			"paint": str(Game.PAINTS[r.randi() % Game.PAINTS.size()]["id"]), "tuning": tuning.duplicate(), "personality": pers})
 		names.remove_at(ni)
 	return out

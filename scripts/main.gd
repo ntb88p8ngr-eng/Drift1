@@ -54,7 +54,7 @@ func show_menu(screen: String, message := "", color := UiKit.GOLD) -> void:
 		_hide_loading()
 		_loading = LoadingScreen.new()
 		_loading.track_name = "MIDNIGHT DRIFT"
-		_loading.sub_text = "Die Werkstatt wird aufgeschlossen …"
+		_loading.sub_text = Game.t("Die Werkstatt wird aufgeschlossen …")
 		add_child(_loading)
 		await get_tree().process_frame
 		await get_tree().process_frame
@@ -143,7 +143,7 @@ func start_editor(base_track: String, map_path := "") -> void:
 	if map_path != "":
 		var m = MapData.load_file(map_path)
 		if m == null:
-			show_menu("editor", "Karte nicht lesbar: " + map_path, UiKit.BAD)
+			show_menu("editor", Game.t("Karte nicht lesbar: ") + map_path, UiKit.BAD)
 			return
 		cfg["track"] = m.base_track
 		cfg["map"] = map_path

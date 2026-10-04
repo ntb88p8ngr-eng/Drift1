@@ -399,8 +399,8 @@ func _update_top_drift() -> void:
 		var rec: Array = Game.get_scores(world.track.track_id, "combo")
 		var rec_txt := ""
 		if rec.size() > 0:
-			rec_txt = "Rekord %s · %s" % [Game.format_points(float(rec[0]["value"])), rec[0]["name"]]
-		_top_drift_sub.text = ("Du%s" % ("  · läuft" if live and best > 0.0 else "")) + ("\n" + rec_txt if rec_txt != "" else "")
+			rec_txt = Game.t("Rekord %s · %s") % [Game.format_points(float(rec[0]["value"])), rec[0]["name"]]
+		_top_drift_sub.text = (Game.t("Du%s") % ("  · läuft" if live and best > 0.0 else "")) + ("\n" + rec_txt if rec_txt != "" else "")
 	_top_drift_label.text = Game.format_points(best) if best > 0.0 else "–"
 	_top_drift_label.add_theme_color_override("font_color", UiKit.GOLD if live and best > 0.0 else Color.WHITE)
 
@@ -435,12 +435,12 @@ func on_drift_event(ev: Array) -> void:
 		"fail":
 			var lost: float = ev[1]
 			var reason := str(ev[2]) if ev.size() > 2 else "Wand"
-			show_message("COMBO VERLOREN", "%s – %s Punkte weg" % [reason, Game.format_points(lost)], UiKit.BAD, 1.8)
+			show_message("COMBO VERLOREN", Game.t("%s – %s Punkte weg") % [reason, Game.format_points(lost)], UiKit.BAD, 1.8)
 		"transition":
 			_mult_label.add_theme_color_override("font_color", Color(0.5, 1.0, 1.0))
 		"spin":
 			var count := int(ev[2]) if ev.size() > 2 else 1
-			show_message("%d°!" % (360 * count), "+%s  ·  Reifen durchgehend durchgedreht" % Game.format_points(float(ev[1])), UiKit.GOLD, 1.6)
+			show_message("%d°!" % (360 * count), Game.t("+%s  ·  Reifen durchgehend durchgedreht") % Game.format_points(float(ev[1])), UiKit.GOLD, 1.6)
 		"reverse":
 			show_message("REVERSE ENTRY!", "+%s" % Game.format_points(float(ev[1])), UiKit.GOLD, 1.6)
 
@@ -478,24 +478,24 @@ func _process(delta: float) -> void:
 	_mode_label.text = "%s · %s" % [Game.mode_name(world.mode).to_upper(), Game.track_name(world.track.track_id)]
 	var lines: Array = []
 	if world.graffiti:
-		lines.append("Zeit     %s" % Game.format_time(maxf(float(world.time_limit) - float(world.race_time), 0.0)))
+		lines.append(Game.t("Zeit     %s") % Game.format_time(maxf(float(world.time_limit) - float(world.race_time), 0.0)))
 		for st in world.graffiti.standings():
 			lines.append("%s  %d m  (%d %%)" % [str(world.graffiti.names.get(st[0], "?")).substr(0, 10), int(st[1]), int(round(float(st[2]) * 100.0))])
 	elif world.mode == "free":
-		lines.append("Runde %d" % (int(world.lap) + 1))
+		lines.append(Game.t("Runde %d") % (int(world.lap) + 1))
 	else:
-		lines.append("Runde %d / %d" % [mini(int(world.lap) + 1, int(world.laps_total)), int(world.laps_total)])
+		lines.append(Game.t("Runde %d / %d") % [mini(int(world.lap) + 1, int(world.laps_total)), int(world.laps_total)])
 	if world.graffiti:
 		pass
 	elif world.mode == "race" and world.state != "countdown":
-		lines.append("Gesamt  %s" % Game.format_time(float(world.race_time)))
+		lines.append(Game.t("Gesamt  %s") % Game.format_time(float(world.race_time)))
 	if not world.graffiti:
-		lines.append("Zeit     %s" % (Game.format_time(float(world.race_time) - float(world.lap_start)) if world.crossed_start else "-- Einführungsrunde --"))
-		lines.append("Letzte  %s" % Game.format_time(float(world.last_lap)))
-		lines.append("Beste   %s" % Game.format_time(float(world.best_lap)))
+		lines.append(Game.t("Zeit     %s") % (Game.format_time(float(world.race_time) - float(world.lap_start)) if world.crossed_start else "-- Einführungsrunde --"))
+		lines.append(Game.t("Letzte  %s") % Game.format_time(float(world.last_lap)))
+		lines.append(Game.t("Beste   %s") % Game.format_time(float(world.best_lap)))
 	var pos_text: String = world.position_text()
 	if pos_text != "":
-		lines.append("Platz   %s" % pos_text)
+		lines.append(Game.t("Platz   %s") % pos_text)
 	var section: String = world.track.section_at(float(world.progress))
 	if section != "":
 		lines.append("» %s" % section)
@@ -544,7 +544,7 @@ func _process(delta: float) -> void:
 		_cam_time = 1.6
 	if _cam_time > 0.0:
 		_cam_time -= delta
-		_cam_label.text = "Kamera: " + cam_name
+		_cam_label.text = Game.t("Kamera: ") + cam_name
 		_cam_label.modulate.a = clampf(_cam_time, 0.0, 1.0)
 	else:
 		_cam_label.text = ""

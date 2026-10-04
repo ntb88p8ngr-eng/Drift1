@@ -218,6 +218,16 @@ static func _device_name(d: String) -> String:
 
 static func gameplay_page() -> VBoxContainer:
 	var v := _page()
+	# language (German is the source; the menus rebuild themselves when it changes)
+	var langs: Array = Game.LANGUAGES.map(func(l): return l[1])
+	var cur := 0
+	for i in Game.LANGUAGES.size():
+		if Game.LANGUAGES[i][0] == str(Game.settings.get("language", "de")):
+			cur = i
+	var lang := UiKit.option(langs, cur, func(i): Game.set_setting("language", Game.LANGUAGES[i][0]))
+	lang.set_auto_translate_mode(Node.AUTO_TRANSLATE_MODE_DISABLED)      # (each in its own language)
+	v.add_child(UiKit.labeled("Sprache / Language", lang))
+	v.add_child(UiKit.sep())
 	var adm := CheckBox.new()
 	adm.text = "Admin-Modus (Hauptmenü: Admin · im Spiel: F10)"
 	adm.button_pressed = bool(Game.settings.get("admin_mode", false))

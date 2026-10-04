@@ -45,7 +45,7 @@ func _draw() -> void:
 			var hd := Vector2(cos(ha), sin(ha))
 			draw_line(c + hd * (r - 20.0), c + hd * (r - 8.0), Color(1, 1, 1, 0.45), 1.5, true)
 		k += 1
-	draw_string(font, c + Vector2(-r, -r * 0.64), "x1000 U/min", HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 11, Color(1, 1, 1, 0.45))
+	draw_string(font, c + Vector2(-r, -r * 0.64), Game.t("x1000 U/min"), HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 11, Color(1, 1, 1, 0.45))
 	var nd := Vector2(cos(a), sin(a))
 	draw_line(c - nd * 12.0, c + nd * (r - 12.0), Color(1.0, 0.3, 0.2), 4.0, true)
 	draw_circle(c, 9.0, Color(0.15, 0.1, 0.2))

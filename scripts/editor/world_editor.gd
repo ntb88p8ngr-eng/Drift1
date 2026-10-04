@@ -233,16 +233,16 @@ func _build_ui() -> void:
 	left.add_child(dfb)
 	# brush
 	_brush_box = VBoxContainer.new()
-	var size_l := UiKit.label("Pinsel: %d m" % int(brush_r), 16)
+	var size_l := UiKit.label(Game.t("Pinsel: %d m") % int(brush_r), 16)
 	_brush_box.add_child(size_l)
 	_brush_box.add_child(UiKit.slider(4, 120, 1, brush_r, func(v):
 		brush_r = v
-		size_l.text = "Pinsel: %d m" % int(v), 280))
-	var str_l := UiKit.label("Stärke: %.1f" % brush_s, 16)
+		size_l.text = Game.t("Pinsel: %d m") % int(v), 280))
+	var str_l := UiKit.label(Game.t("Stärke: %.1f") % brush_s, 16)
 	_brush_box.add_child(str_l)
 	_brush_box.add_child(UiKit.slider(0.5, 30, 0.5, brush_s, func(v):
 		brush_s = v
-		str_l.text = "Stärke: %.1f" % v, 280))
+		str_l.text = Game.t("Stärke: %.1f") % v, 280))
 	var prot := CheckBox.new()
 	prot.text = "Strecke schützen"
 	prot.button_pressed = protect_track
@@ -285,11 +285,11 @@ func _build_ui() -> void:
 	left.add_child(_paint_box)
 	# road
 	_road_box = VBoxContainer.new()
-	var w_l := UiKit.label("Breite: %d m" % int(road_w), 16)
+	var w_l := UiKit.label(Game.t("Breite: %d m") % int(road_w), 16)
 	_road_box.add_child(w_l)
 	_road_box.add_child(UiKit.slider(3, 30, 0.5, road_w, func(v):
 		road_w = v
-		w_l.text = "Breite: %.1f m" % v
+		w_l.text = Game.t("Breite: %.1f m") % v
 		_preview_dirty = true, 280))
 	var names: Array = []
 	for s in RoadBuilder.SURFACES:
@@ -297,11 +297,11 @@ func _build_ui() -> void:
 	_road_box.add_child(UiKit.option(names, 0, func(i):
 		road_surface = RoadBuilder.SURFACES[i][0]
 		_preview_dirty = true, 280))
-	var h_l := UiKit.label("Dicke: %.1f m" % road_h, 16)
+	var h_l := UiKit.label(Game.t("Dicke: %.1f m") % road_h, 16)
 	_road_box.add_child(h_l)
 	_road_h_slider = UiKit.slider(-6, 4, 0.1, road_h, func(v):
 		road_h = v
-		h_l.text = ("Dicke: %.1f m" % v) if v >= 0.0 else ("Vertieft: %.1f m" % -v)
+		h_l.text = (Game.t("Dicke: %.1f m") % v) if v >= 0.0 else (Game.t("Vertieft: %.1f m") % -v)
 		_preview_dirty = true, 280)
 	_road_h_slider.tooltip_text = "Dicke der Straße – sie liegt immer auf dem Boden, nie in der Luft (unter 0: eingegraben). Eine gewählte Straße: Bild↑ / Bild↓."
 	_road_box.add_child(_road_h_slider)
@@ -340,7 +340,7 @@ func _build_ui() -> void:
 	root.add_child(_box_rect)
 	rp.custom_minimum_size = Vector2(320, 0)
 	root.add_child(rp)
-	right.add_child(UiKit.label("Basis: " + Game.track_name(map.base_track), 16, UiKit.TEXT_DIM))
+	right.add_child(UiKit.label(Game.t("Basis: ") + Game.track_name(map.base_track), 16, UiKit.TEXT_DIM))
 	_name_edit = LineEdit.new()
 	_name_edit.text = map.map_name
 	_name_edit.custom_minimum_size = Vector2(300, 0)
@@ -616,12 +616,12 @@ func _click(double: bool, shift := false) -> void:
 			var wall := _wall_at(_mouse)
 			if not wall.is_empty() and (str(it.get("kind", "")) == "none" or it.is_empty()):
 				_sel = [wall]
-				message("Leitplanke ausgewählt (%d m) – Entf entfernt dieses Stück (Rückgängig: Strg+Z)" % int(float(wall["p1"]) - float(wall["p0"])))
+				message(Game.t("Leitplanke ausgewählt (%d m) – Entf entfernt dieses Stück (Rückgängig: Strg+Z)") % int(float(wall["p1"]) - float(wall["p0"])))
 				return
 			if str(it.get("kind", "")) == "none":
 				if not shift:
 					_select({})
-				message("%s gehört fest zur Karte und ist nicht editierbar." % str(it["why"]))
+				message(Game.t("%s gehört fest zur Karte und ist nicht editierbar.") % str(it["why"]))
 				return
 			if it.is_empty():
 				# empty ground: drag a box to select several
@@ -849,7 +849,7 @@ func _sel_message() -> void:
 	if _sel.is_empty():
 		message("")
 	elif _sel.size() > 1:
-		message("%d Objekte ausgewählt · Ziehen: verschieben · R: drehen · +/-: Größe · Entf: löschen · Strg+C / Strg+V" % _sel.size())
+		message(Game.t("%d Objekte ausgewählt · Ziehen: verschieben · R: drehen · +/-: Größe · Entf: löschen · Strg+C / Strg+V") % _sel.size())
 	else:
 		var s: Dictionary = _sel[0]
 		match str(s["kind"]):
@@ -860,12 +860,12 @@ func _sel_message() -> void:
 					nm = str(n.get_meta("label"))
 				elif n.has_meta("asset"):
 					var aid := str(n.get_meta("asset"))
-					nm = "Kopie: Gebäude" if aid.begins_with("cbld:") else ("Kopie: " + aid.substr(6) if aid.begins_with("cprop:") else AssetLib.name_of(aid))
+					nm = "Kopie: Gebäude" if aid.begins_with("cbld:") else (Game.t("Kopie: ") + aid.substr(6) if aid.begins_with("cprop:") else AssetLib.name_of(aid))
 				elif n.has_meta("road"):
 					nm = "Straße"
-				message("Ausgewählt: %s" % nm)
+				message(Game.t("Ausgewählt: %s") % nm)
 			"spot":
-				message("Ausgewählt: %s" % _spot_name(int(s["id"])))
+				message(Game.t("Ausgewählt: %s") % _spot_name(int(s["id"])))
 			"water":
 				message("Ausgewählt: Wasser (Bild↑/↓: Pegel)")
 
@@ -1188,7 +1188,7 @@ func _deflicker_all() -> void:
 	deflicker = was
 	_sync_objects()
 	_changed = true
-	message("%d Objekte entflackert" % n)
+	message(Game.t("%d Objekte entflackert") % n)
 
 
 ## The dragged objects' bounds (their union) at the start of a drag.
@@ -1249,7 +1249,7 @@ func _set_snap(objects: bool, grid_on: bool) -> void:
 	if _snap_boxes.size() == 2:
 		(_snap_boxes[0] as CheckBox).set_pressed_no_signal(objects)
 		(_snap_boxes[1] as CheckBox).set_pressed_no_signal(grid_on)
-	message("Einrasten an Objekten: %s · Raster 1 m: %s" % ["an" if objects else "aus", "an" if grid_on else "aus"])
+	message(Game.t("Einrasten an Objekten: %s · Raster 1 m: %s") % ["an" if objects else "aus", "an" if grid_on else "aus"])
 
 
 ## A built road a step higher or lower: rebuilt at its new height (undo puts the old one back).
@@ -1276,7 +1276,7 @@ func _road_height(body: Node3D, dy: float) -> void:
 	_sync_objects()
 	_changed = true
 	var hh := float(r["height"])
-	message("Straßendicke %.1f m (liegt immer auf dem Boden)" % hh if hh >= 0.0 else "Straße %.1f m eingegraben" % -hh)
+	message(Game.t("Straßendicke %.1f m (liegt immer auf dem Boden)") % hh if hh >= 0.0 else Game.t("Straße %.1f m eingegraben") % -hh)
 
 
 ## The track barrier under the mouse: {kind: wall, p0, p1 (metres along the track), side} for a
@@ -1475,7 +1475,7 @@ func _copy() -> void:
 		var rel := x.origin - c
 		rel.y = x.origin.y - _ground_y(x.origin)      # height above the ground
 		_clip.append([asset, Transform3D(x.basis, rel)])
-	message("%d kopiert%s – Strg+V setzt sie unter die Maus" % [_clip.size(), " (%d Spielobjekte lassen sich nicht kopieren)" % skipped if skipped > 0 else ""])
+	message(Game.t("%d kopiert%s – Strg+V setzt sie unter die Maus") % [_clip.size(), Game.t(" (%d Spielobjekte lassen sich nicht kopieren)") % skipped if skipped > 0 else ""])
 
 
 ## Ctrl+V: the copied things around the point under the mouse.
@@ -1516,7 +1516,7 @@ func _place(at: Vector3) -> void:
 	var xf := Transform3D(Basis(Vector3.UP, _ghost_rot).scaled(Vector3.ONE * _ghost_scale), at)
 	var body := MapData.place_object(holder, place_asset, xf)
 	if body == null:
-		message("Kann %s nicht setzen" % AssetLib.name_of(place_asset))
+		message(Game.t("Kann %s nicht setzen") % AssetLib.name_of(place_asset))
 		return
 	_deflicker_node(body)
 	_undo.append(func():
@@ -1772,7 +1772,7 @@ func _finish_road() -> void:
 		_sync_objects())
 	_sync_objects()
 	_changed = true
-	message("Straße gebaut (%d m breit)" % int(road_w))
+	message(Game.t("Straße gebaut (%d m breit)") % int(road_w))
 
 
 static func _pts_v3(arr: Array) -> Array:
@@ -1833,18 +1833,18 @@ func _open_upload() -> void:
 func _on_upload(path: String) -> void:
 	var bytes := FileAccess.get_file_as_bytes(path)
 	if bytes.is_empty():
-		message("Datei nicht lesbar: " + path)
+		message(Game.t("Datei nicht lesbar: ") + path)
 		return
 	var id: String = map.add_model(path.get_file(), bytes)
 	if not AssetLib.uploaded.has(id):
 		map.models.erase(id)
-		message("Kein gültiges GLB-Modell: " + path.get_file())
+		message(Game.t("Kein gültiges GLB-Modell: ") + path.get_file())
 		return
 	_fill_palette()
 	place_asset = "model:" + id
 	_set_tool("place")
 	_changed = true
-	message("Hochgeladen: %s (%d KB, wird mit der Karte gespeichert)" % [path.get_file(), bytes.size() / 1024])
+	message(Game.t("Hochgeladen: %s (%d KB, wird mit der Karte gespeichert)") % [path.get_file(), bytes.size() / 1024])
 
 
 func _open_export() -> void:
@@ -1880,7 +1880,7 @@ func _save_copy() -> void:
 		map_path = MapData.MAP_DIR.path_join(MapData.safe_file_name(map.map_name) + ".dmap")
 	if map.save(map_path):
 		_changed = false
-		message("Gespeichert: %s – im Einzelspieler unter „Eigene Karte“ fahrbar" % map.map_name)
+		message(Game.t("Gespeichert: %s – im Einzelspieler unter „Eigene Karte“ fahrbar") % map.map_name)
 	else:
 		message("Speichern fehlgeschlagen")
 
@@ -1889,7 +1889,7 @@ func _on_export(path: String) -> void:
 	_collect()
 	if not path.ends_with(".dmap"):
 		path += ".dmap"
-	message(("Exportiert: " + path) if map.save(path) else "Export fehlgeschlagen")
+	message((Game.t("Exportiert: ") + path) if map.save(path) else "Export fehlgeschlagen")
 
 
 func _test_drive() -> void:

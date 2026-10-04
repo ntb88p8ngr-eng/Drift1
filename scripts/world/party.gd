@@ -403,9 +403,9 @@ func _stop_race(msg: Dictionary) -> void:
 	_t = 0.0
 	var by := int(msg.get("by", 1))
 	_chooser = by
-	var who := "Du hast" if by == me else "%s hat" % _name(by)
-	_b_by.text = "%s eine Minispiel-Münze eingesammelt!" % who
-	_b_title.text = "MINISPIEL %d / %d" % [games_played, games_total]
+	var who := "Du hast" if by == me else Game.t("%s hat") % _name(by)
+	_b_by.text = Game.t("%s eine Minispiel-Münze eingesammelt!") % who
+	_b_title.text = Game.t("MINISPIEL %d / %d") % [games_played, games_total]
 	_b_desc.text = ""
 	_banner.visible = true
 	_table.visible = false
@@ -424,7 +424,7 @@ func _on_choose(msg: Dictionary) -> void:
 		c.queue_free()
 	if _chooser == me:
 		_b_game.text = "Wähle ein Minispiel!"
-		_b_desc.text = "Klicken, Taste 1–%d oder Steuerkreuz + (A)" % _available_games().size()
+		_b_desc.text = Game.t("Klicken, Taste 1–%d oder Steuerkreuz + (A)") % _available_games().size()
 		var n := 1
 		for k in _available_games():
 			var gk: int = k
@@ -439,7 +439,7 @@ func _on_choose(msg: Dictionary) -> void:
 		if first:
 			first.grab_focus.call_deferred()
 	else:
-		_b_game.text = "%s wählt ein Minispiel …" % _name(_chooser)
+		_b_game.text = Game.t("%s wählt ein Minispiel …") % _name(_chooser)
 		_b_desc.text = ""
 		_choices.visible = false
 
@@ -524,7 +524,7 @@ func _physics_process(delta: float) -> void:
 				var avail := _available_games()
 				_host_decide(avail[randi() % avail.size()])
 			elif _chooser != Net.local_id():
-				_b_desc.text = "noch %d s" % int(ceil(maxf(CHOOSE_TIME - _t, 0.0)))
+				_b_desc.text = Game.t("noch %d s") % int(ceil(maxf(CHOOSE_TIME - _t, 0.0)))
 		"announce":
 			# roulette: names flicker, slowing down, then the drawn game stays
 			var k := _t / (ANNOUNCE_TIME - 1.5)
@@ -712,7 +712,7 @@ func _play(delta: float, g: Dictionary) -> void:
 					_red_since = -1.0
 				if not _done and _penalty <= 0.0 and _pin:
 					_release()
-			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(sites.rlgl_finish() - along, 0.0))]
+			_line.text = "%s   ·   %s" % [_clock(left), (Game.t("Ziel in %.2f s") % _finish_t) if _done else Game.t("%d m bis zum Ziel") % int(maxf(sites.rlgl_finish() - along, 0.0))]
 		"parkour":
 			if not _done:
 				for cz in sites.pk_checkpoints():
@@ -725,7 +725,7 @@ func _play(delta: float, g: Dictionary) -> void:
 					_finish_t = _t
 					_finish_local()
 					world.hud.show_message("IM ZIEL!", Game.format_time(_t), UiKit.GOLD, 2.5)
-			_line.text = "%s   ·   %s" % [_clock(left), ("Ziel in %.2f s" % _finish_t) if _done else "%d m bis zum Ziel" % int(maxf(sites.pk_finish() - along, 0.0))]
+			_line.text = "%s   ·   %s" % [_clock(left), (Game.t("Ziel in %.2f s") % _finish_t) if _done else Game.t("%d m bis zum Ziel") % int(maxf(sites.pk_finish() - along, 0.0))]
 		"koth":
 			var step := int(_t / KOTH_STEP)
 			_zone = _zone.lerp(sites.koth_spot(_seed, step), 1.0 - exp(-delta * 2.5))
@@ -734,7 +734,7 @@ func _play(delta: float, g: Dictionary) -> void:
 			if inside and _penalty <= 0.0 and not _done:
 				_value += delta
 			_show_status("IN DER ZONE" if inside else "", UiKit.GOLD)
-			_line.text = "%s   ·   %.1f s in der Zone" % [_clock(left), _value]
+			_line.text = Game.t("%s   ·   %.1f s in der Zone") % [_clock(left), _value]
 		"bowling":
 			_play_bowling(delta, car, along, left)
 		"balloon":
@@ -754,7 +754,7 @@ func _play(delta: float, g: Dictionary) -> void:
 				var pw2 := ""
 				if str(fb.get("power", "")) != "":
 					pw2 = "   ·   %s %d s" % ["3× SCHUSS" if fb["power"] == "triple" else "⚡ SCHNELLFEUER", int(ceil(float(fb["power_t"])))]
-				_line.text = "%s   ·   %s   ·   %d geplatzt   ·   noch %d im Spiel%s" % [_clock(left), bal, int(fb.get("kills", 0)), alive, pw2]
+				_line.text = Game.t("%s   ·   %s   ·   %d geplatzt   ·   noch %d im Spiel%s") % [_clock(left), bal, int(fb.get("kills", 0)), alive, pw2]
 				_show_status(_arena.feed if _arena.feed_t > 0.0 else "", UiKit.TEXT)
 				_status.add_theme_font_size_override("font_size", 30)
 		"arena":
@@ -768,7 +768,7 @@ func _play(delta: float, g: Dictionary) -> void:
 				var pw := ""
 				if str(f.get("power", "")) != "":
 					pw = "   ·   %s %d s" % ["3× SCHUSS" if f["power"] == "triple" else "⚡ SCHNELLFEUER", int(ceil(float(f["power_t"])))]
-				_line.text = "%s   ·   %s   ·   %d Abschüsse%s" % [_clock(left), hearts, int(_value), pw]
+				_line.text = Game.t("%s   ·   %s   ·   %d Abschüsse%s") % [_clock(left), hearts, int(_value), pw]
 				_show_status(_arena.feed if _arena.feed_t > 0.0 else "", UiKit.TEXT)
 				_status.add_theme_font_size_override("font_size", 30)
 		"donut":
@@ -779,7 +779,7 @@ func _play(delta: float, g: Dictionary) -> void:
 			if car.speed > 1.5 and car.global_position.distance_to(spot.origin) < PartySites.DONUT_R and not _done:
 				_yaw_acc += dy
 			_value = floorf(absf(_yaw_acc) / TAU)
-			_line.text = "%s   ·   %d Donuts" % [_clock(left), int(_value)]
+			_line.text = Game.t("%s   ·   %d Donuts") % [_clock(left), int(_value)]
 
 
 ## Bowling: two throws. Take a run-up; past the red foul line the car only rolls (no gas, no steering).
@@ -800,7 +800,7 @@ func _play_bowling(delta: float, car, along: float, left: float) -> void:
 			if _throw_t > 1.8 and not _done:
 				_value += down
 				var strike := down == _pins.size()
-				world.hud.show_message("STRIKE!" if strike else "%d KEGEL" % down, "Wurf %d / 2" % (_throw + 1), UiKit.GOLD, 1.8)
+				world.hud.show_message("STRIKE!" if strike else "%d KEGEL" % down, Game.t("Wurf %d / 2") % (_throw + 1), UiKit.GOLD, 1.8)
 				car.input_enabled = true
 				_throw += 1
 				if _throw >= 2:
@@ -818,7 +818,7 @@ func _play_bowling(delta: float, car, along: float, left: float) -> void:
 				_bowl_phase = "roll"
 				_throw_t = 0.0
 	var now := down if _bowl_phase != "reset" else 0
-	_line.text = "%s   ·   Wurf %d / 2   ·   %d Kegel (gesamt %d)" % [_clock(left), mini(_throw + 1, 2), now, int(_value)]
+	_line.text = Game.t("%s   ·   Wurf %d / 2   ·   %d Kegel (gesamt %d)") % [_clock(left), mini(_throw + 1, 2), now, int(_value)]
 
 
 func _show_status(text: String, color: Color) -> void:
@@ -884,14 +884,14 @@ func _on_final(rows: Array) -> void:
 	Game.add_credits(credits)
 	for c in _table.get_children():
 		c.queue_free()
-	_table.add_child(UiKit.label("ERGEBNIS – " + str(g["name"]).to_upper(), 26, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+	_table.add_child(UiKit.label(Game.t("ERGEBNIS – ") + str(g["name"]).to_upper(), 26, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
 	for e in list:
 		var col: Color = UiKit.GOLD if e[3] else UiKit.TEXT
 		_table.add_child(UiKit.label("%d.   %s   –   %s" % [int(e[0]) + 1, e[1], e[2]], 22, col, HORIZONTAL_ALIGNMENT_CENTER))
-	_table.add_child(UiKit.label("+%s Credits" % Game.format_points(credits), 20, UiKit.GOOD, HORIZONTAL_ALIGNMENT_CENTER))
+	_table.add_child(UiKit.label(Game.t("+%s Credits") % Game.format_points(credits), 20, UiKit.GOOD, HORIZONTAL_ALIGNMENT_CENTER))
 	_table.visible = true
 	_banner.visible = true
-	_b_title.text = "MINISPIEL %d / %d" % [games_played, games_total]
+	_b_title.text = Game.t("MINISPIEL %d / %d") % [games_played, games_total]
 	_b_game.text = g["name"]
 	_b_desc.text = ""
 	_b_by.text = "Gewonnen!" if my_rank == 0 and rows.size() > 1 else ""
@@ -911,21 +911,21 @@ func _fmt(g: Dictionary, v: float) -> String:
 	match str(g["id"]):
 		"rlgl", "parkour":
 			if v >= 5000.0:
-				return "Ziel in %s" % Game.format_time(10000.0 - v)
-			return "%d m weit" % int(v)
+				return Game.t("Ziel in %s") % Game.format_time(10000.0 - v)
+			return Game.t("%d m weit") % int(v)
 		"koth":
-			return "%.1f s in der Zone" % v
+			return Game.t("%.1f s in der Zone") % v
 		"bowling":
-			return "%d Kegel" % int(v)
+			return Game.t("%d Kegel") % int(v)
 		"arena":
-			return "%d Abschüsse (%d Treffer)" % [int(v), int(round(fmod(v, 1.0) * 100.0))]
+			return Game.t("%d Abschüsse (%d Treffer)") % [int(v), int(round(fmod(v, 1.0) * 100.0))]
 		"balloon":
 			var pops := int(round(fmod(v, 1.0) * 10.0))
 			if v >= 1000.0:
 				var left_b := int((v - 1000.0) / 100.0)
-				return "überlebt mit %d Ballon%s · %d geplatzt" % [left_b, "" if left_b == 1 else "s", pops]
-			return "raus nach %d s · %d geplatzt" % [int(v), pops]
-	return "%d Donuts" % int(v)
+				return Game.t("überlebt mit %d Ballon%s · %d geplatzt") % [left_b, "" if left_b == 1 else "s", pops]
+			return Game.t("raus nach %d s · %d geplatzt") % [int(v), pops]
+	return Game.t("%d Donuts") % int(v)
 
 
 func _begin_back() -> void:
@@ -1014,4 +1014,4 @@ func _build_ui() -> void:
 
 func _update_info() -> void:
 	var left := games_total - games_played
-	_info.text = ("★ PARTY: noch %d Minispiel%s – fahr durch eine Münze!" % [left, "" if left == 1 else "e"]) if left > 0 else "★ PARTY: alle Minispiele gespielt"
+	_info.text = (Game.t("★ PARTY: noch %d Minispiel%s – fahr durch eine Münze!") % [left, "" if left == 1 else "e"]) if left > 0 else "★ PARTY: alle Minispiele gespielt"

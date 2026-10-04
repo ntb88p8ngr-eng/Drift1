@@ -633,16 +633,16 @@ func _complete_lap() -> void:
 	if is_best:
 		best_lap = t
 	var rank := Game.submit_score(track.track_id, "lap", local_car.player_name, t, local_car.car_id)
-	var sub := "Rundenzeit %s" % Game.format_time(t)
+	var sub := Game.t("Rundenzeit %s") % Game.format_time(t)
 	if rank > 0:
-		sub += "  ·  Leaderboard Platz %d" % rank
+		sub += Game.t("  ·  Leaderboard Platz %d") % rank
 	if _lap_race() and lap >= laps_total:
 		_finish()
 		return
 	if is_best:
 		hud.show_message("NEUE BESTZEIT", sub, UiKit.GOLD, 2.5)
 	else:
-		hud.show_message("RUNDE %d" % (lap + 1) if _lap_race() else "RUNDE", sub, Color.WHITE, 2.0)
+		hud.show_message(Game.t("RUNDE %d") % (lap + 1) if _lap_race() else "RUNDE", sub, Color.WHITE, 2.0)
 	if _lap_race() and lap == laps_total - 1:
 		hud.show_message("LETZTE RUNDE", sub, UiKit.GOLD, 2.5)
 
@@ -707,7 +707,7 @@ func _finish() -> void:
 			rows = _results_with_bots()
 		var lap_rows: Array = []
 		for i in lap_times.size():
-			lap_rows.append("Runde %d: %s" % [i + 1, Game.format_time(lap_times[i])])
+			lap_rows.append(Game.t("Runde %d: %s") % [i + 1, Game.format_time(lap_times[i])])
 		hud.show_results("ZIEL!" if mode == "race" else "DRIFT-BATTLE BEENDET", header, rows, notes + lap_rows, [
 			["Nochmal", request_restart], ["Replay speichern", save_replay], ["Hauptmenü", request_main_menu]])
 
@@ -746,15 +746,15 @@ func _submit_leaderboard() -> Array:
 	if scorer.total > 0.0:
 		var r := Game.submit_score(tid, "drift", pname, scorer.total, cid, Game.mode_name(mode))
 		if r > 0:
-			notes.append("Driftpunkte: Platz %d im Leaderboard!" % r)
+			notes.append(Game.t("Driftpunkte: Platz %d im Leaderboard!") % r)
 	if scorer.best_chain > 0.0:
 		var r2 := Game.submit_score(tid, "combo", pname, scorer.best_chain, cid, Game.mode_name(mode))
 		if r2 > 0:
-			notes.append("Bester Einzeldrift: Platz %d im Leaderboard!" % r2)
+			notes.append(Game.t("Bester Einzeldrift: Platz %d im Leaderboard!") % r2)
 	if mode == "race" and finished:
-		var r3 := Game.submit_score(tid, "race", pname, finish_time, cid, "%d Runden" % laps_total)
+		var r3 := Game.submit_score(tid, "race", pname, finish_time, cid, Game.t("%d Runden") % laps_total)
 		if r3 > 0:
-			notes.append("Rennzeit: Platz %d im Leaderboard!" % r3)
+			notes.append(Game.t("Rennzeit: Platz %d im Leaderboard!") % r3)
 	# credits for the tuning shop
 	var credits := int(scorer.total / 40.0)
 	if finished and mode != "free":
@@ -765,7 +765,7 @@ func _submit_leaderboard() -> Array:
 			credits += 2500
 	if credits > 0:
 		Game.add_credits(credits)
-		notes.append("+%s Credits (Tuning in der Garage)" % Game.format_points(credits))
+		notes.append(Game.t("+%s Credits (Tuning in der Garage)") % Game.format_points(credits))
 	return notes
 
 
@@ -799,7 +799,7 @@ func _on_remote_state(peer_id: int, s: Array) -> void:
 func _on_peer_left(peer_id: int) -> void:
 	if cars.has(peer_id) and cars[peer_id] != local_car:
 		var c: Car = cars[peer_id]
-		hud.show_message("%s hat das Spiel verlassen" % c.player_name, "", UiKit.TEXT_DIM, 2.0)
+		hud.show_message(Game.t("%s hat das Spiel verlassen") % c.player_name, "", UiKit.TEXT_DIM, 2.0)
 		c.queue_free()
 		cars.erase(peer_id)
 
@@ -850,13 +850,13 @@ func _show_online_results() -> void:
 	for id in cars.keys():
 		if not done.has(id) and is_instance_valid(cars[id]):
 			var c: Car = cars[id]
-			rows.append(["–", c.player_name, Game.get_car(c.car_id)["name"], "fährt noch (Runde %d)" % (c.remote_lap + 1), "", Game.format_points(c.remote_drift), false])
+			rows.append(["–", c.player_name, Game.get_car(c.car_id)["name"], Game.t("fährt noch (Runde %d)") % (c.remote_lap + 1), "", Game.format_points(c.remote_drift), false])
 	var buttons: Array = []
 	if Net.is_host():
 		buttons.append(["Zurück zur Lobby", func(): Net.host_return_to_lobby()])
 	buttons.append(["Replay speichern", save_replay])
 	buttons.append(["Lobby verlassen", request_leave_online])
-	var title_text := "ERGEBNIS – " + Game.mode_name(mode).to_upper()
+	var title_text := Game.t("ERGEBNIS – ") + Game.mode_name(mode).to_upper()
 	hud.show_results(title_text, header, rows, [], buttons)
 
 
@@ -996,7 +996,7 @@ func save_replay() -> void:
 	var path: String = recorder.save()
 	if hud:
 		if path != "":
-			hud.show_message("REPLAY GESPEICHERT", "%s – im Hauptmenü unter „Replays“" % Game.format_time(recorder.duration()), UiKit.GOOD, 3.0)
+			hud.show_message("REPLAY GESPEICHERT", Game.t("%s – im Hauptmenü unter „Replays“") % Game.format_time(recorder.duration()), UiKit.GOOD, 3.0)
 		else:
 			hud.show_message("REPLAY", "Nichts aufgenommen", UiKit.BAD, 2.0)
 

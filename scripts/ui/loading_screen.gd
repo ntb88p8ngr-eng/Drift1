@@ -94,7 +94,7 @@ func _on_draw() -> void:
 	c.draw_rect(fill.grow(3.0), Color(UiKit.ACCENT.r, UiKit.ACCENT.g, UiKit.ACCENT.b, 0.15))
 	c.draw_rect(fill, UiKit.ACCENT)
 	var dots := ".".repeat(1 + int(_t * 2.5) % 3)
-	c.draw_string(body, Vector2(bar.position.x, bar.position.y + 26.0), (Game.load_stage if Game.load_stage != "" else "Lade") + dots, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UiKit.TEXT_DIM)
+	c.draw_string(body, Vector2(bar.position.x, bar.position.y + 26.0), Game.t(Game.load_stage if Game.load_stage != "" else "Lade") + dots, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UiKit.TEXT_DIM)
 	c.draw_string(body, Vector2(bar.position.x, bar.position.y + 26.0), "%d %%" % int(round(clampf(_shown, 0.0, 1.0) * 100.0)), HORIZONTAL_ALIGNMENT_RIGHT, bw, 15, UiKit.TEXT_DIM)
 
 

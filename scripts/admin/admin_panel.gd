@@ -44,11 +44,11 @@ func _ready() -> void:
 	fc.text = "Freie Kamera (WASD, Q/E, rechte Maustaste)"
 	fc.toggled.connect(_set_freecam)
 	v.add_child(fc)
-	var sp_l := UiKit.label("Kamera-Tempo: %d m/s" % int(cam.speed), 15)
+	var sp_l := UiKit.label(Game.t("Kamera-Tempo: %d m/s") % int(cam.speed), 15)
 	v.add_child(sp_l)
 	v.add_child(UiKit.slider(1, 300, 1, cam.speed, func(x):
 		cam.speed = x
-		sp_l.text = "Kamera-Tempo: %d m/s" % int(x), 380))
+		sp_l.text = Game.t("Kamera-Tempo: %d m/s") % int(x), 380))
 	var sm_l := UiKit.label("Kamera-Weichheit", 15)
 	v.add_child(sm_l)
 	v.add_child(UiKit.slider(0, 0.95, 0.01, cam.smoothing, func(x): cam.smoothing = x, 380))
@@ -56,7 +56,7 @@ func _ready() -> void:
 	v.add_child(ts_l)
 	v.add_child(UiKit.slider(0.05, 2.0, 0.05, 1.0, func(x):
 		Engine.time_scale = x
-		ts_l.text = "Spieltempo: %.2f" % x, 380))
+		ts_l.text = Game.t("Spieltempo: %.2f") % x, 380))
 	v.add_child(UiKit.button("Auto zur Kamera holen", func():
 		if world.local_car and cam.current:
 			var f := -cam.global_transform.basis.z
@@ -125,7 +125,7 @@ func _refresh() -> void:
 	_bots_box.add_child(AdminUi.param_editor(b["p"], func(p):
 		ai.set_personality(b, str(b.get("personality", "")), p)))
 	_bots_box.add_child(UiKit.button("Als Persönlichkeit speichern …", func():
-		var nm := "%s (angepasst)" % str(b.get("personality", "Bot"))
+		var nm := Game.t("%s (angepasst)") % str(b.get("personality", "Bot"))
 		BotProfiles.save_profile(nm, (b["p"] as Dictionary).duplicate())
 		world.hud.show_message("GESPEICHERT", nm, UiKit.GOOD, 2.0), 380))
 	if ai.best_laps.is_empty():
@@ -136,7 +136,7 @@ func _refresh() -> void:
 			UiKit.button("Als Standard", func():
 				BotProfiles.save_line(str(world.track.track_id), l)
 				ai.default_line = l
-				world.hud.show_message("STANDARD-RUNDE", "Alle Bots fahren jetzt diese Runde (%s)" % Game.format_time(float(l["time"])), UiKit.GOOD, 3.0), 150)]))
+				world.hud.show_message("STANDARD-RUNDE", Game.t("Alle Bots fahren jetzt diese Runde (%s)") % Game.format_time(float(l["time"])), UiKit.GOOD, 3.0), 150)]))
 
 
 func _exit_tree() -> void:
