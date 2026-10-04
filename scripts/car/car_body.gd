@@ -126,7 +126,7 @@ const MODELS := {
 		"path": "res://assets/cars/m6gt3.glb", "wheel_r": 0.367, "wheel_w": 0.33, "track": 0.865,
 		"axle_f": -1.419, "axle_r": 1.419, "length": 4.94, "half_width": 1.03, "base": 0.042, "roof": 1.336,
 		"head": [[-0.668, 0.564, -1.93], [0.666, 0.566, -1.929]], "tail": [[-0.562, 0.737, 2.293], [0.568, 0.735, 2.291]],
-		"exhaust": [[-0.98, 0.2, 0.8], [0.98, 0.2, 0.8]], "exhaust_r": 0.045,
+		"exhaust": [[-0.98, 0.2, 0.8], [0.98, 0.2, 0.8]], "exhaust_r": 0.045, "livery_from": "md_keep_A_Body",
 	},
 	"m4f82": {
 		"path": "res://assets/cars/m4f82.glb", "wheel_r": 0.302, "wheel_w": 0.23, "track": 0.725,
@@ -1218,7 +1218,7 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 	# tinted glass you can see the cabin through, drawn from both sides (some models' windows face
 	# inwards: one-sided they vanished from outside)
 	glass_mat = StandardMaterial3D.new()
-	glass_mat.albedo_color = Color(0.02, 0.025, 0.03, 0.62)
+	glass_mat.albedo_color = Color(0.015, 0.018, 0.022, 0.87)     # dark tint: the cabin hardly shows
 	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	glass_mat.metallic = 0.4
@@ -1245,7 +1245,24 @@ func _build_from_model(m: Dictionary, paint: Dictionary) -> void:
 			if sm == null:
 				continue
 			var key := String(sm.resource_name)
-			if replace.has(key):
+			if m.has("livery_from") and key == "md_black" and String(mi.name).begins_with("body") and paint_mat.albedo_texture == null:
+				# (the M6's body came out of the conversion as plain black: its livery is the
+				# A_Body texture, mapped by the same UVs)
+				for nb in _mesh_instances(inst):
+					for k2 in (nb as MeshInstance3D).mesh.get_surface_count():
+						var lm = (nb as MeshInstance3D).mesh.surface_get_material(k2)
+						if lm is BaseMaterial3D and String(lm.resource_name) == str(m["livery_from"]):
+							paint_mat.albedo_texture = (lm as BaseMaterial3D).albedo_texture
+				mi.set_surface_override_material(i, paint_mat)
+			elif key == "md_black" and m.has("livery_from") and String(mi.name).begins_with("body"):
+				mi.set_surface_override_material(i, paint_mat)
+			elif key == "md_keep_A_Body" and sm is BaseMaterial3D and (sm as BaseMaterial3D).albedo_texture:
+				# a livery body (M6): the paint with the livery printed on it – the paint colour tints
+				# its white, the finish (clearcoat, metallic …) is the paint's (the model's own was
+				# a black mirror: roughness 0)
+				paint_mat.albedo_texture = (sm as BaseMaterial3D).albedo_texture
+				mi.set_surface_override_material(i, paint_mat)
+			elif replace.has(key):
 				mi.set_surface_override_material(i, replace[key])
 	# wheels: re-parent the imported wheel meshes into steer pivot + spin nodes
 	var names := ["fl", "fr", "rl", "rr"]
