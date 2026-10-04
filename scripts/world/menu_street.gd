@@ -48,7 +48,7 @@ func at(s: float, lateral: float, y := 0.0) -> Vector3:
 	return centre(s) + side(s) * lateral + Vector3(0, y, 0)
 
 
-func build(_asphalt: Material) -> void:
+func build(asphalt: Material) -> void:
 	var walk_mat := TexKit.ground_material(Color(0.075, 0.075, 0.08), Color(0.09, 0.09, 0.095), Color(0.07, 0.07, 0.075), 0.7, 1.25)
 	var grass_mat := TexKit.ground_material(Color(0.07, 0.08, 0.07), Color(0.085, 0.09, 0.075), Color(0.09, 0.085, 0.07), 0.9)
 	var line_mat := TexKit.std(Color(0.85, 0.84, 0.8), 0.45)
@@ -56,7 +56,9 @@ func build(_asphalt: Material) -> void:
 	# grass: either side of the driveway between yard and pavement, and all beyond the far pavement
 	var near_edge := STREET_Z + HALF + WALK
 	_ground(Rect2(-300.0, near_edge, 300.0 - DRIVE - 0.4, YARD_Z - near_edge), grass_mat)
-	_ground(Rect2(DRIVE + 0.4, near_edge, 300.0 - DRIVE - 0.4, YARD_Z - near_edge), grass_mat)
+	# (right of the driveway the yard's black asphalt goes on to the fence; the flowers sit on it)
+	_ground(Rect2(DRIVE + 0.4, near_edge, 30.0 - DRIVE - 0.4, YARD_Z - near_edge), asphalt if asphalt else grass_mat)
+	_ground(Rect2(30.0, near_edge, 270.0, YARD_Z - near_edge), grass_mat)
 	# beyond the street no pavement: the ground fades from the wet asphalt into dark grass (no seam)
 	_far_ground(STREET_Z - HALF + 0.3)
 	# pavements with their kerbs (the near one dropped and open at the driveway)
@@ -90,6 +92,8 @@ func build(_asphalt: Material) -> void:
 	_plant()
 	_yard_garden()
 	_fence()
+	_gate()
+	_brick_wall()
 	_traffic_setup()
 	_lamp(mid + 7.0, HALF + 0.55)
 	_street_props()
@@ -239,13 +243,22 @@ func _fence() -> void:
 	var col := Color(0.16, 0.16, 0.17)
 	# posts, two rails, pickets with pointed tops
 	var x := x0
+	var gap := DRIVE + 0.25              # the driveway's opening (closed by the sliding gate)
 	while x <= x1 + 0.01:
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, h * 0.5 + 0.05, z)), Vector3(0.09, h + 0.1, 0.09), col)
+		if absf(x) > gap:
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, h * 0.5 + 0.05, z)), Vector3(0.09, h + 0.1, 0.09), col)
 		x += 2.5
+	for sg in [-1.0, 1.0]:
+		# the posts either side of the opening, heavier
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(sg * gap, h * 0.5 + 0.1, z)), Vector3(0.14, h + 0.2, 0.14), col)
 	for ry in [0.25, h - 0.2]:
-		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3((x0 + x1) * 0.5, ry, z)), Vector3(x1 - x0, 0.05, 0.04), col)
+		for span in [[x0, -gap], [gap, x1]]:
+			MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3((span[0] + span[1]) * 0.5, ry, z)), Vector3(span[1] - span[0], 0.05, 0.04), col)
 	x = x0 + 0.08
 	while x < x1:
+		if absf(x) < gap + 0.05:
+			x += 0.14
+			continue
 		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, h * 0.5, z)), Vector3(0.025, h, 0.025), col)
 		MeshKit.box(st, Transform3D(Basis(Vector3.BACK, PI * 0.25), Vector3(x, h + 0.01, z)), Vector3(0.04, 0.04, 0.03), col)
 		x += 0.14
@@ -256,6 +269,134 @@ func _fence() -> void:
 	mi.mesh = st.commit()
 	mi.material_override = m
 	add_child(mi)
+
+
+## The driveway's sliding gate: a palisade panel on rollers along a ground rail, sliding to the right
+## (seen from the garage) behind the fence; it opens and closes with the shutter (set_gate).
+var _gate_node: Node3D
+var _gate_closed_x := 0.0
+var _gate_travel := 0.0
+
+
+func _gate() -> void:
+	var z := STREET_Z + HALF + WALK + 0.5 + 0.16     # just inside the fence line
+	var w := (DRIVE + 0.25) * 2.0 + 0.3
+	var h := 1.75
+	var col := Color(0.16, 0.16, 0.17)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# frame, a diagonal brace, pickets
+	for ry in [0.12, h - 0.06]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, ry, 0)), Vector3(w, 0.08, 0.06), col)
+	for ex in [-w * 0.5 + 0.04, w * 0.5 - 0.04]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(ex, h * 0.5 + 0.05, 0)), Vector3(0.08, h - 0.1, 0.06), col)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, h * 0.5, 0)), Vector3(w, 0.05, 0.04), col)
+	var px := -w * 0.5 + 0.12
+	while px < w * 0.5 - 0.08:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(px, h * 0.5 + 0.1, 0)), Vector3(0.025, h - 0.1, 0.025), col)
+		MeshKit.box(st, Transform3D(Basis(Vector3.BACK, PI * 0.25), Vector3(px, h + 0.06, 0)), Vector3(0.04, 0.04, 0.03), col)
+		px += 0.14
+	# the rollers underneath
+	for rx in [-w * 0.35, w * 0.35]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(rx, 0.05, 0)), Vector3(0.14, 0.1, 0.08), Color(0.3, 0.3, 0.3))
+	st.generate_normals()
+	_gate_node = MeshInstance3D.new()
+	_gate_node.name = "YardGate"
+	(_gate_node as MeshInstance3D).mesh = st.commit()
+	(_gate_node as MeshInstance3D).material_override = TexKit.std(col, 0.45, 0.7)
+	add_child(_gate_node)
+	_gate_closed_x = 0.0
+	_gate_travel = w + 0.2
+	_gate_node.position = Vector3(_gate_closed_x, 0.0, z)
+	# the ground rail it runs on, the guide post at its far end and the motor box by the gate post
+	var fix := SurfaceTool.new()
+	fix.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var r0 := -w * 0.5
+	var r1 := w * 1.5 + 0.4
+	MeshKit.box(fix, Transform3D(Basis.IDENTITY, Vector3((r0 + r1) * 0.5, 0.025, z)), Vector3(r1 - r0, 0.03, 0.06), Color(0.35, 0.35, 0.36))
+	MeshKit.box(fix, Transform3D(Basis.IDENTITY, Vector3(r1, 1.0, z + 0.12)), Vector3(0.1, 2.0, 0.1), col)
+	MeshKit.box(fix, Transform3D(Basis.IDENTITY, Vector3(DRIVE + 0.6, 0.3, z + 0.32)), Vector3(0.32, 0.45, 0.24), Color(0.55, 0.55, 0.53))
+	fix.generate_normals()
+	var fm := MeshInstance3D.new()
+	fm.mesh = fix.commit()
+	fm.material_override = TexKit.std(Color(1, 1, 1), 0.5, 0.4)
+	add_child(fm)
+
+
+## 0 = closed, 1 = right open (it follows the shutter).
+func set_gate(open: float) -> void:
+	if _gate_node:
+		_gate_node.position.x = _gate_closed_x + _gate_travel * clampf(open, 0.0, 1.0)
+
+
+## A brick wall along the far side of the street (the trees show over it).
+func _brick_wall() -> void:
+	var z := STREET_Z - HALF - 0.9
+	var h := 2.3
+	var len := LENGTH
+	var m := StandardMaterial3D.new()
+	var tex := _brick_textures()
+	m.albedo_texture = tex[0]
+	m.normal_enabled = true
+	m.normal_texture = tex[1]
+	m.normal_scale = 0.9
+	m.roughness = 0.9
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3(1.0 / 0.96, 1.0, 1.0 / 0.96)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(0, h * 0.5, z)), Vector3(len, h, 0.3))
+	# piers every 6 m
+	var x := -len * 0.5
+	while x <= len * 0.5:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, h * 0.5 + 0.05, z)), Vector3(0.5, h + 0.1, 0.45))
+		x += 6.0
+	st.generate_normals()
+	var wall := MeshInstance3D.new()
+	wall.name = "BrickWall"
+	wall.mesh = st.commit()
+	wall.material_override = m
+	add_child(wall)
+	# a concrete coping on top
+	var cap := MeshKit.box_node(Vector3(len, 0.08, 0.42), TexKit.std(Color(0.32, 0.31, 0.3), 0.8), Vector3(0, h + 0.04, z))
+	add_child(cap)
+
+
+## Albedo + normal map of a running-bond brick wall: 4 bricks × 14 courses per tile (0.96 × 1 m).
+static func _brick_textures() -> Array:
+	var bw := 60
+	var bh := 18
+	var w := bw * 4
+	var hh := bh * 14
+	var img := Image.create(w, hh, false, Image.FORMAT_RGBA8)
+	var bump := Image.create(w, hh, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5150
+	var tones := []
+	for i in 4 * 14 + 8:
+		var t := rng.randf_range(-0.07, 0.07)
+		tones.append(Color(0.42 + t, 0.17 + t * 0.6 + rng.randf_range(-0.02, 0.02), 0.12 + t * 0.4))
+	for y in hh:
+		var row := y / bh
+		var off := (bw / 2) if row % 2 == 1 else 0
+		for x in w:
+			var xx := (x + off) % w
+			var col := xx / bw
+			var mortar := (y % bh) < 2 or (xx % bw) < 2
+			var c: Color
+			if mortar:
+				c = Color(0.36, 0.35, 0.33) * rng.randf_range(0.9, 1.05)
+			else:
+				c = (tones[row * 4 + col] as Color) * rng.randf_range(0.88, 1.08)
+			img.set_pixel(x, y, c)
+			var hv := 0.0 if mortar else 0.8 + rng.randf_range(-0.08, 0.08)
+			bump.set_pixel(x, y, Color(hv, hv, hv))
+	bump.bump_map_to_normal_map(6.0)
+	img.generate_mipmaps()
+	bump.generate_mipmaps()
+	return [ImageTexture.create_from_image(img), ImageTexture.create_from_image(bump)]
 
 
 ## Beside the driveway: a row of big bushes on the left, a flower field on the right.

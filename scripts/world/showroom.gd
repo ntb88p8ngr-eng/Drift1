@@ -78,6 +78,7 @@ var _shutter_base := Transform3D.IDENTITY
 var _shutter_b := 1.5
 var _shutter_want := 1.5
 var _shutter_paused := false
+var _street: Node3D                 # menu_street.gd (its yard gate opens with the shutter)
 var _trolley: Node3D                # the opener's carriage on its rail (moves with the shutter)
 var _trolley_a := Vector3.ZERO      # its place with the shutter down / up
 var _trolley_b := Vector3.ZERO
@@ -150,6 +151,8 @@ func _set_shutter(b: float) -> void:
 		return
 	var k := (SHUTTER_TOP - b) / (SHUTTER_TOP - SHUTTER_B0)
 	_shutter.global_transform = Transform3D(Basis.from_scale(Vector3(1.0, k, 1.0)), Vector3(0, SHUTTER_TOP * (1.0 - k), 0)) * _shutter_base
+	if _street:
+		_street.set_gate((b - SHUTTER_DOWN - 0.6) / (SHUTTER_UP - SHUTTER_DOWN - 0.6))
 	if _trolley:
 		_trolley.position = _trolley_a.lerp(_trolley_b, clampf((b - SHUTTER_DOWN) / (SHUTTER_UP - SHUTTER_DOWN), 0.0, 1.0))
 
@@ -394,6 +397,7 @@ func _load_workshop() -> bool:
 	_epoxy_floor(g)
 	_open_spanners(g)
 	_replace_wall_tools(g)
+	_pegboards(g)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
 	for pat in ["*Turntable_skirt_segment*", "*Skirt_hex_bolt*"]:
@@ -496,6 +500,7 @@ func _load_workshop() -> bool:
 	var street := MenuStreet.new()
 	street.name = "Street"
 	add_child(street)
+	_street = street
 	street.build(_world_tiled(asphalt, 1.0 / 4.0) if asphalt else null)
 	var storm_fx := MenuStorm.new()
 	storm_fx.name = "Storm"
@@ -563,8 +568,10 @@ func _load_workshop() -> bool:
 	var probe := ReflectionProbe.new()
 	# (reaching over the extended floor in front of the hall too: outside the box the floor's
 	# mirror image of the honeycomb came out stretched and smeared)
-	probe.size = Vector3(17.4, 5.2, 24.0)
-	probe.position = Vector3(0, 2.4, -2.0)
+	# (and wide enough for the floor left of the hall, behind the menu: past the box's side it only
+	# showed blurred blobs of the sky)
+	probe.size = Vector3(44.0, 5.2, 40.0)
+	probe.position = Vector3(0, 2.4, 4.0)
 	probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	probe.box_projection = true
 	probe.interior = true
@@ -696,6 +703,41 @@ func _replace_wall_tools(g: Node3D) -> void:
 			tool.global_transform = Transform3D(b, Vector3(c.x, c.y, back + depth * 0.5 + 0.005) - b * mbox.get_center())
 			done += 1
 	print("SHOWROOM: %d wall tools replaced" % done)
+
+
+## The perforated tool boards: their hundreds of tiny hole meshes shimmered from the camera's
+## distance. The holes go into the board's texture instead (mipmapped, so far off they blur into
+## an even tone rather than flicker).
+func _pegboards(g: Node3D) -> void:
+	for pat in ["*Peg_hole*", "*Side_board_hole*"]:
+		for n in g.find_children(pat, "MeshInstance3D", true, false):
+			(n as MeshInstance3D).mesh = null
+	var holes := 8                  # per tile
+	var px := 16                    # per hole
+	var size := holes * px
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	for y in size:
+		for x in size:
+			var d := Vector2(x % px - px * 0.5 + 0.5, y % px - px * 0.5 + 0.5).length()
+			var grain := 0.94 + 0.06 * sin(float(y) * 0.9 + sin(float(x) * 0.07) * 3.0) + rng.randf_range(-0.02, 0.02)
+			var board := Color(0.5, 0.38, 0.25) * grain
+			var hole := Color(0.05, 0.04, 0.035)
+			var k := clampf((d - 2.2) / 1.2, 0.0, 1.0)      # soft hole edge
+			img.set_pixel(x, y, hole.lerp(board, k))
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = tex
+	m.roughness = 0.85
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE / (holes * 0.0254)      # one hole every inch
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	for pat in ["*Perforated_board*", "*Side_pegboard*"]:
+		for n in g.find_children(pat, "MeshInstance3D", true, false):
+			(n as MeshInstance3D).material_override = m
 
 
 ## Bounds of everything drawn under `n`, in world space.
