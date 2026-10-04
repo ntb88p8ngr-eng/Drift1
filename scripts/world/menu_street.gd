@@ -8,6 +8,7 @@ extends Node3D
 
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
+const FlowerBeds = preload("res://scripts/world/city/flower_beds.gd")
 
 const STREET_Z := -27.0    # the street's centre line (the shutter is at z = -6.5)
 const LENGTH := 260.0      # along x, centred on the driveway
@@ -41,7 +42,7 @@ func at(s: float, lateral: float, y := 0.0) -> Vector3:
 func build(_asphalt: Material) -> void:
 	var walk_mat := TexKit.ground_material(Color(0.16, 0.16, 0.17), Color(0.19, 0.19, 0.2), Color(0.14, 0.14, 0.15), 0.45, 1.25)
 	var grass_mat := TexKit.ground_material(Color(0.07, 0.08, 0.07), Color(0.085, 0.09, 0.075), Color(0.09, 0.085, 0.07), 0.9)
-	var line_mat := TexKit.std(Color(0.62, 0.61, 0.56), 0.5)
+	var line_mat := TexKit.std(Color(0.85, 0.84, 0.8), 0.45)
 	var mid := LENGTH * 0.5
 	# grass: either side of the driveway between yard and pavement, and all beyond the far pavement
 	var near_edge := STREET_Z + HALF + WALK
@@ -58,15 +59,22 @@ func build(_asphalt: Material) -> void:
 			_wall(sg * (HALF + WALK), 0.0, KERB, sp[0], sp[1], walk_mat, true)
 		# edge lines
 		var lines: Array = [[0.0, LENGTH]] if sg < 0.0 else [[0.0, mid - DRIVE - 1.0], [mid + DRIVE + 1.0, LENGTH]]
+		# (over the yard's asphalt, which lies 2.6 cm up)
 		for ln in lines:
-			_strip(sg * (HALF - 0.32), sg * (HALF - 0.2), 0.012, ln[0], ln[1], line_mat)
+			_strip(sg * (HALF - 0.32), sg * (HALF - 0.2), 0.04, ln[0], ln[1], line_mat)
 	# the dropped kerb: a low ramp of pavement across the driveway mouth
 	_strip(HALF, HALF + WALK, 0.03, mid - DRIVE, mid + DRIVE, walk_mat)
 	var s := 3.0
 	while s < LENGTH:
-		_strip(-0.07, 0.07, 0.012, s, minf(s + 3.0, LENGTH), line_mat)
+		_strip(-0.07, 0.07, 0.04, s, minf(s + 3.0, LENGTH), line_mat)
 		s += 9.0
+	# where the driveway meets the street: a give-way line of short dashes
+	var g := mid - DRIVE
+	while g < mid + DRIVE:
+		_strip(HALF - 0.65, HALF - 0.4, 0.04, g, minf(g + 0.5, mid + DRIVE), line_mat)
+		g += 0.9
 	_plant()
+	_yard_garden()
 	_lamp(mid + 7.0, HALF + 0.55)
 	_street_props()
 
@@ -203,6 +211,51 @@ func _plant() -> void:
 		_instances(m, items[m], rng)
 
 
+## Beside the driveway: a row of big bushes on the left, a flower field on the right.
+func _yard_garden() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4411
+	var near_edge := STREET_Z + HALF + WALK
+	var bushes := [TreeFactory.bush(3), TreeFactory.bush(8), TreeFactory.bush(12)]
+	var items := {}
+	for m in bushes:
+		items[m] = []
+	var x := -DRIVE - 2.2
+	while x > -17.0:
+		var z := rng.randf_range(YARD_Z - 2.5, YARD_Z - 1.2)
+		items[bushes[rng.randi() % bushes.size()]].append(_xf_at(Vector3(x, 0.03, z), rng, 1.3, 1.8))
+		if rng.randf() < 0.6:
+			items[bushes[rng.randi() % bushes.size()]].append(_xf_at(Vector3(x + rng.randf_range(-0.6, 0.6), 0.03, z - rng.randf_range(1.6, 3.0)), rng, 1.0, 1.4))
+		x -= rng.randf_range(1.6, 2.4)
+	for m in items:
+		_garden_instances(m, items[m], rng)
+	var beds := FlowerBeds.new()
+	beds.name = "FlowerField"
+	add_child(beds)
+	var w := 12.0
+	var d := (YARD_Z - 1.0) - (near_edge + 1.0)
+	beds.add_bed(Vector3(DRIVE + 2.6 + w * 0.5, 0.0, (YARD_Z - 1.0 + near_edge + 1.0) * 0.5), Vector2(w, absf(d)), 0.0, rng)
+	beds.build(null)
+
+
+## Garden bushes: a fresher green than the dark trees out in the rain.
+func _garden_instances(mesh: Mesh, xfs: Array, rng: RandomNumberGenerator) -> void:
+	if xfs.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = mesh
+	mm.instance_count = xfs.size()
+	for i in xfs.size():
+		mm.set_instance_transform(i, xfs[i])
+		var g := rng.randf_range(0.7, 0.9)
+		mm.set_instance_custom_data(i, Color(g * 0.8, g, g * 0.75, 1.0))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	add_child(mmi)
+
+
 func _xf_at(p: Vector3, rng: RandomNumberGenerator, k0: float, k1: float) -> Transform3D:
 	var k := rng.randf_range(k0, k1)
 	return Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(k, k, k)), p)
@@ -231,7 +284,6 @@ const PACK := "res://assets/props/street_pack/"
 ## mouth and the near pavement. [model, x, z, y (on the pavement or the ground), turn]
 ## (signs face +Z: towards the garage, i.e. the cars coming out of the driveway)
 const PROPS := [
-	["sign_stop", 5.3, -21.7, KERB, 0.0],
 	["fire_hydrant_red", 7.4, -21.5, KERB, 0.4],
 	["traffic_light_pole", 9.8, -22.4, KERB, 0.0],
 	["sign_one_way", 14.5, -22.0, KERB, 0.0],

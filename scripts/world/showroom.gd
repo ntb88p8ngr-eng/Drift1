@@ -309,6 +309,14 @@ func _load_workshop() -> bool:
 	if _office_door:
 		_office_door_base = _office_door.global_transform
 	var asphalt := _material_named(g, "Wet_forecourt_asphalt")
+	if asphalt is BaseMaterial3D:
+		# the yard and the street outside: black asphalt with a little wet sheen (its texture's
+		# metal channel made it a grey mirror of the sky)
+		var am := asphalt as BaseMaterial3D
+		am.albedo_color = Color(0.2, 0.2, 0.21)
+		am.metallic = 0.0
+		am.metallic_specular = 0.35
+		am.roughness = 0.75
 	_build_pc_screen()
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
 	var t0 := Time.get_ticks_msec()

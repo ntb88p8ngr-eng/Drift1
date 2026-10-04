@@ -11,6 +11,7 @@ func _ready() -> void:
 	var out := "/tmp/wheel.png"
 	var view := "wheels"
 	var shutter := false
+	var open_up := false
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out = a.substr(6)
@@ -18,6 +19,8 @@ func _ready() -> void:
 			view = a.substr(7)
 		if a == "--shutter":
 			shutter = true
+		if a == "--open":
+			open_up = true
 		if a.begins_with("--car="):
 			Game.settings["car"] = a.substr(6)
 	var main := Main.new()
@@ -27,6 +30,9 @@ func _ready() -> void:
 	var sr = main.showroom
 	sr.set_view(view)
 	if shutter:
+		sr.toggle_shutter()
+	if open_up:
+		sr.toggle_shutter()
 		sr.toggle_shutter()
 	# swing the platform round and settle the camera in big steps (few frames to render)
 	for f in 25:
