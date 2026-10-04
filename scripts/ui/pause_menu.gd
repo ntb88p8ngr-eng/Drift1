@@ -140,39 +140,64 @@ func _toggle_radio() -> void:
 		_ed_radio.layer = 9
 		_ed_radio.process_mode = Node.PROCESS_MODE_ALWAYS
 		world.add_child(_ed_radio)
+		# a slim black frame round the radio, a strip on its right with ✕ and a grip to move it
 		var frame := Panel.new()
 		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0, 0, 0, 0.55)
+		sb.bg_color = Color(0, 0, 0, 1)
 		sb.border_color = Color(0, 0, 0, 1)
-		sb.set_border_width_all(3)
-		sb.set_corner_radius_all(6)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(4)
 		frame.add_theme_stylebox_override("panel", sb)
-		frame.anchor_top = 1.0
-		frame.anchor_bottom = 1.0
-		frame.offset_left = 14
-		frame.offset_right = 424
-		frame.offset_top = -146
-		frame.offset_bottom = -20
+		frame.size = Vector2(348, 96)
 		_ed_radio.add_child(frame)
 		var w = load("res://scripts/ui/radio_widget.gd").new()
 		w.floating = false
-		w.set_anchors_preset(Control.PRESET_FULL_RECT)
-		w.offset_left = 5
-		w.offset_top = 5
-		w.offset_right = -30
-		w.offset_bottom = -5
+		w.position = Vector2(2, 2)
+		w.size = Vector2(320, 92)
 		frame.add_child(w)
 		var x := Button.new()
 		x.text = "✕"
 		x.flat = true
+		x.focus_mode = Control.FOCUS_NONE
+		x.add_theme_font_size_override("font_size", 14)
 		x.add_theme_color_override("font_color", Color.WHITE)
-		x.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		x.offset_left = -28
-		x.offset_top = 4
-		x.offset_right = -4
-		x.offset_bottom = 30
+		x.position = Vector2(323, 2)
+		x.size = Vector2(22, 22)
 		x.pressed.connect(func(): _ed_radio.visible = false)
 		frame.add_child(x)
+		var grip := Label.new()
+		grip.text = "⠿"
+		grip.add_theme_font_size_override("font_size", 18)
+		grip.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+		grip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		grip.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		grip.position = Vector2(322, 28)
+		grip.size = Vector2(24, 64)
+		grip.mouse_filter = Control.MOUSE_FILTER_STOP
+		grip.mouse_default_cursor_shape = Control.CURSOR_MOVE
+		grip.tooltip_text = Game.t("Ziehen: Radio verschieben")
+		frame.add_child(grip)
+		# dragged by the grip (or the frame's edge), kept on the screen
+		var drag := {"on": false, "off": Vector2.ZERO}
+		var on_drag := func(e: InputEvent) -> void:
+			if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+				drag["on"] = (e as InputEventMouseButton).pressed
+				drag["off"] = frame.get_global_mouse_position() - frame.position
+			elif e is InputEventMouseMotion and bool(drag["on"]):
+				var vs := frame.get_viewport_rect().size
+				frame.position = (frame.get_global_mouse_position() - (drag["off"] as Vector2)).clamp(Vector2.ZERO, vs - frame.size)
+		grip.gui_input.connect(on_drag)
+		frame.gui_input.connect(on_drag)
+		# first place: under the editor's map panel (Speichern … Beenden) on the right
+		(func() -> void:
+			var vs := frame.get_viewport_rect().size
+			var at := Vector2(vs.x - frame.size.x - 10, vs.y - frame.size.y - 10)
+			var ed = world.get("editor")
+			var rp = ed.get("right_panel") if ed else null
+			if rp and is_instance_valid(rp):
+				var r: Rect2 = (rp as Control).get_global_rect()
+				at = Vector2(r.end.x - frame.size.x, r.end.y + 8)
+			frame.position = at.clamp(Vector2.ZERO, vs - frame.size)).call_deferred()
 	else:
 		_ed_radio.visible = not _ed_radio.visible
 

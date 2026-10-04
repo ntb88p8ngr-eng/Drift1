@@ -173,6 +173,9 @@ static func _line_mat(c: Color) -> StandardMaterial3D:
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
+var right_panel: Control     # the map panel on the right (Speichern … Beenden): the radio goes under it
+
+
 func _build_ui() -> void:
 	ui = CanvasLayer.new()
 	ui.layer = 5
@@ -331,6 +334,7 @@ func _build_ui() -> void:
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 6)
 	var rp := UiKit.panel(right)
+	right_panel = rp
 	_pin(rp, 1.0, 0.0, Vector2(-330, 10))
 	_panels.append(rp)
 	_box_rect = ColorRect.new()

@@ -635,6 +635,38 @@ func _slide_to(pos: Vector2) -> void:
 		Radio.set_tone(_slider, v)
 
 
+## The tapes to pick from: the owner's list (main menu, HUD) or, with nobody listening, its own.
+var _tape_popup: PopupMenu
+
+
+func _open_tapes() -> void:
+	if not tape_list_wanted.get_connections().is_empty():
+		tape_list_wanted.emit()
+		return
+	if _tape_popup == null:
+		_tape_popup = PopupMenu.new()
+		_tape_popup.add_theme_font_size_override("font_size", 18)
+		_tape_popup.id_pressed.connect(func(i):
+			var ids: Array = _tape_popup.get_meta("ids", [])
+			if i >= 0 and i < ids.size():
+				insert(str(ids[i])))
+		add_child(_tape_popup)
+	_tape_popup.clear()
+	var ids: Array = Radio.owned_tapes()
+	for i in ids.size():
+		_tape_popup.add_item("📼  " + Radio.tape_title(ids[i]) + ("   ▶" if Radio.tape == ids[i] else ""), i)
+	if ids.is_empty():
+		_tape_popup.add_item(Game.t("Noch keine Kassetten gefunden"), -1)
+		_tape_popup.set_item_disabled(0, true)
+	_tape_popup.set_meta("ids", ids)
+	_tape_popup.reset_size()
+	var r := get_global_rect()
+	_tape_popup.position = Vector2i(r.position + Vector2(r.size.x * 0.4, -_tape_popup.size.y - 4))
+	if _tape_popup.position.y < 0:
+		_tape_popup.position.y = int(r.end.y + 4)
+	_tape_popup.popup()
+
+
 ## A button pressed: it goes in, clicks, does its thing.
 func _press(b: String) -> void:
 	if b == "face":
@@ -669,10 +701,8 @@ func _press(b: String) -> void:
 			if Radio.on:
 				Radio.flash(Radio.title.to_upper().left(12) if Radio.title != "" else "NO INFO", 2.5)
 		"slot":
-			if Radio.tape != "":
-				Radio.tape_button()
-			else:
-				tape_list_wanted.emit()
+			# always the list of tapes (to put one in, or another one)
+			_open_tapes()
 		_:
 			if b.begins_with("p"):
 				Radio.pick_preset(int(b.substr(1)) - 1)
