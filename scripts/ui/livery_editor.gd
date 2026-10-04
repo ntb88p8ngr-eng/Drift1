@@ -102,7 +102,7 @@ func _ready() -> void:
 		_pages.append(p)
 	tabs.add_child(UiKit.button("Lack", func(): _show_page(0), 160))
 	tabs.add_child(UiKit.button("Sticker", func(): _show_page(1), 160))
-	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
+	_hint = UiKit.label("Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · Q / E: drehen (Shift: fein) · rechte Maustaste: Kamera drehen · Mausrad: Zoom", 13, UiKit.TEXT_DIM)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_hint)
 	_show_page(1)
@@ -265,10 +265,20 @@ func _sticker_page() -> VBoxContainer:
 	_ctl["side"] = UiKit.option(sides, 0, func(i): _set_prop("side", Livery.SIDES[i]), 240)
 	_props.add_child(UiKit.labeled("Seite", _ctl["side"], 170))
 	for k in [["p", "Position (vorne – hinten)", -1.0, 1.0, 0.01], ["h", "Höhe / quer", -1.0, 1.0, 0.01],
-			["size", "Größe (m)", 0.08, 3.0, 0.01], ["stretch", "Breite ↔ Höhe", -3.0, 3.0, 0.05], ["rot", "Drehung (°)", -180.0, 180.0, 1.0], ["alpha", "Deckkraft", 0.1, 1.0, 0.01]]:
+			["size", "Größe (m)", 0.08, 3.0, 0.01], ["stretch", "Breite ↔ Höhe", -3.0, 3.0, 0.05], ["rot", "Drehung (°)", -180.0, 180.0, 0.1], ["alpha", "Deckkraft", 0.1, 1.0, 0.01]]:
 		var key: String = k[0]
 		_ctl[key] = UiKit.slider(k[2], k[3], k[4], 0.0, func(x): _set_prop(key, x), 240)
 		_props.add_child(UiKit.labeled(k[1], _ctl[key], 170))
+		if key == "rot":
+			# fine turning: small steps either way (also Q / E on the car, with Shift 0.1°)
+			var fine := HBoxContainer.new()
+			fine.add_theme_constant_override("separation", 4)
+			for d: float in [-5.0, -1.0, -0.1, 0.1, 1.0, 5.0]:
+				var fb := UiKit.button(("%+.1f°" % d).replace(".0°", "°"), func(): _nudge_rot(d), 62)
+				fb.alignment = HORIZONTAL_ALIGNMENT_CENTER
+				fb.add_theme_font_size_override("font_size", 15)
+				fine.add_child(fb)
+			_props.add_child(UiKit.labeled("Fein drehen", fine, 170))
 	var mir := CheckBox.new()
 	mir.text = "Gespiegelt auf der anderen Seite"
 	mir.toggled.connect(func(on): _set_prop("mirror", on))
@@ -428,6 +438,14 @@ func _move(d: int) -> void:
 	_changed(true)
 
 
+## Turns the selected sticker by `d` degrees (the slider follows and applies it).
+func _nudge_rot(d: float) -> void:
+	if sel < 0:
+		return
+	var v := wrapf(float(layers[sel].get("rot", 0.0)) + d, -180.0, 180.0)
+	(_ctl["rot"] as HSlider).value = snappedf(v, 0.1)
+
+
 func _set_prop(key: String, value) -> void:
 	if _syncing or sel < 0:
 		return
@@ -555,6 +573,10 @@ func _input(event: InputEvent) -> void:
 		JOY_BUTTON_RIGHT_SHOULDER:
 			_place_rot = wrapf(_place_rot + 15.0, -180.0, 180.0)
 			_preview(_pad_cursor)
+		JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN:
+			# fine turning
+			_place_rot = wrapf(_place_rot + (1.0 if (event as InputEventJoypadButton).button_index == JOY_BUTTON_DPAD_UP else -1.0), -180.0, 180.0)
+			_preview(_pad_cursor)
 		JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
 			_place_stretch = clampf(_place_stretch + (0.25 if (event as InputEventJoypadButton).button_index == JOY_BUTTON_DPAD_RIGHT else -0.25), -3.0, 3.0)
 			_preview(_pad_cursor)
@@ -613,6 +635,8 @@ func _unhandled_input(event: InputEvent) -> void:
 						_place_stretch = clampf(_place_stretch + (0.25 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -0.25), -3.0, 3.0)
 					elif mb.shift_pressed:
 						_place_size = clampf(_place_size * (1.08 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 0.92), 0.08, 3.0)
+					elif mb.alt_pressed:
+						_place_rot = wrapf(_place_rot + (1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -1.0), -180.0, 180.0)
 					else:
 						_place_rot = wrapf(_place_rot + (15.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -15.0), -180.0, 180.0)
 					_preview(mb.position)
@@ -629,12 +653,20 @@ func _unhandled_input(event: InputEvent) -> void:
 				_preview(get_viewport().get_mouse_position())
 				get_viewport().set_input_as_handled()
 			elif k == KEY_Q or k == KEY_E:
-				_place_rot = wrapf(_place_rot + (-15.0 if k == KEY_Q else 15.0), -180.0, 180.0)
+				var step := 1.0 if (event as InputEventKey).shift_pressed else 15.0
+				_place_rot = wrapf(_place_rot + (-step if k == KEY_Q else step), -180.0, 180.0)
 				_preview(get_viewport().get_mouse_position())
 				get_viewport().set_input_as_handled()
 			elif k == KEY_ESCAPE:
 				_stop_placing()
 				get_viewport().set_input_as_handled()
+			return
+	if event is InputEventKey and event.pressed and sel >= 0:
+		var k := (event as InputEventKey).keycode
+		if k == KEY_Q or k == KEY_E:
+			var step := 0.1 if (event as InputEventKey).shift_pressed else 1.0
+			_nudge_rot(-step if k == KEY_Q else step)
+			get_viewport().set_input_as_handled()
 			return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -752,17 +784,17 @@ func _start_placing(id: String) -> void:
 	if _pad:
 		# (the cursor starts on the car's middle)
 		_pad_cursor = sr.cam.unproject_position(sr.car.global_position + Vector3(0, 0.7, 0)) if sr and sr.car else get_viewport_rect().size * 0.6
-		_hint.text = "Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen · LT / RT: Größe · Steuerkreuz ← →: breiter / höher · rechter Stick: Kamera · B: abbrechen"
+		_hint.text = "Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen (Steuerkreuz ↑ ↓: fein) · LT / RT: Größe · Steuerkreuz ← →: breiter / höher · rechter Stick: Kamera · B: abbrechen"
 		_preview(_pad_cursor)
 	else:
-		_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Strg+Mausrad oder Y / C: breiter / höher · Rechtsklick / Esc: abbrechen"
+		_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen (Alt+Mausrad / Shift+Q / E: fein) · Shift+Mausrad: Größe · Strg+Mausrad oder Y / C: breiter / höher · Rechtsklick / Esc: abbrechen"
 
 
 func _stop_placing() -> void:
 	_placing = ""
 	if _cursor:
 		_cursor.visible = false
-	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
+	_hint.text = "Klick aufs Auto: Sticker setzen / ziehen · Ecken ziehen: skalieren (Shift: proportional) · Q / E: drehen (Shift: fein) · rechte Maustaste: Kamera drehen · Mausrad: Zoom"
 	_apply()
 
 

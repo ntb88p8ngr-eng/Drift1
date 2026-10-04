@@ -448,6 +448,21 @@ func _widen_booth(g: Node3D) -> void:
 					annex.add_child(mm)
 					mm.global_transform = (m as MeshInstance3D).global_transform
 				mm.global_position.x += x - from_x
+	# each wall strip lights the booth for real (they only glowed: with the hall's lights off the far
+	# wall stayed dark – the neon's lamps hang along the middle): a soft light just in front of each
+	for c in annex.get_children():
+		if c is MeshInstance3D and String(c.name).contains("wall_LED"):
+			var mc := (c as MeshInstance3D)
+			var p: Vector3 = (mc.global_transform * mc.get_aabb()).get_center()
+			var l := OmniLight3D.new()
+			l.omni_range = 3.6
+			l.omni_attenuation = 1.4
+			l.light_energy = 0.55
+			l.light_color = Color(0.96, 0.97, 1.0)
+			l.shadow_enabled = false
+			l.light_specular = 0.3
+			add_child(l)
+			l.global_position = p + Vector3(0, 0, 0.45 if p.z < BOOTH_C.z else -0.45)
 	# the front wall either side of the door: the hall's plaster wall showed through on the near side,
 	# on the far side there was none yet
 	var near := MeshKit.box_node(Vector3(0.04, 3.5, BOOTH_WIDEN + 0.1), walls, Vector3(6.97, 1.75, -2.02 + (BOOTH_WIDEN + 0.1) * 0.5))

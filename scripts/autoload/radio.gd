@@ -62,6 +62,7 @@ var mode := "radio"             # "radio" / "tape"
 var tape := ""                  # the tape in the slot ("" = none)
 var api := true                 # A.P.I.: song titles scroll by on their own
 var tape_paused := false
+var show_freq := false          # TUNE: the display shows the frequency instead of the station name
 var status := ""                # "" / "TUNING" / "NO SIGNAL" / "PLAY"
 var title := ""
 var flash_text := ""
@@ -259,6 +260,11 @@ func toggle_api() -> void:
 	api = not api
 	flash("API ON" if api else "API OFF", 1.2)
 	_store()
+
+
+func toggle_freq() -> void:
+	show_freq = not show_freq
+	changed.emit()
 
 
 func flash(text: String, secs := 1.5) -> void:
