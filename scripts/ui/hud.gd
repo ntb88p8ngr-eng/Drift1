@@ -7,6 +7,7 @@ const Gauge = preload("res://scripts/ui/gauge.gd")
 const Minimap = preload("res://scripts/ui/minimap.gd")
 const IsoArrow = preload("res://scripts/ui/iso_arrow.gd")
 const IsoCompass = preload("res://scripts/ui/iso_compass.gd")
+const RadioWidget = preload("res://scripts/ui/radio_widget.gd")
 const MISSION_COL := Color(0.3, 0.95, 0.9)
 const NAV_ORANGE := Color(1.0, 0.55, 0.1)
 const NAV_RED := Color(1.0, 0.12, 0.08)
@@ -17,6 +18,8 @@ const WRONG_WAY_DELAY := 10.0
 var world   # world.gd
 
 var _root: Control
+var _radio: Control         # the car radio, small, bottom left (P)
+var _radio_tapes: PopupMenu
 var _info_lines: Label
 var _mode_label: Label
 var _drift_box: VBoxContainer
@@ -249,6 +252,30 @@ func _ready() -> void:
 	_compass_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	_anchor(_compass_label, 0.5, 0.0, -200, 268, 400, 26)
 	_root.add_child(_compass_label)
+
+	# --- the car radio, small in the bottom left corner: P shows / hides it ---
+	_radio = RadioWidget.new()
+	_radio.floating = false
+	_anchor(_radio, 0, 1, 14, -142, 380, 118)
+	_radio.visible = false
+	_root.add_child(_radio)
+	_radio_tapes = PopupMenu.new()
+	_radio_tapes.id_pressed.connect(func(i):
+		var ids: Array = _radio_tapes.get_meta("ids", [])
+		if i >= 0 and i < ids.size():
+			_radio.insert(str(ids[i])))
+	_root.add_child(_radio_tapes)
+	_radio.tape_list_wanted.connect(func():
+		_radio_tapes.clear()
+		var ids: Array = Radio.owned_tapes()
+		for i in ids.size():
+			_radio_tapes.add_item(Radio.tape_title(ids[i]), i)
+		if ids.is_empty():
+			_radio_tapes.add_item("Noch keine Kassetten gefunden", -1)
+		_radio_tapes.set_meta("ids", ids)
+		_radio_tapes.reset_size()
+		_radio_tapes.position = Vector2i(_radio.get_global_rect().position - Vector2(0, _radio_tapes.size.y + 6))
+		_radio_tapes.popup())
 
 	# --- results ---
 	_results_box = VBoxContainer.new()
@@ -606,3 +633,28 @@ func hide_results() -> void:
 
 func results_visible() -> bool:
 	return _results.visible
+
+
+## P: the radio in / out of view; while it shows: 1-6 the presets, + / - the volume, 0 on / off.
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("radio"):
+		_radio.visible = not _radio.visible
+		Radio.click_sound()
+		get_viewport().set_input_as_handled()
+		return
+	if not _radio.visible or not (event is InputEventKey) or not event.pressed or event.is_echo():
+		return
+	var k := (event as InputEventKey).physical_keycode
+	if k >= KEY_1 and k <= KEY_6:
+		Radio.click_sound()
+		Radio.pick_preset(k - KEY_1)
+	elif k == KEY_0:
+		Radio.click_sound()
+		Radio.toggle_power()
+	elif k == KEY_EQUAL or k == KEY_KP_ADD or k == KEY_PAGEUP:
+		Radio.set_volume(Radio.volume + 1.0 / 30.0)
+	elif k == KEY_MINUS or k == KEY_KP_SUBTRACT or k == KEY_PAGEDOWN:
+		Radio.set_volume(Radio.volume - 1.0 / 30.0)
+	else:
+		return
+	get_viewport().set_input_as_handled()

@@ -13,6 +13,7 @@ const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
 const Replay = preload("res://scripts/replay/replay.gd")
 const StoryPc = preload("res://scripts/ui/story_pc.gd")
+const RadioWidget = preload("res://scripts/ui/radio_widget.gd")
 
 var main   # main.gd
 var current := ""
@@ -56,6 +57,9 @@ var _view_row: HBoxContainer
 var _player_info: VBoxContainer   # driver / car / credits, top right
 var _side: Control          # the menu column on the left
 var _at_pc := false         # story mode: the camera is at the office PC, its screen takes the input
+var radio_w: Control        # the car radio floating top right (radio_widget.gd), "♪ Radio" toggles it
+var _tape_menu: PopupMenu
+const RADIO_H := 196.0
 
 
 func _ready() -> void:
@@ -148,6 +152,18 @@ func _ready() -> void:
 	_player_info.offset_top = 36
 	_player_info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_player_info)
+	radio_w = RadioWidget.new()
+	radio_w.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	radio_w.offset_left = -600
+	radio_w.offset_right = -20
+	radio_w.offset_top = 8
+	radio_w.offset_bottom = 8 + RADIO_H
+	radio_w.tape_list_wanted.connect(func(): open_tapes(radio_w.get_global_rect().get_center()))
+	_root.add_child(radio_w)
+	_tape_menu = PopupMenu.new()
+	_tape_menu.add_theme_font_size_override("font_size", 20)
+	_tape_menu.id_pressed.connect(_on_tape_picked)
+	_root.add_child(_tape_menu)
 	_status = UiKit.label("", 17, UiKit.GOLD)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(640, 0)
@@ -250,6 +266,14 @@ func _build_platform_bar() -> void:
 	gb.add_theme_font_size_override("font_size", 20)
 	gb.tooltip_text = "Rolltor hoch- / runterfahren – während der Fahrt: anhalten, nochmal: weiter"
 	_platform_bar.add_child(gb)
+	# the car radio up in the top right corner: shown / hidden
+	var rb := UiKit.button("♪ Radio", func():
+		Game.settings["radio_menu"] = not bool(Game.settings.get("radio_menu", true))
+		Game.save_settings()
+		_sync_radio(), 110)
+	rb.focus_mode = Control.FOCUS_NONE
+	rb.tooltip_text = "Autoradio oben rechts ein- / ausblenden"
+	_platform_bar.add_child(rb)
 	_light_panel = _build_light_panel()
 	_light_panel.visible = false
 	box.add_child(_light_panel)
@@ -416,6 +440,7 @@ func show_screen(screen: String) -> void:
 	if sr and screen == "garage" and sr.view == "overview":
 		sr.set_view("garage")
 	_sync_platform_buttons()
+	_sync_radio()
 	match screen:
 		"story":
 			_build_story()
@@ -460,6 +485,43 @@ func show_screen(screen: String) -> void:
 			_build_main()
 	# focus first button for gamepad users
 	_focus_first.call_deferred()
+
+
+## The radio where the car is in view (main menu, garage) when it is switched on there; the text in
+## the top right corner (driver, car, credits) moves down under it.
+func _sync_radio() -> void:
+	if radio_w == null:
+		return
+	var sr = _showroom()
+	var show: bool = sr != null and (current == "main" or current == "garage") and bool(Game.settings.get("radio_menu", true))
+	radio_w.visible = show
+	_player_info.offset_top = 36 + (RADIO_H if show else 0.0)
+
+
+## The tapes found so far, to pick one for the radio (from its slot or the garage's cabinet).
+func open_tapes(at: Vector2) -> void:
+	_tape_menu.clear()
+	var ids: Array = Radio.owned_tapes()
+	if ids.is_empty():
+		_tape_menu.add_item("Noch keine Kassetten gefunden", -1)
+		_tape_menu.set_item_disabled(0, true)
+	for i in ids.size():
+		_tape_menu.add_item("📼  " + Radio.tape_title(ids[i]) + ("   ▶" if Radio.tape == ids[i] else ""), i)
+	_tape_menu.set_meta("ids", ids)
+	_tape_menu.reset_size()
+	_tape_menu.position = Vector2i(at - Vector2(_tape_menu.size.x * 0.5, 0))
+	_tape_menu.popup()
+
+
+func _on_tape_picked(i: int) -> void:
+	var ids: Array = _tape_menu.get_meta("ids", [])
+	if i < 0 or i >= ids.size():
+		return
+	if not radio_w.visible:
+		Game.settings["radio_menu"] = true
+		Game.save_settings()
+		_sync_radio()
+	radio_w.insert(str(ids[i]))
 
 
 func _focus_first() -> void:

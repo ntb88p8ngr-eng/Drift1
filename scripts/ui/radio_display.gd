@@ -7,7 +7,7 @@ extends Control
 const W := 800
 const H := 160
 const ORANGE := Color(1.0, 0.36, 0.06)
-const GHOST := Color(1.0, 0.36, 0.06, 0.07)
+const GHOST := Color(1.0, 0.36, 0.06, 0.045)
 const CHARS := 12
 
 ## segments: a top, b/c right upper/lower, d bottom, e/f left lower/upper, g/G middle left/right,
@@ -103,11 +103,11 @@ func _draw() -> void:
 	# the main line: 12 characters of 14 segments
 	var text := _main_text().to_upper()
 	text = text.left(CHARS)
-	var x0 := 150.0
-	var cw := 50.0
+	var x0 := 140.0
+	var cw := 46.0
 	for i in CHARS:
 		var ch := text[i] if i < text.length() else " "
-		_char(ch, Vector2(x0 + i * cw, 24), 36.0, 78.0, on)
+		_char(ch, Vector2(x0 + i * cw, 24), 33.0, 78.0, on)
 	# the volume: a bar of 15 steps along the bottom while the flash says VOL
 	if on and Radio.flash_left() > 0.0 and Radio.flash_text.begins_with("VOL"):
 		for k in 15:

@@ -432,8 +432,9 @@ func _widen_booth(g: Node3D) -> void:
 	var keys := light_sets.keys()
 	keys.sort()
 	if keys.size() >= 2:
-		var x_first: float = keys[0] / 10.0
-		var x_last: float = 13.4 + BOOTH_LONGER - (13.4 - keys[keys.size() - 1] / 10.0)
+		# the same gap at both ends (door frame and back wall)
+		var x_first: float = 6.82 + 1.1
+		var x_last: float = 13.4 + BOOTH_LONGER - 1.1
 		var step0: float = (keys[keys.size() - 1] - keys[0]) / 10.0 / (keys.size() - 1)
 		var n := maxi(keys.size(), roundi((x_last - x_first) / step0) + 1)
 		# (from the back: the extra sets are copied from the last one before it moves)
