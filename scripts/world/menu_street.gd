@@ -8,6 +8,7 @@ extends Node3D
 
 const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
+const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const FlowerBeds = preload("res://scripts/world/city/flower_beds.gd")
 const TrafficCars = preload("res://scripts/world/traffic_cars.gd")
 
@@ -88,6 +89,7 @@ func build(_asphalt: Material) -> void:
 		g += 0.9
 	_plant()
 	_yard_garden()
+	_fence()
 	_traffic_setup()
 	_lamp(mid + 7.0, HALF + 0.55)
 	_street_props()
@@ -226,6 +228,36 @@ func _plant() -> void:
 		_instances(m, items[m], rng)
 
 
+## A metal palisade fence closing the yard off from the street (along the near pavement).
+func _fence() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var z := STREET_Z + HALF + WALK + 0.5
+	var x0 := -42.0
+	var x1 := 42.0
+	var h := 1.7
+	var col := Color(0.16, 0.16, 0.17)
+	# posts, two rails, pickets with pointed tops
+	var x := x0
+	while x <= x1 + 0.01:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, h * 0.5 + 0.05, z)), Vector3(0.09, h + 0.1, 0.09), col)
+		x += 2.5
+	for ry in [0.25, h - 0.2]:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3((x0 + x1) * 0.5, ry, z)), Vector3(x1 - x0, 0.05, 0.04), col)
+	x = x0 + 0.08
+	while x < x1:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, h * 0.5, z)), Vector3(0.025, h, 0.025), col)
+		MeshKit.box(st, Transform3D(Basis(Vector3.BACK, PI * 0.25), Vector3(x, h + 0.01, z)), Vector3(0.04, 0.04, 0.03), col)
+		x += 0.14
+	st.generate_normals()
+	var m := TexKit.std(Color(0.16, 0.16, 0.17), 0.45, 0.7)
+	var mi := MeshInstance3D.new()
+	mi.name = "YardFence"
+	mi.mesh = st.commit()
+	mi.material_override = m
+	add_child(mi)
+
+
 ## Beside the driveway: a row of big bushes on the left, a flower field on the right.
 func _yard_garden() -> void:
 	var rng := RandomNumberGenerator.new()
@@ -301,8 +333,6 @@ const PACK := "res://assets/props/street_pack/"
 const PROPS := [
 	["fire_hydrant_red", 7.4, -21.5, KERB, 0.4],
 	["sign_one_way", 14.5, -22.0, KERB, 0.0],
-	["pedestrian_signal", -5.4, -21.9, KERB, 0.0],
-	["sign_pedestrian_crossing", -8.2, -22.0, KERB, 0.0],
 	["sign_street_names", -12.5, -21.8, KERB, 0.25],
 	["traffic_light_overhead", -17.5, -21.8, KERB, PI * 0.5],
 	["sign_speed_30", -22.0, -22.0, KERB, 0.0],

@@ -322,10 +322,17 @@ func _load_workshop() -> bool:
 		# the yard and the street outside: black asphalt with a little wet sheen (its texture's
 		# metal channel made it a grey mirror of the sky)
 		var am := asphalt as BaseMaterial3D
-		am.albedo_color = Color(0.2, 0.2, 0.21)
+		# one even colour (no patches, no puddle texture)
+		am.albedo_texture = null
+		am.albedo_color = Color(0.035, 0.035, 0.038)
+		am.normal_enabled = false
+		am.roughness_texture = null
+		am.metallic_texture = null
+		if am is ORMMaterial3D:
+			(am as ORMMaterial3D).orm_texture = null
 		am.metallic = 0.0
-		am.metallic_specular = 0.35
-		am.roughness = 0.75
+		am.metallic_specular = 0.3
+		am.roughness = 0.7
 	_build_pc_screen()
 	# ~9800 separate parts: everything but the turning deck becomes one mesh per material
 	var t0 := Time.get_ticks_msec()
