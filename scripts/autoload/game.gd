@@ -942,7 +942,6 @@ const FREE_CARS := 3
 const CAR_PRICES := [15000, 25000, 40000, 60000, 85000, 120000, 160000, 210000]
 ## Built-in codes (the easter eggs). Admin codes come on top (settings "admin_codes", or the server's).
 const BUILTIN_CODES := {
-	"BMWM": {"car": "m6gt3"},
 	"M6": {"car": "m6gt3"},
 	"BOUNCY": {"car": "yaris"},       # the bouncy Toyota
 }
