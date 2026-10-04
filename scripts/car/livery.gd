@@ -3,7 +3,7 @@ extends RefCounted
 ## them in the game too). A design is a list of layers – later ones on top:
 ##   {"shape": id, "color": "#rrggbb", "side": "left"/"right"/"top"/"front"/"rear",
 ##    "p": -1..1 (along the car: front→rear, across on the front/rear), "h": 0..1 (up; across on top: -1..1),
-##    "size": metres, "rot": degrees, "alpha": 0..1, "mirror": bool (also on the opposite side)}
+##    "size": metres, "stretch": log2 of width : height (0 = as drawn), "rot": degrees, "alpha": 0..1, "mirror": bool (also on the opposite side)}
 ## Each layer is a thin skin on the body's own triangles (not the wheels), wrapped round the panel
 ## where the straight-in ray from the chosen side lands.
 
@@ -121,12 +121,14 @@ static func apply(body: Node3D, layers: Array) -> void:
 		mat.render_priority = clampi(k, 0, 120)
 		var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
 		var s := float(l.get("size", 0.7))
+		# unproportional: "stretch" is log2 of width : height (0 = as drawn), the area stays
+		var st := pow(2.0, clampf(float(l.get("stretch", 0.0)), -3.0, 3.0) * 0.5)
 		for pl in placements(l):
 			var f := frame(pl[0], pl[1], pl[2], box)
 			var hit = ray_surface(surf, f[0], f[1], box.size.length())
 			if hit == null:
 				continue
-			var mesh := sticker_mesh(surf, hit[0], hit[1], f[2], float(pl[3]), s, s / aspect, k)
+			var mesh := sticker_mesh(surf, hit[0], hit[1], f[2], float(pl[3]), s * st, s / aspect / st, k)
 			if mesh == null:
 				continue
 			var mi := MeshInstance3D.new()

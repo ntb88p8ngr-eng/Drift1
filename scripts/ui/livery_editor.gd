@@ -34,6 +34,7 @@ var _custom: ColorPickerButton
 var _placing := ""        # a shape picked from the grid, following the mouse over the car
 var _place_rot := 0.0
 var _place_size := 0.7
+var _place_stretch := 0.0     # log2 width : height
 var _hint: Label
 var _pad := false          # the last input came from a gamepad: placing follows a cursor on the stick
 var _pad_cursor := Vector2.ZERO
@@ -225,7 +226,7 @@ func _sticker_page() -> VBoxContainer:
 	_ctl["side"] = UiKit.option(sides, 0, func(i): _set_prop("side", Livery.SIDES[i]), 240)
 	_props.add_child(UiKit.labeled("Seite", _ctl["side"], 170))
 	for k in [["p", "Position (vorne – hinten)", -1.0, 1.0, 0.01], ["h", "Höhe / quer", -1.0, 1.0, 0.01],
-			["size", "Größe (m)", 0.08, 3.0, 0.01], ["rot", "Drehung (°)", -180.0, 180.0, 1.0], ["alpha", "Deckkraft", 0.1, 1.0, 0.01]]:
+			["size", "Größe (m)", 0.08, 3.0, 0.01], ["stretch", "Breite ↔ Höhe", -3.0, 3.0, 0.05], ["rot", "Drehung (°)", -180.0, 180.0, 1.0], ["alpha", "Deckkraft", 0.1, 1.0, 0.01]]:
 		var key: String = k[0]
 		_ctl[key] = UiKit.slider(k[2], k[3], k[4], 0.0, func(x): _set_prop(key, x), 240)
 		_props.add_child(UiKit.labeled(k[1], _ctl[key], 170))
@@ -356,7 +357,7 @@ func _sync_props() -> void:
 	_syncing = true
 	var l: Dictionary = layers[sel]
 	(_ctl["side"] as OptionButton).selected = maxi(Livery.SIDES.find(str(l["side"])), 0)
-	for k in ["p", "h", "size", "rot", "alpha"]:
+	for k in ["p", "h", "size", "stretch", "rot", "alpha"]:
 		(_ctl[k] as HSlider).value = float(l.get(k, 0.0))
 	(_ctl["mirror"] as CheckBox).button_pressed = bool(l.get("mirror", false))
 	_syncing = false
@@ -398,6 +399,9 @@ func _input(event: InputEvent) -> void:
 			_preview(_pad_cursor)
 		JOY_BUTTON_RIGHT_SHOULDER:
 			_place_rot = wrapf(_place_rot + 15.0, -180.0, 180.0)
+			_preview(_pad_cursor)
+		JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
+			_place_stretch = clampf(_place_stretch + (0.25 if (event as InputEventJoypadButton).button_index == JOY_BUTTON_DPAD_RIGHT else -0.25), -3.0, 3.0)
 			_preview(_pad_cursor)
 		JOY_BUTTON_B:
 			_stop_placing()
@@ -449,7 +453,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			var mb := event as InputEventMouseButton
 			match mb.button_index:
 				MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
-					if mb.shift_pressed:
+					if mb.ctrl_pressed:
+						_place_stretch = clampf(_place_stretch + (0.25 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -0.25), -3.0, 3.0)
+					elif mb.shift_pressed:
 						_place_size = clampf(_place_size * (1.08 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 0.92), 0.08, 3.0)
 					else:
 						_place_rot = wrapf(_place_rot + (15.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -15.0), -180.0, 180.0)
@@ -462,7 +468,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event is InputEventKey and event.pressed:
 			var k := (event as InputEventKey).keycode
-			if k == KEY_Q or k == KEY_E:
+			if k == KEY_Z or k == KEY_Y or k == KEY_C:
+				_place_stretch = clampf(_place_stretch + (0.25 if k == KEY_C else -0.25), -3.0, 3.0)
+				_preview(get_viewport().get_mouse_position())
+				get_viewport().set_input_as_handled()
+			elif k == KEY_Q or k == KEY_E:
 				_place_rot = wrapf(_place_rot + (-15.0 if k == KEY_Q else 15.0), -180.0, 180.0)
 				_preview(get_viewport().get_mouse_position())
 				get_viewport().set_input_as_handled()
@@ -511,10 +521,10 @@ func _start_placing(id: String) -> void:
 	if _pad:
 		# (the cursor starts on the car's middle)
 		_pad_cursor = sr.cam.unproject_position(sr.car.global_position + Vector3(0, 0.7, 0)) if sr and sr.car else get_viewport_rect().size * 0.6
-		_hint.text = "Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen · LT / RT: Größe · rechter Stick: Kamera · B: abbrechen"
+		_hint.text = "Linker Stick: Sticker bewegen · A: aufkleben · X: aufkleben + weitere · LB / RB: drehen · LT / RT: Größe · Steuerkreuz ← →: breiter / höher · rechter Stick: Kamera · B: abbrechen"
 		_preview(_pad_cursor)
 	else:
-		_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Rechtsklick / Esc: abbrechen"
+		_hint.text = "Klick aufs Auto: hier aufkleben (Shift+Klick: weitere) · Mausrad oder Q / E: drehen · Shift+Mausrad: Größe · Strg+Mausrad oder Y / C: breiter / höher · Rechtsklick / Esc: abbrechen"
 
 
 func _stop_placing() -> void:
@@ -539,6 +549,7 @@ func _ghost(pos: Vector2):
 	l["h"] = hit[2]
 	l["rot"] = _place_rot
 	l["size"] = _place_size
+	l["stretch"] = _place_stretch
 	l["mirror"] = false
 	return l
 
