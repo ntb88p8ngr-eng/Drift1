@@ -25,6 +25,12 @@ static func shapes() -> Array:
 	return out
 
 
+## Two kinds of sticker: one colour (a white shape, printed in the colour picked) and full colour
+## (a picture printed as it is – the graffiti, and any "full_…" sticker added later).
+static func full_color(id: String) -> bool:
+	return id.begins_with("graffiti_") or id.begins_with("full_")
+
+
 static func graffiti_path(k: int) -> String:
 	return "res://assets/main_menu/textures/Grafitti (%d).png" % k
 
@@ -112,7 +118,7 @@ static func apply(body: Node3D, layers: Array) -> void:
 		var tex := texture(str(l.get("shape", "")))
 		if tex == null:
 			continue
-		var col := Color.from_string(str(l.get("color", "#ffffff")), Color.WHITE)
+		var col := Color.WHITE if full_color(str(l.get("shape", ""))) else Color.from_string(str(l.get("color", "#ffffff")), Color.WHITE)
 		col.a = clampf(float(l.get("alpha", 1.0)), 0.0, 1.0)
 		var mat := ShaderMaterial.new()
 		mat.shader = _shader()

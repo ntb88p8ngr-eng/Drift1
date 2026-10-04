@@ -22,7 +22,8 @@ var color := Color.BLACK
 
 var _panel: PanelContainer
 var _pages: Array = []
-var _shape_grid: GridContainer
+var _shape_grid: GridContainer   # one colour
+var _full_grid: GridContainer    # full colour
 var _shape_note: Label
 var _list: ItemList
 var _props: VBoxContainer
@@ -183,11 +184,20 @@ func _sticker_page() -> VBoxContainer:
 	var sc := ScrollContainer.new()
 	sc.custom_minimum_size = Vector2(0, 190)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var kinds := VBoxContainer.new()
+	kinds.add_theme_constant_override("separation", 6)
+	kinds.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(kinds)
+	kinds.add_child(UiKit.label("Einfarbig – in der gewählten Farbe", 14, UiKit.TEXT))
 	_shape_grid = GridContainer.new()
-	_shape_grid.columns = 8
-	_shape_grid.add_theme_constant_override("h_separation", 4)
-	_shape_grid.add_theme_constant_override("v_separation", 4)
-	sc.add_child(_shape_grid)
+	kinds.add_child(_shape_grid)
+	kinds.add_child(UiKit.label("Vollfarbe – im Original", 14, UiKit.TEXT))
+	_full_grid = GridContainer.new()
+	kinds.add_child(_full_grid)
+	for g in [_shape_grid, _full_grid]:
+		g.columns = 8
+		g.add_theme_constant_override("h_separation", 4)
+		g.add_theme_constant_override("v_separation", 4)
 	v.add_child(sc)
 	v.add_child(UiKit.label("Farbe", 20, UiKit.GOLD))
 	var sw := HBoxContainer.new()
@@ -259,10 +269,12 @@ func _swatch_button(c: Color, cb: Callable, w: float, h: float) -> Button:
 
 func _fill_shapes() -> void:
 	_shape_note.text = "Form wählen, dann aufs Auto klicken – sie hängt bis dahin halb durchsichtig am Mauszeiger."
-	for c in _shape_grid.get_children():
-		c.queue_free()
+	for g in [_shape_grid, _full_grid]:
+		for c in g.get_children():
+			c.queue_free()
 	for s in Livery.shapes():
 		var id: String = s[0]
+		var full := Livery.full_color(id)
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(52, 52)
 		b.tooltip_text = str(s[1])
@@ -272,7 +284,7 @@ func _fill_shapes() -> void:
 		b.pressed.connect(func():
 			shape = id
 			_start_placing(id))
-		_shape_grid.add_child(b)
+		(_full_grid if full else _shape_grid).add_child(b)
 	_apply()
 
 
