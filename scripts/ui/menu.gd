@@ -649,7 +649,70 @@ func _at_pc_off() -> void:
 			sr.pc_ui.set_cursor(Vector2.ZERO, false)
 
 
+## Idle in the main menu: after a minute without touching anything all of it fades away but the
+## game's name and version in the top left – the garage alone; any input brings it back.
+const IDLE_AFTER := 60.0
+var _idle_t := 0.0
+var _idle_hidden := false
+
+
+func _idle_parts() -> Array:
+	var out: Array = [_sub_panel, _float_bar, _quit_btn, _player_info, _platform_bar.get_parent(), _status]
+	if radio_w:
+		out.append(radio_w)
+	return out
+
+
+func _set_idle(on: bool) -> void:
+	if on == _idle_hidden:
+		return
+	_idle_hidden = on
+	for c in _idle_parts():
+		if c == null or not is_instance_valid(c):
+			continue
+		var ci := c as CanvasItem
+		var tw := create_tween()
+		if on:
+			tw.tween_property(ci, "modulate:a", 0.0, 1.6)
+			# (gone: not clickable either)
+			tw.tween_callback(func():
+				if _idle_hidden:
+					ci.visible = false)
+		else:
+			ci.modulate.a = 0.0
+			ci.visible = true
+			tw.tween_property(ci, "modulate:a", 1.0, 0.25)
+	if not on:
+		# the screen's own rules for what shows (the platform bar, the radio)
+		var sr = _showroom()
+		_platform_bar.get_parent().visible = sr != null and (current == "main" or current == "garage")
+		_sync_radio()
+
+
+func _process(delta: float) -> void:
+	if current != "main" or _at_pc or not visible:
+		_idle_t = 0.0
+		if _idle_hidden:
+			_set_idle(false)
+		return
+	_idle_t += delta
+	if _idle_t >= IDLE_AFTER and not _idle_hidden:
+		_set_idle(true)
+
+
 func _input(event: InputEvent) -> void:
+	# anything touched: awake again
+	var active := event is InputEventKey or event is InputEventMouseButton or event is InputEventJoypadButton \
+		or (event is InputEventMouseMotion and (event as InputEventMouseMotion).relative.length() > 2.0) \
+		or (event is InputEventJoypadMotion and absf((event as InputEventJoypadMotion).axis_value) > 0.3)
+	if active:
+		_idle_t = 0.0
+		if _idle_hidden:
+			_set_idle(false)
+			# (the first touch only wakes it)
+			if event is InputEventMouseButton or event is InputEventKey or event is InputEventJoypadButton:
+				get_viewport().set_input_as_handled()
+				return
 	if not _at_pc:
 		return
 	var sr = _showroom()

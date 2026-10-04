@@ -1495,8 +1495,10 @@ func _replace_wall_tools(g: Node3D) -> void:
 	# the pliers and ratchets on both tool walls stood out as odd shapes between the new tools: gone
 	for pre in ["Hanging_pliers_", "Hanging_ratchet_"]:
 		for n in g.find_children(pre + "*", "Node3D", true, false):
+			if not is_instance_valid(n):
+				continue          # (a part of one already taken away)
 			var nm := str(n.name)
-			if is_instance_valid(n) and nm.length() == pre.length() + 3 and nm.substr(pre.length()).is_valid_int():
+			if nm.length() == pre.length() + 3 and nm.substr(pre.length()).is_valid_int():
 				n.get_parent().remove_child(n)
 				n.free()
 	print("SHOWROOM: %d wall tools replaced" % done)
