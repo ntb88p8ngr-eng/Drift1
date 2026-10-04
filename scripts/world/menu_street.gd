@@ -709,7 +709,7 @@ func _traffic_setup() -> void:
 			# a headlight beam that lights the wet road in front of it
 			var spot := SpotLight3D.new()
 			spot.light_color = Color(1.0, 0.95, 0.85)
-			spot.light_energy = 12.0
+			spot.light_energy = 16.0
 			spot.spot_range = 40.0
 			spot.spot_angle = 34.0
 			spot.spot_attenuation = 0.6
@@ -727,29 +727,12 @@ func _traffic_setup() -> void:
 			x += _trng.randf_range(45.0, 110.0)
 
 
-## The light of a car's headlamps you can see in the wet air: two cones fading out ahead, a glow on
-## each lamp. -Z of the node points the way the car drives.
-var _beam_mat: ShaderMaterial
+## A glow on each of a car's headlamps. -Z of the node points the way the car drives.
 var _flare_mat: StandardMaterial3D
 
 
 func _beam_node() -> Node3D:
-	if _beam_mat == null:
-		var sh := Shader.new()
-		sh.code = """
-shader_type spatial;
-render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
-varying float along;
-void vertex() { along = UV.y; }
-void fragment() {
-	// bright at the lamp (narrow end), gone after a few metres; softer towards the cone's edge
-	float f = pow(1.0 - along, 2.2);
-	float edge = abs(dot(normalize(NORMAL), normalize(VIEW)));
-	ALBEDO = vec3(1.0, 0.93, 0.8) * f * 0.16 * smoothstep(0.0, 0.6, edge);
-}
-"""
-		_beam_mat = ShaderMaterial.new()
-		_beam_mat.shader = sh
+	if _flare_mat == null:
 		var grad := Gradient.new()
 		grad.set_color(0, Color(1, 0.95, 0.85, 1))
 		grad.set_color(1, Color(1, 0.95, 0.85, 0))
@@ -770,23 +753,8 @@ void fragment() {
 	var root := Node3D.new()
 	add_child(root)
 	for sx in [-0.62, 0.62]:
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.09
-		cone.bottom_radius = 1.9
-		cone.height = 11.0
-		cone.radial_segments = 16
-		cone.rings = 1
-		cone.cap_top = false
-		cone.cap_bottom = false
-		var mi := MeshInstance3D.new()
-		mi.mesh = cone
-		mi.material_override = _beam_mat
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		# the cylinder's top (narrow) at the lamp, its length forwards and a little down
-		mi.transform = Transform3D(Basis(Vector3.RIGHT, -PI * 0.5 + 0.07), Vector3(sx, 0.0, 0.0)) * Transform3D(Basis.IDENTITY, Vector3(0, -5.5, 0))
-		root.add_child(mi)
 		var q := QuadMesh.new()
-		q.size = Vector2(0.9, 0.9)
+		q.size = Vector2(1.1, 1.1)
 		var fl := MeshInstance3D.new()
 		fl.mesh = q
 		fl.material_override = _flare_mat
