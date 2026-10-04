@@ -285,7 +285,6 @@ const PACK := "res://assets/props/street_pack/"
 ## (signs face +Z: towards the garage, i.e. the cars coming out of the driveway)
 const PROPS := [
 	["fire_hydrant_red", 7.4, -21.5, KERB, 0.4],
-	["traffic_light_pole", 9.8, -22.4, KERB, 0.0],
 	["sign_one_way", 14.5, -22.0, KERB, 0.0],
 	["pedestrian_signal", -5.4, -21.9, KERB, 0.0],
 	["sign_pedestrian_crossing", -8.2, -22.0, KERB, 0.0],

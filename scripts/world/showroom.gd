@@ -77,6 +77,7 @@ var _shutter: Node3D
 var _shutter_base := Transform3D.IDENTITY
 var _shutter_b := 1.5
 var _shutter_want := 1.5
+var _shutter_paused := false
 
 ## The platform (menu buttons): it turns slowly on its own, always the same way; held buttons turn it
 ## either way; a view ("overview", "wheels", "front", "rear") swings it (forwards) and the camera to a
@@ -127,9 +128,16 @@ func _wheel_frame():
 	return [wp + side * 2.7 + Vector3.UP * 0.25 + shift, wp + shift + Vector3.UP * 0.05]
 
 
-## Rolls the shutter right down, or (when it is down) up again.
+## The shutter button: while it rolls, a press stops it where it is and the next one rolls it on the
+## same way; standing at the top it goes down, at the bottom up (from part way: down).
 func toggle_shutter() -> void:
-	_shutter_want = SHUTTER_UP if _shutter_want <= SHUTTER_DOWN + 0.01 else SHUTTER_DOWN
+	if _shutter_paused:
+		_shutter_paused = false
+		return
+	if absf(_shutter_b - _shutter_want) > 0.001:
+		_shutter_paused = true
+		return
+	_shutter_want = SHUTTER_UP if _shutter_b <= SHUTTER_DOWN + 0.01 else SHUTTER_DOWN
 
 
 ## The shutter with its lower edge at `b`: the slats squeezed up under the roll at the top.
@@ -1078,7 +1086,7 @@ static func _spline(pts: Array, u: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	_t += delta
-	if _shutter and absf(_shutter_b - _shutter_want) > 0.001:
+	if _shutter and not _shutter_paused and absf(_shutter_b - _shutter_want) > 0.001:
 		# rolling at an even pace, easing in the last few centimetres
 		var d := _shutter_want - _shutter_b
 		_set_shutter(_shutter_b + signf(d) * minf(absf(d), delta * clampf(absf(d) * 3.0, 0.15, 0.7)))

@@ -197,7 +197,7 @@ func _build_platform_bar() -> void:
 	gb.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gb.focus_mode = Control.FOCUS_NONE
 	gb.add_theme_font_size_override("font_size", 20)
-	gb.tooltip_text = "Rolltor hoch- / runterfahren"
+	gb.tooltip_text = "Rolltor hoch- / runterfahren – während der Fahrt: anhalten, nochmal: weiter"
 	_platform_bar.add_child(gb)
 	_light_panel = _build_light_panel()
 	_light_panel.visible = false
