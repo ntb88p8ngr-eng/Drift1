@@ -596,8 +596,11 @@ func _key(k: InputEventKey) -> void:
 		KEY_ESCAPE:
 			if tool == "road" and _road_pts.size() > 0:
 				_cancel_road()
-			else:
+			elif not _sel.is_empty():
 				_select({})
+			elif world.pause_menu:
+				# nothing to cancel: the menu (options, radio, leave)
+				world.pause_menu.toggle()
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9:
 			if not k.ctrl_pressed:
 				_set_tool(TOOLS[k.keycode - KEY_1][0])

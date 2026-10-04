@@ -1022,4 +1022,6 @@ const EN := {
 	"Replay importieren …": "Import replay …",
 	"Konnte nicht gespeichert werden": "Could not be saved",
 	"Kein gültiges Replay: ": "Not a valid replay: ",
+	"♪ Radio ein- / ausblenden": "♪ Show / hide the radio",
+	"Editor verlassen": "Leave the editor",
 }
