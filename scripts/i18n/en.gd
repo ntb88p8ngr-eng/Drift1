@@ -1007,4 +1007,6 @@ const EN := {
 	"Autoradio oben rechts ein- / ausblenden": "Show / hide the car radio in the top right corner",
 	"KASSETTE GEFUNDEN": "CASSETTE FOUND",
 	"„%s“ – liegt jetzt im Schrank in der Garage": "“%s” – now in the cabinet in the garage",
+	"Radio ausblenden (P)": "Hide the radio (P)",
+	"Radio einblenden (P)": "Show the radio (P)",
 }

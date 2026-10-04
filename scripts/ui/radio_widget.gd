@@ -26,8 +26,13 @@ const BUTTONS := {
 	"p4": [0.59, 0.209, 0.671, 0.302], "p5": [0.494, 0.105, 0.59, 0.21], "p6": [0.59, 0.105, 0.671, 0.21],
 	"slot": [-0.31, 0.34, 0.09, 0.46],
 }
-const PRESS_DEPTH := 0.0055
-const PRESS_TIME := 0.16
+const PRESS_DEPTH := 0.009
+const PRESS_TIME := 0.22
+## the TREB / BASS sliders: their thumbs [min x, min y, max x, max y] (they slide along x), the tracks
+const SLIDERS := {"bass": [-0.59, 0.318, -0.516, 0.348], "treble": [-0.59, 0.398, -0.516, 0.428]}
+const SLIDER_TRACKS := {"bass": [-0.652, 0.312, -0.452, 0.354], "treble": [-0.652, 0.392, -0.452, 0.434]}
+const SLIDE_C := -0.553          # the thumbs' middle (0 dB) …
+const SLIDE_R := 0.061           # … and how far they go either way
 
 var floating := true            # the menu's: drifts and turns a little
 var _vp: SubViewport
@@ -46,6 +51,7 @@ var _drag := false
 var _drag_from := Vector2.ZERO
 var _drag_vol := 0.0
 var _drag_moved := false
+var _slider := ""                # "bass" / "treble" while its thumb is dragged
 var _t := 0.0
 var _hover := ""
 var _btn_nodes := {}             # button -> Node3D with its own pieces of the model (they press in)
@@ -243,10 +249,10 @@ func _split_buttons() -> void:
 				var p2: Vector3 = rel * v[idx[t + 2]]
 				var hit := ""
 				if p0.z >= 0.0 and p1.z >= 0.0 and p2.z >= 0.0:
-					for b in BUTTONS:
+					for b in BUTTONS.keys() + SLIDERS.keys():
 						if b == "slot":
 							continue
-						var r: Array = BUTTONS[b]
+						var r: Array = BUTTONS[b] if BUTTONS.has(b) else SLIDERS[b]
 						var lo := Vector2(float(r[0]) - g, float(r[1]) - g)
 						var hi := Vector2(float(r[2]) + g, float(r[3]) + g)
 						var inside := true
@@ -434,8 +440,9 @@ func _process(delta: float) -> void:
 		return
 	_t += delta
 	if floating:
-		_pivot.rotation = Vector3(0.1 + sin(_t * 0.37) * 0.05, sin(_t * 0.5) * 0.14, sin(_t * 0.29) * 0.015)
-		_pivot.position.y = sin(_t * 0.8) * 0.02
+		# (gently: a little sway, it has to stay easy to hit)
+		_pivot.rotation = Vector3(0.05 + sin(_t * 0.37) * 0.015, sin(_t * 0.5) * 0.04, sin(_t * 0.29) * 0.004)
+		_pivot.position.y = sin(_t * 0.8) * 0.006
 	else:
 		_pivot.rotation = Vector3(0.06, 0.0, 0.0)
 	# the knob and its ring follow the volume
@@ -445,6 +452,10 @@ func _process(delta: float) -> void:
 	_arc_mat.set_shader_parameter("centre", _arc_centre())
 	_arc_mat.set_shader_parameter("lit", Radio.volume)
 	_arc_mat.set_shader_parameter("on", 1.0 if Radio.on else 0.0)
+	# the TREB / BASS thumbs where their values are
+	for k in SLIDERS:
+		if _btn_nodes.has(k):
+			(_btn_nodes[k] as Node3D).position.x = (Radio.bass if k == "bass" else Radio.treble) * SLIDE_R
 	# pressed buttons: in, and back out again
 	for b in _btn_press.keys():
 		var left: float = _btn_press[b] - delta
@@ -512,6 +523,10 @@ func _button_at(pos: Vector2) -> String:
 	var p: Vector2 = fp
 	if p.distance_to(KNOB_C) < KNOB_R + 0.012:
 		return "knob"
+	for k in SLIDER_TRACKS:
+		var r: Array = SLIDER_TRACKS[k]
+		if p.x >= float(r[0]) and p.x <= float(r[2]) and p.y >= float(r[1]) and p.y <= float(r[3]):
+			return k
 	for b in BUTTONS:
 		var r: Array = BUTTONS[b]
 		if p.x >= float(r[0]) and p.x <= float(r[2]) and p.y >= float(r[1]) and p.y <= float(r[3]):
@@ -522,6 +537,10 @@ func _button_at(pos: Vector2) -> String:
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
+		if _slider != "":
+			_slide_to(mm.position)
+			accept_event()
+			return
 		if _drag:
 			var dv := (_drag_from.y - mm.position.y + mm.position.x - _drag_from.x) / 160.0
 			if absf(mm.position.y - _drag_from.y) + absf(mm.position.x - _drag_from.x) > 4.0:
@@ -537,15 +556,29 @@ func _gui_input(event: InputEvent) -> void:
 		var b := _button_at(mb.position)
 		if b == "":
 			return      # past the radio: the click goes on to what is behind
-		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			Radio.set_volume(Radio.volume + 1.0 / 30.0)
-			accept_event()
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			Radio.set_volume(Radio.volume - 1.0 / 30.0)
+		var wheel := 0.0
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			wheel = 1.0
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			wheel = -1.0
+		if wheel != 0.0:
+			if SLIDERS.has(b):
+				# over a slider: that one, a step at a time
+				Radio.set_tone(b, (Radio.bass if b == "bass" else Radio.treble) + wheel / 6.0)
+			else:
+				Radio.set_volume(Radio.volume + wheel / 30.0)
 			accept_event()
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
+			if not mb.pressed and _slider != "":
+				_slider = ""
+				accept_event()
+				return
 			if mb.pressed:
-				if b == "knob":
+				if SLIDERS.has(b):
+					_slider = b
+					Radio.click_sound()
+					_slide_to(mb.position)
+				elif b == "knob":
 					_drag = true
 					_drag_from = mb.position
 					_drag_vol = Radio.volume
@@ -559,16 +592,23 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 
 
-## A button pressed: its flash, its click, what it does.
+## The dragged TREB / BASS thumb under the mouse (along its track).
+func _slide_to(pos: Vector2) -> void:
+	var fp = _face_point(pos)
+	if fp == null:
+		return
+	var v := clampf(((fp as Vector2).x - SLIDE_C) / SLIDE_R, -1.0, 1.0)
+	# notches: 13 steps (-6 … +6)
+	v = roundf(v * 6.0) / 6.0
+	if not is_equal_approx(v, Radio.bass if _slider == "bass" else Radio.treble):
+		Radio.set_tone(_slider, v)
+
+
+## A button pressed: it goes in, clicks, does its thing.
 func _press(b: String) -> void:
 	if b == "face":
 		return
-	if BUTTONS.has(b) and b != "slot":
-		var r: Array = BUTTONS[b]
-		_flash.position = Vector3((float(r[0]) + float(r[2])) * 0.5, (float(r[1]) + float(r[3])) * 0.5, FRONT_Z + 0.02)
-		(_flash.mesh as QuadMesh).size = Vector2(float(r[2]) - float(r[0]), float(r[3]) - float(r[1])) * 1.1
-		_flash.visible = true
-		_flash_t = 0.18
+	# (the button itself goes in – no light)
 	if b != "slot":
 		_btn_press[b] = PRESS_TIME
 	Radio.click_sound()

@@ -19,6 +19,8 @@ var world   # world.gd
 
 var _root: Control
 var _radio: Control         # the car radio, small, bottom left (P)
+var _radio_box: Control     # it and its ✕
+var _radio_pill: Button     # ♪: brings it back while it is hidden
 var _radio_tapes: PopupMenu
 var _info_lines: Label
 var _mode_label: Label
@@ -253,12 +255,35 @@ func _ready() -> void:
 	_anchor(_compass_label, 0.5, 0.0, -200, 268, 400, 26)
 	_root.add_child(_compass_label)
 
-	# --- the car radio, small in the bottom left corner: P shows / hides it ---
+	# --- the car radio, small in the bottom left corner: ✕ (or P) hides it, ♪ (or P) brings it back ---
+	_radio_box = Control.new()
+	_anchor(_radio_box, 0, 1, 14, -142, 380, 118)
+	_root.add_child(_radio_box)
 	_radio = RadioWidget.new()
 	_radio.floating = false
-	_anchor(_radio, 0, 1, 14, -142, 380, 118)
-	_radio.visible = false
-	_root.add_child(_radio)
+	_radio.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_radio_box.add_child(_radio)
+	var close := Button.new()
+	close.text = "✕"
+	close.tooltip_text = "Radio ausblenden (P)"
+	close.focus_mode = Control.FOCUS_NONE
+	close.add_theme_font_size_override("font_size", 14)
+	close.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	close.offset_left = -26
+	close.offset_top = -4
+	close.offset_right = 2
+	close.offset_bottom = 22
+	close.pressed.connect(func(): _show_radio(false))
+	_radio_box.add_child(close)
+	_radio_pill = Button.new()
+	_radio_pill.text = "♪"
+	_radio_pill.tooltip_text = "Radio einblenden (P)"
+	_radio_pill.focus_mode = Control.FOCUS_NONE
+	_radio_pill.add_theme_font_size_override("font_size", 20)
+	_anchor(_radio_pill, 0, 1, 14, -58, 44, 40)
+	_radio_pill.pressed.connect(func(): _show_radio(true))
+	_root.add_child(_radio_pill)
+	_show_radio(bool(Game.settings.get("radio_hud", true)), false)
 	_radio_tapes = PopupMenu.new()
 	_radio_tapes.id_pressed.connect(func(i):
 		var ids: Array = _radio_tapes.get_meta("ids", [])
@@ -274,7 +299,7 @@ func _ready() -> void:
 			_radio_tapes.add_item("Noch keine Kassetten gefunden", -1)
 		_radio_tapes.set_meta("ids", ids)
 		_radio_tapes.reset_size()
-		_radio_tapes.position = Vector2i(_radio.get_global_rect().position - Vector2(0, _radio_tapes.size.y + 6))
+		_radio_tapes.position = Vector2i(_radio_box.get_global_rect().position - Vector2(0, _radio_tapes.size.y + 6))
 		_radio_tapes.popup())
 
 	# --- results ---
@@ -635,14 +660,23 @@ func results_visible() -> bool:
 	return _results.visible
 
 
+func _show_radio(on: bool, click := true) -> void:
+	_radio_box.visible = on
+	_radio_pill.visible = not on
+	if click:
+		Radio.click_sound()
+	if bool(Game.settings.get("radio_hud", true)) != on:
+		Game.settings["radio_hud"] = on
+		Game.save_settings()
+
+
 ## P: the radio in / out of view; while it shows: 1-6 the presets, + / - the volume, 0 on / off.
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("radio"):
-		_radio.visible = not _radio.visible
-		Radio.click_sound()
+		_show_radio(not _radio_box.visible)
 		get_viewport().set_input_as_handled()
 		return
-	if not _radio.visible or not (event is InputEventKey) or not event.pressed or event.is_echo():
+	if not _radio_box.visible or not (event is InputEventKey) or not event.pressed or event.is_echo():
 		return
 	var k := (event as InputEventKey).physical_keycode
 	if k >= KEY_1 and k <= KEY_6:

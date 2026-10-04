@@ -20,16 +20,16 @@ signal flashed            # a short message for the display (flash_text)
 
 const STATIONS := [
 	[   # FM1: rock
-		{"ps": "RP ROCK", "name": "Radio Paradise – Rock Mix", "freq": "98.5", "url": "https://stream.radioparadise.com/rock-128"},
+		{"ps": "RP ROCK", "name": "Radio Paradise – Rock Mix", "freq": "98.5", "url": "https://stream.radioparadise.com/rock-192"},
 		{"ps": "METAL", "name": "SomaFM – Metal Detector", "freq": "101.3", "url": "https://ice2.somafm.com/metal-128-mp3"},
 		{"ps": "80S ROCK", "name": "SomaFM – Underground 80s", "freq": "89.7", "url": "https://ice2.somafm.com/u80s-128-mp3"},
 		{"ps": "70S ROCK", "name": "SomaFM – Left Coast 70s", "freq": "94.1", "url": "https://ice2.somafm.com/seventies-128-mp3"},
-		{"ps": "INDIE", "name": "SomaFM – BAGeL Radio", "freq": "104.6", "url": "https://ice2.somafm.com/bagel-128-mp3"},
+		{"ps": "INDIE", "name": "SomaFM – Indie Pop Rocks!", "freq": "104.6", "url": "https://ice2.somafm.com/indiepop-128-mp3"},
 		{"ps": "ALT ROCK", "name": "SomaFM – Digitalis", "freq": "106.2", "url": "https://ice2.somafm.com/digitalis-128-mp3"},
 	],
 	[   # FM2: the rest
 		{"ps": "RP MAIN", "name": "Radio Paradise – Main Mix", "freq": "93.3", "url": "https://stream.radioparadise.com/mp3-128"},
-		{"ps": "RP MELLO", "name": "Radio Paradise – Mellow Mix", "freq": "95.8", "url": "https://stream.radioparadise.com/mellow-128"},
+		{"ps": "RP MELLO", "name": "Radio Paradise – Mellow Mix", "freq": "95.8", "url": "https://stream.radioparadise.com/mellow-192"},
 		{"ps": "COUNTRY", "name": "SomaFM – Boot Liquor", "freq": "88.4", "url": "https://ice2.somafm.com/bootliquor-128-mp3"},
 		{"ps": "COVERS", "name": "SomaFM – Covers", "freq": "91.6", "url": "https://ice2.somafm.com/covers-128-mp3"},
 		{"ps": "FOLK", "name": "SomaFM – Folk Forward", "freq": "100.1", "url": "https://ice2.somafm.com/folkfwd-128-mp3"},
@@ -39,7 +39,6 @@ const STATIONS := [
 
 ## More stations to pick for the presets (Optionen → Audio), besides the ones above and the own ones.
 const MORE := [
-	{"ps": "INDIE POP", "name": "SomaFM – Indie Pop Rocks!", "freq": "92.4", "url": "https://ice2.somafm.com/indiepop-128-mp3"},
 	{"ps": "POPTRON", "name": "SomaFM – PopTron", "freq": "97.1", "url": "https://ice2.somafm.com/poptron-128-mp3"},
 	{"ps": "GROOVE", "name": "SomaFM – Groove Salad", "freq": "99.6", "url": "https://ice2.somafm.com/groovesalad-128-mp3"},
 	{"ps": "7 SOUL", "name": "SomaFM – Seven Inch Soul", "freq": "102.7", "url": "https://ice2.somafm.com/7soul-128-mp3"},
@@ -54,7 +53,7 @@ const TAPES := {
 	"garage_mix": {"title": "Garage Mix", "color": Color(0.85, 0.12, 0.1), "stream": "https://ice2.somafm.com/u80s-128-mp3"},
 	"night_run": {"title": "Night Run", "color": Color(0.12, 0.3, 0.85), "stream": "https://ice2.somafm.com/metal-128-mp3"},
 	"desert_tape": {"title": "Desert Tape", "color": Color(0.9, 0.6, 0.15), "stream": "https://ice2.somafm.com/bootliquor-128-mp3"},
-	"hell_mix": {"title": "Green Hell", "color": Color(0.15, 0.7, 0.3), "stream": "https://stream.radioparadise.com/rock-128"},
+	"hell_mix": {"title": "Green Hell", "color": Color(0.15, 0.7, 0.3), "stream": "https://stream.radioparadise.com/rock-192"},
 	"harbor_tape": {"title": "Harbor Lights", "color": Color(0.1, 0.7, 0.75), "stream": "https://ice2.somafm.com/covers-128-mp3"},
 	"tokyo_tape": {"title": "Tokyo Tape", "color": Color(0.95, 0.3, 0.7), "stream": "https://ice2.somafm.com/seventies-128-mp3"},
 }
@@ -74,6 +73,8 @@ var preset := [0, 0]
 var mode := "radio"             # "radio" / "tape"
 var tape := ""                  # the tape in the slot ("" = none)
 var api := true                 # A.P.I.: song titles scroll by on their own
+var bass := 0.0                 # -1..1: the BASS slider (±12 dB down low)
+var treble := 0.0               # -1..1: the TREB slider (±12 dB up high)
 var tape_paused := false
 var show_freq := false          # TUNE: the display shows the frequency instead of the station name
 var status := ""                # "" / "TUNING" / "NO SIGNAL" / "PLAY"
@@ -118,9 +119,10 @@ var _clock := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_make_bus()
 	for i in 2:
 		var p := AudioStreamPlayer.new()
-		p.bus = "Master"
+		p.bus = "Radio"
 		add_child(p)
 		_players.append(p)
 	_players[0].finished.connect(_on_player_finished.bind(0))
@@ -142,6 +144,9 @@ func _ready() -> void:
 	if tape == "":
 		mode = "radio"
 	api = bool(st.get("api", true))
+	bass = clampf(float(st.get("bass", 0.0)), -1.0, 1.0)
+	treble = clampf(float(st.get("treble", 0.0)), -1.0, 1.0)
+	_apply_eq()
 	# no sound and no network for the dedicated server / headless tests
 	if DisplayServer.get_name() == "headless":
 		on = false
@@ -275,6 +280,46 @@ func toggle_api() -> void:
 	_store()
 
 
+## The radio's own bus with a 6-band EQ (32 Hz … 10 kHz) for its BASS and TREB sliders.
+var _eq: AudioEffectEQ6
+
+
+func _make_bus() -> void:
+	var i := AudioServer.get_bus_index("Radio")
+	if i < 0:
+		AudioServer.add_bus()
+		i = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(i, "Radio")
+		AudioServer.set_bus_send(i, "Master")
+		_eq = AudioEffectEQ6.new()
+		AudioServer.add_bus_effect(i, _eq, 0)
+	else:
+		_eq = AudioServer.get_bus_effect(i, 0) as AudioEffectEQ6
+
+
+func _apply_eq() -> void:
+	if _eq == null:
+		return
+	_eq.set_band_gain_db(0, bass * 12.0)
+	_eq.set_band_gain_db(1, bass * 10.0)
+	_eq.set_band_gain_db(2, bass * 4.0)
+	_eq.set_band_gain_db(3, treble * 2.0)
+	_eq.set_band_gain_db(4, treble * 8.0)
+	_eq.set_band_gain_db(5, treble * 12.0)
+
+
+## `which` = "bass" / "treble", -1..1 (the slider's place).
+func set_tone(which: String, v: float) -> void:
+	v = clampf(v, -1.0, 1.0)
+	if which == "bass":
+		bass = v
+	else:
+		treble = v
+	_apply_eq()
+	flash("%s %+d" % ["BASS" if which == "bass" else "TREB", roundi(v * 6.0)], 1.2)
+	_store()
+
+
 func toggle_freq() -> void:
 	show_freq = not show_freq
 	changed.emit()
@@ -369,6 +414,14 @@ func _files_in(path: String) -> PackedStringArray:
 	return out
 
 
+## Addresses that did not play (AAC, not MP3) and what plays instead.
+const MOVED := {
+	"https://stream.radioparadise.com/rock-128": "https://stream.radioparadise.com/rock-192",
+	"https://stream.radioparadise.com/mellow-128": "https://stream.radioparadise.com/mellow-192",
+	"https://ice2.somafm.com/bagel-128-mp3": "https://ice2.somafm.com/indiepop-128-mp3",
+}
+
+
 func _load_stations() -> void:
 	var slots = Game.settings.get("radio_slots", [])
 	var bands: Array = []
@@ -377,7 +430,7 @@ func _load_stations() -> void:
 		for i in 6:
 			var st: Dictionary = STATIONS[b][i]
 			if slots is Array and b < slots.size() and slots[b] is Array and i < (slots[b] as Array).size():
-				var found := station_by_url(str(slots[b][i]))
+				var found := station_by_url(str(MOVED.get(str(slots[b][i]), slots[b][i])))
 				if not found.is_empty():
 					st = found
 			l.append(st)
@@ -468,7 +521,7 @@ func remove_custom(url: String) -> void:
 
 func _store() -> void:
 	Game.settings["radio"] = {"on": on, "volume": volume, "band": band, "preset": preset.duplicate(), "mode": mode,
-		"tape": tape, "api": api}
+		"tape": tape, "api": api, "bass": bass, "treble": treble}
 	_save_at = _clock + 0.8
 	changed.emit()
 
@@ -653,6 +706,13 @@ func _poll_http() -> void:
 					return
 				if code != 200:
 					_fail()
+					return
+				var ctype := str(h.get("content-type", "audio/mpeg")).to_lower()
+				if ctype.contains("aac") or ctype.contains("ogg") or ctype.contains("flac") or ctype.contains("mp4"):
+					# (only MP3 streams can be played)
+					_fail()
+					_retry_at = -1.0
+					flash("NO MP3", 3.0)
 					return
 				_metaint = int(h.get("icy-metaint", "0"))
 				_until_meta = _metaint

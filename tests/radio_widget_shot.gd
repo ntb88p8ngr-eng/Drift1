@@ -19,6 +19,8 @@ func _ready() -> void:
 	add_child(w)
 	Radio.on = true
 	Radio.volume = 0.6
+	Radio.bass = 1.0
+	Radio.treble = -1.0
 	Radio.status = "PLAY"
 	Radio.title = "Led Zeppelin - Kashmir"
 	for f in 30:
