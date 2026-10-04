@@ -386,6 +386,14 @@ func _widen_booth(g: Node3D) -> void:
 		var nm := String(mi.name)
 		if (nm.contains("wall") or nm.contains("ceiling_0")) and not nm.contains("LED"):
 			mi.material_override = walls
+		if nm.contains("LED"):
+			# (its own diffuser: the booth stays lit when the hall's ceiling lights are switched off)
+			for si in mi.mesh.get_surface_count():
+				var lm := mi.get_active_material(si)
+				if lm:
+					lm = lm.duplicate()
+					lm.resource_name = "Booth_LED_diffuser"
+					mi.set_surface_override_material(si, lm)
 		if nm.contains("Door_frame") or nm.contains("Filter"):
 			continue
 		if nm.contains("Extraction"):
@@ -1552,7 +1560,10 @@ func _find_menu_lights(g: Node3D) -> void:
 		_ceiling_albedo = _ceiling_mat.albedo_color
 	if _platform_mat:
 		_platform_emission = _platform_mat.emission_energy_multiplier
+	var booth := AABB(Vector3(6.6, -0.5, -6.6 - BOOTH_WIDEN_FAR), Vector3(7.4, 4.5, 4.9 + BOOTH_WIDEN + BOOTH_WIDEN_FAR))
 	for l in g.find_children("*", "Light3D", true, false):
+		if booth.has_point((l as Node3D).global_position):
+			continue          # (the paint booth's own lights stay on)
 		if str(l.name).begins_with("Honeycomb"):
 			_ceiling_lights.append(l)
 		elif str(l.name).begins_with("Neon") and str(l.get_path()).contains("Platform_Static"):
