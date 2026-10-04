@@ -68,6 +68,8 @@ func _ready() -> void:
 			storm.set_process(false)
 			storm._strike()
 			storm._process(0.001)
+			if OS.get_cmdline_user_args().has("--noproj"):
+				storm._window.light_projector = null
 			await get_tree().process_frame
 			await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(out)

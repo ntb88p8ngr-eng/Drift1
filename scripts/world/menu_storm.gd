@@ -498,7 +498,7 @@ func _build_rain(hall: Rect2, density := 1.0, reach := 14.0) -> void:
 ## The window the lightning shines through: four panes in a frame, soft at the edges.
 static func _window_texture() -> ImageTexture:
 	var n := 256
-	var img := Image.create(n, n, false, Image.FORMAT_L8)
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	for y in n:
 		for x in n:
 			var u := float(x) / (n - 1)
@@ -506,7 +506,9 @@ static func _window_texture() -> ImageTexture:
 			var inside := smoothstep(0.04, 0.1, u) * smoothstep(0.96, 0.9, u) * smoothstep(0.04, 0.1, v) * smoothstep(0.96, 0.9, v)
 			# the cross bars (glazing bars) between the panes
 			var bar := maxf(1.0 - smoothstep(0.018, 0.03, absf(u - 0.5)), 1.0 - smoothstep(0.018, 0.03, absf(v - 0.5)))
-			img.set_pixel(x, y, Color(inside * (1.0 - bar), 0, 0))
+			var k := inside * (1.0 - bar)
+			img.set_pixel(x, y, Color(k, k, k, 1.0))
+	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
 
