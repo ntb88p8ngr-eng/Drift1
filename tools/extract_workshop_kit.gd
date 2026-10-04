@@ -17,6 +17,9 @@ const KIT := ["Rolling_tool_trolley_001", "Rolling_tool_trolley_002", "Radial_ca
 	"Mountain_poster_001", "Spare_exhaust_section_001", "Paint_mixing_trolley_001", "Bench_vice_001"]
 
 
+var _written := {}
+
+
 func _init() -> void:
 	var g := (load("res://assets/main_menu/Midnight_Drift_Garage_Detailed.glb") as PackedScene).instantiate() as Node3D
 	root.add_child(g)
@@ -74,7 +77,13 @@ func _init() -> void:
 				mi.owner = kit
 		var ps := PackedScene.new()
 		ps.pack(kit)
-		var path: String = OUT + String(kit.name).to_lower() + ".scn"
+		# the names mech_shop.gd loads: without the model's _001 numbering (the second of a kind: _2)
+		var base := String(kit.name).to_lower()
+		var stem := base.substr(0, base.length() - 4) if base.length() > 4 and base[base.length() - 4] == "_" and base.right(3).is_valid_int() else base
+		var path: String = OUT + stem + ".scn"
+		if FileAccess.file_exists(path) and _written.has(path):
+			path = OUT + stem + "_2.scn"
+		_written[path] = true
 		ResourceSaver.save(ps, path)
 		print("saved ", path, "  ", mb.size, "  parts ", group.size())
 		kit.queue_free()
