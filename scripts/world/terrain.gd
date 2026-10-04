@@ -330,7 +330,8 @@ func _build_distance_field() -> void:
 	_dn = Vector2i(int(ceil((nx - 1) * CELL / DIST_CELL)) + 1, int(ceil((nz - 1) * CELL / DIST_CELL)) + 1)
 	_dist.resize(_dn.x * _dn.y)
 	_dist.fill(DIST_MAX)
-	if big:
+	var follow := big or bool(track.hilly)
+	if follow:
 		_rh.resize(_dn.x * _dn.y)
 		_rh.fill(0.0)
 	var reach := int(ceil(DIST_MAX / DIST_CELL))
@@ -359,7 +360,7 @@ func _build_distance_field() -> void:
 				var k := gz * _dn.x + gx
 				if d < _dist[k]:
 					_dist[k] = d
-					if big:
+					if follow:
 						_rh[k] = s.y + clampf(wx * fl.x + wz * fl.y, -3.0, 3.0) * grade
 						if banked:
 							_rh[k] += track.ground_bank_y(i, wx * track.rights[i].x + wz * track.rights[i].z)
@@ -399,6 +400,18 @@ func _height_fn(x: float, z: float, d: float) -> float:
 	var bumps := _n_small.get_noise_2d(x, z) * 0.55 * smoothstep(fr, fr + 10.0, d)
 	if Game.is_city(track_id):
 		bumps = 0.0
+	if bool(track.hilly):
+		# the road runs over the hills: the corridor lies at the road's height (a little under its
+		# surface right beside it), the land rises and falls away from there
+		var hw := float(track.half_w)
+		var under := 1.0 - smoothstep(hw + 0.3, hw + 2.0, d)
+		if track.water != null:
+			bumps *= float(track.water.calm(x, z))      # (the terrace round the lake stays flat)
+		var g := lerpf(_road_h_raw(x, z) - 0.08 - 0.25 * under, h, blend) + bumps
+		# the lake bed and the river channel (under the bridges too)
+		if track.water != null:
+			g = minf(g, track.water.carve(x, z))
+		return g
 	return h * blend + bumps
 
 
@@ -546,7 +559,15 @@ func desert_rect() -> Rect2:
 
 
 func _desert_height(x: float, z: float, _r: float) -> float:
-	var dunes := (_n_mid.get_noise_2d(x, z) * 0.5 + 0.5) * 2.2 + _n_large.get_noise_2d(x, z) * 1.5
+	var wt = track.water
+	var calm: float = wt.calm(x, z) if wt != null else 1.0
+	# soft dunes, the hills the road runs over and broad rounded hills between the loops
+	var dunes := ((_n_mid.get_noise_2d(x, z) * 0.5 + 0.5) * 2.0 + _n_large.get_noise_2d(x, z) * 2.0) * calm
+	dunes += float(track.hill_y(x, z))
+	var swell := _n_large.get_noise_2d(x * 0.6 + 50.0, z * 0.6) * 0.5 + 0.5
+	dunes += swell * swell * 18.0 * calm
+	if wt != null:
+		dunes = minf(dunes, wt.carve(x, z))
 	var rc := desert_rect()
 	var out := maxf(maxf(rc.position.x - x, x - rc.end.x), maxf(rc.position.y - z, z - rc.end.y))
 	var far := smoothstep(70.0, 200.0, out)
@@ -559,7 +580,9 @@ func _desert_height(x: float, z: float, _r: float) -> float:
 	# a lower terrace below some of the cliffs
 	mesa += smoothstep(0.42, 0.46, m) * 14.0
 	var rise := smoothstep(300.0, 900.0, out) * 45.0
-	return dunes + (mesa + rise) * far
+	var hh := dunes + (mesa + rise) * far
+	# (the river cuts its way out through the mesas too)
+	return minf(hh, wt.carve(x, z)) if wt != null else hh
 
 
 ## Ground colour weights: R = concrete, G = dirt, B = forest floor, A = meadow (dry grass / flowers).
@@ -583,6 +606,12 @@ func _splat_fn(x: float, z: float, d: float) -> Color:
 		# a narrow strip of worn gravel right behind the barrier, grass on the run-off
 		var wb := float(track.wall_base)
 		dirt = smoothstep(wb - 1.0, wb, d) * (1.0 - smoothstep(wb + 0.8, wb + 2.8, d)) * 0.7
+		if track.water != null:
+			# damp, darker sand along the shore and the river banks
+			var rv: Vector2 = track.water.river_at(x, z)
+			var dc := Vector2(x, z).distance_to(track.water.center)
+			dirt = maxf(dirt, 1.0 - smoothstep(9.0, 16.0, rv.x))
+			dirt = maxf(dirt, 1.0 - smoothstep(float(track.water.radius) + 2.0, float(track.water.radius) + 9.0, dc))
 	var forest := forest_density(x, z, d) * (1.0 - paved)
 	var mn := _n_meadow.get_noise_2d(x, z) * 0.9 + 0.2
 	if big:

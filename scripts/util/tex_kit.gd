@@ -234,6 +234,7 @@ uniform sampler2D asphalt_tex : source_color, filter_linear_mipmap_anisotropic, 
 uniform sampler2D asphalt_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float photo_tex = 0.0;   // 1 when the photo textures are set
 uniform int paved_mode = 0;      // paved ground: 0 concrete slabs, 1 gravel, 2 asphalt, 3 city pavers
+uniform float desert = 0.0;      // 1: the "grass" is sand – wind ripples, red iron patches, pale flats, grit
 // textures painted in the world editor (terrain_paint.gd): R = id, G = strength, one texel per paint_res m
 uniform sampler2D paint_tex : filter_nearest, repeat_disable;
 uniform vec2 paint_origin = vec2(0.0);
@@ -305,6 +306,19 @@ void fragment() {
 	vec3 g = mix(grass_a, grass_b, smoothstep(0.3, 0.7, n1));
 	g = mix(g, grass_dry, clamp(smoothstep(0.6, 0.85, n3) * 0.5 + splat.a * smoothstep(0.5, 0.75, n5) * 0.35, 0.0, 1.0));
 	g *= 0.78 + 0.42 * n2;
+	if (desert > 0.5) {
+		float big = texture(noise_tex, p * 0.0023 + vec2(0.13, 0.71)).r;
+		float mid = texture(noise_tex, p * 0.011 + vec2(0.61, 0.27)).r;
+		vec3 sd = mix(grass_a, grass_b, smoothstep(0.3, 0.7, n1));
+		sd = mix(sd, vec3(0.6, 0.27, 0.15), smoothstep(0.55, 0.8, big) * 0.65);      // red iron sand
+		sd = mix(sd, grass_dry, smoothstep(0.38, 0.16, big) * 0.7);                   // pale flats
+		sd = mix(sd, vec3(0.78, 0.6, 0.42), smoothstep(0.62, 0.85, mid) * 0.35);      // light drifts
+		sd = mix(sd, vec3(0.4, 0.28, 0.19), smoothstep(0.72, 0.9, n4) * 0.4);         // dark grit
+		// wind ripples across the dunes, fading out in the distance
+		float rip = sin(dot(p, vec2(0.83, 0.56)) * 3.4 + n1 * 16.0 + mid * 6.0) * 0.5 + 0.5;
+		sd *= 1.0 - 0.09 * rip * (1.0 - far_flat);
+		g = sd * (0.86 + 0.24 * n2);
+	}
 	vec3 col = g;
 	float forest = clamp(splat.b, 0.0, 1.0);
 	vec3 ff = forest_floor * (0.75 + 0.6 * n2) + vec3(0.03, 0.02, 0.0) * n4;
@@ -1120,6 +1134,7 @@ static func terrain_material(track_id: String) -> ShaderMaterial:
 		m.set_shader_parameter("concrete", Color(0.12, 0.12, 0.13))
 		m.set_shader_parameter("joints", 0.0)
 	if track_id == "utah":
+		m.set_shader_parameter("desert", 1.0)
 		# desert: orange sand in place of the grass, pale dry patches, red sandstone on the slopes
 		m.set_shader_parameter("grass_a", Color(0.62, 0.4, 0.24))
 		m.set_shader_parameter("grass_b", Color(0.7, 0.48, 0.3))

@@ -88,18 +88,25 @@ var _trail_t := 0.0
 ## ground height under a point (x, z) – flat (0) in the city, the dunes in the desert
 var ground_fn: Callable
 var turn_msg := "Hier draußen ist nichts – zurück in die Stadt"
+## false: no mist at all, only the border that turns you round (the desert)
+var show := true
 
 
 func _ground(x: float, z: float) -> float:
 	return float(ground_fn.call(x, z)) if ground_fn.is_valid() else 0.0
 
 
-func setup(p_world, p_rect: Rect2, p_ground := Callable(), p_msg := "") -> void:
+func setup(p_world, p_rect: Rect2, p_ground := Callable(), p_msg := "", p_show := true) -> void:
 	world = p_world
 	rect = p_rect
 	ground_fn = p_ground
+	show = p_show
 	if p_msg != "":
 		turn_msg = p_msg
+	if not show:
+		mist_rect = rect.grow(-DEPTH)
+		set_process(false)
+		return
 	mist_rect = rect.grow(-DEPTH)
 	var noise: Texture2D = TexKit.noise_texture(733, 0.02)
 	# the mist wall: sheets from DEPTH inside out to OUTER beyond the border

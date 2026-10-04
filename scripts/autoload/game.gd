@@ -13,7 +13,7 @@ const TRACKS := [
 	{"id": "harbor", "name": "Harbor Drift Yard", "desc": "Breiter Industriekurs am Hafen – enge Kehren zwischen Containern und Lagerhallen."},
 	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
 	{"id": "tokyo", "name": "Neo Tokyo", "desc": "Japanische Großstadt: Scramble-Kreuzung mit Riesen-Bildschirmen, enge 90°-Ecken zwischen Hochhäusern, eine Stadtautobahn-Schleife auf Stelzen, Kirschblüten, Neonschilder – nachts am schönsten."},
-	{"id": "utah", "name": "Utah Desert", "desc": "Offene Wüste in Utah: eine verwinkelte Strecke voller Haarnadeln und S-Kurven, mal Asphalt, mal loser Sand, dazwischen Kakteen, riesige Felsbrocken und Tafelberge – rundherum zieht Nebel auf."},
+	{"id": "utah", "name": "Utah Desert", "desc": "Hügelige Wüste in Utah: eine verwinkelte Strecke voller Haarnadeln und S-Kurven über Kuppen und durch Senken, mal Asphalt, mal loser Sand. In der Mitte ein See mit Ringstraße, Motel, Diner und Tankstelle, ein Fluss mit Staudamm und Brücken, Kakteen, Felsformationen und Tafelberge."},
 	{"id": "gruene_hoelle", "name": "Grüne Hölle", "desc": "Nachbau der Nordschleife aus echten Karten- und Höhendaten – 20,5 km durch die Eifel, fast 300 m Höhenunterschied, von Hatzenbach über Karussell bis Döttinger Höhe."},
 ]
 

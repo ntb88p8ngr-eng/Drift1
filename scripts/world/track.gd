@@ -65,7 +65,14 @@ const DEFS := {
 			Vector2(300, 230), Vector2(245, 200), Vector2(215, 150), Vector2(180, 115), Vector2(150, 135),
 			Vector2(140, 180), Vector2(105, 210), Vector2(55, 195), Vector2(45, 150), Vector2(80, 110),
 			Vector2(80, 60), Vector2(45, 55), Vector2(10, 40)],
-		"sand": [[9, 16], [33, 41], [45, 48]],
+		# (bundled in one corner of the map: the inner loops on the east side, short asphalt between)
+		"sand": [[27, 32], [33, 38], [39, 44]],
+		# rolling desert hills the road runs over: [big swell amplitude, small amplitude] (m)
+		"hills": [18.0, 4.0],
+		# the lake in the middle (ring road and buildings round it), a river in and out of it (the
+		# lap crosses both on bridges), a dam below the lake; roads from the ring out to the lap
+		"lake": {"center": Vector2(192, -8), "radius": 45.0, "ring": 62.0, "terrace": 95.0, "plateau": 2.0,
+			"rivers": [30.0, 240.0], "spokes": [90.0, 150.0, 310.0]},
 		"width": 14.0, "runoff": 6.0, "start_dist": 50.0,
 		"ground": "sand", "offroad_grip": 0.74, "wall": "none", "asphalt": Color(0.1, 0.095, 0.09),
 	},
@@ -125,6 +132,12 @@ var elevated := false
 ## Spline tracks with a height profile (the city's expressway): the road has its own collision, out
 ## to the walls (a bridge deck), the terrain stays flat underneath.
 var raised := false
+## Spline tracks laid over hills ("hills"): the road climbs and dips with the land, has its own
+## collision, and the terrain follows it (like the data tracks).
+var hilly := false
+var _hill_c := Vector2.ZERO     # the start: the hills flatten out round it
+const DesertWater = preload("res://scripts/world/desert_water.gd")
+var water                       # desert_water.gd when the track has a "lake", else null
 var meta: Dictionary = {}       # data tracks: meta.json (grid layout, sections, attribution)
 var sections: Array = []        # [name, distance from the start line] in driving order
 var min_y := 0.0
@@ -152,6 +165,7 @@ func build(id: String) -> void:
 	trap_w = minf(4.6, float(def["runoff"]) - 0.4)
 	elevated = def.has("data")
 	raised = def.has("heights")
+	hilly = def.has("hills")
 	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
 	_setup_profile()
@@ -162,7 +176,7 @@ func build(id: String) -> void:
 	_build_ground()
 	await Game.load_tick(0.35)
 	_build_road()
-	if elevated or raised:
+	if elevated or raised or hilly:
 		_build_road_collision()
 	await Game.load_tick(0.55)
 	_build_puddles()
@@ -189,6 +203,8 @@ func _sample_centerline() -> void:
 		_load_centerline()
 	else:
 		_spline_centerline()
+	if def.has("hills"):
+		_lay_on_hills()
 	var count := samples.size()
 	var step := length / float(count)
 	tangents.resize(count)
@@ -320,6 +336,75 @@ func _spline_centerline() -> void:
 		samples[i] = a.lerp(b, t)
 		dists[i] = d
 	length = step * count
+
+
+## Height of the desert hills at (x, z) (0 on tracks without "hills"): two crossing swells and a
+## smaller ripple, flat round the start line.
+func hill_y(x: float, z: float) -> float:
+	if not def.has("hills"):
+		return 0.0
+	var a: Array = def["hills"]
+	var h := float(a[0]) * sin(x * 0.0105 + 0.7) * cos(z * 0.0083 - 0.4)
+	h += float(a[1]) * (sin(x * 0.021 - z * 0.017 + 1.3) + 0.6 * cos(x * 0.013 + z * 0.026))
+	h *= smoothstep(55.0, 150.0, Vector2(x, z).distance_to(_hill_c))
+	if water != null:
+		h = water.shape(x, z, h)
+	return h
+
+
+## The road over the hills: every sample takes the ground's height, then the profile is smoothed
+## along the lap (no kinks, grades a car can drift up and down).
+func _lay_on_hills() -> void:
+	var n := samples.size()
+	var step := length / float(n)
+	var s0 := int(round(float(def["start_dist"]) / step)) % n
+	_hill_c = Vector2(samples[s0].x, samples[s0].z)
+	if def.has("lake") and water == null:
+		water = DesertWater.new(def["lake"])
+	var ys := PackedFloat32Array()
+	ys.resize(n)
+	for i in n:
+		ys[i] = hill_y(samples[i].x, samples[i].z)
+	for _p in 60:
+		var q := ys.duplicate()
+		for i in n:
+			q[i] = (ys[(i - 2 + n) % n] + ys[(i - 1 + n) % n] * 2.0 + ys[i] * 2.0 + ys[(i + 1) % n] * 2.0 + ys[(i + 2) % n]) / 8.0
+		ys = q
+	# no steeper than 13 %: forward and backward passes, then smoothed again; over a river the road
+	# keeps its bridge height
+	var g := 0.13 * step
+	for _it in 4:
+		_keep_bridges(ys)
+		for _p in 4:
+			var q := ys.duplicate()
+			for i in n:
+				q[i] = (ys[(i - 1 + n) % n] + ys[i] * 2.0 + ys[(i + 1) % n]) * 0.25
+			ys = q
+		# twice round the lap each way (the lap is closed: no step at the seam)
+		for k in range(1, 2 * n):
+			var i := k % n
+			var j := (k - 1) % n
+			ys[i] = clampf(ys[i], ys[j] - g, ys[j] + g)
+		for k in range(2 * n - 2, -1, -1):
+			var i := k % n
+			var j := (k + 1) % n
+			ys[i] = clampf(ys[i], ys[j] - g, ys[j] + g)
+	for i in n:
+		samples[i].y = ys[i]
+	var steep := 0.0
+	for i in n:
+		steep = maxf(steep, absf(ys[(i + 1) % n] - ys[i]) / step)
+	print("TRACK: hills %.1f … %.1f m, steepest %.0f %%" % [Array(ys).min(), Array(ys).max(), steep * 100.0])
+
+
+## Over (and next to) a river the road stays at least 2.6 m above the water.
+func _keep_bridges(ys: PackedFloat32Array) -> void:
+	if water == null:
+		return
+	for i in ys.size():
+		var r: Vector2 = water.river_at(samples[i].x, samples[i].z)
+		if r.x < water.RIVER_W * 0.5 + 10.0:
+			ys[i] = maxf(ys[i], r.y + 2.6)
 
 
 ## Name of the track section at `progress` metres from the start line ("" on tracks without names).
@@ -584,7 +669,7 @@ func _build_road() -> void:
 		var b := edge_point(i, hws[i]) + y0
 		var c := edge_point(i2, hws[i2]) + y1
 		var d := edge_point(i2, -hws[i2]) + y1
-		var nrm := (b - a).normalized().cross(tangents[i]).normalized() if elevated or raised else Vector3.UP
+		var nrm := (b - a).normalized().cross(tangents[i]).normalized() if elevated or raised or hilly else Vector3.UP
 		MeshKit.quad(st, a, b, c, d, nrm, Vector2(0, d0), Vector2(1, d0), Vector2(1, d1), Vector2(0, d1))
 	var mat := TexKit.road_material(def["asphalt"])
 	if has_sand():

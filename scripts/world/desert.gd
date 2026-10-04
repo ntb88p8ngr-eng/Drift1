@@ -10,6 +10,8 @@ const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Debris = preload("res://scripts/util/debris.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const CityFog = preload("res://scripts/world/city/city_fog.gd")
+const DesertTown = preload("res://scripts/world/desert_town.gd")
+const DesertLake = preload("res://scripts/world/desert_lake.gd")
 
 const PACK := "res://assets/props/street_pack/"
 const PROP_CELL := 8.0
@@ -57,6 +59,7 @@ var _props: Array = []
 var _prop_grid := {}
 var _debris: Array = []
 var _weeds: Array = []
+static var _hulls := {}
 
 
 func build(p_track, p_terrain, p_scenery, quality: int) -> void:
@@ -70,21 +73,34 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	_stone.shader = Shader.new()
 	_stone.shader.code = SANDSTONE_SHADER
 	_stone.set_shader_parameter("noise_tex", TexKit.noise_texture(417, 0.03))
+	# the lake, its ring road, dam and bridges; then the buildings (they level their ground)
+	var lake := DesertLake.new()
+	lake.name = "Lake"
+	add_child(lake)
+	await lake.build(track, terrain, scenery)
+	stats.merge(lake.stats)
+	var town := DesertTown.new()
+	town.name = "Town"
+	add_child(town)
+	await town.build(track, terrain, scenery, rect)
+	stats.merge(town.stats)
 	_street_signs()
 	_arch()
 	await Game.load_tick()
 	_hoodoos()
+	_outcrops()
 	_boulders()
 	await Game.load_tick()
 	_cacti(quality)
 	await Game.load_tick()
 	_shrubs(quality)
 	_tumbleweeds()
+	# the edge of the desert: no fog, but whoever drives out past it is turned round
 	fog = CityFog.new()
-	fog.name = "DesertFog"
+	fog.name = "DesertBorder"
 	add_child(fog)
 	fog.setup(world, rect, func(x: float, z: float) -> float: return terrain.height_at(x, z),
-		"Nur Sand und Nebel da draußen – zurück zur Strecke")
+		"Hier draußen ist nur Wüste – zurück zur Strecke", false)
 	print("DESERT: %s" % str(stats))
 
 
@@ -96,12 +112,19 @@ func set_night(n: float) -> void:
 # ---------------------------------------------------------------------------
 # Placement helpers
 # ---------------------------------------------------------------------------
+## In the lake or a river, on the ring road or inside it (within `margin`).
+func _wet(x: float, z: float, margin: float) -> bool:
+	var wt = track.water
+	return wt != null and (wt.wet(x, z, margin) or wt.ring_band(x, z, margin) or Vector2(x, z).distance_to(wt.center) < wt.ring_r)
+
 ## A free spot on the sand: off the road by `clear` metres, nothing else within `radius`.
 func _spot(radius: float, clear: float, tries := 12) -> Variant:
 	for _t in tries:
 		var x := rng.randf_range(rect.position.x + 8.0, rect.end.x - 8.0)
 		var z := rng.randf_range(rect.position.y + 8.0, rect.end.y - 8.0)
 		if float(terrain.distance_to_road(x, z)) < float(track.half_w) + clear + radius:
+			continue
+		if _wet(x, z, radius + 2.0):
 			continue
 		var p := Vector3(x, 0.0, z)
 		if not scenery.free_at(p, radius, 0.0):
@@ -118,8 +141,10 @@ func _static_convex(mesh: Mesh, xf: Transform3D, label: String) -> void:
 	body.collision_mask = 0
 	body.set_meta("surface", "wall")
 	var pts := PackedVector3Array()
-	var hull := mesh.create_convex_shape(true, true) as ConvexPolygonShape3D
-	for v in hull.points:
+	# (the hull of each rock mesh is worked out once)
+	if not _hulls.has(mesh):
+		_hulls[mesh] = (mesh.create_convex_shape(true, true) as ConvexPolygonShape3D).points
+	for v in (_hulls[mesh] as PackedVector3Array):
 		pts.append(xf.basis * v)          # the shape takes the (non-uniform) scale, not the body
 	var shape := ConvexPolygonShape3D.new()
 	shape.points = pts
@@ -171,9 +196,43 @@ func _boulders() -> void:
 			_rock(seeds[(i + k + 1) % seeds.size()], Transform3D(bb, q - Vector3(0, ss * 0.15, 0)), ss > 0.5)
 
 
+## Rock formations between the loops: heaps of huge sandstone blocks piled up into crags and
+## small buttes (10–25 m), smaller blocks tumbled at their feet. Solid.
+func _outcrops() -> void:
+	var seeds := [11, 23, 37, 41, 53, 61]
+	for i in 40:
+		var size := rng.randf_range(6.0, 14.0)
+		var p = _spot(size * 1.2, 10.0, 30)
+		if p == null:
+			continue
+		scenery.occupy(p, size * 1.1)
+		var g: float = p.y
+		var blocks := rng.randi_range(4, 9)
+		for k in blocks:
+			# the big ones low and in the middle, smaller and higher on top, a few sliding off
+			var f := float(k) / blocks
+			var s := size * lerpf(1.0, 0.45, f) * rng.randf_range(0.8, 1.1)
+			var a := rng.randf() * TAU
+			var off := Vector3(cos(a), 0, sin(a)) * size * rng.randf_range(0.0, 0.55) * (1.0 - f * 0.6)
+			var y := g - s * 0.2 + size * f * rng.randf_range(0.8, 1.5)
+			var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.2, 0.2))
+			b = b.scaled(Vector3(s * rng.randf_range(0.8, 1.2), s * rng.randf_range(0.7, 1.3), s * rng.randf_range(0.8, 1.2)))
+			_rock(seeds[(i + k) % seeds.size()], Transform3D(b, Vector3(p.x, y, p.z) + off), true)
+		for k in rng.randi_range(3, 7):
+			var a := rng.randf() * TAU
+			var q: Vector3 = p + Vector3(cos(a), 0, sin(a)) * size * rng.randf_range(1.1, 1.7)
+			if float(terrain.distance_to_road(q.x, q.z)) < float(track.half_w) + 3.0:
+				continue
+			q.y = terrain.height_at(q.x, q.z)
+			var ss := size * rng.randf_range(0.1, 0.3)
+			var bb := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ss, ss * rng.randf_range(0.6, 1.0), ss))
+			_rock(seeds[k % seeds.size()], Transform3D(bb, q - Vector3(0, ss * 0.15, 0)), ss > 0.6)
+		stats["outcrops"] = int(stats.get("outcrops", 0)) + 1
+
+
 ## Hoodoos: thin towers of stacked, narrowing stone with a wider cap rock on top.
 func _hoodoos() -> void:
-	for i in 14:
+	for i in 34:
 		var p = _spot(5.0, 10.0)
 		if p == null:
 			continue
@@ -201,6 +260,9 @@ func _arch() -> void:
 	var best := -1
 	var best_k := 1e9
 	for i in range(int(n * 0.3), int(n * 0.6)):
+		var sp: Vector3 = track.samples[i]
+		if _wet(sp.x, sp.z, 30.0):
+			continue      # (not over the river: the bridges are there)
 		var k := 0.0
 		for d in range(-15, 16, 3):
 			k += absf(float(track.curvature[(i + d) % n]))
@@ -239,22 +301,38 @@ func _arch() -> void:
 # Plants
 # ---------------------------------------------------------------------------
 func _cacti(quality: int) -> void:
+	# three kinds: saguaros (4 shapes), prickly pears and organ pipes (3 shapes each)
 	var variants: Array = []
 	for v in 4:
 		variants.append(scenery._cached("saguaro_%d" % v, func(): return saguaro_mesh(100 + v)))
-	var sets: Array = [{}, {}, {}, {}]
+	for v in 3:
+		variants.append(scenery._cached("pear_%d" % v, func(): return pear_mesh(200 + v)))
+	for v in 3:
+		variants.append(scenery._cached("organ_%d" % v, func(): return organ_mesh(300 + v)))
+	var sets: Array = []
+	for v in variants.size():
+		sets.append({})
 	var count: int = [140, 200, 260, 320][clampi(quality, 0, 3)]
 	for i in count:
 		var p = _spot(1.2, 3.0, 6)
 		if p == null:
 			continue
 		scenery.occupy(p, 1.0)
-		var s := rng.randf_range(0.75, 1.25)
+		var roll := rng.randf()
+		var v := rng.randi() % 4
+		var kind := "saguaros"
+		if roll > 0.45:
+			v = 4 + rng.randi() % 3
+			kind = "prickly_pears"
+		if roll > 0.75:
+			v = 7 + rng.randi() % 3
+			kind = "organ_pipes"
+		var s := rng.randf_range(0.75, 1.25) * (1.0 if v < 4 else rng.randf_range(1.2, 2.2) if v < 7 else 1.0)
 		var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s)), p - Vector3(0, 0.15, 0))
-		scenery._push(sets[i % 4], p, [xf, Color(1, 1, 1, 1)], scenery.usize)
-		stats["saguaros"] = int(stats.get("saguaros", 0)) + 1
-	for v in 4:
-		scenery._emit_chunks(variants[v], sets[v], 0.0, 700.0, "Desert_cactus", true, scenery.usize)
+		scenery._push(sets[v], p, [xf, Color(1, 1, 1, 1)], scenery.usize)
+		stats[kind] = int(stats.get(kind, 0)) + 1
+	for v in variants.size():
+		scenery._emit_chunks(variants[v], sets[v], 0.0, 700.0 if v < 4 else 450.0, "Desert_cactus", true, scenery.usize)
 	# small barrel cacti, no collision
 	var barrel: Mesh = scenery._cached("barrel_cactus", func(): return barrel_mesh(7))
 	var small := {}
@@ -275,7 +353,7 @@ func _shrubs(quality: int) -> void:
 	for i in count:
 		var x := rng.randf_range(rect.position.x, rect.end.x)
 		var z := rng.randf_range(rect.position.y, rect.end.y)
-		if float(terrain.distance_to_road(x, z)) < float(track.half_w) + 1.5:
+		if float(terrain.distance_to_road(x, z)) < float(track.half_w) + 1.5 or _wet(x, z, 1.0):
 			continue
 		var p := Vector3(x, terrain.height_at(x, z) - 0.05, z)
 		var s := rng.randf_range(0.5, 1.3)
@@ -359,7 +437,7 @@ func _street_signs() -> void:
 		var lat: float = (float(track.hws[i]) + (2.2 if not kind.begins_with("fire") else 3.0)) * side
 		var p: Vector3 = track.edge_point(i, lat)
 		p.y = terrain.height_at(p.x, p.z)
-		if not scenery.free_at(p, 0.6, 0.0):
+		if not scenery.free_at(p, 0.6, 0.0) or _wet(p.x, p.z, 2.0):
 			continue
 		scenery.occupy(p, 0.6)
 		var node := scene.instantiate() as Node3D
@@ -484,6 +562,7 @@ static func _cactus_material() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.roughness = 0.7
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED      # (the needles are single triangles)
 	return m
 
 
@@ -518,6 +597,12 @@ static func _tube(st: SurfaceTool, path: Array, r: float, base_index: int, col: 
 			st.add_vertex(p + dv * rr * rib)
 		rings.append(idx)
 		idx += SEG + 1
+		# spines: a little cluster on every rib crest, every other ring (and on the dome)
+		if j % 2 == 1 and rr > 0.03:
+			for m in int(RIBS):
+				var am := TAU * m / RIBS + (0.13 if j % 4 == 1 else 0.0)
+				var dm := side * cos(am) + up * sin(am)
+				idx = _spine_cluster(st, idx, p + dm * rr * 1.07, dm, t, 0.045 + rr * 0.12)
 	for j in count - 1:
 		for s in SEG:
 			var a: int = rings[j] + s
@@ -528,6 +613,26 @@ static func _tube(st: SurfaceTool, path: Array, r: float, base_index: int, col: 
 			st.add_index(a + 1)
 			st.add_index(b)
 			st.add_index(b + 1)
+	return idx
+
+
+## Three pale needles fanning out from `base` (indexed geometry, like the tube it sits on).
+static func _spine_cluster(st: SurfaceTool, idx: int, base: Vector3, out: Vector3, along: Vector3, len: float) -> int:
+	var spine := Color(0.93, 0.89, 0.72)
+	var across := out.cross(along).normalized()
+	for k in 3:
+		var d := (out + along * (float(k) - 1.0) * 0.45 + across * (0.3 if k == 1 else -0.15)).normalized()
+		var w := along.cross(d).normalized() * 0.006
+		if w.length() < 0.001:
+			w = across * 0.006
+		for v in [base - w, base + w, base + d * len]:
+			st.set_color(spine)
+			st.set_normal(out)
+			st.add_vertex(v)
+		st.add_index(idx)
+		st.add_index(idx + 1)
+		st.add_index(idx + 2)
+		idx += 3
 	return idx
 
 
@@ -565,6 +670,103 @@ static func saguaro_mesh(seed_value: int) -> ArrayMesh:
 		idx = _tube(st, path, 0.22, idx, col * 1.05)
 	st.set_material(_cactus_material())
 	return st.commit()
+
+
+## An organ pipe cactus: a clump of ribbed stems rising from one base, bending out and up.
+static func organ_mesh(seed_value: int) -> ArrayMesh:
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_value
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var idx := 0
+	var stems := r.randi_range(6, 11)
+	for k in stems:
+		var a := TAU * k / stems + r.randf_range(-0.3, 0.3)
+		var d := Vector3(cos(a), 0, sin(a))
+		var out := r.randf_range(0.25, 0.7)
+		var h := r.randf_range(1.8, 3.8)
+		var p0 := d * 0.15 + Vector3(0, -0.2, 0)
+		var path: Array = []
+		for j in 9:
+			var t := float(j) / 8.0
+			# out first, then straight up
+			var o := out * (1.0 - pow(1.0 - minf(t * 2.5, 1.0), 2.0))
+			path.append(p0 + d * o + Vector3(0, h * t, 0))
+		var col := Color(0.27, 0.4, 0.19) * r.randf_range(0.85, 1.1)
+		col.a = 1.0
+		idx = _tube(st, path, r.randf_range(0.11, 0.16), idx, col)
+	st.set_material(_cactus_material())
+	return st.commit()
+
+
+## A prickly pear: flat oval pads growing out of each other's rims, spines in little tufts on both
+## faces, red fruit on the top pads.
+static func pear_mesh(seed_value: int) -> ArrayMesh:
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_value
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var idx := [0]
+	var green := Color(0.32, 0.46, 0.2)
+	# [transform of the pad's base point (its plane = local XY, up = +Y), depth]
+	var todo: Array = []
+	for k in r.randi_range(2, 3):
+		var b := Basis(Vector3.UP, r.randf() * TAU) * Basis(Vector3.FORWARD, r.randf_range(-0.35, 0.35))
+		todo.append([Transform3D(b, Vector3(r.randf_range(-0.2, 0.2), -0.05, r.randf_range(-0.2, 0.2))), 0])
+	while not todo.is_empty():
+		var it: Array = todo.pop_back()
+		var xf: Transform3D = it[0]
+		var depth: int = it[1]
+		var w := r.randf_range(0.2, 0.27) * (1.0 - depth * 0.12)
+		var h := w * r.randf_range(1.3, 1.55)
+		var centre := xf * Vector3(0, h, 0)
+		var pxf := Transform3D(xf.basis, centre)
+		idx[0] = _pad(st, idx[0], pxf, w, h, 0.045, green * r.randf_range(0.9, 1.1), true)
+		if depth < 2:
+			for c in r.randi_range(1, 2):
+				var ang := r.randf_range(-1.0, 1.0)
+				var rim := Vector3(sin(ang) * w * 0.9, cos(ang) * h * 0.95, 0)
+				var nb := xf.basis * Basis(Vector3.FORWARD, -ang * 0.9 + r.randf_range(-0.3, 0.3)) * Basis(Vector3.UP, r.randf_range(-0.7, 0.7))
+				todo.append([Transform3D(nb, pxf * rim), depth + 1])
+		else:
+			for f in r.randi_range(1, 3):
+				var ang := r.randf_range(-0.8, 0.8)
+				var fp := pxf * Vector3(sin(ang) * w, cos(ang) * h + 0.03, 0)
+				idx[0] = _pad(st, idx[0], Transform3D(xf.basis, fp), 0.035, 0.05, 0.035, Color(0.65, 0.08, 0.22), false)
+	st.set_material(_cactus_material())
+	return st.commit()
+
+
+## An oval pad (or a fruit): a flattened ellipsoid in the local XY plane, tufts of spines on it.
+static func _pad(st: SurfaceTool, idx: int, xf: Transform3D, w: float, h: float, th: float, col: Color, spines: bool) -> int:
+	const U := 10
+	const V := 7
+	var start := idx
+	for j in V + 1:
+		var lat := PI * (float(j) / V - 0.5)
+		for i in U + 1:
+			var lon := TAU * i / U
+			var v := Vector3(cos(lat) * cos(lon) * w, cos(lat) * sin(lon) * h, sin(lat) * th)
+			st.set_color(col * (0.85 + 0.15 * absf(sin(lat))))
+			st.set_normal((xf.basis * Vector3(v.x / (w * w), v.y / (h * h), v.z / (th * th))).normalized())
+			st.add_vertex(xf * v)
+			idx += 1
+	for j in V:
+		for i in U:
+			var a := start + j * (U + 1) + i
+			var b := a + U + 1
+			for q in [a, b, a + 1, a + 1, b, b + 1]:
+				st.add_index(q)
+	if spines:
+		for face in [-1.0, 1.0]:
+			for gx in [-0.5, 0.0, 0.5]:
+				for gy in [-0.55, -0.1, 0.35, 0.7]:
+					var lp := Vector2(gx * w, gy * h)
+					if (lp.x * lp.x) / (w * w) + (lp.y * lp.y) / (h * h) > 0.8:
+						continue
+					var base := xf * Vector3(lp.x, lp.y, face * th * 0.9)
+					idx = _spine_cluster(st, idx, base, (xf.basis * Vector3(0, 0, face)).normalized(), (xf.basis * Vector3.UP).normalized(), 0.04)
+	return idx
 
 
 ## A squat ribbed barrel cactus.
