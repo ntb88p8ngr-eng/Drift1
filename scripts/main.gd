@@ -53,8 +53,7 @@ func show_menu(screen: String, message := "", color := UiKit.GOLD) -> void:
 		Game.load_stage = ""
 		_hide_loading()
 		_loading = LoadingScreen.new()
-		_loading.track_name = "MIDNIGHT DRIFT"
-		_loading.sub_text = Game.t("Die Werkstatt wird aufgeschlossen …")
+		_loading.title_only = true
 		add_child(_loading)
 		await get_tree().process_frame
 		await get_tree().process_frame

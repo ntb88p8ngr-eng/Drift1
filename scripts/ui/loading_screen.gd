@@ -7,6 +7,7 @@ const UiKit = preload("res://scripts/ui/ui_kit.gd")
 
 var track_name := ""
 var sub_text := ""
+var title_only := false     # the start of the game: just the name and the percentage
 
 var _draw_node: Control
 var _t := 0.0
@@ -58,6 +59,11 @@ func _on_draw() -> void:
 		c.draw_circle(mid, r, Color(UiKit.ACCENT.r, UiKit.ACCENT.g, UiKit.ACCENT.b, 0.012 + k * 0.004))
 	var font := UiKit.title_font()
 	var body := ThemeDB.fallback_font
+	if title_only:
+		var pct := "%d %%" % int(round(clampf(_shown, 0.0, 1.0) * 100.0))
+		_text(font, "MIDNIGHT DRIFT", Vector2(mid.x, mid.y + 10.0), 84, UiKit.TEXT)
+		_text(body, pct, Vector2(mid.x, mid.y + 70.0), 26, UiKit.TEXT_DIM)
+		return
 	_text(body, "MIDNIGHT DRIFT", Vector2(mid.x, mid.y - 210.0), 18, UiKit.TEXT_DIM)
 	_text(font, track_name, Vector2(mid.x, mid.y - 160.0), 52, UiKit.TEXT)
 	_text(body, sub_text, Vector2(mid.x, mid.y - 122.0), 17, UiKit.TEXT_DIM)
