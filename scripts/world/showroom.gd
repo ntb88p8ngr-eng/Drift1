@@ -418,6 +418,9 @@ func _widen_booth(g: Node3D) -> void:
 	var rack := g.find_child("Spray_gun_wall_rack_001", true, false) as Node3D
 	if rack:
 		_spray_guns(rack)
+	var trolley := g.find_child("Paint_mixing_trolley_001", true, false) as Node3D
+	if trolley:
+		_paint_can_labels(trolley)
 
 
 ## The spray guns rebuilt: aluminium body, air cap with its horns, the gravity cup on top with lid
@@ -445,15 +448,19 @@ func _spray_guns(rack: Node3D) -> void:
 		var c: Vector3 = (bb as AABB).get_center()     # body centre; the nozzle points to -z
 		var f := Vector3(0, 0, -1)
 		# body, air cap and horns, fluid needle knob at the back
-		_tube_l(st, [c + f * -0.075, c + f * 0.06], 0.021, alu, inv)
+		# (black body with alloy fittings)
+		_tube_l(st, [c + f * -0.075, c + f * 0.035], 0.021, black, inv)
+		_tube_l(st, [c + f * 0.035, c + f * 0.06], 0.019, alu, inv)
 		_tube_l(st, [c + f * 0.06, c + f * 0.085], 0.026, alu.darkened(0.2), inv)
 		for sx in [-1.0, 1.0]:
 			_tube_l(st, [c + f * 0.08 + Vector3(sx * 0.02, 0, 0), c + f * 0.1 + Vector3(sx * 0.03, 0, 0)], 0.006, alu, inv)
-		_tube_l(st, [c + f * -0.075, c + f * -0.1], 0.012, black, inv)
+		_tube_l(st, [c + f * -0.075, c + f * -0.1], 0.012, alu, inv)
+		_tube_l(st, [c + f * -0.1, c + f * -0.115], 0.015, black, inv)
 		# gravity cup on its feed stem
 		_tube_l(st, [c + Vector3(0, 0.03, 0.03), c + Vector3(0, 0.075, 0.03)], 0.008, alu, inv)
 		_tube_l(st, [c + Vector3(0, 0.075, 0.03), c + Vector3(0, 0.2, 0.03)], 0.055, Color(0.85, 0.87, 0.9, 1.0), inv)
-		_tube_l(st, [c + Vector3(0, 0.2, 0.03), c + Vector3(0, 0.215, 0.03)], 0.058, blue, inv)
+		_tube_l(st, [c + Vector3(0, 0.2, 0.03), c + Vector3(0, 0.215, 0.03)], 0.058, black, inv)
+		_tube_l(st, [c + Vector3(0, 0.195, 0.03), c + Vector3(0, 0.2, 0.03)], 0.059, blue, inv)
 		_tube_l(st, [c + Vector3(0, 0.215, 0.03), c + Vector3(0, 0.24, 0.03)], 0.006, black, inv)
 		# grip down and back, trigger in front of it, the inlet fitting
 		var g0 := c + Vector3(0, -0.015, 0.04)
@@ -659,6 +666,85 @@ func booth_ray(screen: Vector2):
 	var o := cam.project_ray_origin(screen)
 	var d := cam.project_ray_normal(screen)
 	return [inv * o, (inv.basis * d).normalized()]
+
+
+## The mixing cans get a printed label wrapped round them: a band in the paint's colour, the maker's
+## name, a colour chip, the product lines and a barcode – each can its own colour.
+func _paint_can_labels(trolley: Node3D) -> void:
+	var cols := [Color(0.85, 0.1, 0.12), Color(0.1, 0.35, 0.85), Color(0.95, 0.75, 0.1), Color(0.12, 0.7, 0.35), Color(0.55, 0.2, 0.75)]
+	var k := 0
+	for c in trolley.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		var nm := String(mi.name)
+		if nm.contains("Paint_can_label"):
+			mi.mesh = null
+			continue
+		if not nm.contains("Mixing_can"):
+			continue
+		var bb: AABB = mi.global_transform * mi.get_aabb()
+		var cm := CylinderMesh.new()
+		var r := maxf(bb.size.x, bb.size.z) * 0.5 + 0.002
+		cm.top_radius = r
+		cm.bottom_radius = r
+		cm.height = bb.size.y * 0.62
+		cm.radial_segments = 32
+		cm.rings = 1
+		cm.cap_top = false
+		cm.cap_bottom = false
+		var m := StandardMaterial3D.new()
+		m.albedo_texture = _can_label_texture(cols[k % cols.size()], k)
+		m.roughness = 0.45
+		var lab := MeshInstance3D.new()
+		lab.mesh = cm
+		lab.material_override = m
+		add_child(lab)
+		lab.global_position = bb.get_center() - Vector3(0, bb.size.y * 0.04, 0)
+		lab.rotation.y = 0.6 * k + 2.2         # (the front of each label turned a bit differently)
+		k += 1
+
+
+static func _can_label_texture(col: Color, seed_: int) -> ImageTexture:
+	var w := 512
+	var h := 160
+	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.95, 0.95, 0.93))
+	img.fill_rect(Rect2i(0, 0, w, 22), col)
+	img.fill_rect(Rect2i(0, h - 22, w, 22), col)
+	img.fill_rect(Rect2i(0, 22, w, 3), Color(0.1, 0.1, 0.12))
+	img.fill_rect(Rect2i(0, h - 25, w, 3), Color(0.1, 0.1, 0.12))
+	var dark := Color(0.12, 0.12, 0.14)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 91 + seed_
+	# two label fronts round the can (so one always faces out)
+	for side in 2:
+		var x0 := side * 256
+		# the brand: blocky letters "MD" and a name line
+		_blocks(img, x0 + 18, 40, ["#   #", "## ##", "# # #", "#   #", "#   #"], 6, dark)
+		_blocks(img, x0 + 54, 40, ["#### ", "#   #", "#   #", "#   #", "#### "], 6, col.darkened(0.2))
+		img.fill_rect(Rect2i(x0 + 92, 44, 120, 9), dark)
+		img.fill_rect(Rect2i(x0 + 92, 58, 80, 6), Color(0.4, 0.4, 0.42))
+		# the colour chip
+		img.fill_rect(Rect2i(x0 + 18, 80, 52, 46), Color(0.1, 0.1, 0.12))
+		img.fill_rect(Rect2i(x0 + 21, 83, 46, 40), col)
+		# product lines
+		for i in 4:
+			img.fill_rect(Rect2i(x0 + 80, 84 + i * 11, rng.randi_range(70, 130), 5), Color(0.3, 0.3, 0.33))
+		# barcode
+		var bx := x0 + 214
+		while bx < x0 + 246:
+			var bw := rng.randi_range(1, 3)
+			img.fill_rect(Rect2i(bx, 84, bw, 40), dark)
+			bx += bw + rng.randi_range(1, 3)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+static func _blocks(img: Image, x: int, y: int, rows: Array, px: int, col: Color) -> void:
+	for j in rows.size():
+		var row: String = rows[j]
+		for i in row.length():
+			if row[i] == "#":
+				img.fill_rect(Rect2i(x + i * px, y + j * px, px, px), col)
 
 
 ## The booth's walls: white enamelled sandwich panels – a seam every metre, a fine stucco
