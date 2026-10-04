@@ -51,6 +51,7 @@ var _drag := false
 var _drag_from := Vector2.ZERO
 var _drag_vol := 0.0
 var _drag_moved := false
+var _drag_ang := 0.0             # the mouse's angle round the knob at the last step (turning it)
 var _slider := ""                # "bass" / "treble" while its thumb is dragged
 var _t := 0.0
 var _hover := ""
@@ -97,6 +98,7 @@ func _ready() -> void:
 	_cam.position = Vector3(0, 0.0, 3.25)
 	_vp.add_child(_cam)
 	_cam.current = true
+	_blacken()
 	_setup_display()
 	_split_knob()
 	_setup_arc()
@@ -155,6 +157,19 @@ func _setup_display() -> void:
 	m.emission_energy_multiplier = 1.4
 	for n in _radio.find_children("*display*", "MeshInstance3D", true, false):
 		(n as MeshInstance3D).material_override = m
+
+
+## The case (and its knobs and buttons) a deep black instead of the model's grey plastic.
+func _blacken() -> void:
+	for n in _radio.find_children("radio_base*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		for si in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(si)
+			if m is StandardMaterial3D:
+				var d := (m as StandardMaterial3D).duplicate() as StandardMaterial3D
+				d.albedo_color = d.albedo_color * Color(0.38, 0.38, 0.4)
+				d.roughness = minf(d.roughness, 0.55)
+				mi.set_surface_override_material(si, d)
 
 
 ## The model's knob is part of its body: its triangles (in front of the face, round the axis) are taken
@@ -542,11 +557,20 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 			return
 		if _drag:
-			var dv := (_drag_from.y - mm.position.y + mm.position.x - _drag_from.x) / 160.0
-			if absf(mm.position.y - _drag_from.y) + absf(mm.position.x - _drag_from.x) > 4.0:
+			# turned like a real knob: the mouse goes round it, clockwise = louder; one sweep of the
+			# 270° scale from nothing to full (the angle summed up step by step, no jump at the bottom)
+			if mm.position.distance_to(_drag_from) > 4.0:
 				_drag_moved = true
-			if _drag_moved:
-				Radio.set_volume(_drag_vol + dv)
+			var c := _knob_screen()
+			var rel := mm.position - c
+			if rel.length() > 6.0:
+				var ang := rel.angle()
+				var d := wrapf(ang - _drag_ang, -PI, PI)
+				_drag_ang = ang
+				if _drag_moved:
+					# (screen y points down: a clockwise turn makes the angle grow)
+					_drag_vol = clampf(_drag_vol + d / deg_to_rad(ARC_SPAN), 0.0, 1.0)
+					Radio.set_volume(_drag_vol)
 			accept_event()
 			return
 		_hover = _button_at(mm.position)
@@ -583,6 +607,7 @@ func _gui_input(event: InputEvent) -> void:
 					_drag_from = mb.position
 					_drag_vol = Radio.volume
 					_drag_moved = false
+					_drag_ang = (mb.position - _knob_screen()).angle()
 				else:
 					_press(b)
 			elif _drag:
@@ -590,6 +615,12 @@ func _gui_input(event: InputEvent) -> void:
 				if not _drag_moved:
 					_press("knob")
 			accept_event()
+
+
+## The knob's axis on the screen (in this control's coordinates).
+func _knob_screen() -> Vector2:
+	var p := _radio.global_transform * Vector3(KNOB_C.x, KNOB_C.y, 0.1)
+	return _cam.unproject_position(p) * (size / Vector2(_vp.size))
 
 
 ## The dragged TREB / BASS thumb under the mouse (along its track).
