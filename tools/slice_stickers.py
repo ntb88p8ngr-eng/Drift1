@@ -9,7 +9,7 @@ from scipy import ndimage
 
 OUT = "assets/stickers"
 MERGE = 2          # px: parts closer than this belong to one sticker (and parts inside another)
-MIN_SIZE = 18      # px: smaller blobs are specks
+MIN_SIZE = 26      # px: smaller blobs are specks
 SIG = 40           # silhouette size for the duplicate test
 
 
@@ -40,12 +40,16 @@ def main(args):
             paths.append(a)
     global MERGE
     for si, spec in enumerate(paths):
-        path, _, merge = spec.partition(":")
-        MERGE = int(merge) if merge else 2
+        bits = spec.split(":")
+        path = bits[0]
+        MERGE = int(bits[1]) if len(bits) > 1 and bits[1] else 2
+        # "split<y>": wide pieces above y (the digit rows) are cut apart into single digits
+        split_y = int(bits[2][5:]) if len(bits) > 2 and bits[2].startswith("split") else -1
+        dup_limit = float(bits[3]) if len(bits) > 3 else 0.86
         img = np.array(Image.open(path).convert("RGBA"))
         alpha = img[..., 3]
         solid = alpha > 40
-        grown = ndimage.binary_dilation(solid, iterations=MERGE)
+        grown = ndimage.binary_dilation(solid, iterations=MERGE) if MERGE > 0 else solid
         labels, n = ndimage.label(grown)
         boxes = ndimage.find_objects(labels)
         # a part lying inside another one's box (a number in its frame, the eyes in a skull) joins it
@@ -86,7 +90,44 @@ def main(args):
             if max(y1 - y0, x1 - x0) < MIN_SIZE:
                 continue
             gy, gx = sl[0].start + y0, sl[1].start + x0
-            items.append((gy, gx, y1 - y0, x1 - x0, part[y0:y1, x0:x1]))
+            m = part[y0:y1, x0:x1]
+            pieces = [(0, m.shape[1])]
+            split = gy + m.shape[0] < split_y
+            if split and m.shape[1] > m.shape[0] * 1.15:
+                # (digits set close together: a column with (almost) nothing in it is the gap between two)
+                col = m.sum(axis=0)
+                empty = col <= max(1, int(m.shape[0] * 0.02))
+                pieces = []
+                start = None
+                for xi in range(m.shape[1] + 1):
+                    filled = xi < m.shape[1] and not empty[xi]
+                    if filled and start is None:
+                        start = xi
+                    elif not filled and start is not None:
+                        if xi - start >= 6:
+                            pieces.append((start, xi))
+                        start = None
+            if split:
+                # two digits that touch: cut at the thinnest column round the middle
+                done = []
+                while pieces:
+                    a, b = pieces.pop()
+                    w = b - a
+                    if w > m.shape[0] * 1.02 and w > 30:
+                        col = m[:, a:b].sum(axis=0)
+                        lo, hi = int(w * 0.3), int(w * 0.7)
+                        cut = lo + int(np.argmin(col[lo:hi]))
+                        if col[cut] < col.max() * 0.35:
+                            pieces += [(a, a + cut), (a + cut, b)]
+                            continue
+                    done.append((a, b))
+                pieces = sorted(done)
+            for (a, b) in pieces:
+                sub = m[:, a:b]
+                ys2 = np.nonzero(sub.any(axis=1))[0]
+                if len(ys2) == 0:
+                    continue
+                items.append((gy + ys2.min(), gx + a, ys2.max() + 1 - ys2.min(), b - a, sub[ys2.min():ys2.max() + 1]))
         # reading order: rows (by top, in bands), then left to right
         items.sort(key=lambda t: (t[0] // 40, t[1]))
         count = 0
@@ -96,7 +137,7 @@ def main(args):
             for o in kept:
                 inter = np.logical_and(sig, o).sum()
                 union = np.logical_or(sig, o).sum()
-                if union and inter / union > 0.86:
+                if union and inter / union > dup_limit:
                     dup = True
                     break
             if dup:
