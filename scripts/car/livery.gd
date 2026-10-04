@@ -32,7 +32,7 @@ static func full_color(id: String) -> bool:
 
 
 static func graffiti_path(k: int) -> String:
-	return "res://assets/main_menu/textures/Grafitti (%d).png" % k
+	return "res://assets/main_menu/workshop_tex/Grafitti (%d).png" % k
 
 
 const CACHE := "user://decals/"
@@ -204,13 +204,19 @@ static func surface(body: Node3D) -> Dictionary:
 		var mi := n as MeshInstance3D
 		if mi.mesh == null or skip.has(mi) or not mi.is_visible_in_tree() or mi.get_parent().name == "Livery":
 			continue
+		# (only the body itself: no underglow tubes, effects or other bits hung on it)
+		if not (mi.mesh is ArrayMesh) or String(mi.get_path()).contains("Underglow"):
+			continue
 		var xf: Transform3D = inv * mi.global_transform
 		var nb := xf.basis.inverse().transposed()
 		for si in mi.mesh.get_surface_count():
 			if mi.mesh is ArrayMesh and (mi.mesh as ArrayMesh).surface_get_primitive_type(si) != Mesh.PRIMITIVE_TRIANGLES:
 				continue
 			var arr := mi.mesh.surface_get_arrays(si)
+			if arr.size() <= Mesh.ARRAY_INDEX or not (arr[Mesh.ARRAY_VERTEX] is PackedVector3Array):
+				continue
 			var pos: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var np := pos.size()
 			var nor = arr[Mesh.ARRAY_NORMAL]
 			var idx = arr[Mesh.ARRAY_INDEX]
 			var has_n: bool = nor is PackedVector3Array and (nor as PackedVector3Array).size() == pos.size()
@@ -220,6 +226,8 @@ static func surface(body: Node3D) -> Dictionary:
 				var ia: int = idx[t] if use_idx else t
 				var ib: int = idx[t + 1] if use_idx else t + 1
 				var ic: int = idx[t + 2] if use_idx else t + 2
+				if ia < 0 or ib < 0 or ic < 0 or ia >= np or ib >= np or ic >= np:
+					continue          # (a broken index: never trust a mesh blindly)
 				var a: Vector3 = xf * pos[ia]
 				var b: Vector3 = xf * pos[ib]
 				var c: Vector3 = xf * pos[ic]

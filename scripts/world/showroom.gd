@@ -762,6 +762,38 @@ static func _blocks(img: Image, x: int, y: int, rows: Array, px: int, col: Color
 ## The booth's walls: white enamelled sandwich panels – a seam every metre, a fine stucco
 ## profile and a little orange peel in the enamel (world triplanar, so stretched walls keep the scale).
 func _booth_wall_material() -> StandardMaterial3D:
+	# (worked out pixel by pixel once, then kept in user://: it took a good second every menu load)
+	const CACHE_A := "user://cache/booth_wall_albedo.png"
+	const CACHE_N := "user://cache/booth_wall_normal.png"
+	var img: Image = null
+	var hgt: Image = null
+	if FileAccess.file_exists(CACHE_A) and FileAccess.file_exists(CACHE_N):
+		img = Image.load_from_file(CACHE_A)
+		hgt = Image.load_from_file(CACHE_N)
+	if img == null or hgt == null:
+		var made := _booth_wall_images()
+		img = made[0]
+		hgt = made[1]
+		DirAccess.make_dir_recursive_absolute("user://cache")
+		img.save_png(CACHE_A)
+		hgt.save_png(CACHE_N)
+	img.generate_mipmaps()
+	hgt.generate_mipmaps()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.normal_enabled = true
+	m.normal_texture = ImageTexture.create_from_image(hgt)
+	m.normal_scale = 0.6
+	m.roughness = 0.42
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE * 1.0
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	return m
+
+
+## [albedo, normal map] of the booth's wall panels.
+func _booth_wall_images() -> Array:
 	var n := 512
 	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
 	var hgt := Image.create(n, n, false, Image.FORMAT_RGB8)
@@ -786,20 +818,9 @@ func _booth_wall_material() -> StandardMaterial3D:
 				e = 0.62
 			img.set_pixel(x, y, Color(v, v, v * 1.01))
 			hgt.set_pixel(x, y, Color(e, e, e))
-	img.generate_mipmaps()
 	hgt.bump_map_to_normal_map(5.0)
-	hgt.generate_mipmaps()
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = ImageTexture.create_from_image(img)
-	m.normal_enabled = true
-	m.normal_texture = ImageTexture.create_from_image(hgt)
-	m.normal_scale = 0.6
-	m.roughness = 0.42
-	m.uv1_triplanar = true
-	m.uv1_world_triplanar = true
-	m.uv1_scale = Vector3.ONE * 1.0
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	return m
+	hgt.convert(Image.FORMAT_RGB8)
+	return [img, hgt]
 
 
 ## A coil spring along x (radius r, length l).

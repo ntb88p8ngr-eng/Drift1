@@ -388,10 +388,10 @@ func _graffiti(z: float, h: float) -> void:
 			fonts.append(load(f))
 	if fonts.is_empty():
 		return
-	# the sprayed pieces (pictures in assets/main_menu/textures/Grafitti*.png), every one its own size
+	# the sprayed pieces (pictures in assets/main_menu/workshop_tex/Grafitti*.png), every one its own size
 	var pieces: Array = []
 	for k in range(1, 13):
-		var f := "res://assets/main_menu/textures/Grafitti (%d).png" % k
+		var f := "res://assets/main_menu/workshop_tex/Grafitti (%d).png" % k
 		if ResourceLoader.exists(f):
 			var m := StandardMaterial3D.new()
 			m.albedo_texture = load(f)

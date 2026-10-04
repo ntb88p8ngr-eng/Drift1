@@ -3,7 +3,7 @@ extends RefCounted
 ## glTF: assigned at load time, so the garage is textured even where the model was imported before
 ## its texture files were there.
 
-const DIR := "res://assets/main_menu/textures/"
+const DIR := "res://assets/main_menu/workshop_tex/"
 
 const MAP := {
 	"Concrete_wall": {"albedo": "Concrete_wall_basecolor.png", "orm": "Concrete_wall_orm.png", "normal": "Concrete_wall_normal.png", "normal_scale": 0.8},
