@@ -15,7 +15,7 @@ const FELL_SPEED := 6.0        # m/s: slower than this the trunk just stops the 
 const MAX_FALLEN := 30
 const CUT := 0.6              # above the tree's origin (which sits 0.3 m in the ground): the stump         # older fallen trees freeze where they lie
 ## Labels of the instanced sets that draw trees (all LODs of the forest, the city's street trees).
-const MAIN := ["Trees_hi", "City_tree", "City_sakura", "Desert_cactus"]
+const MAIN := ["Trees_hi", "City_tree", "City_sakura", "Desert_cactus", "Desert_palm"]
 const OTHER := ["Trees_shadow", "Trees_mid", "Trees_far", "Trees_2d"]
 
 var world
@@ -52,7 +52,7 @@ func register_set(label: String, mm: MultiMesh, items: Array) -> void:
 			var sx := Vector2(xf.basis.x.x, xf.basis.x.z).length()
 			t = {"xf": xf, "sets": [], "mesh": mm.mesh, "custom": items[idx][1],
 				"r": clampf(0.28 * sx, 0.15, 0.6), "h": maxf(aabb.end.y * xf.basis.y.length(), 2.0), "down": false,
-				"cactus": label.begins_with("Desert")}
+				"cactus": label == "Desert_cactus"}
 			_trees[k] = t
 			var g := Vector2i(int(floor(xf.origin.x / CELL)), int(floor(xf.origin.z / CELL)))
 			if not _grid.has(g):

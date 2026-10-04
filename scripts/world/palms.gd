@@ -3,7 +3,7 @@ extends Node3D
 ## river banks. Each palm is real geometry – a curved trunk ringed with leaf scars, a boot of old
 ## frond stubs under the crown, a dozen and a half arching fronds with leaflet pairs along them
 ## (green, the lowest ones drying yellow, a couple of dead ones hanging down), a coconut cluster –
-## in a few variants, drawn as multimeshes, swaying in the wind. The trunks are solid.
+## in a few variants, drawn as multimeshes, swaying in the wind. A car can fell them like trees.
 
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 
@@ -66,28 +66,26 @@ func build(p_track, p_terrain, p_scenery) -> void:
 			continue
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = palm_mesh(1000 + v * 17)
+		mm.use_custom_data = true
+		var mesh := palm_mesh(1000 + v * 17)
+		mesh.surface_set_material(0, mat)     # (on the mesh: the pieces of a felled palm keep it)
+		mm.mesh = mesh
 		mm.instance_count = list.size()
+		var items: Array = []
 		for k in list.size():
 			var sp: Array = list[k]
 			var b := Basis(Vector3.UP, float(sp[1])).scaled(Vector3.ONE * float(sp[2]))
-			mm.set_instance_transform(k, Transform3D(b, sp[0]))
+			var xf := Transform3D(b, sp[0])
+			mm.set_instance_transform(k, xf)
+			mm.set_instance_custom_data(k, Color(1, 1, 1, 1))
+			items.append([xf, Color(1, 1, 1, 1)])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.material_override = mat
 		mmi.visibility_range_end = 900.0
 		add_child(mmi)
-	# the trunks: solid poles
-	var body := StaticBody3D.new()
-	add_child(body)
-	for sp in _spots:
-		var cs := CollisionShape3D.new()
-		var cyl := CylinderShape3D.new()
-		cyl.radius = 0.3 * float(sp[2])
-		cyl.height = 5.0 * float(sp[2])
-		cs.shape = cyl
-		cs.position = (sp[0] as Vector3) + Vector3(0, cyl.height * 0.5, 0)
-		body.add_child(cs)
+		# a car can fell them (tree_hits.gd: the trunk stops a slow car, a fast one knocks it over)
+		if scenery.trees != null:
+			scenery.trees.register_set("Desert_palm", mm, items)
 	count = _spots.size()
 	print("PALMS: %d" % count)
 
