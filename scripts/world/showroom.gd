@@ -89,7 +89,10 @@ var _door_s := 1.0                  # into the hall along z
 ## rolls in; the camera inside orbits it. booth: "" / "in" (on the way) / "inside" / "out"
 signal booth_ready
 signal booth_left
-const BOOTH_C := Vector3(10.05, 0.034, -4.1)
+const BOOTH_C := Vector3(10.05, 0.034, -3.8)
+const BOOTH_WIDEN := 1.5            # the booth's near side wall moved out this far (z)
+## the room the booth camera stays in (x, y, z ranges; clear of the walls)
+const BOOTH_ROOM := AABB(Vector3(7.3, 0.35, -5.8), Vector3(5.6, 2.75, 4.94))
 var booth := ""
 var _booth_doors: Array = []        # [node, base transform, hinge, swing sign]
 var _booth_door_open := 0.0
@@ -317,7 +320,9 @@ func _booth_setup(g: Node3D) -> void:
 			# the hinge: the edge away from the opening's middle (z = -4.15), at the frame
 			var hz := box.position.z if box.get_center().z < -4.15 else box.end.z
 			var sign_ := -1.0 if box.get_center().z < -4.15 else 1.0
-			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_])
+			# (the left leaf stops before the drawer cabinet beside it)
+			_booth_doors.append([n, (n as Node3D).global_transform, Vector3(6.72, 0, hz), sign_, 0.9 if sign_ < 0.0 else PI * 0.5])
+	_widen_booth(g)
 	# (the portable worklight panels in the booth stood in front of its camera: the neon tubes light it)
 	for n in g.find_children("Booth_worklight*", "Node3D", false, false) + g.find_children("Booth_worklight*", "Node3D", true, false):
 		if is_instance_valid(n) and not n.is_queued_for_deletion() and not String(n.get_parent().name).begins_with("Booth_worklight"):
@@ -329,7 +334,8 @@ func _booth_setup(g: Node3D) -> void:
 	for nm in ["Vertical_shop_air_compressor_001", "Receiver_fabrication_detail_001", "Vertical_compressor_mechanisms_001"]:
 		var n := g.find_child(nm, true, false) as Node3D
 		if n:
-			n.global_position += Vector3(0, 0, 0.95)
+			# (out of the car's way and out of the right door leaf's swing: over by the bench end)
+			n.global_position += Vector3(-1.28, 0, 2.53)
 	# the neon tubes: across the booth every 42 cm, each the full length of the room
 	var tube := StandardMaterial3D.new()
 	tube.albedo_color = Color(1, 1, 1)
@@ -343,7 +349,7 @@ func _booth_setup(g: Node3D) -> void:
 	cm.height = 6.3
 	cm.radial_segments = 10
 	var z := -6.0
-	while z <= -2.2:
+	while z <= -2.2 + BOOTH_WIDEN:
 		var t := MeshInstance3D.new()
 		t.mesh = cm
 		t.material_override = tube
@@ -355,11 +361,137 @@ func _booth_setup(g: Node3D) -> void:
 		z += 0.42
 	for x in [7.8, 10.05, 12.3]:
 		var l := OmniLight3D.new()
-		l.position = Vector3(x, 3.0, -4.1)
+		l.position = Vector3(x, 3.0, -3.35)
 		l.omni_range = 5.0
 		l.light_energy = 0.45
 		l.light_color = Color(0.96, 0.97, 1.0)
 		add_child(l)
+
+
+## The booth a good deal wider: its near side wall (with its lights, the spray gun rack and the
+## mixing trolley) moved out by BOOTH_WIDEN, floor, ceiling, back wall and ceiling LEDs stretched.
+func _widen_booth(g: Node3D) -> void:
+	var annex := g.find_child("Paint_booth_annex_001", true, false)
+	if annex == null:
+		return
+	var z0 := -6.35
+	var k := (4.5 + BOOTH_WIDEN) / 4.5
+	for c in annex.get_children():
+		if not (c is MeshInstance3D):
+			continue
+		var mi := c as MeshInstance3D
+		var bb: AABB = mi.global_transform * mi.get_aabb()
+		var nm := String(mi.name)
+		if nm.contains("Door_frame") or nm.contains("Filter") or nm.contains("Extraction"):
+			continue
+		if bb.size.z > 3.0:
+			# spans the booth: stretched from its far wall
+			mi.global_transform = Transform3D(Basis.IDENTITY, Vector3(0, 0, z0)) * Transform3D(Basis.from_scale(Vector3(1, 1, k)), Vector3.ZERO) \
+				* Transform3D(Basis.IDENTITY, Vector3(0, 0, -z0)) * mi.global_transform
+		elif bb.get_center().z > -2.6:
+			mi.global_position += Vector3(0, 0, BOOTH_WIDEN)
+	for nm in ["Spray_gun_wall_rack_001", "Paint_mixing_trolley_001"]:
+		var n := g.find_child(nm, true, false) as Node3D
+		if n:
+			n.global_position += Vector3(0, 0, BOOTH_WIDEN)
+	var rack := g.find_child("Spray_gun_wall_rack_001", true, false) as Node3D
+	if rack:
+		_spray_guns(rack)
+
+
+## The spray guns rebuilt: aluminium body, air cap with its horns, the gravity cup on top with lid
+## and vent, a black grip with the trigger, the inlet at the bottom – and from there a curly air
+## hose (a coil) to an outlet with a coupler on the wall, fed by a hard air line along the wall up
+## to the ceiling.
+func _spray_guns(rack: Node3D) -> void:
+	var guns: Array = []
+	for c in rack.find_children("*", "MeshInstance3D", true, false):
+		var nm := String(c.name)
+		if nm.contains("Spraygun_body"):
+			guns.append((c as MeshInstance3D).global_transform * (c as MeshInstance3D).get_aabb())
+		if not nm.contains("Spraygun_rack"):
+			(c as MeshInstance3D).mesh = null
+	var alu := Color(0.72, 0.73, 0.76)
+	var black := Color(0.04, 0.04, 0.045)
+	var blue := Color(0.1, 0.3, 0.75)
+	var brass := Color(0.75, 0.6, 0.25)
+	var st := MeshKit.new_st()
+	var hose := MeshKit.new_st()
+	var wall_z := -2.01 + BOOTH_WIDEN                 # the wall's face
+	var inv := rack.global_transform.affine_inverse()
+	var n := 0
+	for bb in guns:
+		var c: Vector3 = (bb as AABB).get_center()     # body centre; the nozzle points to -z
+		var f := Vector3(0, 0, -1)
+		# body, air cap and horns, fluid needle knob at the back
+		_tube_l(st, [c + f * -0.075, c + f * 0.06], 0.021, alu, inv)
+		_tube_l(st, [c + f * 0.06, c + f * 0.085], 0.026, alu.darkened(0.2), inv)
+		for sx in [-1.0, 1.0]:
+			_tube_l(st, [c + f * 0.08 + Vector3(sx * 0.02, 0, 0), c + f * 0.1 + Vector3(sx * 0.03, 0, 0)], 0.006, alu, inv)
+		_tube_l(st, [c + f * -0.075, c + f * -0.1], 0.012, black, inv)
+		# gravity cup on its feed stem
+		_tube_l(st, [c + Vector3(0, 0.03, 0.03), c + Vector3(0, 0.075, 0.03)], 0.008, alu, inv)
+		_tube_l(st, [c + Vector3(0, 0.075, 0.03), c + Vector3(0, 0.2, 0.03)], 0.055, Color(0.85, 0.87, 0.9, 1.0), inv)
+		_tube_l(st, [c + Vector3(0, 0.2, 0.03), c + Vector3(0, 0.215, 0.03)], 0.058, blue, inv)
+		_tube_l(st, [c + Vector3(0, 0.215, 0.03), c + Vector3(0, 0.24, 0.03)], 0.006, black, inv)
+		# grip down and back, trigger in front of it, the inlet fitting
+		var g0 := c + Vector3(0, -0.015, 0.04)
+		var g1 := c + Vector3(0, -0.17, 0.085)
+		_tube_l(st, [g0, g1], 0.017, black, inv)
+		_tube_l(st, [c + Vector3(0, 0.0, -0.01), c + Vector3(0, -0.06, -0.025), c + Vector3(0, -0.11, -0.01)], 0.005, alu, inv)
+		var inlet := g1 + Vector3(0, -0.03, 0.01)
+		_tube_l(st, [g1, inlet], 0.011, brass, inv)
+		# the outlet on the wall below, with its coupler and a ball valve
+		var outlet := Vector3(c.x + 0.13, 0.95, wall_z - 0.04)
+		MeshKit.box(st, inv * Transform3D(Basis.IDENTITY, outlet + Vector3(0, 0, 0.02)), Vector3(0.09, 0.12, 0.04), Color(0.25, 0.25, 0.27))
+		_tube_l(st, [outlet, outlet + Vector3(0, -0.07, -0.02)], 0.012, brass, inv)
+		_tube_l(st, [outlet + Vector3(0.03, 0.03, -0.01), outlet + Vector3(0.09, 0.03, -0.01)], 0.006, Color(0.8, 0.1, 0.08), inv)
+		# the hard line from the outlet up the wall to the ceiling
+		_tube_l(st, [outlet + Vector3(0, 0.06, 0.012), Vector3(outlet.x, 3.42, wall_z - 0.03)], 0.011, Color(0.62, 0.42, 0.25), inv)
+		# the curly hose: a coil wound round a curve from the inlet down and over to the outlet
+		var guide: Array = [inlet, inlet + Vector3(0, -0.45, -0.1), outlet + Vector3(0.0, -0.25, -0.18), outlet + Vector3(0, -0.08, -0.03)]
+		var pts: Array = []
+		var radii: Array = []
+		var steps := 420
+		var turns := 34.0
+		for i in steps + 1:
+			var t := float(i) / steps
+			var q := _bez(guide, t)
+			var d := (_bez(guide, minf(t + 0.005, 1.0)) - _bez(guide, maxf(t - 0.005, 0.0))).normalized()
+			var u := d.cross(Vector3.RIGHT if absf(d.x) < 0.9 else Vector3.UP).normalized()
+			var v := d.cross(u)
+			var a := t * turns * TAU
+			var rr := 0.032 * smoothstep(0.0, 0.05, t) * smoothstep(1.0, 0.95, t)
+			pts.append(inv * (q + (u * cos(a) + v * sin(a)) * rr))
+			radii.append(0.0055)
+		MeshKit.tube(hose, pts, radii, 5, Vector2(1, 1), Color(0.95, 0.75, 0.1) if n % 2 == 0 else Color(0.1, 0.45, 0.95))
+		n += 1
+	st.generate_normals()
+	var guns_mi := MeshKit.mesh_instance(MeshKit.commit(st, _vc_mat(0.35, 0.7)))
+	guns_mi.name = "SprayGuns"
+	rack.add_child(guns_mi)
+	hose.generate_normals()
+	var hose_mi := MeshKit.mesh_instance(MeshKit.commit(hose, _vc_mat(0.55, 0.0)))
+	hose_mi.name = "AirHoses"
+	rack.add_child(hose_mi)
+
+
+static func _vc_mat(rough: float, metal: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = rough
+	m.metallic = metal
+	return m
+
+
+## A tube through world points into the surface tool of a node with inverse transform `inv`.
+static func _tube_l(st: SurfaceTool, pts: Array, r: float, col: Color, inv: Transform3D) -> void:
+	var local: Array = []
+	var radii: Array = []
+	for p in pts:
+		local.append(inv * (p as Vector3))
+		radii.append(r)
+	MeshKit.tube(st, local, radii, 12, Vector2(1, 1), col)
 
 
 ## The way from the platform into the booth: a cubic Bézier (start, two handles, the booth's middle).
@@ -417,6 +549,7 @@ func leave_booth() -> void:
 		await get_tree().process_frame
 	_booth_cam_on = false
 	cam.h_offset = 0.0
+	cam.near = 0.05
 	var o := _overview_cam()
 	_cam_pos = o[0]
 	_cam_at = o[1]
@@ -476,8 +609,11 @@ func _booth_camera() -> void:
 		target = car.global_position + Vector3(0, 0.7, 0)
 	var off := Vector3(sin(_booth_yaw) * cos(_booth_pitch), sin(_booth_pitch), cos(_booth_yaw) * cos(_booth_pitch)) * _booth_dist
 	var p := BOOTH_C + Vector3(0, 0.7, 0) + off
-	p = Vector3(clampf(p.x, 7.0, 13.2), clampf(p.y, 0.3, 3.25), clampf(p.z, -6.05, -2.15))
+	# always inside the booth, clear of its walls and ceiling (no looking through them)
+	var room := BOOTH_ROOM
+	p = Vector3(clampf(p.x, room.position.x, room.end.x), clampf(p.y, room.position.y, room.end.y), clampf(p.z, room.position.z, room.end.z))
 	cam.global_position = p
+	cam.near = 0.03
 	cam.look_at(target, Vector3.UP)
 	cam.fov = 70.0
 	cam.h_offset = -0.55 if booth == "inside" else 0.0
@@ -489,7 +625,7 @@ func booth_orbit(dx: float, dy: float) -> void:
 
 
 func booth_zoom(f: float) -> void:
-	_booth_dist = clampf(_booth_dist * f, 2.2, 5.0)
+	_booth_dist = clampf(_booth_dist * f, 2.2, 4.4)
 
 
 ## A ray from the screen into the car's body space: [from, dir] or null.
@@ -800,7 +936,7 @@ func _load_workshop() -> bool:
 	storm_fx.name = "Storm"
 	add_child(storm_fx)
 	# (no rain under the roofs beside the hall: the office annex on the left, the paint booth on the right)
-	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5, 7.1, 4.7)])
+	storm_fx.setup_heavy(env, Rect2(-6.9, -6.5, 13.8, 13.0), [Rect2(-10.3, 2.0, 3.7, 4.1), Rect2(6.6, -6.5, 7.1, 4.7 + BOOTH_WIDEN)])
 	await Game.load_tick(0.9)
 	for l in g.find_children("*", "Light3D", true, false):
 		var light := l as Light3D
@@ -1664,7 +1800,7 @@ func _process(delta: float) -> void:
 		var e := _booth_door_open * _booth_door_open * (3.0 - 2.0 * _booth_door_open)
 		for d in _booth_doors:
 			var h: Vector3 = d[2]
-			(d[0] as Node3D).global_transform = Transform3D(Basis.IDENTITY, h) * Transform3D(Basis(Vector3.UP, e * float(d[3]) * PI * 0.5), Vector3.ZERO) \
+			(d[0] as Node3D).global_transform = Transform3D(Basis.IDENTITY, h) * Transform3D(Basis(Vector3.UP, e * float(d[3]) * float(d[4])), Vector3.ZERO) \
 				* Transform3D(Basis.IDENTITY, -h) * (d[1] as Transform3D)
 	if _booth_cam_on:
 		_turn_platform(delta)

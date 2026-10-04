@@ -52,4 +52,12 @@ func _ready() -> void:
 		for f in 4:
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png(out.replace(".png", "_clean.png"))
+		# close to the spray guns on the wall
+		sr.set_process(false)
+		sr.cam.h_offset = 0.0
+		sr.cam.global_position = Vector3(9.9, 1.45, -1.75)
+		sr.cam.look_at(Vector3(9.6, 1.2, -0.6), Vector3.UP)
+		for f in 4:
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png(out.replace(".png", "_guns.png"))
 	get_tree().quit()
