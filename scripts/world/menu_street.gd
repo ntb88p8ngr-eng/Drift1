@@ -388,8 +388,42 @@ func _graffiti(z: float, h: float) -> void:
 			fonts.append(load(f))
 	if fonts.is_empty():
 		return
+	# the sprayed pieces (pictures in assets/main_menu/textures/Grafitti*.png), every one its own size
+	var pieces: Array = []
+	for k in range(1, 13):
+		var f := "res://assets/main_menu/textures/Grafitti (%d).png" % k
+		if ResourceLoader.exists(f):
+			var m := StandardMaterial3D.new()
+			m.albedo_texture = load(f)
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.roughness = 0.85
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+			pieces.append(m)
+	var order: Array = range(pieces.size())
 	var x := -60.0
+	var pi := 0
 	while x < 60.0:
+		if not pieces.is_empty() and rng.randf() < 0.62:
+			if pi % pieces.size() == 0:
+				order.shuffle()
+			var m: StandardMaterial3D = pieces[order[pi % pieces.size()]]
+			pi += 1
+			var tex := m.albedo_texture
+			var aspect := float(tex.get_width()) / float(tex.get_height())
+			var w := lerpf(1.6, 5.2, pow(rng.randf(), 1.3))
+			var hh := minf(w / aspect, h - 0.15)
+			w = hh * aspect
+			var q := QuadMesh.new()
+			q.size = Vector2(w, hh)
+			var mi := MeshInstance3D.new()
+			mi.mesh = q
+			mi.material_override = m
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.position = Vector3(x + w * 0.5, rng.randf_range(hh * 0.5 + 0.08, h - hh * 0.5 - 0.05), z + 0.005 + pi * 0.0005)
+			mi.rotation = Vector3(0, 0, rng.randf_range(-0.08, 0.08))
+			add_child(mi)
+			x += w + rng.randf_range(0.6, 2.5)
+			continue
 		var t := Label3D.new()
 		t.text = TAGS[rng.randi() % TAGS.size()]
 		var cols: Array = TAG_COLS[rng.randi() % TAG_COLS.size()]
@@ -397,7 +431,7 @@ func _graffiti(z: float, h: float) -> void:
 		t.font_size = 128
 		# from a small tag (a hand's height) to a piece filling the wall
 		var big := pow(rng.randf(), 1.6)
-		t.pixel_size = lerpf(0.0018, 0.0125, big)
+		t.pixel_size = lerpf(0.0016, 0.0075, big)
 		var tall := 128.0 * t.pixel_size
 		t.modulate = cols[0]
 		t.outline_modulate = cols[1]
@@ -409,7 +443,7 @@ func _graffiti(z: float, h: float) -> void:
 		t.rotation = Vector3(0, 0, rng.randf_range(-0.22, 0.22))
 		t.scale = Vector3(rng.randf_range(0.9, 1.3), 1.0, 1.0)
 		add_child(t)
-		x += rng.randf_range(2.0, 4.0) + tall * float(t.text.length()) * 0.35
+		x += rng.randf_range(1.0, 2.5) + tall * float(t.text.length()) * 0.45
 
 
 ## Albedo + normal map of a running-bond brick wall: 4 bricks × 14 courses per tile (0.96 × 1 m).
