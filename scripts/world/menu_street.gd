@@ -65,9 +65,14 @@ func build(_asphalt: Material) -> void:
 	# the dropped kerb: a low ramp of pavement across the driveway mouth
 	_strip(HALF, HALF + WALK, 0.03, mid - DRIVE, mid + DRIVE, walk_mat)
 	var s := 3.0
+	# the middle: a double line, broken (dashes) where cars turn in and out of the driveway
+	for off in [-0.13, 0.13]:
+		for sp in [[0.0, mid - DRIVE - 6.0], [mid + DRIVE + 6.0, LENGTH]]:
+			_strip(off - 0.06, off + 0.06, 0.04, sp[0], sp[1], line_mat)
 	while s < LENGTH:
-		_strip(-0.07, 0.07, 0.04, s, minf(s + 3.0, LENGTH), line_mat)
-		s += 9.0
+		if s > mid - DRIVE - 7.0 and s < mid + DRIVE + 6.0:
+			_strip(-0.07, 0.07, 0.04, s, minf(s + 3.0, LENGTH), line_mat)
+		s += 6.0
 	# where the driveway meets the street: a give-way line of short dashes
 	var g := mid - DRIVE
 	while g < mid + DRIVE:

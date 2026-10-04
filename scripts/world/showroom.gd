@@ -288,6 +288,7 @@ func _load_workshop() -> bool:
 	WorkshopTextures.apply(g)
 	_epoxy_floor(g)
 	_open_spanners(g)
+	_replace_wall_tools(g)
 	# the turning deck's skirt segments and their bolts ran through the static nameplate on the ring
 	# ("MIDNIGHT DRIFT") all the time: gone
 	for pat in ["*Turntable_skirt_segment*", "*Skirt_hex_bolt*"]:
@@ -496,6 +497,82 @@ func _find_pc(g: Node3D) -> void:
 
 ## The wrenches on the walls are ring spanners at both ends: the lower ring of each becomes an open
 ## jaw (a combination spanner) – the ring and its teeth go, a C-shaped jaw takes their place.
+## The tools hanging on the back wall either side of the shutter: the model's spanners and
+## screwdrivers give way to the uploaded models (assets/props/tools) – each new tool where the old
+## one hung, as long as it, hanging straight down, flat against the wall.
+const TOOL_DIR := "res://assets/props/tools/"
+const WALL_TOOLS := [["Hanging_spanner_", ["combination_wrench", "adjustable_wrench", "wrench"]],
+	["Hanging_screwdriver_", ["screwdriver", "flathead_screwdriver"]]]
+
+
+func _replace_wall_tools(g: Node3D) -> void:
+	var done := 0
+	for wt in WALL_TOOLS:
+		var prefix: String = wt[0]
+		var kinds: Array = wt[1]
+		var scenes: Array = []
+		for k in kinds:
+			if ResourceLoader.exists(TOOL_DIR + k + ".glb"):
+				scenes.append(load(TOOL_DIR + k + ".glb"))
+		if scenes.is_empty():
+			continue
+		var olds: Array = []
+		for n in g.find_children(prefix + "*", "Node3D", true, false):
+			# the tool itself (not its parts): exactly "<prefix>NNN"
+			var nm := str(n.name)
+			if nm.length() == prefix.length() + 3 and nm.substr(prefix.length()).is_valid_int():
+				olds.append(n)
+		olds.sort_custom(func(a, b): return (a as Node3D).global_position.x < (b as Node3D).global_position.x)
+		for i in olds.size():
+			var old: Node3D = olds[i]
+			var box := _tree_aabb(old)
+			if box.size == Vector3.ZERO:
+				continue
+			old.get_parent().remove_child(old)
+			old.free()
+			var tool := (scenes[i % scenes.size()] as PackedScene).instantiate() as Node3D
+			add_child(tool)
+			var mbox := _tree_aabb(tool)
+			if mbox.size == Vector3.ZERO:
+				tool.queue_free()
+				continue
+			# the model's long axis hangs down the wall, its flattest faces the room
+			var ax := [Vector3.RIGHT, Vector3.UP, Vector3.BACK]
+			var ext := [mbox.size.x, mbox.size.y, mbox.size.z]
+			var order := [0, 1, 2]
+			order.sort_custom(func(a, b): return ext[a] > ext[b])
+			var e_long: Vector3 = ax[order[0]]
+			var e_mid: Vector3 = ax[order[1]]
+			var e_flat: Vector3 = ax[order[2]]
+			var m := Basis(e_mid, e_long, e_flat)        # columns: model axes that go to world x, y, z
+			if m.determinant() < 0.0:
+				m = Basis(-e_mid, e_long, e_flat)
+			var r := m.transposed()
+			var k: float = box.size.y / float(ext[order[0]])
+			var b := r.scaled(Vector3(k, k, k))
+			var c: Vector3 = box.get_center()
+			# (its back a few millimetres off the wall board)
+			var back: float = box.position.z
+			var depth: float = float(ext[order[2]]) * k
+			tool.global_transform = Transform3D(b, Vector3(c.x, c.y, back + depth * 0.5 + 0.005) - b * mbox.get_center())
+			done += 1
+	print("SHOWROOM: %d wall tools replaced" % done)
+
+
+## Bounds of everything drawn under `n`, in world space.
+static func _tree_aabb(n: Node3D) -> AABB:
+	var box := AABB()
+	var first := true
+	for c in [n] + n.find_children("*", "MeshInstance3D", true, false):
+		if not (c is MeshInstance3D) or (c as MeshInstance3D).mesh == null:
+			continue
+		var mi := c as MeshInstance3D
+		var bb: AABB = mi.global_transform * mi.get_aabb()
+		box = bb if first else box.merge(bb)
+		first = false
+	return box
+
+
 func _open_spanners(g: Node3D) -> void:
 	var by_parent := {}
 	for node in g.find_children("*Ring_spanner_head*", "MeshInstance3D", true, false):

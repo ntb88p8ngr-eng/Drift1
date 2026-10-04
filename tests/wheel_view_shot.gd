@@ -35,8 +35,8 @@ func _ready() -> void:
 	if shutter:
 		sr.toggle_shutter()
 	if open_up:
-		sr.toggle_shutter()
-		sr.toggle_shutter()
+		sr._set_shutter(sr.SHUTTER_UP)
+		sr._shutter_want = sr.SHUTTER_UP
 	# swing the platform round and settle the camera in big steps (few frames to render)
 	for f in 25:
 		sr._process(0.4)
