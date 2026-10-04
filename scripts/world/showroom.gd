@@ -530,14 +530,29 @@ func _replace_wall_tools(g: Node3D) -> void:
 			if nm.length() == prefix.length() + 3 and nm.substr(prefix.length()).is_valid_int():
 				olds.append(n)
 		olds.sort_custom(func(a, b): return (a as Node3D).global_position.x < (b as Node3D).global_position.x)
+		# right of the shutter: a set of combination wrenches, small to large, side by side
+		var spanners := prefix == "Hanging_spanner_" and ResourceLoader.exists(TOOL_DIR + "combination_wrench.glb")
+		var set_scene: PackedScene = load(TOOL_DIR + "combination_wrench.glb") if spanners else null
+		var right_n := 0
+		for o in olds:
+			if (o as Node3D).global_position.x > 0.0:
+				right_n += 1
+		var right_k := 0
 		for i in olds.size():
 			var old: Node3D = olds[i]
 			var box := _tree_aabb(old)
 			if box.size == Vector3.ZERO:
 				continue
+			var in_set: bool = spanners and old.global_position.x > 0.0
 			old.get_parent().remove_child(old)
 			old.free()
-			var tool := (scenes[i % scenes.size()] as PackedScene).instantiate() as Node3D
+			var tool := (set_scene if in_set else scenes[i % scenes.size()] as PackedScene).instantiate() as Node3D
+			if in_set:
+				# 14 cm up to 30 cm, hanging from the same hook height (the box's top stays)
+				var want := lerpf(0.14, 0.3, float(right_k) / maxf(right_n - 1, 1))
+				right_k += 1
+				var top := box.end.y
+				box = AABB(Vector3(box.position.x, top - want, box.position.z), Vector3(box.size.x, want, box.size.z))
 			add_child(tool)
 			var mbox := _tree_aabb(tool)
 			if mbox.size == Vector3.ZERO:
