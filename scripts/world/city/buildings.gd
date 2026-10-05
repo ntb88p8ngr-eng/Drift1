@@ -746,9 +746,15 @@ func _pitched_roof(b: Dictionary, h: float) -> void:
 	for s: float in [-1.0, 1.0]:
 		var basis := Basis(ax, Vector3.UP, az).rotated(ax, slope * s)
 		cm.box("frame", Transform3D(basis, c + az * s * d * 0.25 + Vector3(0, rise * 0.5, 0)), Vector3(w + 0.6, 0.15, d * 0.5 / cos(slope) + 0.5), tile)
-	# gable ends
+	# gable ends: full triangles from the eaves up to the ridge (both faces – no gaps under the roof)
+	var gcol := Color(0.85, 0.83, 0.78)
 	for s: float in [-1.0, 1.0]:
-		cm.box("frame", Transform3D(Basis(ax, Vector3.UP, az), c + ax * s * (w * 0.5 - 0.1) + Vector3(0, rise * 0.35, 0)), Vector3(0.2, rise * 0.7, d * 0.5), Color(0.85, 0.83, 0.78))
+		var e := c + ax * s * (w * 0.5)
+		var g0: Vector3 = e - az * d * 0.5
+		var g1: Vector3 = e + az * d * 0.5
+		var top: Vector3 = e + Vector3(0, rise, 0)
+		cm.tri("frame", g0, g1, top, ax * s, gcol)
+		cm.tri("frame", g1, g0, top, -ax * s, gcol)
 
 
 func _cyl(mat: String, base: Vector3, r: float, hgt: float, col: Color) -> void:

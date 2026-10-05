@@ -387,8 +387,20 @@ static func _bicycle(st: SurfaceTool) -> void:
 	var frame := Color(0.85, 0.85, 0.85, 0.6)
 	var tyre := Color(0.05, 0.05, 0.05)
 	for z: float in [-0.52, 0.52]:
-		_cyl(st, Vector3(-0.015, 0.34, z), Vector3(0.015, 0.34, z), 0.34, 0.34, tyre, 18)
-		_cyl(st, Vector3(-0.017, 0.34, z), Vector3(0.017, 0.34, z), 0.05, 0.05, STEEL, 8)
+		# a real wheel (no solid black disc): the tyre and rim as rings, spokes, the hub
+		var c := Vector3(0, 0.34, z)
+		var segs := 16
+		for k in segs:
+			var a0 := TAU * k / segs
+			var a1 := TAU * (k + 1) / segs
+			var d0 := Vector3(0, sin(a0), cos(a0))
+			var d1 := Vector3(0, sin(a1), cos(a1))
+			_cyl(st, c + d0 * 0.32, c + d1 * 0.32, 0.028, 0.028, tyre, 5)
+			_cyl(st, c + d0 * 0.285, c + d1 * 0.285, 0.01, 0.01, STEEL, 4)
+		for k in 8:
+			var a := TAU * k / 8.0
+			_cyl(st, c, c + Vector3(0, sin(a), cos(a)) * 0.285, 0.004, 0.004, STEEL, 3)
+		_cyl(st, Vector3(-0.03, 0.34, z), Vector3(0.03, 0.34, z), 0.03, 0.03, STEEL, 8)
 	_cyl(st, Vector3(0, 0.34, 0.52), Vector3(0, 0.62, -0.02), 0.018, 0.018, frame, 6)
 	_cyl(st, Vector3(0, 0.34, -0.52), Vector3(0, 0.78, -0.4), 0.018, 0.018, frame, 6)
 	_cyl(st, Vector3(0, 0.62, -0.02), Vector3(0, 0.76, -0.38), 0.018, 0.018, frame, 6)

@@ -879,7 +879,8 @@ func _misc(p: Vector3, face: Vector3, along: Vector2) -> void:
 		lamps.add_vending(p, face)
 	elif r < 0.5:
 		for k in rng.randi_range(2, 5):
-			add_inst.call("bicycle", Transform3D(Basis.looking_at(face, Vector3.UP).rotated(Vector3.UP, PI * 0.5 + rng.randf_range(-0.1, 0.1)), p + Vector3(along.x, 0, along.y) * (k * 0.7)), Color(1, 1, 1, 1))
+			add_inst.call("bicycle", Transform3D(Basis.looking_at(face, Vector3.UP).rotated(Vector3.UP, PI * 0.5 + rng.randf_range(-0.1, 0.1)), p + Vector3(along.x, 0, along.y) * (k * 0.7)),
+				Color.from_hsv(rng.randf(), rng.randf_range(0.3, 0.8), rng.randf_range(0.55, 0.95)))
 	elif r < 0.65:
 		# pushed about by the cars (city_lamps.gd)
 		lamps.add_prop("bench", p, -face)
