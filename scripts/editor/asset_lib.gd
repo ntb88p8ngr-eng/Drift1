@@ -40,7 +40,23 @@ const ASSETS := [
 	["glb:res://assets/props/camp/05_extra_large_bell.glb", "Glockenzelt", "Camping"],
 	["block:box", "Block", "Bausteine"], ["block:wall", "Mauer", "Bausteine"], ["block:ramp", "Rampe", "Bausteine"],
 	["block:pillar", "Säule", "Bausteine"], ["block:container", "Container", "Bausteine"], ["block:barrier", "Betonleitwand", "Bausteine"],
+	["mark:arrow", "Pfeil geradeaus", "Markierungen"], ["mark:arrow_left", "Pfeil links", "Markierungen"],
+	["mark:arrow_right", "Pfeil rechts", "Markierungen"], ["mark:arrow_straight_left", "Pfeil geradeaus + links", "Markierungen"],
+	["mark:arrow_straight_right", "Pfeil geradeaus + rechts", "Markierungen"], ["mark:zebra", "Zebrastreifen", "Markierungen"],
+	["mark:stop_line", "Haltelinie", "Markierungen"], ["mark:line", "Linie (durchgezogen)", "Markierungen"],
+	["mark:line_dashed", "Linie (gestrichelt)", "Markierungen"], ["mark:diamond", "Raute", "Markierungen"],
+	["mark:yield", "Haifischzähne (Vorfahrt achten)", "Markierungen"], ["mark:grid_slot", "Startplatz", "Markierungen"],
+	["mark:checker", "Start / Ziel (Karo)", "Markierungen"], ["mark:hatch", "Sperrfläche (gelb)", "Markierungen"],
 ]
+
+
+## Street markings: flat paint on the road – cars drive over them (no collision for the cars,
+## the editor still picks them: own layer).
+const MARK_LAYER := 1 << 19
+
+
+static func is_marking(id: String) -> bool:
+	return id.begins_with("mark:")
 
 static var _mesh_cache := {}
 ## Uploaded models: id -> PackedScene-like generated Node (template), set by the map / editor.
@@ -125,6 +141,8 @@ static func make(id: String) -> Node3D:
 	else:
 		var mi := MeshInstance3D.new()
 		mi.mesh = mesh
+		if id.begins_with("mark:"):
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
 	return root
 
@@ -139,6 +157,8 @@ static func mesh_of(id: String) -> Mesh:
 		m = GlbKit.merged(id.substr(4))
 	elif id.begins_with("block:"):
 		m = _block(id.substr(6))
+	elif id.begins_with("mark:"):
+		m = _marking(id.substr(5))
 	else:
 		match id:
 			"tree_pine":
@@ -193,6 +213,92 @@ static func _block(kind: String) -> Mesh:
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.roughness = 0.8
+	return MeshKit.commit(st, mat)
+
+
+## A street marking lying on the ground (2 cm up), forward = -Z, white paint (yellow hatching).
+static func _marking(kind: String) -> Mesh:
+	var st := MeshKit.new_st()
+	var y := 0.02
+	var white := Color(0.93, 0.93, 0.9)
+	var rect := func(x0: float, z0: float, x1: float, z1: float, col: Color) -> void:
+		MeshKit.quad(st, Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1), Vector3.UP,
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, col)
+	var tri := func(a: Vector2, b: Vector2, c: Vector2, col: Color) -> void:
+		MeshKit.tri(st, Vector3(a.x, y, a.y), Vector3(b.x, y, b.y), Vector3(c.x, y, c.y), Vector3.UP, Vector3.UP, Vector3.UP,
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector3.UP, col)
+	# a bar from a to b (2D, x/z), width w
+	var bar := func(a: Vector2, b: Vector2, w: float, col: Color) -> void:
+		var d := (b - a).normalized()
+		var n := Vector2(-d.y, d.x) * w * 0.5
+		MeshKit.quad(st, Vector3(a.x + n.x, y, a.y + n.y), Vector3(b.x + n.x, y, b.y + n.y), Vector3(b.x - n.x, y, b.y - n.y), Vector3(a.x - n.x, y, a.y - n.y),
+			Vector3.UP, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, col)
+	# an arrow head at tip, pointing along dir
+	var head := func(tip: Vector2, dir: Vector2, l: float, w: float) -> void:
+		var d := dir.normalized()
+		var n := Vector2(-d.y, d.x)
+		tri.call(tip, tip - d * l + n * w * 0.5, tip - d * l - n * w * 0.5, white)
+	match kind:
+		"arrow":
+			bar.call(Vector2(0, 2.5), Vector2(0, -1.0), 0.3, white)
+			head.call(Vector2(0, -2.5), Vector2(0, -1), 1.5, 1.1)
+		"arrow_left", "arrow_right":
+			var s := -1.0 if kind == "arrow_left" else 1.0
+			bar.call(Vector2(0, 2.5), Vector2(0, -0.6), 0.3, white)
+			bar.call(Vector2(0, -0.45), Vector2(s * 0.9, -0.45), 0.3, white)
+			head.call(Vector2(s * 2.0, -0.45), Vector2(s, 0), 1.1, 1.0)
+		"arrow_straight_left", "arrow_straight_right":
+			var s2 := -1.0 if kind == "arrow_straight_left" else 1.0
+			bar.call(Vector2(0, 2.5), Vector2(0, -1.0), 0.3, white)
+			head.call(Vector2(0, -2.5), Vector2(0, -1), 1.5, 1.1)
+			bar.call(Vector2(0, 0.6), Vector2(s2 * 0.9, 0.6), 0.3, white)
+			head.call(Vector2(s2 * 2.0, 0.6), Vector2(s2, 0), 1.1, 1.0)
+		"zebra":
+			# 4 m across the road (x), bars 0.5 m wide, 3 m long (z)
+			for k in 5:
+				var x := -2.0 + 0.25 + k * 0.9
+				rect.call(x - 0.25, -1.5, x + 0.25, 1.5, white)
+		"stop_line":
+			rect.call(-2.0, -0.2, 2.0, 0.2, white)
+		"line":
+			rect.call(-0.075, -3.0, 0.075, 3.0, white)
+		"line_dashed":
+			for k in 3:
+				var z := -4.5 + k * 3.0
+				rect.call(-0.075, z, 0.075, z + 1.5, white)
+		"diamond":
+			tri.call(Vector2(0, -2.0), Vector2(0.6, 0), Vector2(-0.6, 0), white)
+			tri.call(Vector2(0, 2.0), Vector2(-0.6, 0), Vector2(0.6, 0), white)
+			tri.call(Vector2(0, -1.6), Vector2(-0.35, 0), Vector2(0.35, 0), Color(0.1, 0.1, 0.11))
+			tri.call(Vector2(0, 1.6), Vector2(0.35, 0), Vector2(-0.35, 0), Color(0.1, 0.1, 0.11))
+		"yield":
+			# a row of triangles across the road, pointing at the cars coming (+Z)
+			for k in 6:
+				var x2 := -2.25 + k * 0.9
+				tri.call(Vector2(x2 - 0.3, -0.3), Vector2(x2 + 0.3, -0.3), Vector2(x2, 0.3), white)
+		"grid_slot":
+			rect.call(-1.2, -2.6, 1.2, -2.45, white)
+			rect.call(-1.2, -2.6, -1.05, 0.0, white)
+			rect.call(1.05, -2.6, 1.2, 0.0, white)
+		"checker":
+			# 8 m across, two rows of squares
+			for row in 2:
+				for k in 16:
+					var dark := (k + row) % 2 == 0
+					rect.call(-4.0 + k * 0.5, -0.5 + row * 0.5, -3.5 + k * 0.5, row * 0.5, Color(0.08, 0.08, 0.09) if dark else white)
+		"hatch":
+			var yel := Color(0.95, 0.75, 0.12)
+			rect.call(-2.0, -2.0, 2.0, -1.85, yel)
+			rect.call(-2.0, 1.85, 2.0, 2.0, yel)
+			rect.call(-2.0, -2.0, -1.85, 2.0, yel)
+			rect.call(1.85, -2.0, 2.0, 2.0, yel)
+			for k in 5:
+				var o := -2.0 + k * 1.0
+				bar.call(Vector2(maxf(o, -1.9), -1.9 + maxf(o, -1.9) - o), Vector2(minf(o + 3.8, 1.9), 1.9 - (o + 3.8 - minf(o + 3.8, 1.9))), 0.15, yel)
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.7
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return MeshKit.commit(st, mat)
 
 

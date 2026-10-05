@@ -204,6 +204,8 @@ static func place_object(holder: Node3D, asset: String, xf: Transform3D) -> Node
 	body.collision_layer = 1
 	body.collision_mask = 0
 	body.set_meta("asset", asset)
+	if AssetLib.is_marking(asset):
+		body.collision_layer = AssetLib.MARK_LAYER      # (paint: the cars drive over it)
 	body.add_child(n)
 	holder.add_child(body)
 	body.global_transform = xf
