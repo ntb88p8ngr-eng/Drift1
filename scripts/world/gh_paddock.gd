@@ -51,6 +51,7 @@ func build(p_track, p_terrain, p_scenery, p_festival) -> void:
 	_lat = max_off + 2.5 + LANE_W * 0.5
 	_pit_lane()
 	await Game.load_tick()
+	_sink_under_garages()
 	_garages()
 	await Game.load_tick()
 	# the grandstand side too: one smooth surface from the track's edge to behind the stands (they
@@ -273,7 +274,7 @@ func _lane_surface() -> void:
 		# no grass through it: the ground under it marked paved, out to its edges (and nothing put on it)
 		var lat := ea.x
 		while lat <= ea.y + 0.01:
-			scenery._ground_paints.append([_at(pp, lat), 2.0, Color(1, 0, 0, 0), true])
+			scenery._ground_paints.append([_at(pp, lat), 3.0, Color(1, 0, 0, 0), true])
 			scenery.occupy(_at(pp, lat), 1.6)
 			lat += 1.5
 		scenery._ground_wall("road", _at(pp, ea.y), _at(pb, eb.y), scenery.ROAD_LIFT, (_at(pp, ea.y + 1.0) - _at(pp, ea.y)).normalized())
@@ -296,7 +297,7 @@ func _pave(lane_pts: Array) -> void:
 	while p <= PIT_TO + 20.0:
 		var lat := _wall_off + 0.5
 		while lat <= lat1:
-			scenery._ground_paints.append([_at(p, lat), 3.2, paved, true])
+			scenery._ground_paints.append([_at(p, lat), 4.5, paved, true])
 			lat += 3.0
 		p += 3.0
 
@@ -336,6 +337,34 @@ func _crew(p: Vector3, look_at: Vector3, team: Color) -> void:
 	var sc := rng.randf_range(0.95, 1.05)
 	festival._add("person", Transform3D(Basis.looking_at(d.normalized(), Vector3.UP) * Basis.from_scale(Vector3(sc, sc, sc)), g),
 		Color(team.r, team.g, team.b, 2.0 + rng.randf() * 0.5))
+## The ground under the garages a little below their floor: levelled to the road's edge it lay
+## a few centimetres above the floor on the banked stretch – the meadow showed (and grew grass)
+## inside the boxes.
+func _sink_under_garages() -> void:
+	var cell: float = terrain.CELL
+	var o: Vector2 = terrain.origin
+	var hs: PackedFloat32Array = terrain.heights
+	var nx: int = terrain.nx
+	var nz: int = terrain.nz
+	var front_lat := _lat + LANE_W * 0.5 + 1.0
+	var p0 := (PIT_FROM + PIT_TO) * 0.5 - GARAGES * GARAGE_W * 0.5 - 2.0
+	var p1 := p0 + GARAGES * GARAGE_W + 4.0
+	var p := p0
+	while p <= p1:
+		var floor_y := _road_y(p) + float(track.ROAD_Y) - 0.06
+		var lat := front_lat - 0.5
+		while lat <= front_lat + GARAGE_D + 1.5:
+			var q := _at(p, lat)
+			var ix := int(round((q.x - o.x) / cell))
+			var iz := int(round((q.z - o.y) / cell))
+			if ix >= 0 and iz >= 0 and ix < nx and iz < nz:
+				var idx := iz * nx + ix
+				hs[idx] = minf(hs[idx], floor_y)
+			lat += cell * 0.5
+		p += cell * 0.5
+	terrain.heights = hs
+
+
 func _garages() -> void:
 	var st := MeshKit.new_st()
 	var wall := Color(0.86, 0.86, 0.84)
@@ -369,7 +398,9 @@ func _garages() -> void:
 		# the slabs and the upper floor are built after the loop as one piece along the curve)
 		box.call(Vector3(-w * 0.5 + 0.15, 3.0, GARAGE_D * 0.5), Vector3(0.3, 6.0, GARAGE_D), wall)
 		box.call(Vector3(0, 0.02, GARAGE_D * 0.5), Vector3(w, 0.04, GARAGE_D), floor_c)
-		box.call(Vector3(0, 4.3, 0.15), Vector3(w, 1.0, 0.3), team)
+		# (neighbouring bands overlap a little where the row curves: every other one sits 2 cm further
+		# out, so their faces never share a plane – they flickered at the joints)
+		box.call(Vector3(0, 4.3, 0.15 - 0.02 * float(k % 2)), Vector3(w - 0.02, 1.0, 0.3), team)
 		box.call(Vector3(0, 7.7, 2.05), Vector3(w - 0.4, 1.8, 0.05), glass)
 		box.call(Vector3(0, 2.0, GARAGE_D - 0.6), Vector3(w - 0.6, 3.6, 0.1), dark)
 		# concrete apron and garage floor painted into the ground (no grass coming through)
