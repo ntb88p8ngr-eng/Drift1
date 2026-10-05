@@ -6,6 +6,7 @@ const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const MainTiles = preload("res://scripts/ui/main_tiles.gd")
+const Avatar = preload("res://scripts/ui/avatar.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const CarBody = preload("res://scripts/car/car_body.gd")
 const CarBodyScript = preload("res://scripts/car/car_body.gd")
@@ -429,7 +430,7 @@ func show_screen(screen: String) -> void:
 	_sub_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new() if screen == "main" else _panel_style())
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER if screen == "main" else ScrollContainer.SCROLL_MODE_AUTO
 	_player_info.visible = false      # (the main screen shows it again)
-	_quit_btn.visible = screen == "main" or not ["story", "single", "garage", "online", "lobby", "leaderboard", "options", "controls", "editor", "replays", "credits", "servers", "admin", "booth"].has(screen)
+	_quit_btn.visible = screen == "main" or not ["story", "single", "garage", "online", "lobby", "leaderboard", "options", "controls", "editor", "replays", "credits", "servers", "admin", "booth", "profile"].has(screen)
 	if screen != "story":
 		_at_pc_off()
 	show_status("")
@@ -470,6 +471,8 @@ func show_screen(screen: String) -> void:
 			_build_replays()
 		"credits":
 			_build_credits()
+		"profile":
+			_build_profile()
 		"servers":
 			_build_servers()
 		"admin":
@@ -831,10 +834,169 @@ func _fill_player_info() -> void:
 		c.queue_free()
 	var car: Dictionary = Game.get_car(Game.settings["car"])
 	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
-	for l in [UiKit.label(Game.t("Fahrer: %s") % Game.settings["player_name"], 18, UiKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT),
-			UiKit.label(Game.t("Auto: %s – %s") % [Game.t(car["name"]), Game.t(paint["name"])], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT),
+	var bar := _profile_bar()
+	_player_info.add_child(bar)
+	for l in [UiKit.label(Game.t("Auto: %s – %s") % [Game.t(car["name"]), Game.t(paint["name"])], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT),
 			UiKit.label(Game.t("Credits: %s") % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)]:
 		_player_info.add_child(l)
+
+
+## The driver bar top right: black, slanted the other way round than the tiles on the left (it is on
+## the other side), the profile picture and the driver's name – a click opens the driver profile.
+func _profile_bar() -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.tooltip_text = Game.t("Fahrerprofil")
+	var pname := str(Game.settings["player_name"])
+	var font := UiKit.title_font()
+	var tw := font.get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x if font else pname.length() * 14.0
+	b.custom_minimum_size = Vector2(maxf(tw + 120.0, 230.0), 58)
+	var skew := -MainTiles.SKEW
+	var base := StyleBoxFlat.new()
+	base.bg_color = Color(0.0, 0.0, 0.0, 0.88)
+	base.border_color = Color(UiKit.ACCENT, 0.55)
+	base.border_width_right = 5
+	base.border_width_top = 1
+	base.border_width_bottom = 1
+	base.border_width_left = 1
+	base.set_corner_radius_all(3)
+	base.skew = Vector2(skew, 0)
+	base.shadow_color = Color(0, 0, 0, 0.35)
+	base.shadow_size = 6
+	var hover := base.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.08, 0.04, 0.14, 0.95)
+	hover.border_color = UiKit.ACCENT
+	hover.border_width_right = 9
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.3, 0.14, 0.52, 1.0)
+	b.add_theme_stylebox_override("normal", base)
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", pressed)
+	b.add_theme_stylebox_override("hover_pressed", pressed)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var row := HBoxContainer.new()
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 18
+	row.offset_right = -20
+	row.add_theme_constant_override("separation", 12)
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(row)
+	var av := Avatar.new()
+	av.idx = int(Game.settings.get("avatar", 0))
+	av.custom_minimum_size = Vector2(44, 44)
+	av.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(av)
+	var l := UiKit.label(pname, 24, UiKit.TEXT)
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	if font:
+		l.add_theme_font_override("font", font)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.size_flags_vertical = Control.SIZE_FILL
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(l)
+	b.pressed.connect(func(): show_screen("profile"))
+	return b
+
+
+# ---------------------------------------------------------------------------
+# Driver profile: picture, name and the stats (Game.profile())
+# ---------------------------------------------------------------------------
+func _build_profile() -> void:
+	_header("FAHRERPROFIL")
+	var p := Game.profile()
+	var big := Avatar.new()
+	big.idx = int(Game.settings.get("avatar", 0))
+	big.custom_minimum_size = Vector2(110, 110)
+	var name_edit := LineEdit.new()
+	name_edit.text = Game.settings["player_name"]
+	name_edit.max_length = 20
+	name_edit.custom_minimum_size = Vector2(320, 42)
+	name_edit.text_changed.connect(func(t): Game.set_setting("player_name", t.strip_edges() if t.strip_edges() != "" else "Driver"))
+	var head := VBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	head.add_child(UiKit.label("Fahrername", 17, UiKit.TEXT_DIM))
+	head.add_child(name_edit)
+	head.add_child(UiKit.label("Profilbild", 17, UiKit.TEXT_DIM))
+	# the standard pictures: click one to take it
+	var pics := HBoxContainer.new()
+	pics.add_theme_constant_override("separation", 8)
+	for k in Avatar.COUNT:
+		var pb := Button.new()
+		pb.custom_minimum_size = Vector2(52, 52)
+		pb.flat = true
+		pb.tooltip_text = Game.t(Avatar.NAMES[k])
+		var sel := StyleBoxFlat.new()
+		sel.bg_color = Color(UiKit.ACCENT, 0.35 if k == big.idx else 0.0)
+		sel.set_corner_radius_all(26)
+		pb.add_theme_stylebox_override("normal", sel)
+		var hv := sel.duplicate() as StyleBoxFlat
+		hv.bg_color = Color(UiKit.ACCENT, 0.5)
+		pb.add_theme_stylebox_override("hover", hv)
+		pb.add_theme_stylebox_override("pressed", hv)
+		var a := Avatar.new()
+		a.idx = k
+		a.set_anchors_preset(Control.PRESET_FULL_RECT)
+		a.offset_left = 4
+		a.offset_top = 4
+		a.offset_right = -4
+		a.offset_bottom = -4
+		pb.add_child(a)
+		pb.pressed.connect(func():
+			Game.set_setting("avatar", k)
+			show_screen("profile"))
+		pics.add_child(pb)
+	head.add_child(pics)
+	_add(UiKit.row([big, head], 22))
+	_add(UiKit.spacer(10))
+	# the numbers
+	var races := int(p.get("races", 0))
+	var wins := int(p.get("wins", 0))
+	var losses := int(p.get("losses", 0))
+	var played := float(p.get("time", 0.0))
+	var fav_car := Game.profile_top("car_time")
+	var fav_track := Game.profile_top("track_time")
+	var car_line := "–"
+	if fav_car != "":
+		car_line = "%s  (%s)" % [Game.t(Game.get_car(fav_car)["name"]), _hours(float(p["car_time"][fav_car]))]
+	var track_line := "–"
+	if fav_track != "":
+		track_line = "%s  (%s)" % [Game.track_name(fav_track), _hours(float(p["track_time"][fav_track]))]
+	var rows := [
+		["Gefahrene Rennen", str(races)],
+		["Siege", str(wins)],
+		["Niederlagen", str(losses)],
+		["Siegquote", ("%d %%" % int(round(100.0 * wins / float(wins + losses)))) if wins + losses > 0 else "–"],
+		["Podestplätze", str(int(p.get("podiums", 0)))],
+		["Spielzeit", _hours(played)],
+		["Lieblingsauto", car_line],
+		["Lieblingsstrecke", track_line],
+		["Beste Driftpunkte", Game.format_points(float(p.get("best_drift", 0.0)))],
+		["Bester Einzeldrift", Game.format_points(float(p.get("best_chain", 0.0)))],
+		["Credits", Game.format_points(int(Game.settings["credits"]))],
+	]
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 40)
+	grid.add_theme_constant_override("v_separation", 8)
+	for r in rows:
+		grid.add_child(UiKit.label(r[0], 19, UiKit.TEXT_DIM))
+		grid.add_child(UiKit.label(r[1], 19, UiKit.GOLD if r[0] == "Credits" else UiKit.TEXT))
+	_add(grid)
+	if races == 0:
+		_add(UiKit.spacer(6))
+		var hint := UiKit.label("Siege und Niederlagen zählen in Rennen gegen KI-Fahrer oder online.", 15, UiKit.TEXT_DIM)
+		_add(hint)
+	_float_button("◀  Zurück", func(): show_screen("main"))
+
+
+## A play time as "3 h 25 min" (or "12 min").
+func _hours(seconds: float) -> String:
+	var m := int(seconds / 60.0)
+	if m < 60:
+		return Game.t("%d min") % m
+	return Game.t("%d h %d min") % [m / 60, m % 60]
 
 
 # ---------------------------------------------------------------------------

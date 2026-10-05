@@ -199,6 +199,8 @@ const STEER_KIT := [0.0, 7.0, 14.0, 22.0]
 
 var settings := {
 	"player_name": "Driver",
+	"avatar": 0,                   # the driver's profile picture (avatar.gd, one of the standard pictures)
+	"profile": {},                 # driver stats: races, wins, losses, play time per car / track (profile_*)
 	"language": "de",          # de (the source texts) / en (scripts/i18n/en.gd)
 	"car": "r34",
 	"paint": "red",
@@ -585,6 +587,67 @@ func load_settings() -> void:
 	if not (settings.get("bindings") is Dictionary):
 		settings["bindings"] = {}
 	apply_bindings()
+
+
+## The driver's stats (Game.settings["profile"]): races, wins, losses, podiums, play time (s),
+## car_time / track_time / track_races (id -> value), best_drift, best_chain.
+func profile() -> Dictionary:
+	var p = settings.get("profile", {})
+	if not (p is Dictionary):
+		p = {}
+	settings["profile"] = p
+	return p
+
+
+## Time driven (counted every frame while a session runs; saved now and then by the world).
+func profile_time(car_id: String, track_id: String, dt: float) -> void:
+	var p := profile()
+	p["time"] = float(p.get("time", 0.0)) + dt
+	for e in [["car_time", car_id], ["track_time", track_id]]:
+		var d: Dictionary = p.get(e[0], {})
+		d[e[1]] = float(d.get(e[1], 0.0)) + dt
+		p[e[0]] = d
+
+
+## A race driven to the end: place 1.. among `field` drivers (field 1: alone – neither win nor loss).
+func profile_race(track_id: String, place: int, field: int) -> void:
+	var p := profile()
+	p["races"] = int(p.get("races", 0)) + 1
+	var tr: Dictionary = p.get("track_races", {})
+	tr[track_id] = int(tr.get(track_id, 0)) + 1
+	p["track_races"] = tr
+	if field > 1:
+		if place == 1:
+			p["wins"] = int(p.get("wins", 0)) + 1
+		else:
+			p["losses"] = int(p.get("losses", 0)) + 1
+		if place <= 3:
+			p["podiums"] = int(p.get("podiums", 0)) + 1
+	save_profile()
+
+
+func profile_drift(total: float, chain: float) -> void:
+	var p := profile()
+	p["best_drift"] = maxf(float(p.get("best_drift", 0.0)), total)
+	p["best_chain"] = maxf(float(p.get("best_chain", 0.0)), chain)
+
+
+## The key with the largest value of a stats dictionary ("" when empty): favourite car / track.
+func profile_top(key: String) -> String:
+	var d: Dictionary = profile().get(key, {})
+	var best := ""
+	var v := -1.0
+	for k in d:
+		if float(d[k]) > v:
+			v = float(d[k])
+			best = str(k)
+	return best
+
+
+## Saves the settings file quietly (no settings_changed: nothing to re-apply for the stats).
+func save_profile() -> void:
+	if persist:
+		_write_json(SETTINGS_PATH, settings)
 
 
 func save_settings() -> void:

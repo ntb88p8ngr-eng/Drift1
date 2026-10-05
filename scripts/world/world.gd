@@ -508,9 +508,19 @@ func _start_countdown() -> void:
 	track.set_start_lights(0)
 
 
+var _profile_save := 0.0      # seconds driven since the profile was last saved
+
+
 func _physics_process(delta: float) -> void:
 	if not is_loaded or state == "editor" or state == "replay":
 		return
+	# the driver profile: time driven, per car and map (saved every half minute and on leaving)
+	if local_car and is_instance_valid(local_car) and state != "waiting":
+		Game.profile_time(str(local_car.car_id), str(track.track_id), delta)
+		_profile_save += delta
+		if _profile_save > 30.0:
+			_profile_save = 0.0
+			Game.save_profile()
 	match state:
 		"waiting":
 			_wait_timeout -= delta
@@ -696,6 +706,7 @@ func _finish() -> void:
 	if graffiti:
 		result["graffiti"] = graffiti_metres(local_car)
 	var notes := _submit_leaderboard()
+	_profile_result()
 	if online:
 		Net.report_result(result)
 		_show_online_results()
@@ -715,6 +726,28 @@ func _finish() -> void:
 			lap_rows.append(Game.t("Runde %d: %s") % [i + 1, Game.format_time(lap_times[i])])
 		hud.show_results("ZIEL!" if mode == "race" else "DRIFT-BATTLE BEENDET", header, rows, notes + lap_rows, [
 			["Nochmal", request_restart], ["Replay speichern", save_replay], ["Hauptmenü", request_main_menu]])
+
+
+## The driver profile: one more race (or drift battle / graffiti round), won or lost against the others.
+func _profile_result() -> void:
+	var place := 1
+	var field := 1
+	if online:
+		field = cars.size()
+		# those who reported before finished ahead (a race); drift / graffiti: by points
+		if mode == "race":
+			place = Net.result_list.size() + 1
+		else:
+			for r in Net.result_list:
+				if float((r as Dictionary).get("drift", 0.0)) > scorer.total:
+					place += 1
+	elif race_ai and mode == "race":
+		var rows := _results_with_bots()
+		field = rows.size()
+		for i in rows.size():
+			if bool(rows[i][rows[i].size() - 1]):
+				place = i + 1
+	Game.profile_race(str(track.track_id), place, field)
 
 
 ## Offline race against the AI: everybody who finished by time, then the others by distance.
@@ -745,6 +778,7 @@ func _submit_leaderboard() -> Array:
 		return []
 	_session_saved = true
 	var notes: Array = []
+	Game.profile_drift(scorer.total, scorer.best_chain)
 	var tid := track.track_id
 	var pname := local_car.player_name
 	var cid := local_car.car_id
@@ -1024,6 +1058,8 @@ func request_leave_online() -> void:
 
 
 func _exit_tree() -> void:
+	if _profile_save > 0.0:
+		Game.save_profile()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().paused = false
 
