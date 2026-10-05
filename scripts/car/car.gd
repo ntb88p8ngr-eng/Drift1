@@ -109,7 +109,9 @@ var handbrake := false
 var gear := 1
 var rpm := 900.0
 var engine_on := true          # switched off with the "engine" key; gas or brake starts it again
-var engine_level := 1.0        # 0..1: how much the engine runs (the sound fades with it)
+var engine_level := 1.0
+var _net_rpm := 900.0
+var _net_thr := 0.0        # 0..1: how much the engine runs (the sound fades with it)
 var boost := 0.0
 var shift_timer := 0.0
 var limiter_timer := 0.0
@@ -1294,14 +1296,14 @@ func apply_net_state(s: Array) -> void:
 	_net_rot = s[1]
 	_net_vel = s[2]
 	steer_angle = s[3]
-	rpm = s[4]
+	_net_rpm = s[4]
 	remote_flags = s[5]
 	remote_progress = s[6]
 	remote_lap = s[7]
 	remote_drift = s[8]
 	var rear_slip: float = s[9]
 	var front_slip: float = s[10]
-	throttle = s[11]
+	_net_thr = s[11]
 	boost = s[12]
 	if s.size() >= 15:
 		remote_best_chain = s[13]
@@ -1328,6 +1330,10 @@ func apply_net_state(s: Array) -> void:
 
 
 func _remote_step(delta: float) -> void:
+	# revs and throttle glide to the received values (they came in steps with every packet: the
+	# engine sound jumped – a stutter)
+	rpm = lerpf(rpm, _net_rpm, 1.0 - exp(-delta * 10.0))
+	throttle = lerpf(throttle, _net_thr, 1.0 - exp(-delta * 12.0))
 	# the other player's engine switched off / started: its sound fades out / comes back
 	engine_level = move_toward(engine_level, 1.0 if engine_on else 0.0, delta * (5.0 if engine_on else 1.4))
 	if not _net_has:

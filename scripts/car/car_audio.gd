@@ -352,7 +352,9 @@ func _ready() -> void:
 	Game.settings_changed.connect(_on_settings_changed)
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
-	gen.buffer_length = 0.12
+	# the other cars (several synthesized per frame): a longer buffer, so a slow frame does not run it
+	# dry (a stutter); their state is a little behind anyway
+	gen.buffer_length = 0.25 if positional else 0.12
 	var vol := float(Game.settings.get("engine_volume", 1.0))
 	if positional:
 		var p3 := AudioStreamPlayer3D.new()
@@ -968,6 +970,9 @@ func _exit_tree() -> void:
 
 
 ## This (positional) car is close enough and among the MAX_VOICES nearest other cars.
+var _switch_ms := -100000      # when this voice was last paused / resumed (see _audible)
+
+
 func _audible() -> bool:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -980,7 +985,17 @@ func _audible() -> bool:
 			v.set_meta("d2", (v.car as Node3D).global_position.distance_squared_to(cp) if is_instance_valid(v.car) else 1e12)
 		_voices.sort_custom(func(a, b): return float(a.get_meta("d2")) < float(b.get_meta("d2")))
 	var rank := _voices.find(self)
-	return rank >= 0 and rank < MAX_VOICES and float(get_meta("d2", 0.0)) < OTHER_MAX * OTHER_MAX
+	var playing := not (player as AudioStreamPlayer3D).stream_paused
+	# hysteresis: two cars about as far away swapped ranks every frame – the sound paused and resumed
+	# all the time (a stutter). One that plays keeps playing a rank longer and a moment longer.
+	var want := rank >= 0 and rank < MAX_VOICES + (1 if playing else 0) \
+		and float(get_meta("d2", 0.0)) < OTHER_MAX * OTHER_MAX * (1.1 if playing else 1.0)
+	var now := Time.get_ticks_msec()
+	if want != playing and now - _switch_ms < 1500:
+		return playing
+	if want != playing:
+		_switch_ms = now
+	return want
 
 
 func _on_settings_changed() -> void:
