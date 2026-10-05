@@ -1,6 +1,6 @@
 extends Node3D
-## A cassette to find on a map: floats over the track like the party coins, but purple – a glowing
-## tape (shell, label, window with turning reels) that spins slowly and bobs. Driving through it puts the
+## A cassette hidden on a map: small, low over the ground, faintly glowing purple – off the road where
+## you have to go looking (seen only from close by), spinning slowly. Driving through it puts the
 ## tape into the garage's cabinet (Radio.find_tape) – gone once found.
 
 const MAP_TAPES := {
@@ -8,7 +8,10 @@ const MAP_TAPES := {
 	"gruene_hoelle": "hell_mix",
 }
 const PURPLE := Color(0.62, 0.22, 1.0)
-const REACH := 2.6
+const REACH := 2.0
+const HOVER := 0.45           # low over the ground (small: it has to be looked for)
+const SIZE := 0.45            # of the full-size tape model
+const SEEN := 70.0            # m: further away it isn't drawn
 
 var world      # world.gd
 var tape_id := ""
@@ -65,18 +68,49 @@ func _ready() -> void:
 	var tr = world.track
 	if city_spot and _place_in_city():
 		return
-	# always the same spot on a map: a bit beyond a third of the lap, near the edge of the road
+	# hidden off the road: 15–40 m out into the terrain beside some stretch of the lap, on open ground
+	# (not on a rock, a roof or in water) – the same spot every time
 	var n: int = tr.sample_count()
 	var r := RandomNumberGenerator.new()
 	r.seed = hash(tape_id)
-	var idx := int(n * r.randf_range(0.35, 0.6)) % n
-	var lat := (1.0 if r.randf() < 0.5 else -1.0) * maxf(float(tr.half_w) - 2.2, 0.0)
-	var xf: Transform3D = tr.transform_at(idx, lat, 1.4)
-	global_position = xf.origin
+	var best := Vector3.INF
+	for tries in 24:
+		var idx := int(n * r.randf_range(0.2, 0.85)) % n
+		var lat := (1.0 if r.randf() < 0.5 else -1.0) * (float(tr.half_w) + r.randf_range(15.0, 40.0))
+		var p: Vector3 = tr.transform_at(idx, lat, 0.0).origin
+		var g := _ground(p.x, p.z)
+		if g == INF:
+			continue
+		var wt = tr.get("water")
+		if wt != null and wt.has_method("wet") and wt.wet(p.x, p.z, 3.0):
+			continue
+		best = Vector3(p.x, g, p.z)
+		break
+	if best == Vector3.INF:
+		var xf: Transform3D = tr.transform_at(int(n * 0.5), float(tr.half_w) + 6.0, 0.0)
+		best = xf.origin
+	global_position = best + Vector3(0, HOVER, 0)
 
 
-## On a street of the city off the race route (60–250 m from it) – a different one for each tape, the
-## same every time. The ground found with a ray from above.
+## The open ground at x, z (a ray from above): INF where something stands there (a rock, a house, a
+## tree) – the terrain's own height is the yardstick when there is one.
+func _ground(x: float, z: float) -> float:
+	var space: PhysicsDirectSpaceState3D = (world as Node3D).get_world_3d().direct_space_state
+	var hit: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(x, 600.0, z), Vector3(x, -200.0, z)))
+	if hit.is_empty():
+		return INF
+	var y: float = (hit["position"] as Vector3).y
+	var ter = world.get("terrain")
+	if ter != null and ter.has_method("height_at"):
+		var th: float = ter.height_at(x, z)
+		if y > th + 0.8:
+			return INF          # (on top of something)
+		return maxf(y, th)
+	return y
+
+
+## On a quiet street of the city far off the race route (150–450 m from it) – a different one for each
+## tape, the same every time. The ground found with a ray from above.
 func _place_in_city() -> bool:
 	var sc = world.get("scenery")
 	if sc == null or sc.get("city") == null or sc.city.get("net") == null:
@@ -92,7 +126,7 @@ func _place_in_city() -> bool:
 			for i in range(0, tr.sample_count(), 4):
 				var sp: Vector3 = tr.samples[i]
 				d = minf(d, Vector2(sp.x, sp.z).distance_to(q))
-			if d > 60.0 and d < 250.0:
+			if d > 150.0 and d < 450.0:
 				cands.append(q)
 	if cands.is_empty():
 		return false
@@ -107,7 +141,7 @@ func _place_in_city() -> bool:
 	var hit: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(q.x, 400.0, q.y), Vector3(q.x, -100.0, q.y)))
 	if not hit.is_empty():
 		y = (hit["position"] as Vector3).y
-	global_position = Vector3(q.x, y + 1.4, q.y)
+	global_position = Vector3(q.x, y + HOVER, q.y)
 	return true
 
 
@@ -169,8 +203,16 @@ func _build() -> void:
 		_spin.add_child(l)
 	_light = OmniLight3D.new()
 	_light.light_color = PURPLE
-	_light.light_energy = 1.4
-	_light.omni_range = 5.0
+	_light.light_energy = 0.35
+	_light.omni_range = 2.2
+	_light.distance_fade_enabled = true
+	_light.distance_fade_begin = SEEN * 0.6
+	_light.distance_fade_length = SEEN * 0.4
+	_spin.scale = Vector3.ONE * SIZE
+	for g in find_children("*", "GeometryInstance3D", true, false):
+		(g as GeometryInstance3D).visibility_range_end = SEEN
+		(g as GeometryInstance3D).visibility_range_end_margin = 8.0
+		(g as GeometryInstance3D).visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	_light.shadow_enabled = false
 	add_child(_light)
 
@@ -205,7 +247,7 @@ func _box(size: Vector3, pos: Vector3, mat) -> MeshInstance3D:
 
 func _process(delta: float) -> void:
 	_t += delta
-	_shell_mat.emission_energy_multiplier = 1.4 + 0.6 * sin(_t * 3.0)
+	_shell_mat.emission_energy_multiplier = 0.45 + 0.25 * sin(_t * 3.0)
 	_spin.rotation.y = fmod(_t * 1.6, TAU)
 	for r in _reels:
 		r.rotation.z -= delta * 4.0
@@ -214,14 +256,14 @@ func _process(delta: float) -> void:
 		_taken += delta
 		var k := clampf(_taken / 0.6, 0.0, 1.0)
 		_spin.position.y = 0.25 + k * 2.2
-		_spin.scale = Vector3.ONE * (1.0 + k * 0.6)
+		_spin.scale = Vector3.ONE * SIZE * (1.0 + k * 0.6)
 		_shell_mat.albedo_color.a = 0.7 * (1.0 - k)
-		_light.light_energy = 1.4 * (1.0 - k)
+		_light.light_energy = 0.35 * (1.0 - k)
 		_spin.rotation.y = fmod(_t * (1.6 + k * 14.0), TAU)
 		if k >= 1.0:
 			queue_free()
 		return
-	_spin.position.y = 0.25 * sin(_t * 2.0)
+	_spin.position.y = 0.06 * sin(_t * 2.0)
 	var car = world.local_car if world else null
 	if car and is_instance_valid(car):
 		var d: Vector3 = car.global_position - global_position
