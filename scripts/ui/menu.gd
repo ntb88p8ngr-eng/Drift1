@@ -851,7 +851,9 @@ func _profile_bar() -> Button:
 	var pname := str(Game.settings["player_name"])
 	var font := UiKit.title_font()
 	var tw := font.get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x if font else pname.length() * 14.0
-	b.custom_minimum_size = Vector2(maxf(tw + 120.0, 230.0), 58)
+	# as long as the name needs (picture + gaps + the slant's overhang), right-aligned under the corner
+	b.custom_minimum_size = Vector2(tw + 44.0 + 12.0 + 18.0 + 20.0 + 14.0, 58)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_END
 	var skew := -MainTiles.SKEW
 	var base := StyleBoxFlat.new()
 	base.bg_color = Color(0.0, 0.0, 0.0, 0.88)
