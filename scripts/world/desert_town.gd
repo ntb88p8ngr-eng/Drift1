@@ -352,20 +352,8 @@ func _ranch() -> void:
 			var mid := (p0 + p1) * 0.5
 			if side == 0 and absf(mid.x) < gate_w * 0.5:
 				continue
-			MeshKit.box(st, Transform3D(Basis.IDENTITY, p0 + Vector3(0, 0.75, 0)), Vector3(0.2, 1.6, 0.2), wood)
-			var dir := (p1 - p0).normalized()
-			var rb := Basis(Vector3.UP, atan2(-dir.z, dir.x))
-			for ry in [0.45, 0.85, 1.25]:
-				MeshKit.box(st, Transform3D(rb, mid + Vector3(0, ry, 0)), Vector3(p0.distance_to(p1), 0.14, 0.07), wood * 0.92)
-		# solid: one long box per side (the front in two, either side of the gate)
-		if side == 0:
-			for sx in [-1.0, 1.0]:
-				var w := half - gate_w * 0.5
-				Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, Vector3(sx * (gate_w * 0.5 + w * 0.5), 0.8, half)), Vector3(w, 1.6, 0.3))
-		else:
-			var c := (a + b) * 0.5
-			var size := Vector3(absf(b.x - a.x) + 0.3, 1.6, absf(b.z - a.z) + 0.3)
-			Colliders.add_box(self, xf * Transform3D(Basis.IDENTITY, c + Vector3(0, 0.8, 0)), size)
+			# each 3 m piece breaks off on its own when a car goes through it
+			_fence_piece(xf * p0, xf * p1, [0.45, 0.85, 1.25], Vector3(0.2, 1.6, 0.2), Vector2(0.14, 0.07), wood, false, -0.05)
 	# the log gate with the ranch's name
 	for sx in [-1.0, 1.0]:
 		_part(st, xf, Vector3(sx * (gate_w * 0.5 + 0.3), 3.2, half), Vector3(0.6, 6.4, 0.6), log)
@@ -478,12 +466,7 @@ func _ranch() -> void:
 		var a1 := TAU * (k + 1) / segs
 		var p0 := cc + Vector3(cos(a0), 0, sin(a0)) * cr
 		var p1 := cc + Vector3(cos(a1), 0, sin(a1)) * cr
-		var mid := (p0 + p1) * 0.5
-		var rb := Basis(Vector3.UP, -(a0 + a1) * 0.5 + PI * 0.5)
-		MeshKit.box(cst, Transform3D(Basis.IDENTITY, p0 + Vector3(0, 0.8, 0)), Vector3(0.22, 1.7, 0.22), log)
-		for ry in [0.5, 0.95, 1.4]:
-			MeshKit.box(cst, Transform3D(rb, mid + Vector3(0, ry, 0)), Vector3(p0.distance_to(p1) + 0.05, 0.14, 0.08), wood)
-		Colliders.add_box(self, xf * Transform3D(rb, mid + Vector3(0, 0.8, 0)), Vector3(p0.distance_to(p1) + 0.1, 1.6, 0.3))
+		_fence_piece(xf * p0, xf * p1, [0.5, 0.95, 1.4], Vector3(0.22, 1.7, 0.22), Vector2(0.14, 0.08), wood, false, -0.05)
 	# sand inside, a water trough by it
 	MeshKit.box(cst, Transform3D(Basis.IDENTITY, cc + Vector3(0, 0.02, 0)), Vector3(cr * 1.7, 0.05, cr * 1.7), Color(0.72, 0.6, 0.45))
 	_mesh(cst, xf)
@@ -863,8 +846,7 @@ func _telephone_line() -> void:
 	var n: int = track.sample_count()
 	var wood := Color(0.32, 0.24, 0.17)
 	for stretch in [[0.08, 0.3, 1.0], [0.55, 0.8, -1.0]]:
-		var st := MeshKit.new_st()
-		var wst := MeshKit.new_st()
+		var wst: SurfaceTool
 		var tops: Array = []
 		var i := int(float(stretch[0]) * n)
 		var i_end := int(float(stretch[1]) * n)
@@ -875,10 +857,26 @@ func _telephone_line() -> void:
 				p.y = terrain.height_at(p.x, p.z)
 				var fwd: Vector3 = track.tangents[i % n]
 				var b := Basis.looking_at(Vector3(fwd.x, 0, fwd.z).normalized(), Vector3.UP)
-				MeshKit.box(st, Transform3D(b, p + Vector3(0, 4.5, 0)), Vector3(0.28, 9.0, 0.28), wood)
-				MeshKit.box(st, Transform3D(b, p + Vector3(0, 8.4, 0)), Vector3(2.2, 0.18, 0.2), wood)
-				Colliders.add_box(self, Transform3D(b, p + Vector3(0, 2.0, 0)), Vector3(0.3, 4.0, 0.3))
-				tops.append([p, b])
+				# each pole its own piece: a car snaps it off (desert.gd's breakable props), the
+				# wires on either side of it come down with it
+				var pst := MeshKit.new_st()
+				MeshKit.box(pst, Transform3D(Basis.IDENTITY, Vector3(0, 4.5, 0)), Vector3(0.28, 9.0, 0.28), wood)
+				MeshKit.box(pst, Transform3D(Basis.IDENTITY, Vector3(0, 8.4, 0)), Vector3(2.2, 0.18, 0.2), wood)
+				var pole := Node3D.new()
+				pole.name = "Pole"
+				add_child(pole)
+				pole.global_transform = Transform3D(b, p)
+				pst.generate_normals()
+				var pmi := MeshKit.mesh_instance(MeshKit.commit(pst, _mat), null, true)
+				pmi.visibility_range_end = 1200.0
+				pole.add_child(pmi)
+				var spans: Array = []
+				get_parent()._add_prop(pole, "pole", {"heavy": true, "r": 0.3, "stat": "poles_breakable",
+					"on_break": func():
+						for w in spans:
+							if is_instance_valid(w):
+								w.queue_free()})
+				tops.append([p, b, spans])
 				scenery.occupy(p, 0.6)
 				_count("poles")
 			i += 22      # ~44 m
@@ -888,6 +886,8 @@ func _telephone_line() -> void:
 			var c: Vector3 = tops[k + 1][0]
 			if a.distance_to(c) > 70.0:
 				continue
+			# one mesh per span: it goes when either of its poles is knocked down
+			wst = MeshKit.new_st()
 			for off in [-0.9, 0.0, 0.9]:
 				var oa: Vector3 = a + (tops[k][1] as Basis).x * off + Vector3(0, 8.5, 0)
 				var oc: Vector3 = c + (tops[k + 1][1] as Basis).x * off + Vector3(0, 8.5, 0)
@@ -897,8 +897,9 @@ func _telephone_line() -> void:
 					var q := oa.lerp(oc, t) - Vector3(0, sin(t * PI) * 0.9, 0)
 					MeshKit.box(wst, Transform3D(Basis.looking_at((q - prev).normalized(), Vector3.UP), (q + prev) * 0.5), Vector3(0.03, 0.03, prev.distance_to(q)), Color(0.08, 0.08, 0.08))
 					prev = q
-		_mesh(st, Transform3D.IDENTITY)
-		_mesh(wst, Transform3D.IDENTITY, false, false)
+			var span := _mesh(wst, Transform3D.IDENTITY, false, false)
+			(tops[k][2] as Array).append(span)
+			(tops[k + 1][2] as Array).append(span)
 
 
 ## Ranch fences: rows of posts with two rails, here and there.
@@ -908,20 +909,48 @@ func _fences() -> void:
 		var xf = _site(2.0, 6.0, 100.0, 20)
 		if xf == null:
 			continue
-		var st := MeshKit.new_st()
 		var len := rng.randf_range(12.0, 30.0)
 		var segs := int(len / 2.5)
 		var x0 := -len * 0.5
-		for k in segs + 1:
-			var x := x0 + k * 2.5
-			var p: Vector3 = (xf as Transform3D) * Vector3(x, 0, 0)
-			var gy: float = terrain.height_at(p.x, p.z) - (xf as Transform3D).origin.y
-			MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x, gy + 0.6, 0)), Vector3(0.14, 1.3, 0.14), wood)
-			if k < segs and rng.randf() < 0.9:
-				for ry in [0.5, 1.0]:
-					MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(x + 1.25, gy + ry, 0)), Vector3(2.5, 0.1, 0.06), wood * 0.9)
-		_mesh(st, xf)
+		for k in segs:
+			var a: Vector3 = (xf as Transform3D) * Vector3(x0 + k * 2.5, 0, 0)
+			var b: Vector3 = (xf as Transform3D) * Vector3(x0 + (k + 1) * 2.5, 0, 0)
+			a.y = terrain.height_at(a.x, a.z)
+			b.y = terrain.height_at(b.x, b.z)
+			# (now and then a rail missing; the last post closes the row)
+			_fence_piece(a, b, [0.5, 1.0] if rng.randf() < 0.9 else [], Vector3(0.14, 1.3, 0.14), Vector2(0.1, 0.06), wood, k == segs - 1)
 		_count("fences")
+
+
+## One piece of a wooden fence from the post at a to the next at b (ground points, world): its post
+## and rails, breakable (a car snaps it off, it flies on with physics – desert.gd's props).
+## last: the post at b as well (the end of a row).
+func _fence_piece(a: Vector3, b: Vector3, rails: Array, post: Vector3, rail: Vector2, wood: Color, last := false, sink := 0.0) -> void:
+	var d := Vector3(b.x - a.x, 0, b.z - a.z)
+	var l := d.length()
+	if l < 0.1:
+		return
+	d /= l
+	var c := (a + b) * 0.5
+	var piece := Node3D.new()
+	piece.name = "FencePiece"
+	add_child(piece)
+	piece.global_transform = Transform3D(Basis(Vector3.UP, atan2(-d.z, d.x)), c)
+	var st := MeshKit.new_st()
+	var posts := [[-l * 0.5, a.y - c.y]]
+	if last:
+		posts.append([l * 0.5, b.y - c.y])
+	for pp in posts:
+		MeshKit.box(st, Transform3D(Basis.IDENTITY, Vector3(pp[0], pp[1] + post.y * 0.5 + sink, 0)), post, wood)
+	# the rails follow the slope from post to post
+	var tilt := Basis(Vector3.BACK, atan2(b.y - a.y, l))
+	for ry in rails:
+		MeshKit.box(st, Transform3D(tilt, Vector3(0, ry, 0)), Vector3(l / cos(tilt.get_euler().z) + 0.02, rail.x, rail.y), wood * 0.9)
+	st.generate_normals()
+	var mi := MeshKit.mesh_instance(MeshKit.commit(st, _mat), null, true)
+	mi.visibility_range_end = 600.0
+	piece.add_child(mi)
+	get_parent()._add_prop(piece, "fence", {"heavy": false, "r": l * 0.5, "stat": "fence_pieces"})
 
 
 ## Red stones lying about everywhere: thousands of small ones and a few hundred bigger ones you

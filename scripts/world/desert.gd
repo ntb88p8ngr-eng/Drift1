@@ -511,7 +511,8 @@ func _street_signs() -> void:
 		_add_prop(node, kind)
 
 
-func _add_prop(node: Node3D, kind: String) -> void:
+## opts: "r" (reach of the hit test round its foot, m), "heavy", "on_break" (called when it snaps off).
+func _add_prop(node: Node3D, kind: String, opts := {}) -> void:
 	var inv := node.global_transform.affine_inverse()
 	var box := AABB()
 	var first := true
@@ -522,15 +523,16 @@ func _add_prop(node: Node3D, kind: String) -> void:
 		first = false
 	if first:
 		return
-	var p := {"node": node, "xf": node.global_transform, "r": clampf(maxf(box.size.x, box.size.z) * 0.25, 0.12, 0.5),
-		"box": box, "down": false, "heavy": kind.begins_with("traffic") or kind.begins_with("fire")}
+	var p := {"node": node, "xf": node.global_transform, "r": float(opts.get("r", clampf(maxf(box.size.x, box.size.z) * 0.25, 0.12, 0.5))),
+		"box": box, "down": false, "heavy": bool(opts.get("heavy", kind.begins_with("traffic") or kind.begins_with("fire"))),
+		"on_break": opts.get("on_break", Callable())}
 	_props.append(p)
 	var o := node.global_position
 	var g := Vector2i(int(floor(o.x / PROP_CELL)), int(floor(o.z / PROP_CELL)))
 	if not _prop_grid.has(g):
 		_prop_grid[g] = []
 	_prop_grid[g].append(p)
-	stats["signs"] = int(stats.get("signs", 0)) + 1
+	stats["signs" if not opts.has("stat") else str(opts["stat"])] = int(stats.get("signs" if not opts.has("stat") else str(opts["stat"]), 0)) + 1
 
 
 func _physics_process(delta: float) -> void:
@@ -573,6 +575,9 @@ func _physics_process(delta: float) -> void:
 ## Snapped off at the foot: the whole sign flies off the way the car went, spinning.
 func _break(p: Dictionary, car: RigidBody3D, v: Vector3) -> void:
 	p["down"] = true
+	var cb: Callable = p.get("on_break", Callable())
+	if cb.is_valid():
+		cb.call()
 	var node: Node3D = p["node"]
 	var box: AABB = p["box"]
 	var xf: Transform3D = node.global_transform
