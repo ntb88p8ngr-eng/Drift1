@@ -179,6 +179,9 @@ func _ready() -> void:
 	add_child(grass)
 	Game.load_begin("Gras", 0.94, 1.0)
 	await grass.setup(terrain, track, self)
+	# paved areas that are not the road (the Grüne Hölle pits): no grass growing through
+	for gc in scenery.grass_clear:
+		grass.add_clear_line(gc[0], float(gc[1]))
 	terrain.paint.attach([terrain.material], grass)
 	# a map from the world editor: its ground, scenery changes, objects, roads and water
 	var base_heights := PackedFloat32Array()

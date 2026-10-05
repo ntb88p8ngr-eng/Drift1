@@ -48,6 +48,7 @@ var city: Node3D
 var desert: Node3D            # desert.gd on the desert maps
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
+var grass_clear: Array = []     # [PackedVector3Array line, half width]: no GPU grass there (paved areas)
 var _ground_sts := {}             # kind -> SurfaceTool: paths, driveways, car parks, bay lines
 ## kind -> [[a, b, c, d (only x / z count), lift, uv a, uv b, uv c, uv d], …]: the ground's height is
 ## taken at the end (_finish_ground), when nothing levels the terrain any more
@@ -106,9 +107,9 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	if big:
 		csize = 160.0
 		usize = 64.0
-		# long track: hand over to the lighter tree meshes a little sooner
-		LOD0_END *= 0.6
-		LOD1_END *= 0.7
+		# long track: the middle trees hand over to the far ones a little sooner (the full trees keep
+		# the same reach as elsewhere – at 60 % they turned plain only 45 m away)
+		LOD1_END *= 0.85
 		_build_block_distance()
 	await Game.load_tick()
 	_flatten_start()

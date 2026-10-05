@@ -254,6 +254,18 @@ func _lane_surface() -> void:
 		if pp < PIT_FROM - 5.0 or pp > PIT_TO + 5.0:
 			inner = hw - 0.05          # where the barrier is open: right up to the track
 		return Vector2(inner, maxf(outer, inner))
+	# its own flat slab at the road's height (not laid on the ground: where the ground bulged between
+	# its points it showed through as green flecks), with its own collision; the ground under it is
+	# sunk well below, and the grass shader keeps clear of it
+	var st := MeshKit.new_st()
+	var faces := PackedVector3Array()
+	var cell: float = terrain.CELL
+	var o: Vector2 = terrain.origin
+	var hs: PackedFloat32Array = terrain.heights
+	var nx: int = terrain.nx
+	var nz: int = terrain.nz
+	var y_at := func(q: Vector3, pp: float) -> Vector3:
+		return Vector3(q.x, _road_y(pp) + float(track.ROAD_Y) + 0.004, q.z)
 	var pp := p0
 	while pp < p1 - 0.01:
 		var pb := minf(pp + step, p1)
@@ -268,17 +280,49 @@ func _lane_surface() -> void:
 		for k in strips:
 			var t0 := float(k) / strips
 			var t1 := float(k + 1) / strips
-			var q := [_at(pp, lerpf(ea.x, ea.y, t0)), _at(pp, lerpf(ea.x, ea.y, t1)), _at(pb, lerpf(eb.x, eb.y, t1)), _at(pb, lerpf(eb.x, eb.y, t0))]
+			var qa: Vector3 = y_at.call(_at(pp, lerpf(ea.x, ea.y, t0)), pp)
+			var qb: Vector3 = y_at.call(_at(pp, lerpf(ea.x, ea.y, t1)), pp)
+			var qc: Vector3 = y_at.call(_at(pb, lerpf(eb.x, eb.y, t1)), pb)
+			var qd: Vector3 = y_at.call(_at(pb, lerpf(eb.x, eb.y, t0)), pb)
 			# (the road shader's x: kept between its edge lines and away from the racing line's rubber)
-			scenery.add_road_quad(q, [Vector2(0.06, ua), Vector2(0.06, ua), Vector2(0.06, ub), Vector2(0.06, ub)])
-		# no grass through it: the ground under it marked paved, out to its edges (and nothing put on it)
-		var lat := ea.x
-		while lat <= ea.y + 0.01:
-			scenery._ground_paints.append([_at(pp, lat), 3.0, Color(1, 0, 0, 0), true])
-			scenery.occupy(_at(pp, lat), 1.6)
-			lat += 1.5
-		scenery._ground_wall("road", _at(pp, ea.y), _at(pb, eb.y), scenery.ROAD_LIFT, (_at(pp, ea.y + 1.0) - _at(pp, ea.y)).normalized())
+			MeshKit.quad(st, qa, qb, qc, qd, Vector3.UP, Vector2(0.06, ua), Vector2(0.06, ua), Vector2(0.06, ub), Vector2(0.06, ub))
+			faces.append_array(PackedVector3Array([qa, qb, qc, qa, qc, qd]))
+		# the outer edge: a short skirt down into the ground
+		var ta: Vector3 = y_at.call(_at(pp, ea.y), pp)
+		var tb: Vector3 = y_at.call(_at(pb, eb.y), pb)
+		MeshKit.quad(st, ta, tb, tb - Vector3(0, 0.3, 0), ta - Vector3(0, 0.3, 0), (_at(pp, ea.y + 1.0) - _at(pp, ea.y)).normalized(),
+			Vector2(0.06, ua), Vector2(0.06, ub), Vector2(0.06, ub), Vector2(0.06, ua))
+		# the ground under it: sunk below the slab; no paint of grass, nothing put on it, no GPU grass
+		var lat := ea.x - 1.0
+		while lat <= ea.y + 1.0:
+			var q := _at(pp, lat)
+			var ix := int(round((q.x - o.x) / cell))
+			var iz := int(round((q.z - o.y) / cell))
+			if ix >= 0 and iz >= 0 and ix < nx and iz < nz and lat > float(track.half_w):
+				hs[iz * nx + ix] = minf(hs[iz * nx + ix], _road_y(pp) + float(track.ROAD_Y) - 0.15)
+			if lat >= ea.x and lat <= ea.y:
+				scenery._ground_paints.append([q, 3.0, Color(1, 0, 0, 0), true])
+				scenery.occupy(q, 1.6)
+			lat += cell * 0.5
+		var mid := (ea.x + ea.y) * 0.5
+		scenery.grass_clear.append([PackedVector3Array([_at(pp, mid), _at(pb, (eb.x + eb.y) * 0.5)]), (ea.y - ea.x) * 0.5 + 0.6])
 		pp = pb
+	terrain.heights = hs
+	var mi := MeshKit.mesh_instance(MeshKit.commit(st, track.road_material, null, true), null, false)
+	mi.name = "PitLaneSurface"
+	add_child(mi)
+	var body := StaticBody3D.new()
+	body.name = "PitLaneCollision"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta("surface", "asphalt")
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	shape.set_faces(faces)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
 
 
 ## The whole pit area is concrete underfoot (the terrain's paved ground, no grass): the lane with
@@ -293,6 +337,16 @@ func _pave(lane_pts: Array) -> void:
 		for j in n:
 			scenery._ground_paints.append([a.lerp(b, float(j) / n), LANE_W * 0.5 + 1.0, paved, true])
 	var lat1 := _lat + LANE_W * 0.5 + 1.0 + GARAGE_D + 10.0
+	# (the GPU grass keeps clear of all of it: lines along the pit area, 3 m apart)
+	var band := _wall_off + 0.5
+	while band <= lat1:
+		var line := PackedVector3Array()
+		var q := PIT_FROM - 20.0
+		while q <= PIT_TO + 20.0:
+			line.append(_at(q, band))
+			q += 2.0
+		scenery.grass_clear.append([line, 1.8])
+		band += 3.0
 	var p := PIT_FROM - 20.0
 	while p <= PIT_TO + 20.0:
 		var lat := _wall_off + 0.5
