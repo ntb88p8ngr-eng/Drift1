@@ -1011,6 +1011,132 @@ func _build_walls() -> void:
 
 ## Builds the barriers (and the kerbs) again after openings were added to wall_gaps once the track
 ## was built.
+## Run-up ramps either side of the road: where the drivable road stands higher than the ground beside
+## it (the sand under Utah's raised road, dips beside the Nordschleife), a gentle slope from the road
+## edge down to the ground, so a car coming back from off the road rolls up instead of hitting the
+## step with its nose. Looks like the ground (terrain material, its splat colours); collides like it.
+const RAMP_MIN_DROP := 0.07      # m: lower steps the tyres take anyway
+const RAMP_MAX_DROP := 1.2       # m: higher is an embankment or a bridge, not a step
+const RAMP_SLOPE := 6.0          # run per rise (~9.5°, under any car's approach angle)
+
+
+func build_ramps(terrain) -> void:
+	if terrain == null or Game.is_city(track_id):
+		return
+	var n := samples.size()
+	var walled := str(def.get("wall", "none")) != "none"
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var faces := PackedVector3Array()
+	var built := 0
+	for side: float in [-1.0, 1.0]:
+		var offs: PackedFloat32Array = off_left if side < 0.0 else off_right
+		# per sample: where the drivable road ends, and how far out the ramp reaches (0 = none)
+		var w := PackedFloat32Array()
+		var reach := PackedFloat32Array()
+		w.resize(n)
+		reach.resize(n)
+		for i in n:
+			var wi: float = offs[i] + 0.3 if raised else hws[i]
+			w[i] = wi
+			var top: float = edge_point(i, side * wi).y + ROAD_Y
+			var lim := 6.0
+			# a barrier beside the road (not in an opening): the ramp only up to it
+			if walled and not raised and not in_wall_gap(i, side):
+				lim = minf(lim, offs[i] - wi - 0.3)
+				if lim < 0.8:
+					continue
+			# a step at all? (ground right outside the edge below a gentle slope down from the road)
+			var step := 0.0
+			for o in [0.1, 0.3, 0.6]:
+				var q: Vector3 = edge_point(i, side * (wi + o))
+				step = maxf(step, top - o / RAMP_SLOPE - float(terrain.height_at(q.x, q.z)))
+			if step < RAMP_MIN_DROP or step > RAMP_MAX_DROP:
+				continue
+			# out to where the ground comes up to that slope (a flat step, a ditch); on a falling bank
+			# that never happens: then 2 m out, joining the bank
+			var run := 0.0
+			var o2 := 0.6
+			while o2 <= lim:
+				var q2: Vector3 = edge_point(i, side * (wi + o2))
+				if float(terrain.height_at(q2.x, q2.z)) >= top - o2 / RAMP_SLOPE:
+					run = o2
+					break
+				o2 += 0.3
+			if run <= 0.0:
+				run = minf(2.0, lim)
+				var q3: Vector3 = edge_point(i, side * (wi + run))
+				if top - float(terrain.height_at(q3.x, q3.z)) > RAMP_MAX_DROP * 1.6:
+					continue
+			run = maxf(run, 0.8)
+			# never out over another stretch of the road (a figure eight, a hairpin's other leg)
+			var tip: Vector3 = edge_point(i, side * (wi + run))
+			if float(terrain.distance_to_road(tip.x, tip.z)) < wi + run - 1.0:
+				continue
+			reach[i] = run
+		# no lone samples; smooth the length along the road
+		var sm := reach.duplicate()
+		for i in n:
+			if reach[i] <= 0.0:
+				continue
+			var acc := 0.0
+			var cnt := 0
+			for d in range(-3, 4):
+				var r := reach[(i + d + n) % n]
+				if r > 0.0:
+					acc += r
+					cnt += 1
+			sm[i] = acc / cnt if cnt >= 3 else 0.0
+		for i in n:
+			var i2 := (i + 1) % n
+			if sm[i] <= 0.0 or sm[i2] <= 0.0:
+				continue
+			var a: Vector3 = edge_point(i, side * w[i]) + Vector3(0, ROAD_Y, 0)
+			var b: Vector3 = edge_point(i2, side * w[i2]) + Vector3(0, ROAD_Y, 0)
+			var c: Vector3 = edge_point(i2, side * (w[i2] + sm[i2]))
+			var d: Vector3 = edge_point(i, side * (w[i] + sm[i]))
+			c.y = float(terrain.height_at(c.x, c.z)) - 0.05
+			d.y = float(terrain.height_at(d.x, d.z)) - 0.05
+			_ramp_tri(st, faces, terrain, a, b, c)
+			_ramp_tri(st, faces, terrain, a, c, d)
+			built += 1
+	if built == 0:
+		return
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.name = "Ramps"
+	mi.mesh = st.commit()
+	mi.material_override = terrain.material
+	add_child(mi)
+	var body := StaticBody3D.new()
+	body.name = "RampBody"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	shape.set_faces(faces)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
+	ramp_count = built
+
+
+var ramp_count := 0
+
+
+## One ramp triangle, facing up (Godot: clockwise seen from the front), in the ground's colours.
+func _ramp_tri(st: SurfaceTool, faces: PackedVector3Array, terrain, p0: Vector3, p1: Vector3, p2: Vector3) -> void:
+	if (p1 - p0).cross(p2 - p0).y > 0.0:
+		var t := p1
+		p1 = p2
+		p2 = t
+	for p: Vector3 in [p0, p1, p2]:
+		st.set_color(terrain.splat_at(p.x, p.z))
+		st.add_vertex(p)
+	faces.append_array(PackedVector3Array([p0, p1, p2]))
+
+
 func rebuild_walls() -> void:
 	for nm in ["Walls", "WallBody", "Posts", "Curbs"]:
 		var old := get_node_or_null(nm)

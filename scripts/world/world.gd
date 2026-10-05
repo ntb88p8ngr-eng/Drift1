@@ -163,6 +163,8 @@ func _ready() -> void:
 	var t2 := Time.get_ticks_msec()
 	Game.load_begin("Gelände-Modell", 0.82, 0.94)
 	await terrain.build_meshes()
+	# gentle ramps from the road edge down to the ground (no step to hit when coming back on)
+	track.build_ramps(terrain)
 	atmosphere.track = track
 	atmosphere.materials_wet = [terrain.material]
 	for key in ["leaf", "needle", "fern", "rock"]:
