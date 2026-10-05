@@ -524,7 +524,8 @@ func _sync_radio() -> void:
 	var sr = _showroom()
 	var show: bool = sr != null and (current == "main" or current == "garage") and bool(Game.settings.get("radio_menu", true))
 	radio_w.visible = show
-	_player_info.offset_top = 36 + (RADIO_H if show else 0.0)
+	# (right under the radio: its 3D case ends a little above the widget's box)
+	_player_info.offset_top = (RADIO_H - 14.0) if show else 36.0
 
 
 ## The tapes found so far, to pick one for the radio (from its slot or the garage's cabinet).
