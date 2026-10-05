@@ -183,21 +183,38 @@ func _drive(b: Dictionary) -> Array:
 	match game:
 		"rlgl":
 			if b["done"]:
-				return [0.0, 1.0, 0.0, false]
+				return [0.0, 0.0, 0.0, true]      # over the line: stays there (brake held = reverse)
 			var light: int = party._rl_light(t)
 			var stop: bool = light == 2 or (light == 0 and not (bool(b["late"]) and t - float(b["red_since"]) < 0.7))
 			var target: Vector3 = sites.course_xf(game, along + 14.0, float(b["lane"]) * hw).origin
 			return _to(car, target, 0.0 if stop else 20.0 * float(b["skill"]))
 		"parkour":
 			if b["done"]:
-				return [0.0, 1.0, 0.0, false]
+				return [0.0, 0.0, 0.0, true]      # over the line: stays there (brake held = reverse)
 			var lane := float(b["lane"]) * hw * (0.5 + 0.5 * sin(t * 0.4 + float(b["slot"])))
 			var target: Vector3 = sites.course_xf(game, along + 10.0, lane).origin
 			return _to(car, target, 9.0 + 4.0 * float(b["skill"]))
 		"koth":
 			var zone: Vector2 = party._zone
 			var target: Vector3 = sites.course_xf(game, zone.x, zone.y).origin
-			var d: float = (target - car.global_position).length()
+			var to: Vector3 = target - car.global_position
+			to.y = 0.0
+			var d := to.length()
+			var fwd: Vector3 = -car.global_transform.basis.z
+			fwd.y = 0.0
+			var alpha := fwd.normalized().signed_angle_to(to.normalized(), Vector3.UP) if d > 0.1 else 0.0
+			var dt := 1.0 / float(Engine.physics_ticks_per_second)
+			# the zone moved behind them or they are stuck (against a car, the kerb): back up while
+			# turning, then on towards it – a three-point turn on the narrow road
+			b["k_rev"] = float(b.get("k_rev", 0.0)) - dt
+			b["k_cd"] = float(b.get("k_cd", 0.0)) - dt
+			b["k_stuck"] = float(b.get("k_stuck", 0.0)) + dt if car.speed < 1.0 and d > PartySites.KOTH_ZONE_R else 0.0
+			if float(b["k_rev"]) <= 0.0 and float(b["k_cd"]) <= 0.0 and (float(b["k_stuck"]) > 1.2 or (absf(alpha) > 2.0 and d > PartySites.KOTH_ZONE_R and car.speed < 5.0)):
+				b["k_rev"] = 1.3
+				b["k_cd"] = 2.2
+				b["k_stuck"] = 0.0
+			if float(b["k_rev"]) > 0.0:
+				return [0.0, 0.9, clampf(alpha * 1.8, -1.0, 1.0), false]
 			return _to(car, target, clampf(d * 0.9, 3.0, 16.0))
 		"donut":
 			var spot: Transform3D = sites.start_xf("donut", int(b["slot"]), _count)

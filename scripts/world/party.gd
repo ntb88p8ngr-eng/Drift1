@@ -230,24 +230,10 @@ func _city_net():
 
 
 ## The HUD's mission compass points at the nearest coin while one can be taken.
-func _coin_compass(can_take: bool) -> void:
-	if world.hud == null:
-		return
-	var best = null
-	var bd := 1e18
-	if can_take:
-		var p: Vector3 = world.local_car.global_position
-		for c in _coins:
-			if bool(c["active"]):
-				var q: Vector3 = (c["node"] as Node3D).global_position
-				var d := p.distance_squared_to(q)
-				if d < bd:
-					bd = d
-					best = q
-	if best == null:
+func _coin_compass(_can_take: bool) -> void:
+	# (no compass in party mode: the coins are found on the minimap / by looking)
+	if world.hud:
 		world.hud.clear_mission()
-	else:
-		world.hud.set_mission(best, "MÜNZE")
 
 
 func _process_coins(delta: float) -> void:

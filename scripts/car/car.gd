@@ -452,6 +452,10 @@ func _physics_process(delta: float) -> void:
 	if is_remote:
 		_remote_step(delta)
 		return
+	if freeze:
+		# parked (party minigame): no driving physics – its forces piled up on the frozen body and
+		# flung it into the air when it was let go
+		return
 	_read_input(delta)
 	_simulate(delta)
 	_check_hits(delta)
