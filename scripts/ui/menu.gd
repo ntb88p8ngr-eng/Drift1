@@ -2209,7 +2209,7 @@ func _update_tuning(car_id: String) -> void:
 	var r_sl := UiKit.slider(Game.RESPONSE_MIN, 1.0, 0.05, Game.get_response(car_id), func(x):
 		r_val.text = "%d %%" % int(round(x * 100.0))
 		Game.set_response(car_id, x), 200)
-	r_sl.tooltip_text = "Wie spontan der Motor auf Gas hochdreht. 100 % = Serie, weniger = Gaspedal, Drehzahl und\ndurchdrehende Räder bauen sich sanfter auf – leichter zu dosieren. Kostenlos umstellbar."
+	r_sl.tooltip_text = "Wie spontan der Motor auf Gas hochdreht. Standard 50 %, 100 % = am spontansten; weniger = Gaspedal,\nDrehzahl und durchdrehende Räder bauen sich sanfter auf – leichter zu dosieren. Kostenlos umstellbar."
 	_tuning_box.add_child(UiKit.row([r_name, r_sl, r_val], 10))
 	_underglow_ui(car_id)
 

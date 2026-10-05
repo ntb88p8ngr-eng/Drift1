@@ -1054,11 +1054,12 @@ func set_burble(car_id: String, level: int) -> void:
 ## Throttle response per car (tuning menu, free): 1.0 = the stock profile, down to 0.2 = the pedal
 ## and the revs build up more gently.
 const RESPONSE_MIN := 0.2
+const RESPONSE_DEFAULT := 0.5   # every car starts at 50 % (easier to dose); the slider goes to 100 %
 
 
 func get_response(car_id: String) -> float:
 	var all: Dictionary = settings.get("response", {})
-	return clampf(float(all.get(car_id, 1.0)), RESPONSE_MIN, 1.0)
+	return clampf(float(all.get(car_id, RESPONSE_DEFAULT)), RESPONSE_MIN, 1.0)
 
 
 func set_response(car_id: String, value: float) -> void:

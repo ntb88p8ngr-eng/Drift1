@@ -235,7 +235,7 @@ const EN := {
 	"Fehlzündungen im Schiebebetrieb (Blubbern, Knallen, Flammen) – kostenlos umstellbar.": "Backfires off throttle (burbles, bangs, flames) – free to change.",
 	"Werkseinstellung: %s": "Factory setting: %s",
 	"Ansprechverhalten": "Throttle response",
-	"Wie spontan der Motor auf Gas hochdreht. 100 % = Serie, weniger = Gaspedal, Drehzahl und\ndurchdrehende Räder bauen sich sanfter auf – leichter zu dosieren. Kostenlos umstellbar.": "How eagerly the engine revs on throttle. 100 % = stock, less = throttle, revs and\nwheelspin build up more gently – easier to control. Free to change.",
+	"Wie spontan der Motor auf Gas hochdreht. Standard 50 %, 100 % = am spontansten; weniger = Gaspedal,\nDrehzahl und durchdrehende Räder bauen sich sanfter auf – leichter zu dosieren. Kostenlos umstellbar.": "How eagerly the engine revs on throttle. Default 50 %, 100 % = most eager; less = throttle,\nrevs and wheelspin build up more gently – easier to control. Free to change.",
 	"An": "On",
 	"Flasher: alle eingeschalteten Seiten blinken gemeinsam und synchron in diesem Muster.\n„Tempo“ stellt die Geschwindigkeit ein. [N] halten = Blitzen, egal welcher Modus.": "Flasher: all switched-on sides flash together in sync in this pattern.\n“Speed” sets how fast. Hold [N] = flash, whatever the mode.",
 	"Tempo": "Speed",
