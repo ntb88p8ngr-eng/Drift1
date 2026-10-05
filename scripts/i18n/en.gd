@@ -1061,4 +1061,5 @@ const EN := {
 	"Mikro an": "Mic on",
 	"Offenes Mikro": "Open mic",
 	"%s: Sprechen": "%s: talk",
+	"Motor aus": "Engine off",
 }

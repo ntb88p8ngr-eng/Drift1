@@ -108,6 +108,8 @@ var steer_angle := 0.0
 var handbrake := false
 var gear := 1
 var rpm := 900.0
+var engine_on := true          # switched off with the "engine" key; gas or brake starts it again
+var engine_level := 1.0        # 0..1: how much the engine runs (the sound fades with it)
 var boost := 0.0
 var shift_timer := 0.0
 var limiter_timer := 0.0
@@ -496,6 +498,13 @@ func _read_input(delta: float) -> void:
 			if paddle != 0:
 				_shift(paddle)
 				_paddle_hold = PADDLE_HOLD
+		if Input.is_action_just_pressed("engine") and engine_on:
+			engine_on = false
+			assist_toggled.emit("MOTOR", false)
+		elif not engine_on and (thr > 0.05 or brk > 0.05):
+			# pulling away: it starts right away
+			engine_on = true
+			assist_toggled.emit("MOTOR", true)
 		if Input.is_action_just_pressed("lights"):
 			headlights = not headlights
 		# driver aids: K / right stick click = ABS, J / left stick click = ESP (saved in the settings)
@@ -706,8 +715,16 @@ func _simulate(delta: float) -> void:
 	# handbrake pulled = clutch in (as drifters do): the engine revs freely, no drive reaches the
 	# wheels and the locked rear wheels stay locked even with the throttle down
 	var clutch_in := handbrake and not line_lock and not controls_locked
-	var engaged := ratio != 0.0 and shift_timer <= 0.0 and not controls_locked and not clutch_in
-	if line_lock or (controls_locked and throttle > 0.4):
+	var engaged := ratio != 0.0 and shift_timer <= 0.0 and not controls_locked and not clutch_in and engine_on
+	engine_level = move_toward(engine_level, 1.0 if engine_on else 0.0, delta * (5.0 if engine_on else 1.4))
+	if not engine_on:
+		# switched off: the revs run down, no drive, no boost
+		rpm = move_toward(rpm, 0.0, 1800.0 * delta)
+		boost = move_toward(boost, 0.0, 3.0 * delta)
+	elif rpm < idle_rpm * 0.9:
+		# starting: the starter turns it over and it catches
+		rpm = move_toward(rpm, idle_rpm, 3000.0 * delta)
+	elif line_lock or (controls_locked and throttle > 0.4):
 		# two-step limiter holds the revs around the launch rpm
 		rpm = lerpf(rpm, launch_rpm * (1.0 + wobble) * clampf(throttle * 1.2, 0.3, 1.0), 1.0 - exp(-delta * 16.0))
 		if turbo_gain > 0.0:
@@ -739,7 +756,8 @@ func _simulate(delta: float) -> void:
 	else:
 		var free_target := idle_rpm + throttle * (redline * 0.99 - idle_rpm)
 		rpm = move_toward(rpm, free_target, (7000.0 * _response_factor() if free_target > rpm else 4000.0) * delta)
-	rpm = clampf(rpm, idle_rpm * 0.9, redline)
+	if engine_on and rpm >= idle_rpm * 0.9:
+		rpm = clampf(rpm, idle_rpm * 0.9, redline)
 	var at_limit := rpm > redline * 0.975
 	limiter_timer = 0.1 if at_limit and throttle > 0.3 else maxf(limiter_timer - delta, 0.0)
 	_limit_time = _limit_time + delta if at_limit else 0.0

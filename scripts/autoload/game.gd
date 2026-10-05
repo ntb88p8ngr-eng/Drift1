@@ -372,6 +372,7 @@ func _setup_input() -> void:
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
 	# (X) fires in the shooting minigames (there it does not look back, see camera_rig.gd)
 	_add_action("radio", [KEY_P], [], [])
+	_add_action("engine", [KEY_I], [], [])
 	_add_action("voice_talk", [KEY_CAPSLOCK], [], [])
 	_add_action("fire", [KEY_F], [JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_X], [])
 	if InputMap.action_get_events("fire").filter(func(e): return e is InputEventMouseButton).is_empty():
@@ -413,7 +414,7 @@ const REBINDABLE := [
 	["fire", "Feuer (Party)"], ["camera_next", "Kamera wechseln"], ["camera_free", "Freie Kamera"],
 	["look_back", "Nach hinten schauen"], ["reset_car", "Auto zurücksetzen"], ["lights", "Licht"],
 	["neon_flash", "Neon blitzen"], ["toggle_abs", "ABS an/aus"], ["toggle_esp", "ESP an/aus"],
-	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["radio", "Autoradio"], ["voice_talk", "Sprechen (Voice-Chat)"], ["pause", "Pause"],
+	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["radio", "Autoradio"], ["voice_talk", "Sprechen (Voice-Chat)"], ["engine", "Motor aus"], ["pause", "Pause"],
 ]
 
 

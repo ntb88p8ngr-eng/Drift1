@@ -208,6 +208,7 @@ var _pop_pitch := 1.0
 var _turbo_level := 1.0
 var _bov_level := 1.0
 var _gain := 1.0
+var _lvl := 1.0                # the engine running (car.engine_level) at the last buffer's end
 var _upshift_bang := 0.0
 var _bcoef := PackedFloat32Array([0, 0, 0, 0])   # body resonance biquad (b0, b2, a1, a2)
 var _hcoef := PackedFloat32Array([0, 0, 0, 0])   # high resonance biquad
@@ -657,6 +658,7 @@ func render(frames: int) -> PackedVector2Array:
 	var redline: float = car.redline
 	var idle: float = car.idle_rpm
 	var t_rpm: float = car.rpm
+	var t_lvl: float = car.engine_level
 	var t_thr: float = car.throttle
 	var t_boost: float = car.boost
 	var t_slip: float = clampf(float(car.total_slip), 0.0, 40.0)
@@ -733,6 +735,7 @@ func render(frames: int) -> PackedVector2Array:
 		if overrun:
 			load = 0.25
 
+		var lvl := lerpf(_lvl, t_lvl, f)
 		var eng := 0.0
 		if _sampled:
 			eng = eblock[i] * ENGINE_SAMPLE_GAIN * _sample_gain / 0.42
@@ -801,6 +804,7 @@ func render(frames: int) -> PackedVector2Array:
 			eng_amp *= 0.85 + 0.15 * sin(float(i) * TAU * 17.0 / MIX_RATE)
 		eng_amp *= 1.0 - _shift_dip * 0.55
 		_shift_dip *= dip_decay
+		eng_amp *= lvl            # (engine switched off: it fades out)
 		var out := eng * eng_amp * 0.42 * _gain * ENGINE_VOICE
 
 		# --- straight-cut gearbox whine (race car) ---
@@ -939,6 +943,7 @@ func render(frames: int) -> PackedVector2Array:
 		buf[i] = Vector2(s, s)
 	_rpm = t_rpm
 	_thr = t_thr
+	_lvl = t_lvl
 	_boost = t_boost
 	_slip = t_slip
 	_speed = t_speed
