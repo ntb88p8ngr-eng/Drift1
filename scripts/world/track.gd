@@ -1098,7 +1098,8 @@ func _build_start() -> void:
 	var banner := TexKit.emissive(Color(0.55, 0.2, 0.95), 1.6)
 	g.add_child(MeshKit.box_node(Vector3(span * 1.6, 0.9, 0.05), banner, Vector3(0, 7.2, -0.43)))
 	g.add_child(MeshKit.box_node(Vector3(span * 1.6, 0.9, 0.05), banner, Vector3(0, 7.2, 0.43)))
-	# start lights (3x red, 1x green)
+	# start lights (3x red, 1x green) in a dark housing hung from the beam (they floated under it)
+	g.add_child(MeshKit.box_node(Vector3(5.6, 1.15, 0.5), TexKit.std(Color(0.06, 0.06, 0.07), 0.6, 0.3), Vector3(0, 6.02, 0)))
 	_start_lights.clear()
 	for k in 4:
 		var col := Color(1.0, 0.1, 0.05) if k < 3 else Color(0.1, 1.0, 0.2)
