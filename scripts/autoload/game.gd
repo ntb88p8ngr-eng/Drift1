@@ -1210,7 +1210,9 @@ func _setup_translations() -> void:
 
 
 ## A course's name ("Rückwärts", "Innenstadt" …), see track.gd layouts_of.
-const LAYOUT_NAMES := {"normal": "Normal", "reverse": "Rückwärts", "city": "Innenstadt-Kurs", "city_reverse": "Innenstadt-Kurs rückwärts"}
+const LAYOUT_NAMES := {"normal": "Normal", "reverse": "Rückwärts", "city": "Innenstadt-Kurs", "city_reverse": "Innenstadt-Kurs rückwärts",
+	"gp": "GP-Strecke", "gp_reverse": "GP-Strecke rückwärts", "combined": "Gesamtstrecke (GP + Nordschleife, 24h)",
+	"combined_reverse": "Gesamtstrecke rückwärts"}
 
 
 func layout_name(layout: String) -> String:

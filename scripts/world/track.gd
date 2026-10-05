@@ -95,6 +95,12 @@ const DEFS := {
 		# [section, reach (samples either side), passes]: the line rounded locally (the map data has a
 		# kink at the Karussell entry – the radius jumped from 170 to 31 m within a few metres)
 		"smooth": [["Karussell", 80, 40]],
+		# the other courses on the map (tools/make_gh_layouts.py): the GP circuit alone, and the
+		# 24h combination GP + Nordschleife; their own centre line file and sections (layouts.json)
+		"layouts": {
+			"gp": {"centerline": "centerline_gp.bin", "start_dist": 40.0, "width": 15.0},
+			"combined": {"centerline": "centerline_combined.bin", "start_dist": 40.0},
+		},
 		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.095, 0.095, 0.1),
 	},
 }
@@ -190,6 +196,7 @@ func build(id: String, p_layout := "normal") -> void:
 		var lay: Dictionary = def["layouts"][base]
 		for k in lay:
 			def[k] = lay[k]
+		def["layout_key"] = base
 		if (def.get("heights", []) as Array).is_empty():
 			def.erase("heights")
 	width = def["width"]
@@ -303,7 +310,13 @@ func _reverse_lap() -> void:
 func _load_centerline() -> void:
 	var dir: String = def["data"]
 	meta = JSON.parse_string(FileAccess.get_file_as_string(dir + "/meta.json"))
-	var raw := FileAccess.get_file_as_bytes(dir + "/centerline.bin").to_float32_array()
+	var raw := FileAccess.get_file_as_bytes(dir.path_join(str(def.get("centerline", "centerline.bin")))).to_float32_array()
+	if def.has("layout_key"):
+		# another course on the map: its own sections (named corners, measured from its sample 0)
+		var lays = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("layouts.json")))
+		if lays is Dictionary and lays.has(def["layout_key"]):
+			meta = meta.duplicate()
+			meta["sections"] = lays[def["layout_key"]]["sections"]
 	var count := raw.size() / 3
 	samples.resize(count)
 	dists.resize(count)
