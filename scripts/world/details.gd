@@ -23,6 +23,7 @@ var _sign_mat: ShaderMaterial
 var _bill_mat: ShaderMaterial
 var _banner_mat: ShaderMaterial
 var _banner_st: SurfaceTool
+var _banner_back_st: SurfaceTool   # the banners' plain light grey backs
 var _banner_count := 0
 var _stats := {}
 
@@ -44,6 +45,7 @@ func setup(p_track, p_terrain, p_scenery) -> void:
 	_banner_mat = SignAtlas.board_material(self, 0.0, true)
 	_banner_mat.set_shader_parameter("roughness_front", 0.85)
 	_banner_st = MeshKit.new_st()
+	_banner_back_st = MeshKit.new_st()
 	for k in ["bench", "pot_red", "pot_yellow", "pot_purple", "pot_white", "planter", "bin", "mailbox", "hay_bale", "cone", "tyre_stack"]:
 		_meshes[k] = [Props.get_mesh(k), 140.0, k == "bench" or k == "planter" or k == "hay_bale" or k == "tyre_stack"]
 	for k in ["car_sedan", "car_hatch", "car_kei", "car_van"]:
@@ -170,6 +172,12 @@ func finish() -> void:
 		var mi := MeshKit.mesh_instance(mesh, null, false)
 		mi.name = "Banners"
 		add_child(mi)
+		var back := StandardMaterial3D.new()
+		back.albedo_color = Color(0.78, 0.78, 0.76)
+		back.roughness = 0.8
+		var bmi := MeshKit.mesh_instance(MeshKit.commit(_banner_back_st, back), null, false)
+		bmi.name = "BannerBacks"
+		add_child(bmi)
 
 
 func set_night(n: float) -> void:
@@ -443,6 +451,11 @@ func _wall_banners(corners: Array) -> void:
 
 
 func _banner_strip(i0: int, count: int, side: float, cell: Color, y0: float, y1: float) -> void:
+	# none where the barrier is open (pit entry, driveways): it hung in the air there
+	if str(track.def.get("wall", "")) != "none":
+		for k in count + 1:
+			if track.in_wall_gap(_idx(i0 + k), side):
+				return
 	var pts: Array = []
 	for k in count + 1:
 		var i := _idx(i0 + k)
@@ -471,6 +484,9 @@ func _banner_strip(i0: int, count: int, side: float, cell: Color, y0: float, y1:
 			var m1 := cell.r * 2.0 + cell.b - u1
 			MeshKit.quad(_banner_st, b + Vector3(0, y0, 0), a + Vector3(0, y0, 0), a + Vector3(0, y1, 0), b + Vector3(0, y1, 0), -nrm,
 				Vector2(m1, v1), Vector2(m0, v1), Vector2(m0, v0), Vector2(m1, v0))
+		else:
+			# the back: plain light grey (seen from behind it showed nothing at all)
+			MeshKit.quad(_banner_back_st, b + Vector3(0, y0, 0), a + Vector3(0, y0, 0), a + Vector3(0, y1, 0), b + Vector3(0, y1, 0), -nrm)
 	_banner_count += 1
 	_stats["banners"] = int(_stats.get("banners", 0)) + 1
 
