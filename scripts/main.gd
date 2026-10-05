@@ -102,6 +102,7 @@ func start_offline() -> void:
 static func offline_config() -> Dictionary:
 	var cfg := {
 		"track": Game.settings["track"],
+		"layout": str(Game.settings.get("layout", "normal")),
 		"mode": Game.settings["mode"],
 		"laps": int(Game.settings["laps"]),
 		"graffiti_minutes": int(Game.settings.get("graffiti_minutes", 5)),
@@ -124,6 +125,7 @@ static func offline_config() -> Dictionary:
 		var m = MapData.load_file(map_path)
 		if m:
 			cfg["track"] = m.base_track
+			cfg["layout"] = "normal"       # (a map is built on the track's own course)
 			cfg["map"] = map_path
 			cfg["party"] = false
 	# bots also race with party mode on (they wait out the minigames, see world._park_bots)

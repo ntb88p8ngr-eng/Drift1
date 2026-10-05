@@ -6,6 +6,7 @@ const Rendezvous = preload("res://scripts/autoload/rendezvous.gd")
 const RaceAI = preload("res://scripts/world/race_ai.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const MainTiles = preload("res://scripts/ui/main_tiles.gd")
+const TrackScript = preload("res://scripts/world/track.gd")
 const Avatar = preload("res://scripts/ui/avatar.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const CarBody = preload("res://scripts/car/car_body.gd")
@@ -1337,6 +1338,17 @@ func _ask_tutorial() -> void:
 	dlg.popup_centered()
 
 
+## The courses of a track as an option list (layout ids to the callback).
+func _layout_option(track_id: String, current: String, cb: Callable) -> OptionButton:
+	var lays: Array = TrackScript.layouts_of(track_id)
+	var names: Array = []
+	for l in lays:
+		names.append(Game.layout_name(str(l)))
+	var o := UiKit.option(names, maxi(lays.find(current), 0), func(i): cb.call(str(lays[i])))
+	o.tooltip_text = "Rückwärts: dieselbe Strecke in Gegenrichtung (eigene Bestzeiten). Neo Tokyo: auch der enge Innenstadt-Kurs durch die Blocks – die Stadt wächst um den gewählten Kurs."
+	return o
+
+
 # ---------------------------------------------------------------------------
 # Single player
 # ---------------------------------------------------------------------------
@@ -1392,7 +1404,11 @@ func _build_single() -> void:
 		desc.text = "%s\n%s" % [t["desc"], m_desc]
 	_add(UiKit.labeled("Strecke", UiKit.option(track_names, track_idx, func(i):
 		Game.set_setting("track", Game.TRACKS[i]["id"])
-		update_desc.call())))
+		Game.set_setting("layout", "normal")
+		show_screen("single"))))
+	# the course on it: normal, reverse, the map's own (Neo Tokyo: the inner-city circuit)
+	_add(UiKit.labeled("Variante", _layout_option(str(Game.settings["track"]), str(Game.settings.get("layout", "normal")),
+		func(l): Game.set_setting("layout", l))))
 	# maps from the world editor (they bring their own base track)
 	var maps := MapData.list_maps()
 	if not maps.is_empty():
@@ -1974,7 +1990,11 @@ func _refresh_lobby() -> void:
 			track_names.append(Game.TRACKS[i]["name"])
 			if Game.TRACKS[i]["id"] == lobby.get("track", "ridge"):
 				ti = i
-		_lobby_settings.add_child(UiKit.labeled("Strecke", UiKit.option(track_names, ti, func(i): Net.host_set_option("track", Game.TRACKS[i]["id"]))))
+		_lobby_settings.add_child(UiKit.labeled("Strecke", UiKit.option(track_names, ti, func(i):
+			Net.host_set_option("layout", "normal")
+			Net.host_set_option("track", Game.TRACKS[i]["id"]))))
+		_lobby_settings.add_child(UiKit.labeled("Variante", _layout_option(str(lobby.get("track", "ridge")), str(lobby.get("layout", "normal")),
+			func(l): Net.host_set_option("layout", l))))
 		var modes: Array = []
 		var mi := 0
 		var race_modes := Game.MODES.filter(func(m): return m["id"] != "free")
@@ -2023,7 +2043,8 @@ func _refresh_lobby() -> void:
 		coll.tooltip_text = "Im Geister-Modus fahren alle durcheinander hindurch, die anderen Autos sind halbtransparent."
 		_lobby_settings.add_child(UiKit.labeled("Kollisionen", coll))
 	else:
-		_lobby_settings.add_child(UiKit.label(Game.t("Strecke: %s") % Game.track_name(str(lobby.get("track", "ridge"))), 18))
+		_lobby_settings.add_child(UiKit.label(Game.t("Strecke: %s") % (Game.track_name(str(lobby.get("track", "ridge")))
+			+ ("" if str(lobby.get("layout", "normal")) == "normal" else "  ·  " + Game.layout_name(str(lobby.get("layout", ""))))), 18))
 		var len_text := (Game.t("Zeit: %d Minuten") % int(lobby.get("graffiti_minutes", 5))) if str(lobby.get("mode", "")) == "graffiti" else (Game.t("Runden: %d") % int(lobby.get("laps", 3)))
 		_lobby_settings.add_child(UiKit.label(Game.t("Modus: %s  ·  %s") % [Game.mode_name(str(lobby.get("mode", "race"))), len_text], 18))
 		_lobby_settings.add_child(UiKit.label(Game.t("Tageszeit: %s  ·  Kollisionen: %s") % [Game.time_name(str(lobby.get("time_of_day", "dusk"))), "an" if lobby.get("collisions", true) else "aus (Geister-Modus)"], 18))

@@ -49,6 +49,14 @@ const DEFS := {
 			Vector2(25, 185), Vector2(25, 120), Vector2(15, 70), Vector2(0, 30)],
 		"heights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 9, 10, 10, 10, 10, 9, 6, 2.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		"width": 16.0, "runoff": 1.5, "start_dist": 60.0,
+		# other courses on this map ("layout"): the city grows round whichever one is driven
+		"layouts": {
+			# Innenstadt: a tight street circuit through the blocks, flat, all 90° corners, no expressway
+			"city": {"points": [Vector2(0, 0), Vector2(0, -180), Vector2(15, -200), Vector2(160, -200), Vector2(175, -215),
+				Vector2(175, -330), Vector2(190, -345), Vector2(330, -345), Vector2(345, -330), Vector2(345, 60),
+				Vector2(330, 75), Vector2(160, 75), Vector2(145, 90), Vector2(145, 170), Vector2(130, 185),
+				Vector2(15, 185), Vector2(0, 170)], "heights": [], "width": 14.0, "start_dist": 50.0},
+		},
 		"ground": "concrete", "offroad_grip": 0.85, "wall": "concrete", "asphalt": Color(0.07, 0.07, 0.08),
 	},
 	# Utah desert: an open sand plain, no barriers; a crooked lap of hairpins and S-bends that keeps
@@ -92,6 +100,8 @@ const DEFS := {
 }
 
 var track_id := "ridge"
+var layout := "normal"         # which course on the map (layouts_of): "reverse" drives the lap the other way
+var reversed := false
 var def: Dictionary
 var width := 15.0
 var half_w := 7.5
@@ -156,9 +166,32 @@ var wall_gaps: Array = []
 var _lamp_lights: Array = []
 
 
-func build(id: String) -> void:
+## The courses of a track: "normal", "reverse", and the map's own ("city", …) with "_reverse".
+static func layouts_of(id: String) -> Array:
+	var out: Array = ["normal", "reverse"]
+	for k in (DEFS.get(id, {}) as Dictionary).get("layouts", {}):
+		out.append(str(k))
+		out.append(str(k) + "_reverse")
+	return out
+
+
+## Leaderboards, bot lines and learned speeds per course (the reverse is another lap).
+func lb_id() -> String:
+	return track_id if layout == "normal" else "%s__%s" % [track_id, layout]
+
+
+func build(id: String, p_layout := "normal") -> void:
 	track_id = id if DEFS.has(id) else "ridge"
-	def = DEFS[track_id]
+	def = DEFS[track_id].duplicate(true)
+	layout = p_layout if layouts_of(track_id).has(p_layout) else "normal"
+	reversed = layout == "reverse" or layout.ends_with("_reverse")
+	var base := "normal" if layout == "reverse" else layout.trim_suffix("_reverse")
+	if base != "normal":
+		var lay: Dictionary = def["layouts"][base]
+		for k in lay:
+			def[k] = lay[k]
+		if (def.get("heights", []) as Array).is_empty():
+			def.erase("heights")
 	width = def["width"]
 	half_w = width * 0.5
 	wall_base = half_w + float(def["runoff"])
@@ -203,6 +236,8 @@ func _sample_centerline() -> void:
 		_load_centerline()
 	else:
 		_spline_centerline()
+	if reversed:
+		_reverse_lap()
 	if def.has("hills"):
 		_lay_on_hills()
 	var count := samples.size()
@@ -224,6 +259,8 @@ func _sample_centerline() -> void:
 		var tn: Vector3 = flat_t[(i + 2) % count]
 		curvature[i] = tp.signed_angle_to(tn, Vector3.UP) / (4.0 * step)
 	start_index = int(round(float(def["start_dist"]) / step)) % count
+	if reversed:
+		start_index = (count - start_index) % count      # (the same start line, faced the other way)
 	start_dist = dists[start_index]
 	var mn := Vector2(1e9, 1e9)
 	var mx := Vector2(-1e9, -1e9)
@@ -243,6 +280,23 @@ func _sample_centerline() -> void:
 	for sec in meta.get("sections", []):
 		sections.append([str(sec[0]), fposmod(float(sec[1]) - start_dist, length)])
 	sections.sort_custom(func(a, b): return float(a[1]) < float(b[1]))
+
+
+## The lap the other way round: sample i becomes sample -i (sample 0 stays where it is), the
+## distances of control points and named sections are mirrored with it.
+func _reverse_lap() -> void:
+	var n := samples.size()
+	var old := samples.duplicate()
+	for i in n:
+		samples[i] = old[(n - i) % n]
+	for k in _point_d.size():
+		_point_d[k] = fposmod(length - float(_point_d[k]), length)
+	if meta.has("sections"):
+		var secs: Array = []
+		for sec in meta["sections"]:
+			secs.append([sec[0], fposmod(length - float(sec[1]), length)])
+		meta = meta.duplicate()
+		meta["sections"] = secs
 
 
 ## Data track: samples (x, y, z) every SPACING metres, already in driving order.
@@ -358,6 +412,8 @@ func _lay_on_hills() -> void:
 	var n := samples.size()
 	var step := length / float(n)
 	var s0 := int(round(float(def["start_dist"]) / step)) % n
+	if reversed:
+		s0 = (n - s0) % n
 	_hill_c = Vector2(samples[s0].x, samples[s0].z)
 	if def.has("lake") and water == null:
 		water = DesertWater.new(def["lake"])
@@ -440,8 +496,8 @@ func _setup_profile() -> void:
 	for wdef in def.get("wide", []):
 		if not raw_secs.has(str(wdef[0])) or not raw_secs.has(str(wdef[1])):
 			continue
-		var d0: float = raw_secs[str(wdef[0])]
-		var d1: float = raw_secs[str(wdef[1])]
+		var d0: float = minf(raw_secs[str(wdef[0])], raw_secs[str(wdef[1])])
+		var d1: float = maxf(raw_secs[str(wdef[0])], raw_secs[str(wdef[1])])
 		var hw2: float = float(wdef[2]) * 0.5
 		for i in n:
 			var d := dists[i]
@@ -487,8 +543,8 @@ func _setup_sand() -> void:
 	for sd in def.get("sand", []):
 		if _point_d.size() <= maxi(int(sd[0]), int(sd[1])):
 			continue
-		var d0: float = _point_d[int(sd[0])]
-		var d1: float = _point_d[int(sd[1])]
+		var d0: float = minf(_point_d[int(sd[0])], _point_d[int(sd[1])])
+		var d1: float = maxf(_point_d[int(sd[0])], _point_d[int(sd[1])])
 		for i in n:
 			var d := dists[i]
 			sand[i] = maxf(sand[i], smoothstep(d0 - 15.0, d0 + 15.0, d) * (1.0 - smoothstep(d1 - 15.0, d1 + 15.0, d)))

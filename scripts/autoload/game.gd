@@ -199,6 +199,7 @@ const STEER_KIT := [0.0, 7.0, 14.0, 22.0]
 
 var settings := {
 	"player_name": "Driver",
+	"layout": "normal",            # the course on the chosen track (track.gd layouts_of)
 	"avatar": 0,                   # the driver's profile picture (avatar.gd, one of the standard pictures)
 	"profile": {},                 # driver stats: races, wins, losses, play time per car / track (profile_*)
 	"language": "de",          # de (the source texts) / en (scripts/i18n/en.gd)
@@ -1206,6 +1207,14 @@ func _setup_translations() -> void:
 		tr_en.add_message(k, EnTexts.EN[k])
 	TranslationServer.add_translation(tr_en)
 	TranslationServer.set_locale("de")
+
+
+## A course's name ("Rückwärts", "Innenstadt" …), see track.gd layouts_of.
+const LAYOUT_NAMES := {"normal": "Normal", "reverse": "Rückwärts", "city": "Innenstadt-Kurs", "city_reverse": "Innenstadt-Kurs rückwärts"}
+
+
+func layout_name(layout: String) -> String:
+	return t(str(LAYOUT_NAMES.get(layout, layout)))
 
 
 func track_name(track_id: String) -> String:

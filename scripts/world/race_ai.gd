@@ -106,7 +106,7 @@ func _physics_process(delta: float) -> void:
 	var tr = world.track
 	var length: float = tr.length
 	if seg_scale.is_empty():
-		var key := "%s/%d" % [str(tr.track_id), level]
+		var key := "%s/%d" % [str(tr.lb_id()), level]
 		if not _learned.has(key):
 			var arr := PackedFloat32Array()
 			arr.resize(int(ceil(float(tr.sample_count()) / SEG)))
@@ -259,7 +259,7 @@ func _drive(b: Dictionary) -> Array:
 	var n: int = tr.sample_count()
 	if default_line.is_empty() and not b.has("line_checked"):
 		b["line_checked"] = true
-		var dl := BotProfiles.load_line(str(tr.track_id))
+		var dl := BotProfiles.load_line(str(tr.lb_id()))
 		if not dl.is_empty() and (dl["speed"] as PackedFloat32Array).size() == n:
 			default_line = dl
 	var sp: float = tr.SPACING

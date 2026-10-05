@@ -165,7 +165,7 @@ func _refresh() -> void:
 		var l: Dictionary = lap
 		_laps_box.add_child(UiKit.row([UiKit.label("%s  %s  %s" % [Game.format_time(float(l["time"])), l["name"], Game.get_car(str(l["car"]))["name"]], 14),
 			UiKit.button("Als Standard", func():
-				BotProfiles.save_line(str(world.track.track_id), l)
+				BotProfiles.save_line(str(world.track.lb_id()), l)
 				ai.default_line = l
 				world.hud.show_message("STANDARD-RUNDE", Game.t("Alle Bots fahren jetzt diese Runde (%s)") % Game.format_time(float(l["time"])), UiKit.GOOD, 3.0), 150)]))
 

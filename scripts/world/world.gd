@@ -127,7 +127,7 @@ func _ready() -> void:
 		track.wall_gaps = TutorialSite.wall_gaps()
 	add_child(track)
 	Game.load_begin("Strecke", 0.0, 0.06)
-	await track.build(config.get("track", "ridge"))
+	await track.build(config.get("track", "ridge"), str(config.get("layout", "normal")))
 	await Game.load_tick(1.0)
 	terrain = Terrain.new()
 	terrain.name = "Terrain"
@@ -788,7 +788,7 @@ func _submit_leaderboard() -> Array:
 	_session_saved = true
 	var notes: Array = []
 	Game.profile_drift(scorer.total, scorer.best_chain)
-	var tid := track.track_id
+	var tid := track.lb_id()
 	var pname := local_car.player_name
 	var cid := local_car.car_id
 	if scorer.total > 0.0:
@@ -957,7 +957,7 @@ func scoreboard_data() -> Dictionary:
 			var r: Array = rows[i]
 			out.append(["%d." % (i + 1), r[0], r[1], r[2], r[3], r[6]])
 		return {"header": ["Pos", "Fahrer", "Auto", "Revier" if graffiti else "Runde", "Driftpunkte"], "rows": out}
-	var tid := track.track_id
+	var tid := track.lb_id()
 	var out2: Array = []
 	var drift: Array = Game.get_scores(tid, "drift")
 	var laps: Array = Game.get_scores(tid, "lap")

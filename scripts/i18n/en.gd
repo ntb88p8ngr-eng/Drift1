@@ -1076,4 +1076,9 @@ const EN := {
 	"Startplatz": "Grid slot",
 	"Start / Ziel (Karo)": "Start / finish (checkered)",
 	"Sperrfläche (gelb)": "Hatched area (yellow)",
+	"Rückwärts": "Reverse",
+	"Innenstadt-Kurs": "Inner-city circuit",
+	"Innenstadt-Kurs rückwärts": "Inner-city circuit reverse",
+	"Variante": "Layout",
+	"Rückwärts: dieselbe Strecke in Gegenrichtung (eigene Bestzeiten). Neo Tokyo: auch der enge Innenstadt-Kurs durch die Blocks – die Stadt wächst um den gewählten Kurs.": "Reverse: the same track the other way round (its own records). Neo Tokyo: also the tight inner-city circuit through the blocks – the city grows round the chosen course.",
 }

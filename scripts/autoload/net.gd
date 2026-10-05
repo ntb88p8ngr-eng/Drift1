@@ -167,6 +167,7 @@ func host_lobby(lobby_name: String, port: int, max_players: int, use_upnp: bool,
 		"port": port,
 		"max_players": max_players,
 		"track": Game.settings["track"],
+		"layout": str(Game.settings.get("layout", "normal")),
 		"laps": int(Game.settings["laps"]),
 		"graffiti_minutes": int(Game.settings.get("graffiti_minutes", 5)),
 		"party": bool(Game.settings.get("party", false)),
@@ -1000,6 +1001,7 @@ func host_start_race() -> String:
 		return "Noch nicht alle Spieler sind bereit."
 	var config := {
 		"track": lobby.get("track", "ridge"),
+		"layout": str(lobby.get("layout", "normal")),
 		"laps": int(lobby.get("laps", 3)),
 		"graffiti_minutes": int(lobby.get("graffiti_minutes", 5)),
 		"party": bool(lobby.get("party", false)),
