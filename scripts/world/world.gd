@@ -274,7 +274,7 @@ func _ready() -> void:
 		vc.world = self
 		add_child(vc)
 	# the map's hidden cassette (for the car radio), while it is not found yet
-	if mode in ["free", "race", "drift", "graffiti"] and not party_sites:
+	if mode in ["free", "race", "drift", "graffiti"] and not party_sites and not track.blank:
 		for tape in CassettePickup.for_world(self):
 			add_child(tape)
 	_collect_view_ranges()
@@ -588,6 +588,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _update_progress() -> void:
+	if track.blank:
+		return       # the editor's empty plane: no lap to follow
 	var proj: Array = track.project(local_car.global_position, local_car.track_hint)
 	var prog: float = proj[1]
 	var length: float = track.length

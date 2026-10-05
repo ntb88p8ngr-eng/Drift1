@@ -1221,6 +1221,8 @@ func layout_name(layout: String) -> String:
 
 
 func track_name(track_id: String) -> String:
+	if track_id == "blank":
+		return t("Leere Fläche")
 	for tk in TRACKS:
 		if tk["id"] == track_id:
 			return t(tk["name"])

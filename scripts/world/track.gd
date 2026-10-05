@@ -13,6 +13,15 @@ const WALL_HEIGHT := 1.15
 const CELL := 20.0
 
 const DEFS := {
+	# the world editor's empty plane: flat grass, nothing on it – the lap is only an invisible
+	# reference loop (start spot, the editor's ground grid); roads come from the editor
+	"blank": {
+		"points": [Vector2(0, 0), Vector2(0, -60), Vector2(25, -110), Vector2(80, -130), Vector2(135, -110),
+			Vector2(160, -60), Vector2(160, 0), Vector2(135, 50), Vector2(80, 70), Vector2(25, 50)],
+		"width": 14.0, "runoff": 6.0, "start_dist": 20.0,
+		"ground": "grass", "offroad_grip": 0.8, "wall": "none", "asphalt": Color(0.1, 0.1, 0.11),
+		"blank": true,
+	},
 	"ridge": {
 		"points": [Vector2(0, 0), Vector2(0, -150), Vector2(20, -240), Vector2(90, -290), Vector2(170, -270),
 			Vector2(210, -200), Vector2(200, -120), Vector2(240, -60), Vector2(320, -50), Vector2(370, -100),
@@ -151,6 +160,8 @@ var raised := false
 ## Spline tracks laid over hills ("hills"): the road climbs and dips with the land, has its own
 ## collision, and the terrain follows it (like the data tracks).
 var hilly := false
+## The world editor's empty plane (no road, no scenery).
+var blank := false
 var _hill_c := Vector2.ZERO     # the start: the hills flatten out round it
 const DesertWater = preload("res://scripts/world/desert_water.gd")
 var water                       # desert_water.gd when the track has a "lake", else null
@@ -206,6 +217,7 @@ func build(id: String, p_layout := "normal") -> void:
 	elevated = def.has("data")
 	raised = def.has("heights")
 	hilly = def.has("hills")
+	blank = bool(def.get("blank", false))
 	# ticks between the steps: the loading screen keeps moving on the long data tracks
 	_sample_centerline()
 	_setup_profile()
@@ -215,16 +227,20 @@ func build(id: String, p_layout := "normal") -> void:
 	_build_grid()
 	_build_ground()
 	await Game.load_tick(0.35)
-	_build_road()
-	if elevated or raised or hilly:
-		_build_road_collision()
-	await Game.load_tick(0.55)
-	_build_puddles()
-	await Game.load_tick(0.7)
-	_build_curbs()
-	_build_walls()
-	await Game.load_tick(0.9)
-	_build_start()
+	if blank:
+		gantry_xf = transform_at(start_index, 0.0, 0.0)
+		road_material = TexKit.road_material(def["asphalt"])      # for the roads drawn in the editor
+	else:
+		_build_road()
+		if elevated or raised or hilly:
+			_build_road_collision()
+		await Game.load_tick(0.55)
+		_build_puddles()
+		await Game.load_tick(0.7)
+		_build_curbs()
+		_build_walls()
+		await Game.load_tick(0.9)
+		_build_start()
 	if track_id != "playground":
 		await _compute_edge(true)
 
@@ -1021,7 +1037,7 @@ const RAMP_SLOPE := 6.0          # run per rise (~9.5°, under any car's approac
 
 
 func build_ramps(terrain) -> void:
-	if terrain == null or Game.is_city(track_id):
+	if terrain == null or Game.is_city(track_id) or blank:
 		return
 	var n := samples.size()
 	var walled := str(def.get("wall", "none")) != "none"
@@ -1391,6 +1407,8 @@ func _compute_edge(sliced := false) -> void:
 
 ## Grip multiplier & surface name at a world position, given the track index nearby.
 func surface_at(pos: Vector3, idx: int) -> Array:
+	if blank:
+		return [float(def["offroad_grip"]) * (1.0 - 0.12 * wetness), str(def["ground"])]
 	var rel := pos - samples[idx]
 	var side_d := rel.dot(rights[idx])
 	var lat := absf(side_d)

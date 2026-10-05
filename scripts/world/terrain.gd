@@ -388,6 +388,8 @@ func distance_to_road(x: float, z: float) -> float:
 
 ## Terrain height before flattening; d = distance to the centreline.
 func _height_fn(x: float, z: float, d: float) -> float:
+	if track.blank:
+		return 0.0       # the world editor's empty plane
 	var h := _base_height(x, z)
 	if track_id == "playground":
 		# the whole pad is flat; green hills start a few metres outside its barrier
@@ -521,8 +523,8 @@ func pad_sd(x: float, z: float) -> float:
 ## Hills, ridges and mountains without the road corridor.
 func _base_height(x: float, z: float) -> float:
 	var r := Vector2(x, z).distance_to(_center)
-	if Game.is_city(track_id):
-		return 0.0       # the city is flat; the skyline closes the view
+	if Game.is_city(track_id) or track.blank:
+		return 0.0       # the city is flat; the skyline closes the view (the editor's plane: flat)
 	if track_id == "playground":
 		var hills := _n_large.get_noise_2d(x, z) * 12.0 + 8.0 + _n_mid.get_noise_2d(x, z) * 5.0
 		hills += smoothstep(550.0, 1100.0, r) * (50.0 + 110.0 * (_n_large.get_noise_2d(x * 0.35, z * 0.35) * 0.5 + 0.5))
@@ -587,6 +589,9 @@ func _desert_height(x: float, z: float, _r: float) -> float:
 
 ## Ground colour weights: R = concrete, G = dirt, B = forest floor, A = meadow (dry grass / flowers).
 func _splat_fn(x: float, z: float, d: float) -> Color:
+	if track.blank:
+		# plain meadow, a little patchy
+		return Color(0.0, 0.0, 0.0, clampf(_n_meadow.get_noise_2d(x, z) * 0.6 + 0.45, 0.0, 1.0))
 	var paved := 0.0
 	var dirt := 0.0
 	if track_id == "playground":
@@ -634,7 +639,7 @@ func forest_density(x: float, z: float, d := -1.0) -> float:
 		var cv := cover_at(x, z)
 		f = smoothstep(0.3, 0.62, cv.x * lerpf(1.0, 0.7 + 0.6 * n, _far_fade(d)) - cv.z * 0.8)
 		return f * smoothstep(float(track.wall_base) + 1.5, float(track.wall_base) + 4.0, d)
-	if Game.is_city(track_id) or Game.is_desert(track_id):
+	if Game.is_city(track_id) or Game.is_desert(track_id) or track.blank:
 		return 0.0       # streets and buildings (the city places its own street trees) / open sand
 	if track_id == "playground":
 		return f * smoothstep(14.0, 40.0, pad_sd(x, z))

@@ -220,6 +220,7 @@ func _ready() -> void:
 	_minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_minimap)
 	_minimap.setup(world)
+	_minimap.visible = not world.track.blank      # (the editor's empty plane has no lap to show)
 
 	# --- scoreboard ---
 	_score_grid = GridContainer.new()
@@ -398,7 +399,7 @@ func _update_nav(delta: float) -> void:
 		yaw = _forced_nav[0]
 		cap = _forced_nav[1]
 		col = _forced_nav[2]
-	elif bool(Game.settings.get("nav_arrow", true)) and world.state == "running" and not _results.visible \
+	elif bool(Game.settings.get("nav_arrow", true)) and world.state == "running" and not _results.visible and not world.track.blank \
 			and (world.party == null or not world.party.active()):
 		var tr = world.track
 		var p: Vector3 = car.global_position

@@ -1057,12 +1057,15 @@ func _build_editor() -> void:
 	info.custom_minimum_size = Vector2(640, 0)
 	_add(info)
 	_add(UiKit.label("Neue Karte auf Basis von:", 19, UiKit.GOLD))
-	var names: Array = []
+	# first choice: an empty flat plane to start from scratch, then the tracks
+	var names: Array = [Game.t("Leere Fläche")]
+	var ids: Array = ["blank"]
 	for t in Game.TRACKS:
 		names.append(t["name"])
+		ids.append(t["id"])
 	var base_idx := [maxi(names.find(Game.track_name(str(Game.settings["track"]))), 0)]
 	_add(UiKit.row([UiKit.option(names, base_idx[0], func(i): base_idx[0] = i, 300),
-		UiKit.button("Neu erstellen", func(): main.start_editor(Game.TRACKS[base_idx[0]]["id"]), 220)]))
+		UiKit.button("Neu erstellen", func(): main.start_editor(ids[base_idx[0]]), 220)]))
 	_add(UiKit.spacer(8))
 	var maps := MapData.list_maps()
 	_add(UiKit.label("Gespeicherte Karten:" if not maps.is_empty() else "Noch keine gespeicherten Karten.", 19, UiKit.GOLD))

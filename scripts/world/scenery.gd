@@ -112,11 +112,18 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		LOD1_END *= 0.85
 		_build_block_distance()
 	await Game.load_tick()
-	_flatten_start()
 	details = Details.new()
 	details.name = "Details"
 	add_child(details)
 	details.setup(track, terrain, self)
+	if track.blank:
+		# the world editor's empty plane: nothing on it
+		_finish_ground()
+		set_night(night)
+		apply_view_distance()
+		Game.settings_changed.connect(apply_view_distance)
+		return
+	_flatten_start()
 	if tutorial_site:
 		# the tutorial's house, driveway, gravel track and camp (before the forest, which keeps clear)
 		add_child(tutorial_site)

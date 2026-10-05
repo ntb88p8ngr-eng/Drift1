@@ -69,6 +69,7 @@ const EN := {
 	"Gelände formen, Wasser, eigene Straßen, Bäume und Objekte verschieben, skalieren, löschen und neue setzen – auch eigene 3D-Modelle (.glb). Gespeicherte Karten sind im Einzelspieler unter „Eigene Karte“ fahrbar.": "Shape terrain, add water and your own roads, move, scale, delete and place trees and objects – your own 3D models (.glb) too. Saved maps can be driven in Single Player under “Custom map”.",
 	"Neue Karte auf Basis von:": "New map based on:",
 	"Neu erstellen": "Create new",
+	"Leere Fläche": "Empty plane",
 	"Gespeicherte Karten:": "Saved maps:",
 	"Noch keine gespeicherten Karten.": "No saved maps yet.",
 	"Löschen": "Delete",
