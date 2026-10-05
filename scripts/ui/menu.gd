@@ -127,10 +127,10 @@ func _ready() -> void:
 	for k in ["normal", "hover", "pressed", "focus"]:
 		var sb := StyleBoxFlat.new()
 		sb.set_corner_radius_all(38)
-		sb.bg_color = Color(0.45, 0.06, 0.08, 0.85) if k == "normal" else Color(0.8, 0.1, 0.14, 0.95)
-		sb.border_color = Color(1.0, 0.35, 0.38, 0.9)
+		sb.bg_color = Color(0.26, 0.1, 0.46, 0.85) if k == "normal" else Color(0.5, 0.24, 0.85, 0.95)
+		sb.border_color = Color(0.75, 0.5, 1.0, 0.9)
 		sb.set_border_width_all(2 if k == "normal" else 4)
-		sb.shadow_color = Color(1.0, 0.2, 0.25, 0.35 if k != "normal" else 0.15)
+		sb.shadow_color = Color(0.62, 0.32, 1.0, 0.35 if k != "normal" else 0.15)
 		sb.shadow_size = 10
 		_quit_btn.add_theme_stylebox_override(k, sb)
 	var qi = MainTiles.MenuIcon.new()
