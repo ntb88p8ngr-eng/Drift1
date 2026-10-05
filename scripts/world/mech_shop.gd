@@ -69,7 +69,7 @@ func build(parent: Node3D, xf: Transform3D) -> Node3D:
 	_wall(Vector3(3, 0, 6), Vector3(11, 0, 6), SHOP_H, plaster)
 	_wall(Vector3(11, 0, -6), Vector3(11, 0, 6), SHOP_H, plaster)
 	_box("wall", Vector3(7, 0.3, -6), Vector3(8, 0.6, T), Color(0.3, 0.3, 0.32), false)
-	Colliders.add_box(root, Transform3D(Basis.IDENTITY, Vector3(7.8, 1.5, -6)), Vector3(6.4, 3.0, T))
+	Colliders.add_box(root, root.global_transform * Transform3D(Basis.IDENTITY, Vector3(7.8, 1.5, -6)), Vector3(6.4, 3.0, T))
 	_box("wall", Vector3(7, 3.6, -6), Vector3(8.2, 0.8, T + 0.1), Color(0.12, 0.12, 0.14), false)
 	_box("glass", Vector3(7.75, 1.9, -6), Vector3(6.5, 2.6, 0.04), Color.WHITE, false)
 	_box("glass", Vector3(3.95, 1.55, -6.3), Vector3(1.0, 2.5, 0.04), Color.WHITE, false)      # the door, ajar
@@ -109,7 +109,7 @@ func _box(key: String, c: Vector3, size: Vector3, col: Color, solid: bool) -> vo
 		_st[key] = MeshKit.new_st()
 	MeshKit.box(_st[key], Transform3D(Basis.IDENTITY, c), size, col)
 	if solid:
-		Colliders.add_box(root, Transform3D(Basis.IDENTITY, c), size)
+		Colliders.add_box(root, root.global_transform * Transform3D(Basis.IDENTITY, c), size)
 
 
 ## A straight wall on the ground from a to b (axis-aligned).
@@ -205,7 +205,7 @@ func _v8_on_stand(at: Vector3) -> void:
 	st.generate_normals()
 	var mi := MeshKit.mesh_instance(MeshKit.commit(st, _mats["metal"]))
 	root.add_child(mi)
-	Colliders.add_box(root, Transform3D(Basis.IDENTITY, at + Vector3(-0.2, 0.7, 0)), Vector3(1.7, 1.4, 1.1))
+	Colliders.add_box(root, root.global_transform * Transform3D(Basis.IDENTITY, at + Vector3(-0.2, 0.7, 0)), Vector3(1.7, 1.4, 1.1))
 
 
 func _cyl_x(st: SurfaceTool, c: Vector3, r: float, len: float, col: Color) -> void:
@@ -235,7 +235,7 @@ func _kit(name: String, pos: Vector3, was := Vector3.BACK, faces := Vector3.BACK
 				box = bb if first else box.merge(bb)
 				first = false
 		if not first and box.size.y > 0.3:
-			Colliders.add_box(root, n.transform * Transform3D(Basis.IDENTITY, box.get_center()), box.size)
+			Colliders.add_box(root, root.global_transform * n.transform * Transform3D(Basis.IDENTITY, box.get_center()), box.size)
 
 
 func _props() -> void:

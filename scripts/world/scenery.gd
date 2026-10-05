@@ -996,6 +996,10 @@ func _build_mech_shop() -> void:
 		var pos := _roadside(i, 22.0 + r.randf_range(0.0, 14.0), side)
 		if not free_at(pos, 15.0, 8.0):
 			continue
+		# clear of every stretch of the road (on a folded lap another leg can pass right there: on the
+		# harbor its walls stood across the straight before the line)
+		if float(terrain.distance_to_road(pos.x, pos.z)) < float(track.wall_base) + 17.0 or _road_near(pos, 19.0):
+			continue
 		if terrain.normal_at(pos.x, pos.z).y < 0.93:
 			continue
 		var wt = track.get("water")
@@ -1007,6 +1011,16 @@ func _build_mech_shop() -> void:
 		occupy(pos, 16.0)
 		mech_shop_at = pos
 		return
+
+
+## Is any part of the road (its edge) within r of pos (checked against the samples directly).
+func _road_near(pos: Vector3, r: float) -> bool:
+	var hw: float = track.half_w
+	for k in range(0, track.sample_count(), 2):
+		var sp: Vector3 = track.samples[k]
+		if Vector2(sp.x - pos.x, sp.z - pos.z).length() < r + hw:
+			return true
+	return false
 
 
 ## Transform on the ground at pos whose -Z faces the nearest point of the road.
