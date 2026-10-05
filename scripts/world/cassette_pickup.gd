@@ -34,15 +34,14 @@ var spot_seed := 0
 ## The map's tapes still out there (pick-up nodes, maybe none).
 static func for_world(w) -> Array:
 	var out: Array = []
-	var have: Array = Game.settings.get("cassettes", [])
 	var track_id := str(w.track.track_id)
 	var id: String = MAP_TAPES.get(track_id, "")
-	if id != "" and not have.has(id):
+	if id != "" and not Radio.is_found(id):
 		out.append(_make(w, id, false, 0))
 	var k := 0
 	for gid in Radio.game_tapes():
 		var n: int = int(Radio.game_tapes()[gid].get("num", 0))
-		if n <= 0 or have.has(gid):
+		if n <= 0 or Radio.is_found(gid):
 			continue
 		var m: String = GAME_TAPE_MAPS[(n - 1) % GAME_TAPE_MAPS.size()]
 		if m == track_id:
@@ -263,6 +262,9 @@ func _process(delta: float) -> void:
 		if k >= 1.0:
 			queue_free()
 		return
+	if Radio.is_found(tape_id):
+		queue_free()          # (found meanwhile: never twice)
+		return
 	_spin.position.y = 0.06 * sin(_t * 2.0)
 	var car = world.local_car if world else null
 	if car and is_instance_valid(car):
@@ -272,6 +274,8 @@ func _process(delta: float) -> void:
 
 
 func _collect() -> void:
+	if _taken >= 0.0:
+		return            # (once)
 	_taken = 0.0
 	if Radio.find_tape(tape_id):
 		Radio.click_sound(true)

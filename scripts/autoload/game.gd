@@ -257,6 +257,7 @@ var settings := {
 	"garage_door": -1.0,           # the menu's roller door: where it was left (m up its track, < 0 = as built)
 	"radio_hud": true,             # the small radio in a race (bottom left) shown            # the floating radio in the main menu shown
 	"cassettes": ["garage_mix"],   # tapes found so far (in the garage's cabinet), see radio.gd TAPES
+	"cassettes_found": [],         # every tape ever picked up on a map: never there again (kept apart from the cabinet)
 	"menu_lights": {"ceiling": 1.0, "platform": 1.0, "platform_color": "#ff0505"},
 	"handbrake_strength": 0.75,
 	"slide": 0.5,

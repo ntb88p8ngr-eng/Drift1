@@ -424,13 +424,22 @@ func owned_tapes() -> Array:
 
 ## A tape was found (for later: pick-ups on the maps).
 func find_tape(id: String) -> bool:
-	var have: Array = Game.settings.get("cassettes", [])
-	if have.has(id) or not (TAPES.has(id) or game_tapes().has(id)):
+	if is_found(id) or not (TAPES.has(id) or game_tapes().has(id)):
 		return false
-	have.append(id)
+	var have: Array = Game.settings.get("cassettes", [])
+	if not have.has(id):
+		have.append(id)
 	Game.settings["cassettes"] = have
+	var found: Array = Game.settings.get("cassettes_found", [])
+	found.append(id)
+	Game.settings["cassettes_found"] = found
 	Game.save_settings()
 	return true
+
+
+## Picked up already (or in the cabinet anyway): only ever collected once.
+func is_found(id: String) -> bool:
+	return (Game.settings.get("cassettes_found", []) as Array).has(id) or (Game.settings.get("cassettes", []) as Array).has(id)
 
 
 func tape_title(id := "") -> String:
