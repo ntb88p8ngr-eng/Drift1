@@ -837,9 +837,31 @@ func _fill_player_info() -> void:
 	var paint: Dictionary = Game.get_paint(Game.settings["paint"], Game.settings["custom_color"], str(Game.settings.get("paint_finish", "gloss")))
 	var bar := _profile_bar()
 	_player_info.add_child(bar)
-	for l in [UiKit.label(Game.t("Auto: %s – %s") % [Game.t(car["name"]), Game.t(paint["name"])], 18, UiKit.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT),
+	for l in [UiKit.label(Game.t("Auto: %s – %s") % [Game.t(car["name"]), Game.t(paint["name"])], 18, UiKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT),
 			UiKit.label(Game.t("Credits: %s") % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)]:
-		_player_info.add_child(l)
+		_player_info.add_child(_info_strip(l))
+
+
+## A smaller black bar behind a line of the driver info (readable over the bright garage), slanted
+## like the driver bar, as wide as its text, right-aligned.
+func _info_strip(l: Label) -> PanelContainer:
+	var pc := PanelContainer.new()
+	pc.size_flags_horizontal = Control.SIZE_SHRINK_END
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.82)
+	sb.border_color = Color(UiKit.ACCENT, 0.4)
+	sb.border_width_right = 3
+	sb.set_corner_radius_all(2)
+	sb.skew = Vector2(-MainTiles.SKEW, 0)
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	pc.add_theme_stylebox_override("panel", sb)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(l)
+	return pc
 
 
 ## The driver bar top right: black, slanted the other way round than the tiles on the left (it is on
