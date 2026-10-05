@@ -840,6 +840,31 @@ func _fill_player_info() -> void:
 	for l in [UiKit.label(Game.t("Auto: %s – %s") % [Game.t(car["name"]), Game.t(paint["name"])], 18, UiKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT),
 			UiKit.label(Game.t("Credits: %s") % Game.format_points(int(Game.settings["credits"])), 18, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)]:
 		_player_info.add_child(_info_strip(l))
+	# the slanted right edges on one line: each strip further down moves left by the slant
+	var sep := float(_player_info.get_theme_constant("separation"))
+	var y := 0.0
+	var c0 := 0.0
+	for k in _player_info.get_child_count():
+		var c: Control = _player_info.get_child(k)
+		var h := c.get_combined_minimum_size().y
+		var cy := y + h * 0.5
+		if k == 0:
+			c0 = cy
+		elif c is PanelContainer:
+			# (a skewed box leans SKEW px sideways per px down, around its middle)
+			c.set_meta("lean", MainTiles.SKEW * (cy - c0))
+		y += h + sep
+	for c in _player_info.get_children():
+		if c.has_meta("lean"):
+			var m := MarginContainer.new()
+			m.size_flags_horizontal = Control.SIZE_SHRINK_END
+			m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			m.add_theme_constant_override("margin_right", int(round(float(c.get_meta("lean")))))
+			var idx := c.get_index()
+			_player_info.remove_child(c)
+			m.add_child(c)
+			_player_info.add_child(m)
+			_player_info.move_child(m, idx)
 
 
 ## A smaller black bar behind a line of the driver info (readable over the bright garage), slanted
