@@ -1276,6 +1276,8 @@ func get_net_state(progress: float, lap: int, drift_total: float, best_chain := 
 		flags |= 16
 	if underglow and underglow.manual:
 		flags |= 32
+	if not engine_on:
+		flags |= 64
 	var rear_slip := 0.0
 	var front_slip := 0.0
 	if wheels.size() == 4:
@@ -1312,6 +1314,7 @@ func apply_net_state(s: Array) -> void:
 	line_lock = (remote_flags & 16) != 0
 	if underglow:
 		underglow.manual = (remote_flags & 32) != 0
+	engine_on = (remote_flags & 64) == 0
 	if wheels.size() == 4:
 		wheels[0]["slip"] = front_slip
 		wheels[1]["slip"] = front_slip
@@ -1325,6 +1328,8 @@ func apply_net_state(s: Array) -> void:
 
 
 func _remote_step(delta: float) -> void:
+	# the other player's engine switched off / started: its sound fades out / comes back
+	engine_level = move_toward(engine_level, 1.0 if engine_on else 0.0, delta * (5.0 if engine_on else 1.4))
 	if not _net_has:
 		return
 	_update_backfire(delta)
