@@ -391,6 +391,65 @@ func _build_splashes(hall: Rect2) -> void:
 		quad.material = m
 		p.draw_pass_1 = quad
 		add_child(p)
+		add_child(_ripples(rect))
+
+
+const RIPPLE_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
+void fragment() {
+	float r = length(UV - 0.5) * 2.0;
+	// a thin ring at the edge and a fainter one inside it
+	float ring = smoothstep(0.78, 0.9, r) * (1.0 - smoothstep(0.9, 1.0, r));
+	float inner = smoothstep(0.42, 0.5, r) * (1.0 - smoothstep(0.5, 0.58, r)) * 0.4;
+	ALBEDO = vec3(0.78, 0.83, 0.92);
+	ALPHA = (ring + inner) * COLOR.a;
+}
+"""
+
+
+## Where a drop hits: a thin circle on the wet ground that runs out quickly and fades (subtle).
+func _ripples(rect: Rect2) -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.amount = maxi(8, int(rect.size.x * rect.size.y * [0.12, 0.2, 0.3, 0.4][clampi(Game.quality(), 0, 3)]))
+	p.lifetime = 0.45
+	p.preprocess = 0.5
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.position = Vector3(rect.get_center().x, 0.02, rect.get_center().y)
+	p.visibility_aabb = AABB(Vector3(-rect.size.x, -1, -rect.size.y), Vector3(rect.size.x * 2.0, 2, rect.size.y * 2.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(rect.size.x * 0.5, 0.0, rect.size.y * 0.5)
+	pm.gravity = Vector3.ZERO
+	pm.initial_velocity_min = 0.0
+	pm.initial_velocity_max = 0.0
+	pm.scale_min = 0.7
+	pm.scale_max = 1.3
+	# out fast at first, then slowing down
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.08), 0.0, 4.0)
+	grow.add_point(Vector2(1.0, 1.0), 0.3, 0.0)
+	var gt := CurveTexture.new()
+	gt.curve = grow
+	pm.scale_curve = gt
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0.22))
+	fade.set_color(1, Color(1, 1, 1, 0.0))
+	var ft := GradientTexture1D.new()
+	ft.gradient = fade
+	pm.color_ramp = ft
+	p.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.32, 0.32)
+	quad.orientation = PlaneMesh.FACE_Y
+	var sh := Shader.new()
+	sh.code = RIPPLE_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	quad.material = m
+	p.draw_pass_1 = quad
+	return p
 
 
 ## A loop of heavy rain: a wash of filtered noise (the roar), a low rumble and dense patter.
