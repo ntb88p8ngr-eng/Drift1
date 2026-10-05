@@ -504,9 +504,10 @@ func _read_input(delta: float) -> void:
 			if paddle != 0:
 				_shift(paddle)
 				_paddle_hold = PADDLE_HOLD
-		if Input.is_action_just_pressed("engine") and engine_on:
-			engine_on = false
-			assist_toggled.emit("MOTOR", false)
+		if Input.is_action_just_pressed("engine"):
+			# the same key switches it off and starts it again
+			engine_on = not engine_on
+			assist_toggled.emit("MOTOR", engine_on)
 		elif not engine_on and (thr > 0.05 or brk > 0.05):
 			# pulling away: it starts right away
 			engine_on = true
