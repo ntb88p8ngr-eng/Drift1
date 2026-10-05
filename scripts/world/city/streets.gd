@@ -65,28 +65,31 @@ func build(p_net, p_cm, p_track, p_scenery, p_add: Callable, p_light: Callable, 
 ## A junction plate wherever street ends meet (not at the race route: its road lies on top there).
 func _find_plates() -> void:
 	var ends: Array = []
-	for s in net.streets:
+	for si in net.streets.size():
+		var s: Dictionary = net.streets[si]
 		var pts: PackedVector2Array = s["pts"]
 		if s["kind"] == "ring":
 			continue
-		ends.append([pts[0], float(s["w"]), (pts[1] - pts[0]).normalized()])
-		ends.append([pts[pts.size() - 1], float(s["w"]), (pts[pts.size() - 2] - pts[pts.size() - 1]).normalized()])
+		ends.append([pts[0], float(s["w"]), (pts[1] - pts[0]).normalized(), [si, 0]])
+		ends.append([pts[pts.size() - 1], float(s["w"]), (pts[pts.size() - 2] - pts[pts.size() - 1]).normalized(), [si, 1]])
 	var used := {}
 	for a in ends.size():
 		if used.has(a):
 			continue
 		var c: Vector2 = ends[a][0]
 		var r: float = float(ends[a][1]) * 0.5
-		var members := 1
+		var count := 1
 		var dirs: Array = [ends[a][2]]
 		var hws: Array = [float(ends[a][1]) * 0.5]
+		var members: Array = [ends[a][3]]
 		for b in range(a + 1, ends.size()):
 			if not used.has(b) and (ends[b][0] as Vector2).distance_to(c) < 4.0:
 				used[b] = true
 				r = maxf(r, float(ends[b][1]) * 0.5)
-				members += 1
+				count += 1
 				dirs.append(ends[b][2])
 				hws.append(float(ends[b][1]) * 0.5)
+				members.append(ends[b][3])
 		if net.owner_at(c) == -3 or _near_track(c, 6.0):
 			continue
 		# where two streets meet at a sharp angle their ribbons overlap far out: cover all of it
@@ -95,7 +98,7 @@ func _find_plates() -> void:
 			for y in range(x + 1, dirs.size()):
 				var ang := acos(clampf((dirs[x] as Vector2).dot(dirs[y]), -1.0, 1.0))
 				need = maxf(need, r / maxf(tan(ang * 0.5), 0.25) + 1.5)
-		plates.append([c, minf(need, 26.0), dirs, hws])
+		plates.append([c, minf(need, 26.0), dirs, hws, members])
 	for pl in plates:
 		var c: Vector2 = pl[0]
 		var key := Vector2i(int(floor(c.x / PLATE_CELL)), int(floor(c.y / PLATE_CELL)))
@@ -267,6 +270,9 @@ func _plate(pl: Array) -> void:
 		return
 	var order: Array = range(dirs.size())
 	order.sort_custom(func(x, y): return (dirs[x] as Vector2).angle() < (dirs[y] as Vector2).angle())
+	if pl.size() > 4:
+		_plate_curved(pl, order)
+		return
 	var poly: Array = []           # [point, kerb along the edge to the next point?]
 	for oi in order.size():
 		var i: int = order[oi]
@@ -310,6 +316,120 @@ func _plate(pl: Array) -> void:
 			cm.quad("road", pc, a3, b3, pc, Vector3.UP, Color(1, 1, 1),
 				Vector2(0.5, c.y), Vector2(0.5, a3.z), Vector2(0.5, b3.z), Vector2(0.5, c.y))
 		# kerb stones along the corner edges (just outside the asphalt)
+		if poly[q][1] and p0.distance_to(p1) > 0.1:
+			var mid := (p0 + p1) * 0.5
+			var out := (mid - c).normalized()
+			var e := p1 - p0
+			var nrm := Vector2(-e.y, e.x).normalized()
+			if nrm.dot(out) < 0.0:
+				nrm = -nrm
+			var m3 := mid + nrm * 0.15
+			cm.box("frame", Transform3D(Basis.looking_at(Vector3(e.x, 0, e.y).normalized(), Vector3.UP), Vector3(m3.x, 0.07, m3.y)), Vector3(0.3, 0.14, e.length() + 0.05), col)
+
+
+## The plate following the streets' own curves: each street's asphalt along its centre line out to
+## the plate radius (a bending street keeps its course – no straight tongue into the pavement), and
+## between two neighbours their kerb lines walked in until they run into the other street.
+func _plate_curved(pl: Array, order: Array) -> void:
+	var c: Vector2 = pl[0]
+	var r: float = float(pl[1]) + 1.0
+	var dirs: Array = pl[2]
+	var hws: Array = pl[3]
+	var members: Array = pl[4]
+	# centre line samples from the junction out: [[point, left normal], …] every metre
+	var lines: Array = []
+	for m in members:
+		var pts: PackedVector2Array = net.streets[int(m[0])]["pts"]
+		var smp: Array = []
+		var d := 0.0
+		while d <= r + 0.01:
+			var at := _along(pts, int(m[1]), d)
+			smp.append([at[0], at[2]])
+			d += 1.0
+		lines.append(smp)
+	var inside := func(q: Vector2, i: int) -> bool:
+		var smp: Array = lines[i]
+		var best := INF
+		for k in smp.size() - 1:
+			var a: Vector2 = smp[k][0]
+			var b: Vector2 = smp[k + 1][0]
+			var ab := b - a
+			var t := clampf((q - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+			best = minf(best, (a + ab * t).distance_to(q))
+		return best < float(hws[i]) - 0.05
+	var poly: Array = []           # [point, kerb along the edge to the next point?]
+	for oi in order.size():
+		var i: int = order[oi]
+		var j: int = order[(oi + 1) % order.size()]
+		var li: Array = lines[i]
+		var lj: Array = lines[j]
+		var hi: float = hws[i]
+		var hj: float = hws[j]
+		# i's left kerb line, from the plate's edge in, while it is not on street j
+		var chain_i: Array = []
+		for k in range(li.size() - 1, -1, -1):
+			var q: Vector2 = (li[k][0] as Vector2) + (li[k][1] as Vector2) * hi
+			if k < li.size() - 1 and inside.call(q, j):
+				break
+			chain_i.append(q)
+		# j's right kerb line, from the junction out, once it is off street i
+		var chain_j: Array = []
+		for k in lj.size():
+			var q: Vector2 = (lj[k][0] as Vector2) - (lj[k][1] as Vector2) * hj
+			if chain_j.is_empty() and k < lj.size() - 1 and inside.call(q, i):
+				continue
+			chain_j.append(q)
+		for q in chain_i:
+			poly.append([q, true])
+		var gap := wrapf((dirs[j] as Vector2).angle() - (dirs[i] as Vector2).angle(), 0.0, TAU)
+		if gap >= PI - 0.15 and not chain_i.is_empty() and not chain_j.is_empty():
+			# the outside of a bend (or the far side of a T): round it off round the centre
+			var a0 := ((chain_i[chain_i.size() - 1] as Vector2) - c).angle()
+			var a1 := a0 + wrapf(((chain_j[0] as Vector2) - c).angle() - a0, 0.0, TAU)
+			var h := maxf(hi, hj)
+			var nseg := maxi(int((a1 - a0) / 0.35), 1)
+			for q in range(1, nseg):
+				var a := lerpf(a0, a1, float(q) / nseg)
+				poly.append([c + Vector2(cos(a), sin(a)) * h, true])
+		for k in chain_j.size():
+			# the last point: across the end of street j (no kerb there)
+			poly.append([chain_j[k], k < chain_j.size() - 1])
+	_plate_poly(c, poly)
+
+
+## Fills a plate outline (fan from the centre) and sets kerb stones along its marked edges.
+func _plate_poly(c: Vector2, poly: Array) -> void:
+	var col := Color(0.66, 0.66, 0.64)
+	# the outline is concave where a street bends: triangulated as a polygon (a fan from the centre
+	# would cover the pavement inside the bend)
+	var outline := PackedVector2Array()
+	for e in poly:
+		var q2: Vector2 = e[0]
+		if outline.is_empty() or outline[outline.size() - 1].distance_to(q2) > 0.02:
+			outline.append(q2)
+	if outline.size() > 2 and outline[0].distance_to(outline[outline.size() - 1]) < 0.02:
+		outline.remove_at(outline.size() - 1)
+	var tris := Geometry2D.triangulate_polygon(outline)
+	if tris.is_empty():
+		var hull := Geometry2D.convex_hull(outline)
+		outline = hull
+		tris = Geometry2D.triangulate_polygon(outline)
+	for t in range(0, tris.size(), 3):
+		var p0: Vector2 = outline[tris[t]]
+		var p1: Vector2 = outline[tris[t + 1]]
+		var p2: Vector2 = outline[tris[t + 2]]
+		if (p1 - p0).cross(p2 - p0) > 0.0:
+			var sw := p1
+			p1 = p2
+			p2 = sw
+		var a3 := Vector3(p0.x, Y_PLATE, p0.y)
+		var b3 := Vector3(p1.x, Y_PLATE, p1.y)
+		var c3 := Vector3(p2.x, Y_PLATE, p2.y)
+		cm.quad("road", a3, b3, c3, c3, Vector3.UP, Color(1, 1, 1),
+			Vector2(0.5, a3.z), Vector2(0.5, b3.z), Vector2(0.5, c3.z), Vector2(0.5, c3.z))
+	for q in poly.size():
+		var p0: Vector2 = poly[q][0]
+		var p1: Vector2 = poly[(q + 1) % poly.size()][0]
 		if poly[q][1] and p0.distance_to(p1) > 0.1:
 			var mid := (p0 + p1) * 0.5
 			var out := (mid - c).normalized()
@@ -394,7 +514,11 @@ func _markings(k: int) -> void:
 			continue
 		if off == 0.0:
 			off = 3.0
-		var zc := e0 + dir * (off + 2.5)
+		# along the street's own curve (a bending street: the crossing lies across it, not beside it)
+		var zat := _along(pts, end, off + 2.5)
+		var zc: Vector2 = zat[0]
+		dir = zat[1]
+		nrm = zat[2]
 		# the lane coming in (keep left): arrows for the ways on, diamonds announcing the crossing –
 		# placed along the street's own curve, sized to the lane
 		var d_in := -dir

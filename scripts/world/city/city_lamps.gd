@@ -357,8 +357,13 @@ static func _centre_of(kind: String) -> Vector3:
 func _multimesh(mesh: Mesh, count: int) -> MultiMesh:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
+	# the props' shader (prop_meshes.gd) tints by the instance's custom data: white = own colours
+	# (without it the flower pots, benches and bins came out black)
+	mm.use_custom_data = true
 	mm.mesh = mesh
 	mm.instance_count = count
+	for i in count:
+		mm.set_instance_custom_data(i, Color(1, 1, 1, 1))
 	return mm
 
 
@@ -605,9 +610,9 @@ func _fountain(at: Vector3) -> void:
 	splash.global_position = Vector3(at.x, at.y - 0.1, at.z)
 	var snd := AudioStreamPlayer3D.new()
 	snd.stream = Sfx.get_sound("hydrant_spray")
-	snd.unit_size = 5.0
-	snd.max_distance = 70.0
-	snd.volume_db = -4.0
+	snd.unit_size = 3.0
+	snd.max_distance = 50.0
+	snd.volume_db = -16.0      # (a hiss in the background, not a roar)
 	add_child(snd)
 	snd.global_position = at + Vector3(0, 1.5, 0)
 	snd.play()
