@@ -23,6 +23,7 @@ signal race_start_requested(config: Dictionary)
 signal countdown_requested
 signal chat_received(from_name: String, text: String)
 signal remote_state(peer_id: int, state: Array)
+signal voice_received(peer_id: int, data: PackedByteArray)
 signal peer_left(peer_id: int)
 signal results_updated(results: Array)
 signal return_to_lobby_requested
@@ -1103,6 +1104,19 @@ func send_state(state: Array) -> void:
 @rpc("any_peer", "call_remote", "unreliable_ordered", 1)
 func _state(state: Array) -> void:
 	remote_state.emit(multiplayer.get_remote_sender_id(), state)
+
+
+## Voice chat: a piece of the local player's voice (μ-law, 16 kHz) to one player close by.
+func send_voice(peer_id: int, data: PackedByteArray) -> void:
+	if is_online and multiplayer.multiplayer_peer != null:
+		_voice.rpc_id(peer_id, data)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered", 2)
+func _voice(data: PackedByteArray) -> void:
+	if data.size() > 4096:
+		return
+	voice_received.emit(multiplayer.get_remote_sender_id(), data)
 
 
 ## Graffiti mode: cells the local player sprayed. The host applies claims in arrival order and

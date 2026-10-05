@@ -262,6 +262,12 @@ func _ready() -> void:
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
 	else:
 		_start_countdown()
+	# online: proximity voice chat (the players close by hear each other)
+	if online and mode != "replay":
+		var vc = load("res://scripts/world/voice_chat.gd").new()
+		vc.name = "VoiceChat"
+		vc.world = self
+		add_child(vc)
 	# the map's hidden cassette (for the car radio), while it is not found yet
 	if mode in ["free", "race", "drift", "graffiti"] and not party_sites:
 		for tape in CassettePickup.for_world(self):

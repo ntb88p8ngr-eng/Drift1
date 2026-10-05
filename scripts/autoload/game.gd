@@ -250,7 +250,12 @@ var settings := {
 	"abs": true,
 	"esp": false,
 	"weather_volume": 0.6,
-	"menu_sfx_volume": 0.0,        # the main menu's storm (rain, thunder): silent unless turned up
+	"menu_sfx_volume": 0.0,
+	# voice chat online (proximity only, see voice_chat.gd): on / "ptt" (hold the key) or "open" mic
+	"voice_chat": true,
+	"voice_mode": "ptt",
+	"voice_volume": 1.0,
+	"mic_gain": 1.0,        # the main menu's storm (rain, thunder): silent unless turned up
 	# car radio (see radio.gd): on / volume 0..1 / band FM1|FM2 / preset per band / radio|tape / inserted tape
 	"radio": {"on": false, "volume": 0.5, "band": 0, "preset": [0, 0], "mode": "radio", "tape": "", "api": true},
 	"radio_slots": [],            # the presets' stations by address [[6 x FM1], [6 x FM2]], [] = built-in
@@ -367,6 +372,7 @@ func _setup_input() -> void:
 	_add_action("scoreboard", [KEY_TAB], [JOY_BUTTON_DPAD_DOWN], [])
 	# (X) fires in the shooting minigames (there it does not look back, see camera_rig.gd)
 	_add_action("radio", [KEY_P], [], [])
+	_add_action("voice_talk", [KEY_CAPSLOCK], [], [])
 	_add_action("fire", [KEY_F], [JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_X], [])
 	if InputMap.action_get_events("fire").filter(func(e): return e is InputEventMouseButton).is_empty():
 		var mb := InputEventMouseButton.new()
@@ -407,7 +413,7 @@ const REBINDABLE := [
 	["fire", "Feuer (Party)"], ["camera_next", "Kamera wechseln"], ["camera_free", "Freie Kamera"],
 	["look_back", "Nach hinten schauen"], ["reset_car", "Auto zurücksetzen"], ["lights", "Licht"],
 	["neon_flash", "Neon blitzen"], ["toggle_abs", "ABS an/aus"], ["toggle_esp", "ESP an/aus"],
-	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["radio", "Autoradio"], ["pause", "Pause"],
+	["scoreboard", "Leaderboard"], ["map_zoom", "Karte vergrößern (halten)"], ["radio", "Autoradio"], ["voice_talk", "Sprechen (Voice-Chat)"], ["pause", "Pause"],
 ]
 
 

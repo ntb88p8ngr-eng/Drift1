@@ -223,6 +223,28 @@ static func _radio_section(v: VBoxContainer) -> void:
 	list_own.call(list_own)
 
 
+## Voice chat online (proximity: only the players close by hear you, see voice_chat.gd).
+static func _voice_section(v: VBoxContainer) -> void:
+	v.add_child(UiKit.label("Voice-Chat (online, nur in der Nähe)", 20, UiKit.GOLD))
+	var on := CheckBox.new()
+	on.text = "Voice-Chat an"
+	on.tooltip_text = "Online hörst du die Fahrer in deiner Nähe (bis 60 m) aus ihren Autos – und sie dich."
+	on.button_pressed = bool(Game.settings.get("voice_chat", true))
+	on.toggled.connect(func(x): Game.set_setting("voice_chat", x))
+	v.add_child(on)
+	var modes := ["ptt", "open"]
+	var mo := UiKit.option(["Drücken zum Sprechen (Taste halten)", "Offenes Mikrofon (spricht bei Stimme)"],
+		maxi(modes.find(str(Game.settings.get("voice_mode", "ptt"))), 0), func(i): Game.set_setting("voice_mode", modes[i]))
+	mo.tooltip_text = "Die Sprechtaste ist Feststelltaste (Caps Lock), änderbar unter Steuerung."
+	v.add_child(UiKit.labeled("Sprechen", mo))
+	v.add_child(UiKit.labeled("Mikrofon-Verstärkung", UiKit.slider(0.2, 3.0, 0.1, float(Game.settings.get("mic_gain", 1.0)), func(x):
+		Game.settings["mic_gain"] = x
+		Game.save_settings())))
+	v.add_child(UiKit.labeled("Lautstärke der anderen", UiKit.slider(0, 2, 0.05, float(Game.settings.get("voice_volume", 1.0)), func(x):
+		Game.settings["voice_volume"] = x
+		Game.save_settings())))
+
+
 static func audio_page() -> VBoxContainer:
 	var v := _page()
 	v.add_child(UiKit.labeled("Gesamtlautstärke", UiKit.slider(0, 1, 0.05, float(Game.settings["master_volume"]), func(x):
@@ -241,6 +263,8 @@ static func audio_page() -> VBoxContainer:
 	v.add_child(UiKit.labeled("Hauptmenü-Geräusche", mv))
 	v.add_child(UiKit.sep())
 	_radio_section(v)
+	v.add_child(UiKit.sep())
+	_voice_section(v)
 	v.add_child(UiKit.sep())
 	# --- devices ---
 	var outs := _device_list(AudioServer.get_output_device_list())
