@@ -297,6 +297,11 @@ func _process(delta: float) -> void:
 	if car == null or car.wheels.size() < 4:
 		return
 	var speed: float = car.speed
+	# other cars far away: less smoke, none beyond 70 m (the volumetric puffs of a field of drifting
+	# bots cost a lot when they were in view)
+	var far_k := 1.0
+	if car.is_remote or car.is_bot or car.ai_fn.is_valid():
+		far_k = 1.0 - smoothstep(30.0, 70.0, float(car.view_dist))
 	for i in 4:
 		var w: Dictionary = car.wheels[i]
 		var p: GPUParticles3D = _smokes[i]
@@ -324,9 +329,10 @@ func _process(delta: float) -> void:
 			ratio = clampf((slip - threshold) / 9.0, 0.15, 1.0)
 			pm.color = Color(1, 1, 1)
 		p.global_position = contact + Vector3(0, 0.25, 0)
+		on = on and far_k > 0.02
 		p.emitting = on
 		if on:
-			p.amount_ratio = ratio
+			p.amount_ratio = ratio * far_k
 		# skidmarks
 		if car.skidmarks:
 			var key := _key_base + i

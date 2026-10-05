@@ -504,8 +504,9 @@ func _banner_arch(corners: Array) -> void:
 	add("banner_tower", Transform3D(basis, Vector3(r.x, r.y, r.z)))
 	var mid := (l + r) * 0.5
 	mid.y = y + 6.0
-	var bw := minf(width - 1.2, 22.0)
-	var h := bw / 8.0
+	# (always from tower to tower – capped at 22 m it hung in the air between them on a wide straight)
+	var bw := width - 1.2
+	var h := minf(bw / 8.0, 2.75)
 	add("bill", Transform3D(Basis(x * bw, Vector3.UP * h, z), mid), SignAtlas.cell("banner", "drift_zone"))
 	add("bill", Transform3D(Basis(-x * bw, Vector3.UP * h, -z), mid - z * 0.2), SignAtlas.cell("banner", "series"))
 	scenery.occupy(l, 1.2)

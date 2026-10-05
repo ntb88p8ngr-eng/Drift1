@@ -465,6 +465,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if is_display:
 		return
+	_update_detail(delta)
 	# the body mesh is drawn at an interpolated transform so it moves smoothly at any frame rate
 	body.global_transform = visual_transform()
 	if jelly > 0.0:
@@ -1130,6 +1131,38 @@ func _check_flip(delta: float) -> void:
 	var ky := arena_kill_y if respawn_fn.is_valid() else (float(track.kill_y) if track else -20.0)
 	if global_position.y < ky:
 		reset_to_track()
+
+
+var view_dist := 0.0            # distance to the camera (other cars; see _update_detail)
+var _detail_t := 0.0
+var _shadows_on := true
+
+
+## Other cars (bots, other players): cheaper the further away they are – no shadow beyond 35 m (a
+## shadow pass per model part each), the tyre smoke thinned out (tire_fx.gd reads view_dist).
+func _update_detail(delta: float) -> void:
+	if not (is_remote or is_bot or ai_fn.is_valid()):
+		return
+	_detail_t -= delta
+	if _detail_t > 0.0:
+		return
+	_detail_t = 0.3
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or body == null:
+		return
+	view_dist = cam.global_position.distance_to(global_position)
+	var want := view_dist < 35.0
+	if want == _shadows_on:
+		return
+	_shadows_on = want
+	for g in body.find_children("*", "GeometryInstance3D", true, false):
+		var gi := g as GeometryInstance3D
+		if want:
+			gi.cast_shadow = int(gi.get_meta("shadow", GeometryInstance3D.SHADOW_CASTING_SETTING_ON))
+		else:
+			if not gi.has_meta("shadow"):
+				gi.set_meta("shadow", gi.cast_shadow)
+			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Car transform interpolated between the last two physics steps (smooth at any frame rate).
