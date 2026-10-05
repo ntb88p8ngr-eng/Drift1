@@ -9,6 +9,7 @@ extends Node3D
 const PartySites = preload("res://scripts/world/party_sites.gd")
 const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const PartyArena = preload("res://scripts/world/party_arena.gd")
+const PartyBots = preload("res://scripts/world/party_bots.gd")
 const Car = preload("res://scripts/car/car.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 
@@ -83,6 +84,7 @@ var _throw := 0
 var _throw_t := 0.0
 var _bowl_phase := ""        # roll, settle, reset
 var _arena: PartyArena
+var _pbots: PartyBots          # offline: the race's bots playing along
 var _mask_before := 0
 
 # UI
@@ -117,6 +119,11 @@ func _ready() -> void:
 
 
 ## True while a minigame holds up the race (the world stops its clock and lap counting).
+## The race's bots are out on a minigame course (the world does not park them then).
+func bots_on_course() -> bool:
+	return _pbots != null and _pbots.on_course()
+
+
 func active() -> bool:
 	return state != "idle"
 
@@ -363,6 +370,10 @@ func _host_check_final(force: bool) -> void:
 	if _arena:
 		for bid in _arena.bot_ids():
 			_results[bid] = _arena.score(bid)
+	if _pbots:
+		var br := _pbots.results()
+		for bid in br:
+			_results[bid] = br[bid]
 	var rows: Array = []
 	for id in _results:
 		rows.append([int(id), float(_results[id])])
@@ -541,6 +552,8 @@ func _physics_process(delta: float) -> void:
 			if _t >= (2.5 if _skip_roulette else ANNOUNCE_TIME):
 				_begin_travel()
 		"travel":
+			if _pbots:
+				_pbots.step(delta, _t)       # (held on the grid)
 			var left := COUNTDOWN_TIME - _t
 			var step := int(ceil(left))
 			if step >= 1 and step <= 3:
@@ -552,8 +565,12 @@ func _physics_process(delta: float) -> void:
 				_t = 0.0
 				_release()
 				world.local_car.controls_locked = false
+				if _pbots:
+					_pbots.go()
 		"play":
 			_play(delta, g)
+			if _pbots:
+				_pbots.step(delta, _t)
 			if _t >= float(g["time"]) and not _done:
 				_finish_local()
 			if _done and not world.online:
@@ -589,7 +606,7 @@ func _begin_travel() -> void:
 	# fought on the long stretch (the balloon battle's) instead of the short arena
 	var site := id
 	var arena_bots: Array = []
-	if (id == "arena" or id == "balloon") and not world.online and _ids.size() <= 1:
+	if (id == "arena" or id == "balloon") and not world.online:
 		for bid in world._bot_ids:
 			if world.cars.has(bid) and is_instance_valid(world.cars[bid]):
 				arena_bots.append(world.cars[bid])
@@ -626,7 +643,14 @@ func _begin_travel() -> void:
 			_arena.bot_cars.append(str(b.car_id))
 		add_child(_arena)
 		var me: int = Net.local_id() if world.online else 1
-		_arena.setup(self, world, sites, _seed, _ids, me)
+		# offline the race's bots fight as the arena's own bots (copies of them), not parked
+		_arena.setup(self, world, sites, _seed, _ids if world.online else [me], me)
+	# offline: the race's bots play along (rlgl, parkour, koth, donut: on the course; bowling: counted)
+	if not world.online and world.race_ai and PartyBots.plays(id):
+		_pbots = PartyBots.new()
+		_pbots.name = "PartyBots"
+		add_child(_pbots)
+		_pbots.setup(self, world, sites, id, _ids, _seed)
 	_checkpoint = 0.0
 	_penalty = 0.0
 	_yaw_acc = 0.0
@@ -916,6 +940,8 @@ func _on_final(rows: Array) -> void:
 	sites.set_rlgl_light(-1)
 	if _arena:
 		_arena.frozen = true
+	if _pbots:
+		_pbots.stop()
 	world.local_car.input_enabled = true
 	world.local_car.controls_locked = true
 	_hold(world.local_car.global_transform)
@@ -958,6 +984,10 @@ func _begin_back() -> void:
 		_arena.queue_free()
 		_arena = null
 	_pins = []
+	if _pbots:
+		_pbots.finish()
+		_pbots.queue_free()
+		_pbots = null
 	_status.remove_theme_font_size_override("font_size")
 	sites.clear_course()
 	_hold(_return_xf)

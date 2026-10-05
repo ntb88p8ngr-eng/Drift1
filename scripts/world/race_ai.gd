@@ -101,7 +101,7 @@ func is_bot(id: int) -> bool:
 func _physics_process(delta: float) -> void:
 	if world == null or not world.is_loaded:
 		return
-	if world._bots_parked:
+	if world._bots_parked or (world.party and world.party.active()):
 		return      # a party minigame is on: the bots wait (no lap counting, no stuck resets)
 	var tr = world.track
 	var length: float = tr.length

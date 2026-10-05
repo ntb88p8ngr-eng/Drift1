@@ -385,7 +385,10 @@ func _park_bots(on: bool) -> void:
 			continue
 		var c: Car = cars[id]
 		c.visible = not on
+		# parked: engine off (it was heard revving at the limiter while hidden)
+		c.engine_on = not on
 		if on:
+			c.engine_level = 0.0
 			c.set_meta("park_layer", c.collision_layer)
 			c.set_meta("park_mask", c.collision_mask)
 			c.collision_layer = 0
@@ -553,7 +556,7 @@ func _physics_process(delta: float) -> void:
 				race_time += delta
 				_update_progress()
 	# race bots wait out a party minigame where they are (hidden, no collision)
-	var park := party != null and party.active()
+	var park := party != null and party.active() and not party.bots_on_course()
 	if park != _bots_parked:
 		_bots_parked = park
 		_park_bots(park)
