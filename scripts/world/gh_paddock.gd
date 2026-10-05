@@ -304,8 +304,10 @@ func _lane_surface() -> void:
 				scenery._ground_paints.append([q, 3.0, Color(1, 0, 0, 0), true])
 				scenery.occupy(q, 1.6)
 			lat += cell * 0.5
-		var mid := (ea.x + ea.y) * 0.5
-		scenery.grass_clear.append([PackedVector3Array([_at(pp, mid), _at(pb, (eb.x + eb.y) * 0.5)]), (ea.y - ea.x) * 0.5 + 0.6])
+		if pp < PIT_FROM - 20.0 or pb > PIT_TO + 20.0:
+			# (the entry / exit curves; along the pits the wide pit-area line covers the lane)
+			var mid := (ea.x + ea.y) * 0.5
+			scenery.grass_clear.append([PackedVector3Array([_at(pp, mid), _at(pb, (eb.x + eb.y) * 0.5)]), (ea.y - ea.x) * 0.5 + 0.6])
 		pp = pb
 	terrain.heights = hs
 	var mi := MeshKit.mesh_instance(MeshKit.commit(st, track.road_material, null, true), null, false)
@@ -337,16 +339,14 @@ func _pave(lane_pts: Array) -> void:
 		for j in n:
 			scenery._ground_paints.append([a.lerp(b, float(j) / n), LANE_W * 0.5 + 1.0, paved, true])
 	var lat1 := _lat + LANE_W * 0.5 + 1.0 + GARAGE_D + 10.0
-	# (the GPU grass keeps clear of all of it: lines along the pit area, 3 m apart)
-	var band := _wall_off + 0.5
-	while band <= lat1:
-		var line := PackedVector3Array()
-		var q := PIT_FROM - 20.0
-		while q <= PIT_TO + 20.0:
-			line.append(_at(q, band))
-			q += 2.0
-		scenery.grass_clear.append([line, 1.8])
-		band += 3.0
+	# (the GPU grass keeps clear of all of it: one wide line along the middle of the pit area – the
+	# shader only looks at the 64 nearest segments, many narrow ones left the garages out)
+	var line := PackedVector3Array()
+	var q := PIT_FROM - 22.0
+	while q <= PIT_TO + 22.0:
+		line.append(_at(q, (_wall_off + lat1) * 0.5))
+		q += 2.0
+	scenery.grass_clear.append([line, (lat1 - _wall_off) * 0.5 + 1.0])
 	var p := PIT_FROM - 20.0
 	while p <= PIT_TO + 20.0:
 		var lat := _wall_off + 0.5
@@ -451,7 +451,6 @@ func _garages() -> void:
 		# side wall, floor, team band, the glass of the upper floor, the dark inside (the back wall,
 		# the slabs and the upper floor are built after the loop as one piece along the curve)
 		box.call(Vector3(-w * 0.5 + 0.15, 3.0, GARAGE_D * 0.5), Vector3(0.3, 6.0, GARAGE_D), wall)
-		box.call(Vector3(0, 0.02, GARAGE_D * 0.5), Vector3(w, 0.04, GARAGE_D), floor_c)
 		# (neighbouring bands overlap a little where the row curves: every other one sits 2 cm further
 		# out, so their faces never share a plane – they flickered at the joints)
 		box.call(Vector3(0, 4.3, 0.15 - 0.02 * float(k % 2)), Vector3(w - 0.02, 1.0, 0.3), team)
@@ -485,6 +484,8 @@ func _garages() -> void:
 		var pa := p0 + kk * GARAGE_W
 		var pb := pa + GARAGE_W
 		_slab(st, pa, pb, front_lat + GARAGE_D - 0.3, front_lat + GARAGE_D, 0.0, 6.0, wall)
+		# the floor: one slab along the curve (a box per garage left wedges of ground between them)
+		_slab(st, pa, pb, front_lat - 0.2, front_lat + GARAGE_D - 0.2, -0.1, 0.05, floor_c)
 		_slab(st, pa, pb, front_lat - 1.0, front_lat + GARAGE_D, 5.95, 6.25, wall)
 		_slab(st, pa, pb, front_lat + 2.0, front_lat + GARAGE_D, 6.25, 9.0, wall)
 		_slab(st, pa, pb, front_lat + 1.8, front_lat + GARAGE_D + 0.2, 9.0, 9.2, Color(0.3, 0.3, 0.33, 0.5))
@@ -496,7 +497,15 @@ func _garages() -> void:
 			dir /= len
 			var y0 := _road_y(pa) + float(track.ROAD_Y)
 			bodies.append([Transform3D(Basis(dir, Vector3.UP, dir.cross(Vector3.UP)), (ba + bb) * 0.5 + Vector3(0, y0 + 4.6 - (ba.y + bb.y) * 0.5, 0)), Vector3(len + 0.1, 9.2, 0.3)])
-	# the last side wall and a row of floodlight masts on the roof
+	# the last side wall (each garage brings only its left one)
+	var pe := p0 + GARAGES * GARAGE_W
+	_slab(st, pe - 0.3, pe, front_lat, front_lat + GARAGE_D, 0.0, 6.0, wall)
+	var wa := _at(pe - 0.15, front_lat)
+	var wb := _at(pe - 0.15, front_lat + GARAGE_D)
+	var wdir := Vector3(wb.x - wa.x, 0, wb.z - wa.z)
+	if wdir.length() > 0.01:
+		wdir = wdir.normalized()
+		bodies.append([Transform3D(Basis(wdir.cross(Vector3.UP), Vector3.UP, wdir), (wa + wb) * 0.5 + Vector3(0, _road_y(pe) + float(track.ROAD_Y) + 3.0 - (wa.y + wb.y) * 0.5, 0)), Vector3(0.3, 6.0, GARAGE_D)])
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshKit.commit(st, _vc())
 	mi.name = "PitBuilding"
