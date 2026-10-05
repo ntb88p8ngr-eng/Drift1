@@ -716,7 +716,6 @@ func _traffic_setup() -> void:
 			spot.shadow_enabled = false
 			add_child(spot)
 			c["spot"] = spot
-			c["beam"] = _beam_node()
 			var tail := OmniLight3D.new()
 			tail.light_color = Color(1.0, 0.1, 0.05)
 			tail.light_energy = 0.8
@@ -725,43 +724,6 @@ func _traffic_setup() -> void:
 			c["tail"] = tail
 			_tcars.append(c)
 			x += _trng.randf_range(45.0, 110.0)
-
-
-## A glow on each of a car's headlamps. -Z of the node points the way the car drives.
-var _flare_mat: StandardMaterial3D
-
-
-func _beam_node() -> Node3D:
-	if _flare_mat == null:
-		var grad := Gradient.new()
-		grad.set_color(0, Color(1, 0.95, 0.85, 1))
-		grad.set_color(1, Color(1, 0.95, 0.85, 0))
-		var gt := GradientTexture2D.new()
-		gt.gradient = grad
-		gt.fill = GradientTexture2D.FILL_RADIAL
-		gt.fill_from = Vector2(0.5, 0.5)
-		gt.fill_to = Vector2(1.0, 0.5)
-		gt.width = 64
-		gt.height = 64
-		_flare_mat = StandardMaterial3D.new()
-		_flare_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_flare_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_flare_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		_flare_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		_flare_mat.albedo_texture = gt
-		_flare_mat.albedo_color = Color(1.0, 0.95, 0.85, 0.9)
-	var root := Node3D.new()
-	add_child(root)
-	for sx in [-0.62, 0.62]:
-		var q := QuadMesh.new()
-		q.size = Vector2(1.1, 1.1)
-		var fl := MeshInstance3D.new()
-		fl.mesh = q
-		fl.material_override = _flare_mat
-		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		fl.position = Vector3(sx, 0.0, -0.05)
-		root.add_child(fl)
-	return root
 
 
 ## A fresh car for the loop: another model, another paint, its own pace.
@@ -783,7 +745,6 @@ func _traffic_step(delta: float) -> void:
 		for c in _tcars:
 			(c["spot"] as Node3D).visible = false
 			(c["tail"] as Node3D).visible = false
-			(c["beam"] as Node3D).visible = false
 		return
 	for c in _tcars:
 		var lane: float = c["lane"]
@@ -818,9 +779,6 @@ func _traffic_step(delta: float) -> void:
 		(c["tail"] as Node3D).visible = true
 		spot.global_transform = Transform3D(Basis.looking_at(fwd + Vector3(0, -0.12, 0), Vector3.UP), xf.origin + fwd * (half + 0.1) + Vector3(0, 0.7, 0))
 		(c["tail"] as OmniLight3D).global_position = xf.origin - fwd * (half + 0.4) + Vector3(0, 0.7, 0)
-		var beam: Node3D = c["beam"]
-		beam.visible = true
-		beam.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), xf.origin + fwd * (half - 0.05) + Vector3(0, 0.66, 0))
 
 
 func _process(delta: float) -> void:

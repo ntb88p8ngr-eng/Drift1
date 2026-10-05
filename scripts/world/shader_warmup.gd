@@ -77,6 +77,21 @@ func run(root: Node, cam: Camera3D, extra_meshes: Array = []) -> void:
 		var gx := (float(i % n) / maxf(n - 1, 1) - 0.5) * 0.6
 		var gy := (float(i / n) / maxf(n - 1, 1) - 0.5) * 0.35
 		node.global_transform = Transform3D(xf.basis.scaled(Vector3(0.004, 0.004, 0.004)), xf * Vector3(gx, gy, -1.5))
+	# lit by a shadow-casting spot (the headlights): its shadow pass needs pipelines of its own for
+	# every material – without this the first switch-on of the lights froze the game
+	var spot := SpotLight3D.new()
+	spot.shadow_enabled = true
+	spot.spot_range = 4.0
+	spot.spot_angle = 40.0
+	spot.light_energy = 0.05
+	add_child(spot)
+	spot.global_transform = Transform3D(xf.basis, xf * Vector3(0, 0, -0.6))
+	var omni := OmniLight3D.new()
+	omni.shadow_enabled = true
+	omni.omni_range = 3.0
+	omni.light_energy = 0.05
+	add_child(omni)
+	omni.global_transform = Transform3D(xf.basis, xf * Vector3(0, 0, -1.2))
 	print("WARMUP: %d pipelines" % items.size())
 
 
