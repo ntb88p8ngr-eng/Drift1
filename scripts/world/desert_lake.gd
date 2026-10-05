@@ -143,7 +143,9 @@ func _ring_road() -> void:
 		var v0 := circ * k / segs
 		var v1 := circ * (k + 1) / segs
 		MeshKit.quad(st, i0, o0, o1, i1, Vector3.UP, Vector2(0, v0), Vector2(1, v0), Vector2(1, v1), Vector2(0, v1))
-		faces.append_array(PackedVector3Array([i0, o1, o0, i0, i1, o1]))
+		# clockwise seen from above (Godot's front face): the other order faced down, so a car went
+		# through the deck wherever no ground lay under it – on the bridge, into the river
+		faces.append_array(PackedVector3Array([i0, o0, o1, i0, o1, i1]))
 		_stamp(Vector2(_ring_point(a0).x, _ring_point(a0).z), half + 0.5)
 	var mi := MeshKit.mesh_instance(MeshKit.commit(st, track.road_material), null, false)
 	mi.name = "RingRoad"
