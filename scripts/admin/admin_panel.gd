@@ -10,6 +10,7 @@ const AdminUi = preload("res://scripts/admin/admin_ui.gd")
 
 var world
 var cam: Camera3D
+var _prev_input := true
 var _prev_cam: Camera3D
 var _panel: Control
 var _bots_box: VBoxContainer
@@ -57,11 +58,7 @@ func _ready() -> void:
 	v.add_child(UiKit.slider(0.05, 2.0, 0.05, 1.0, func(x):
 		Engine.time_scale = x
 		ts_l.text = Game.t("Spieltempo: %.2f") % x, 380))
-	v.add_child(UiKit.button("Auto zur Kamera holen", func():
-		if world.local_car and cam.current:
-			var f := -cam.global_transform.basis.z
-			f.y = 0.0
-			world.local_car.place(Transform3D(Basis.looking_at(f.normalized(), Vector3.UP), cam.global_position)), 380))
+	v.add_child(UiKit.button("Auto zur Kamera holen", _car_to_camera, 380))
 	v.add_child(UiKit.sep())
 	v.add_child(UiKit.label("BOTS", 19, UiKit.GOLD))
 	_bots_box = VBoxContainer.new()
@@ -85,6 +82,35 @@ func _unhandled_input(event: InputEvent) -> void:
 			_refresh())
 
 
+func _physics_process(_delta: float) -> void:
+	# while flying the free camera the car takes no input (others, e.g. the pause menu, switch it back on)
+	if cam and cam.active and world and world.local_car and is_instance_valid(world.local_car):
+		world.local_car.input_enabled = false
+
+
+## The car onto the ground under the camera (the free one, else the current), facing the way it looks.
+func _car_to_camera() -> void:
+	var car = world.local_car
+	var c := get_viewport().get_camera_3d()
+	if car == null or c == null:
+		return
+	var p := c.global_position
+	var f := -c.global_transform.basis.z
+	f.y = 0.0
+	if f.length() < 0.01:
+		f = Vector3(0, 0, -1)
+	# the ground below it (not the car itself)
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 2.0, 0), p - Vector3(0, 500.0, 0))
+	q.exclude = [car.get_rid()]
+	var hit := get_viewport().world_3d.direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		p = (hit["position"] as Vector3) + Vector3(0, 0.8, 0)
+	elif world.terrain:
+		p.y = world.terrain.height_at(p.x, p.z) + 0.8
+	car.place(Transform3D(Basis.looking_at(f.normalized(), Vector3.UP), p))
+	world.hud.show_message("AUTO GEHOLT", "", UiKit.GOOD, 1.2)
+
+
 func _set_freecam(on: bool) -> void:
 	if on:
 		_prev_cam = get_viewport().get_camera_3d()
@@ -93,12 +119,17 @@ func _set_freecam(on: bool) -> void:
 		cam.make_current()
 		if world.local_car:
 			world.local_car.controls_locked = true
+			# (no input at all: flying with W must not give gas)
+			_prev_input = world.local_car.input_enabled
+			world.local_car.input_enabled = false
 	else:
 		cam.active = false
 		if _prev_cam and is_instance_valid(_prev_cam):
 			_prev_cam.make_current()
-		if world.local_car and world.state == "running":
-			world.local_car.controls_locked = false
+		if world.local_car:
+			world.local_car.input_enabled = _prev_input
+			if world.state == "running":
+				world.local_car.controls_locked = false
 
 
 func _refresh() -> void:
