@@ -69,6 +69,10 @@ uniform sampler2D noise_nrm : hint_normal, filter_linear_mipmap_anisotropic, rep
 uniform vec3 asphalt : source_color = vec3(0.10, 0.10, 0.11);
 uniform vec3 line_color : source_color = vec3(0.92, 0.92, 0.88);
 uniform float edge_line = 0.022;
+// stretches without the edge line (pit entry / exit): x..y distance along the lap (x > y: across the
+// lap's seam), z = side (0 left, 1 right)
+uniform vec4 line_gap0 = vec4(0.0);
+uniform vec4 line_gap1 = vec4(0.0);
 uniform float wetness = 0.0;
 uniform float patch_amount = 0.5;
 uniform sampler2D puddle_tex : hint_default_black, filter_linear, repeat_disable;
@@ -117,7 +121,16 @@ void fragment() {
 	float line_off = 0.14 * sin(UV.y * 0.011) + 0.06 * sin(UV.y * 0.037);
 	float rubber = smoothstep(0.30, 0.0, abs(UV.x - 0.5 + line_off)) * (0.45 + 0.4 * n2);
 	col *= 1.0 - rubber * 0.55;
-	float edge = step(UV.x, edge_line) + step(1.0 - edge_line, UV.x);
+	float edge_l = step(UV.x, edge_line);
+	float edge_r = step(1.0 - edge_line, UV.x);
+	for (int g = 0; g < 2; g++) {
+		vec4 gap = g == 0 ? line_gap0 : line_gap1;
+		bool in_gap = gap.x < gap.y ? (UV.y > gap.x && UV.y < gap.y) : (gap.x > gap.y && (UV.y > gap.x || UV.y < gap.y));
+		if (in_gap) {
+			if (gap.z < 0.5) { edge_l = 0.0; } else { edge_r = 0.0; }
+		}
+	}
+	float edge = edge_l + edge_r;
 	col = mix(col, line_color * (0.8 + 0.2 * n), clamp(edge, 0.0, 1.0));
 	float sandy = 0.0;
 	if (sand_len > 0.0) {

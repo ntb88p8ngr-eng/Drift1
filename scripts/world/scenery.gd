@@ -1592,7 +1592,7 @@ func _ground_quad(kind: String, q: Array, lift: float, uvs: Array) -> void:
 
 
 func _ground_wall(kind: String, a: Vector3, b: Vector3, lift: float, outward: Vector3) -> void:
-	if kind != "asphalt" and kind != "paving":
+	if kind != "asphalt" and kind != "paving" and kind != "road":
 		return
 	if not _ground_walls.has(kind):
 		_ground_walls[kind] = []
@@ -1655,6 +1655,16 @@ func add_path(pts: Array, width: float, kind: String, paint := true) -> void:
 		_ground_paints.append([a, width * 0.5 + 1.0 if paint else maxf(width * 0.5 - 1.5, 0.5), GROUND_PAINT.get(kind, Color(0.8, 0.2, 0, 0)), not paint])
 		if k % 3 == 0:
 			occupy(a, width * 0.5 + 0.8)
+
+
+## A piece of road surface like the track's own (its material): the quad q (world points, laid on the
+## ground) with the road's UVs (x across 0..1 – keep it off the edges for no white line, y the distance).
+func add_road_quad(q: Array, uvs: Array) -> void:
+	_ground_quad("road", q, ROAD_LIFT, uvs)
+
+
+## Road pieces beside the track: just above the corridor's ground, which lies ROAD_Y below the road.
+const ROAD_LIFT := 0.04
 
 
 ## A flat rectangle on the ground (car parks), size = (x, z) in the frame xf.
@@ -1724,6 +1734,12 @@ func _finish_ground() -> void:
 	_ground_quads.clear()
 	_ground_walls.clear()
 	for kind in _ground_sts:
+		if kind == "road" and track and track.road_material:
+			# (the track's own surface: same asphalt, wet and puddles with the weather)
+			var rmi := MeshKit.mesh_instance(MeshKit.commit(_ground_sts[kind], track.road_material, null, true), null, false)
+			rmi.name = "Ground_road"
+			add_child(rmi)
+			continue
 		var m := StandardMaterial3D.new()
 		match kind:
 			"asphalt":

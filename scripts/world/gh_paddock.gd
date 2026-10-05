@@ -202,7 +202,12 @@ func _pit_lane() -> void:
 		p += 10.0
 	pts.append(_at(PIT_TO + 25.0, lerpf(edge, _lat, 0.55)))
 	pts.append(_at(PIT_TO + 48.0, edge))
-	scenery.add_path(pts, LANE_W, "asphalt", false)
+	_lane_surface()
+	# no white edge line where the lane and the track merge
+	var side_uv := 0.0 if pit_side < 0.0 else 1.0
+	var dist := func(pp: float) -> float: return float(track.dists[track.index_at(pp)])
+	track.road_material.set_shader_parameter("line_gap0", Vector4(dist.call(PIT_FROM - 48.0), dist.call(PIT_FROM - 5.0), side_uv, 0.0))
+	track.road_material.set_shader_parameter("line_gap1", Vector4(dist.call(PIT_TO + 5.0), dist.call(PIT_TO + 48.0), side_uv, 0.0))
 	_pave(pts)
 	# white lines: the lane's edge and the fast lane / working lane split
 	for lat_l in [_lat - LANE_W * 0.5 + 0.3, _lat + 0.5]:
@@ -231,6 +236,48 @@ func _pit_lane() -> void:
 	# and the strip between the barrier and the lane (the pit wall): no spectators standing there
 	for q in range(int(PIT_FROM) - 60, int(PIT_TO) + 60, 5):
 		scenery.occupy(_at(q, (_wall_off + _lat) * 0.5), 4.5)
+
+
+## The lane's surface: the same road as the track's (its material), from the track's edge where the
+## barrier opens – no strip of grass or gravel between the track and the entry or exit – out to the
+## lane, which curves in from the edge and back.
+func _lane_surface() -> void:
+	var hw: float = track.half_w
+	var p0 := PIT_FROM - 48.0
+	var p1 := PIT_TO + 48.0
+	var step := 2.0
+	var edges := func(pp: float) -> Vector2:
+		var into := smoothstep(p0, PIT_FROM - 12.0, pp) * (1.0 - smoothstep(PIT_TO + 12.0, p1, pp))
+		var outer := lerpf(hw, _lat + LANE_W * 0.5, into)
+		var inner := _lat - LANE_W * 0.5
+		if pp < PIT_FROM - 5.0 or pp > PIT_TO + 5.0:
+			inner = hw - 0.05          # where the barrier is open: right up to the track
+		return Vector2(inner, maxf(outer, inner))
+	var pp := p0
+	while pp < p1 - 0.01:
+		var pb := minf(pp + step, p1)
+		var ea: Vector2 = edges.call(pp)
+		var eb: Vector2 = edges.call(pb)
+		# the distance along the lap (the road's own UV y: puddles, rubber), not jumping at the lap's seam
+		var ua := float(track.dists[track.index_at(pp)])
+		var ub := float(track.dists[track.index_at(pb)])
+		if ub < ua:
+			ub = ua + (pb - pp)
+		var strips := maxi(int(ceil(maxf(ea.y - ea.x, eb.y - eb.x) / 1.5)), 1)
+		for k in strips:
+			var t0 := float(k) / strips
+			var t1 := float(k + 1) / strips
+			var q := [_at(pp, lerpf(ea.x, ea.y, t0)), _at(pp, lerpf(ea.x, ea.y, t1)), _at(pb, lerpf(eb.x, eb.y, t1)), _at(pb, lerpf(eb.x, eb.y, t0))]
+			# (the road shader's x: kept between its edge lines and away from the racing line's rubber)
+			scenery.add_road_quad(q, [Vector2(0.06, ua), Vector2(0.06, ua), Vector2(0.06, ub), Vector2(0.06, ub)])
+		# no grass through it: the ground under it marked paved, out to its edges (and nothing put on it)
+		var lat := ea.x
+		while lat <= ea.y + 0.01:
+			scenery._ground_paints.append([_at(pp, lat), 2.0, Color(1, 0, 0, 0), true])
+			scenery.occupy(_at(pp, lat), 1.6)
+			lat += 1.5
+		scenery._ground_wall("road", _at(pp, ea.y), _at(pb, eb.y), scenery.ROAD_LIFT, (_at(pp, ea.y + 1.0) - _at(pp, ea.y)).normalized())
+		pp = pb
 
 
 ## The whole pit area is concrete underfoot (the terrain's paved ground, no grass): the lane with
