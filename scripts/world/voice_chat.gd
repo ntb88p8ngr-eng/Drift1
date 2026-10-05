@@ -23,6 +23,9 @@ var _open_hold := 0.0
 var _voices := {}              # peer id -> [AudioStreamPlayer3D, playback, last heard (s)]
 var _t := 0.0
 var _label: Label
+var _icon: Control
+var _icon_text: Label
+var _level := 0.0              # the microphone's level (smoothed) for the symbol's ring
 
 
 func _ready() -> void:
@@ -43,6 +46,30 @@ func _ready() -> void:
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	layer.add_child(_label)
+	# the microphone symbol (right edge, middle): grey = on, waiting (push to talk / open mic);
+	# lit with a level ring while you are heard; red and struck through without a microphone
+	_icon = Control.new()
+	_icon.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_icon.offset_left = -78
+	_icon.offset_right = -22
+	_icon.offset_top = -28
+	_icon.offset_bottom = 28
+	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_icon.draw.connect(_draw_icon)
+	layer.add_child(_icon)
+	_icon_text = Label.new()
+	_icon_text.add_theme_font_size_override("font_size", 13)
+	_icon_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_icon_text.add_theme_constant_override("outline_size", 4)
+	_icon_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_icon_text.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_icon_text.offset_left = -120
+	_icon_text.offset_right = 0
+	_icon_text.offset_top = 30
+	_icon_text.offset_bottom = 50
+	_icon_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_icon_text.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	layer.add_child(_icon_text)
 
 
 func _start_mic() -> void:
@@ -77,10 +104,65 @@ func _process(delta: float) -> void:
 		var v: Array = _voices[id]
 		if _t - float(v[2]) < 0.4 and world and world.cars.has(id) and is_instance_valid(world.cars[id]):
 			names.append(str(world.cars[id].player_name))
-	var text := Game.t("🎤 Du sprichst") if talking else ""
+	var text := ""
 	for n in names:
-		text += ("\n" if text != "" else "") + "🔊 " + n
+		text += ("\n" if text != "" else "") + Game.t("%s spricht") % n
 	_label.text = text
+	# the microphone symbol
+	var on := bool(Game.settings.get("voice_chat", true))
+	_icon.visible = on
+	_icon_text.visible = on
+	if on:
+		var key := ""
+		for e in InputMap.action_get_events("voice_talk"):
+			if e is InputEventKey:
+				key = OS.get_keycode_string((e as InputEventKey).physical_keycode)
+				break
+		if _capture == null:
+			_icon_text.text = Game.t("Kein Mikrofon")
+			_icon_text.add_theme_color_override("font_color", Color(1.0, 0.45, 0.45))
+		elif talking:
+			_icon_text.text = Game.t("Mikro an")
+			_icon_text.add_theme_color_override("font_color", Color(0.55, 1.0, 0.6))
+		elif str(Game.settings.get("voice_mode", "ptt")) == "open":
+			_icon_text.text = Game.t("Offenes Mikro")
+			_icon_text.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+		else:
+			_icon_text.text = Game.t("%s: Sprechen") % key
+			_icon_text.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+		_icon.queue_redraw()
+
+
+func _draw_icon() -> void:
+	var sz := _icon.size
+	var c := sz * 0.5
+	var r := minf(sz.x, sz.y) * 0.5
+	var open := str(Game.settings.get("voice_mode", "ptt")) == "open"
+	var col := Color(0.75, 0.75, 0.8, 0.85)
+	if _capture == null:
+		col = Color(1.0, 0.35, 0.35, 0.95)
+	elif talking:
+		col = Color(0.45, 1.0, 0.55)
+	elif open:
+		col = Color(0.88, 0.88, 0.95, 0.95)
+	# the badge, and the level ring round it while talking
+	_icon.draw_circle(c, r, Color(0, 0, 0, 0.6))
+	if talking:
+		_icon.draw_arc(c, r - 2.0, -PI * 0.5, -PI * 0.5 + TAU * clampf(_level * 4.0, 0.08, 1.0), 40, col, 4.0, true)
+	else:
+		_icon.draw_arc(c, r - 2.0, 0.0, TAU, 40, Color(col, 0.35), 2.0, true)
+	# the microphone: capsule, cradle, stand
+	var w := r * 0.36
+	var h := r * 0.62
+	var top := c + Vector2(0, -r * 0.5)
+	_icon.draw_circle(top + Vector2(0, w * 0.5), w * 0.5, col)
+	_icon.draw_rect(Rect2(top.x - w * 0.5, top.y + w * 0.5, w, h - w), col)
+	_icon.draw_circle(top + Vector2(0, h - w * 0.5), w * 0.5, col)
+	_icon.draw_arc(c + Vector2(0, r * 0.02), r * 0.36, 0.15, PI - 0.15, 16, col, 2.5, true)
+	_icon.draw_line(c + Vector2(0, r * 0.38), c + Vector2(0, r * 0.58), col, 2.5)
+	_icon.draw_line(c + Vector2(-r * 0.2, r * 0.58), c + Vector2(r * 0.2, r * 0.58), col, 2.5)
+	if _capture == null:
+		_icon.draw_line(c + Vector2(-r * 0.55, -r * 0.55), c + Vector2(r * 0.55, r * 0.55), col, 3.0, true)
 
 
 func _capture_mic(delta: float) -> void:
@@ -105,6 +187,7 @@ func _capture_mic(delta: float) -> void:
 			_phase += step
 		_phase -= 1.0
 		_last = s
+	_level = lerpf(_level, level, 0.35)
 	var on := false
 	if want:
 		if mode == "open":

@@ -1056,4 +1056,9 @@ const EN := {
 	"Mikrofon-Verstärkung": "Mic gain",
 	"Lautstärke der anderen": "Others' volume",
 	"🎤 Du sprichst": "🎤 You are talking",
+	"%s spricht": "%s is talking",
+	"Kein Mikrofon": "No microphone",
+	"Mikro an": "Mic on",
+	"Offenes Mikro": "Open mic",
+	"%s: Sprechen": "%s: talk",
 }
