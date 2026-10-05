@@ -40,6 +40,7 @@ func setup(p_track, p_terrain, p_scenery) -> void:
 	_sign_mat = SignAtlas.board_material(self)
 	_bill_mat = SignAtlas.board_material(self, 0.0)
 	_bill_mat.set_shader_parameter("roughness_front", 0.6)
+	_bill_mat.set_shader_parameter("both_sides", true)      # (ad boards: readable from both sides)
 	_banner_mat = SignAtlas.board_material(self, 0.0, true)
 	_banner_mat.set_shader_parameter("roughness_front", 0.85)
 	_banner_st = MeshKit.new_st()
@@ -448,6 +449,7 @@ func _banner_strip(i0: int, count: int, side: float, cell: Color, y0: float, y1:
 		var off := _wall_off(i, side) - 0.04
 		pts.append([track.samples[i] + track.rights[i] * side * off, -track.rights[i] * side])
 	var total := float(count)
+	var free_standing: bool = str(track.def.get("wall", "")) == "none"
 	for k in count:
 		var a: Vector3 = pts[k][0]
 		var b: Vector3 = pts[k + 1][0]
@@ -463,6 +465,12 @@ func _banner_strip(i0: int, count: int, side: float, cell: Color, y0: float, y1:
 		var v1 := cell.g + cell.a - 0.002
 		MeshKit.quad(_banner_st, a + Vector3(0, y0, 0), b + Vector3(0, y0, 0), b + Vector3(0, y1, 0), a + Vector3(0, y1, 0), nrm,
 			Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0))
+		if free_standing:
+			# no barrier behind it (Utah): printed on the back too, reading the right way round from there
+			var m0 := cell.r * 2.0 + cell.b - u0
+			var m1 := cell.r * 2.0 + cell.b - u1
+			MeshKit.quad(_banner_st, b + Vector3(0, y0, 0), a + Vector3(0, y0, 0), a + Vector3(0, y1, 0), b + Vector3(0, y1, 0), -nrm,
+				Vector2(m1, v1), Vector2(m0, v1), Vector2(m0, v0), Vector2(m1, v0))
 	_banner_count += 1
 	_stats["banners"] = int(_stats.get("banners", 0)) + 1
 

@@ -24,12 +24,13 @@ uniform vec3 back_color : source_color = vec3(0.45, 0.46, 0.48);
 uniform float glow = 0.0;
 uniform float roughness_front = 0.45;
 uniform bool baked_uv = false;   // banner strips carry atlas UVs in the mesh
+uniform bool both_sides = false; // ad boards: printed on the back too (Props.board: back UVs mirrored)
 
 varying float front;
 varying vec4 cell;
 
 void vertex() {
-	front = (baked_uv || NORMAL.z > 0.5) ? 1.0 : 0.0;
+	front = (baked_uv || NORMAL.z > 0.5 || (both_sides && NORMAL.z < -0.5)) ? 1.0 : 0.0;
 	cell = INSTANCE_CUSTOM;
 }
 

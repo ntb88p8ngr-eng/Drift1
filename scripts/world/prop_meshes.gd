@@ -115,6 +115,9 @@ static func board(thickness := 0.04) -> ArrayMesh:
 		for i in verts.size():
 			if nrms[i].z > 0.5:
 				uvs[i] = Vector2(verts[i].x + 0.5, 0.5 - verts[i].y)
+			elif nrms[i].z < -0.5:
+				# the back: the same picture, reading the right way round from behind
+				uvs[i] = Vector2(0.5 - verts[i].x, 0.5 - verts[i].y)
 		arr[Mesh.ARRAY_TEX_UV] = uvs
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
