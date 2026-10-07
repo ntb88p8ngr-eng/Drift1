@@ -656,7 +656,7 @@ func _log(id: String, along: float, lateral: float, yaw: float, r: float, length
 	var body := RigidBody3D.new()
 	body.mass = clampf(PI * r * r * length * 650.0, 40.0, 900.0)
 	body.collision_layer = 8     # props
-	body.collision_mask = 1 | 2 | 8
+	body.collision_mask = 1 | 2 | 4 | 8      # pushed by every car: the player, the bots, other players
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.9
 	body.physics_material_override = pm
@@ -751,7 +751,7 @@ func _loose_tyre(xf: Transform3D, mat: Material) -> RigidBody3D:
 	var b := RigidBody3D.new()
 	b.mass = 11.0
 	b.collision_layer = 8     # props
-	b.collision_mask = 1 | 2 | 8
+	b.collision_mask = 1 | 2 | 4 | 8      # (bots and other players move them too)
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.8
 	pm.bounce = 0.2
@@ -1030,7 +1030,7 @@ func make_pins() -> Array:
 			var pin := RigidBody3D.new()
 			pin.mass = 7.0
 			pin.collision_layer = 8     # props
-			pin.collision_mask = 1 | 2 | 8
+			pin.collision_mask = 1 | 2 | 4 | 8
 			pin.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 			pin.center_of_mass = Vector3(0, 0.55, 0)
 			var pm := PhysicsMaterial.new()
