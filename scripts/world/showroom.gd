@@ -1584,9 +1584,12 @@ func _open_spanners(g: Node3D) -> void:
 		var down := (lb.get_center() - hb.get_center()).normalized()
 		var r := maxf(maxf(size.x, size.y), size.z) * 0.5
 		var mi := MeshInstance3D.new()
+		mi.name = "OpenJaw"
 		mi.mesh = _jaw_mesh(r, r * 0.55, maxf(size[ax], 0.004))
 		mi.material_override = mat
-		g.add_child(mi)
+		# part of its spanner: when the wall spanners are swapped for the new models
+		# (_replace_wall_tools) the jaw goes with the old one instead of hanging in the air
+		(p as Node).add_child(mi)
 		var side := down.cross(n).normalized()
 		mi.global_transform = Transform3D(Basis(side, -down, n), lb.get_center())
 
