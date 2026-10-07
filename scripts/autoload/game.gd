@@ -614,9 +614,11 @@ func load_settings() -> void:
 	var data = _read_json(SETTINGS_PATH)
 	first_boot = not (data is Dictionary)
 	if data is Dictionary:
+		# everything in the file, also what has no default here (created on first use: the sticker
+		# designs, recent paints, tutorial done …) – those were dropped, so a restart / a new version
+		# lost them
 		for k in data.keys():
-			if settings.has(k):
-				settings[k] = data[k]
+			settings[k] = data[k]
 		if not data.has("window_mode") and bool(data.get("fullscreen", false)):
 			settings["window_mode"] = 1
 		# rev 1: the old default MSAA 4x + FXAA flickered on thin objects in motion -> MSAA 4x + TAA
