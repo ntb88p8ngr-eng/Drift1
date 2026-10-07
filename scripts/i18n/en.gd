@@ -41,6 +41,7 @@ const EN := {
 	"Einzelspieler": "Single Player",
 	"Rennen, Drift, Party, frei": "Race, drift, party, free",
 	"Garage": "Garage",
+	"Garage – Auto, Lack, Tuning": "Garage – car, paint, tuning",
 	"Autos, Lack, Tuning": "Cars, paint, tuning",
 	"Tutorial": "Tutorial",
 	"Steuerung lernen, Grüne Hölle": "Learn the controls, Green Hell",

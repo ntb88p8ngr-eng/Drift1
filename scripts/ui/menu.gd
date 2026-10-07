@@ -435,6 +435,31 @@ func _float_button(text: String, callback: Callable) -> Button:
 	return b
 
 
+## The way into the garage (car, paint, tuning) as a square button with a garage drawn on it: a roof,
+## the walls and the roller door's slats. `back_to` is where the garage's Zurück leads.
+func _garage_button(back_to: String, h := 58.0) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(h, h)
+	b.tooltip_text = Game.t("Garage – Auto, Lack, Tuning")
+	b.pressed.connect(func():
+		_return_to = back_to
+		show_screen("garage"))
+	b.draw.connect(func():
+		var s := minf(b.size.x, b.size.y)
+		var o := (b.size - Vector2(s, s)) * 0.5
+		var p := func(x: float, y: float) -> Vector2: return o + Vector2(x, y) * s
+		var col := Color.WHITE
+		var w := maxf(2.0, s * 0.055)
+		# roof and walls
+		b.draw_polyline(PackedVector2Array([p.call(0.2, 0.8), p.call(0.2, 0.42), p.call(0.5, 0.2), p.call(0.8, 0.42), p.call(0.8, 0.8)]), col, w, true)
+		# the door opening and its slats
+		b.draw_rect(Rect2(p.call(0.3, 0.5), Vector2(0.4, 0.3) * s), col, false, w * 0.8)
+		for k in 3:
+			var y := 0.58 + k * 0.075
+			b.draw_line(p.call(0.33, y), p.call(0.67, y), col, w * 0.55))
+	return b
+
+
 ## A second corner button, right of the way back (e.g. START).
 func _float_action(text: String, callback: Callable) -> Button:
 	var b := UiKit.button(text, callback, 240)
@@ -1470,11 +1495,9 @@ func _build_single() -> void:
 		Game.set_setting("transmission", "auto" if i == 0 else "manual"))))
 	_add(desc)
 	update_desc.call()
-	_add(UiKit.spacer(8))
-	_add(UiKit.button("Garage", func():
-		_return_to = "single"
-		show_screen("garage"), 360))
 	_float_button("◀  Zurück", func(): show_screen("main"))
+	# right beside the way back: into the garage (car, paint, tuning)
+	_float_bar.add_child(_garage_button("single"))
 	_float_action("▶  START", func(): main.start_offline())
 
 
@@ -1880,9 +1903,6 @@ func _build_lobby() -> void:
 			show_status(err, UiKit.BAD), 220)
 	buttons.add_child(_ready_btn)
 	buttons.add_child(_start_btn)
-	buttons.add_child(UiKit.button("Auto / Lack", func():
-		_return_to = "lobby"
-		show_screen("garage"), 160))
 	var leave := func() -> void:
 		Net.leave()
 		show_screen("online")
@@ -1890,6 +1910,8 @@ func _build_lobby() -> void:
 		_opts_return = "lobby"
 		show_screen("options"), 170))
 	buttons.add_child(UiKit.button("Verlassen", leave, 140))
+	# right beside the way out: into the garage (car, paint)
+	buttons.add_child(_garage_button("lobby", 44.0))
 	_back_fn = leave
 	_add(buttons)
 	_refresh_lobby()
