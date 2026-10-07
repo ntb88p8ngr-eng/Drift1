@@ -4,7 +4,7 @@ extends Node
 signal settings_changed
 signal language_changed
 
-const VERSION := "0.0.7"
+const VERSION := "0.0.8"
 const EnTexts = preload("res://scripts/i18n/en.gd")
 ## Languages: [locale, name in that language]
 const LANGUAGES := [["de", "Deutsch"], ["en", "English"]]
