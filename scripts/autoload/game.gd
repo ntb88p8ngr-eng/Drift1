@@ -347,6 +347,74 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Gamepad scrolling in every menu (main menu, pause menu, lobby, results): the right stick scrolls
+# the list the focus is in; and at the last control of a list with text below it (credits, the
+# profile, descriptions) down / up scrolls on instead of doing nothing.
+# ---------------------------------------------------------------------------
+const PAD_SCROLL_SPEED := 1400.0     # px/s at full stick
+const PAD_SCROLL_STEP := 140         # px per d-pad press past the last control
+
+
+func _process(delta: float) -> void:
+	var y := 0.0
+	for dev in Input.get_connected_joypads():
+		var a := Input.get_joy_axis(dev, JOY_AXIS_RIGHT_Y)
+		if absf(a) > absf(y):
+			y = a
+	if absf(y) < 0.2:
+		return
+	var sc := _menu_scroll()
+	if sc:
+		var k := (absf(y) - 0.2) / 0.8
+		sc.scroll_vertical += int(signf(y) * k * k * PAD_SCROLL_SPEED * delta + signf(y))
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# (reaches here only when the focus had nowhere to go in that direction)
+	if not (event is InputEventJoypadButton or event is InputEventJoypadMotion or event is InputEventKey):
+		return
+	var d := 0
+	if event.is_action_pressed("ui_down", true):
+		d = 1
+	elif event.is_action_pressed("ui_up", true):
+		d = -1
+	if d == 0:
+		return
+	var sc := _menu_scroll()
+	if sc == null:
+		return
+	var before := sc.scroll_vertical
+	sc.scroll_vertical += d * PAD_SCROLL_STEP
+	if sc.scroll_vertical != before:
+		get_viewport().set_input_as_handled()
+
+
+## The scroll list the gamepad works in: the one holding the focused control, else (the focus on a
+## button outside the list, e.g. a screen's Zurück) the biggest scrollable list on screen. None
+## without a focus at all – in a race the right stick is the camera's.
+func _menu_scroll() -> ScrollContainer:
+	var f := get_viewport().gui_get_focus_owner()
+	if f == null:
+		return null
+	var n: Node = f
+	while n != null:
+		if n is ScrollContainer and (n as ScrollContainer).is_visible_in_tree():
+			return n
+		n = n.get_parent()
+	var best: ScrollContainer = null
+	var area := 0.0
+	for c in f.get_tree().root.find_children("*", "ScrollContainer", true, false):
+		var sc := c as ScrollContainer
+		if not sc.is_visible_in_tree() or sc.get_v_scroll_bar().max_value <= sc.size.y + 1.0:
+			continue
+		var a := sc.size.x * sc.size.y
+		if a > area:
+			area = a
+			best = sc
+	return best
+
+
+# ---------------------------------------------------------------------------
 # Input map (built in code so it is independent of keyboard layout – physical keys)
 # ---------------------------------------------------------------------------
 func _setup_input() -> void:

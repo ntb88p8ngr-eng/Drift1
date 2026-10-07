@@ -106,6 +106,7 @@ func setup(pages: Array, names: Array) -> void:
 		dot.custom_minimum_size = Vector2(16, 8)
 		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		dot.focus_mode = Control.FOCUS_NONE
+		dot.set_meta("pad_redundant", true)      # (the pages: LB / RB, or off a page's edge)
 		dot.tooltip_text = str(names[pi]) if pi < names.size() else ""
 		dot.pressed.connect(func(): set_page(pi))
 		_dots.add_child(dot)
@@ -243,6 +244,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _arrow(dir: int, cb: Callable) -> Button:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_NONE
+	b.set_meta("pad_redundant", true)          # (the pages: LB / RB, or off a page's edge)
 	b.custom_minimum_size = Vector2(30, 30)
 	b.flat = true
 	var hov := StyleBoxFlat.new()

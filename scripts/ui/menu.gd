@@ -214,7 +214,6 @@ func _build_platform_bar() -> void:
 			if sr:
 				sr.set_view("garage" if key == "overview" and current == "garage" else key)
 				_sync_platform_buttons(), 110)
-		b.focus_mode = Control.FOCUS_NONE
 		_view_row.add_child(b)
 	box.add_child(_view_row)
 	_platform_bar = HBoxContainer.new()
@@ -224,7 +223,6 @@ func _build_platform_bar() -> void:
 	for d: float in [-1.0, 0.0, 1.0]:
 		var b := UiKit.button("⟲" if d < 0.0 else ("⏸" if d == 0.0 else "⟳"), func(): pass, 64)
 		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
-		b.focus_mode = Control.FOCUS_NONE
 		b.add_theme_font_size_override("font_size", 22)
 		if d == 0.0:
 			b.name = "Pause"
@@ -258,8 +256,11 @@ func _build_platform_bar() -> void:
 				if sr:
 					sr.manual_dir = 0.0)
 		_platform_bar.add_child(b)
-	var lb := UiKit.button("💡 Licht", func(): _light_panel.visible = not _light_panel.visible, 110)
-	lb.focus_mode = Control.FOCUS_NONE
+	var lb := UiKit.button("💡 Licht", func():
+		_light_panel.visible = not _light_panel.visible
+		# opened with the gamepad / keyboard: straight into the panel
+		if _light_panel.visible and get_viewport().gui_get_focus_owner() != null:
+			UiKit.focus_first(_light_panel), 110)
 	lb.tooltip_text = "Deckenlicht und Plattform-Beleuchtung einstellen"
 	_platform_bar.add_child(lb)
 	# the roller shutter: down / up (a small button)
@@ -268,7 +269,6 @@ func _build_platform_bar() -> void:
 		if sr and sr.has_method("toggle_shutter"):
 			sr.toggle_shutter(), 48)
 	gb.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	gb.focus_mode = Control.FOCUS_NONE
 	gb.add_theme_font_size_override("font_size", 20)
 	gb.tooltip_text = "Rolltor hoch- / runterfahren – während der Fahrt: anhalten, nochmal: weiter"
 	_platform_bar.add_child(gb)
@@ -277,7 +277,6 @@ func _build_platform_bar() -> void:
 		Game.settings["radio_menu"] = not bool(Game.settings.get("radio_menu", true))
 		Game.save_settings()
 		_sync_radio(), 110)
-	rb.focus_mode = Control.FOCUS_NONE
 	rb.tooltip_text = "Autoradio oben rechts ein- / ausblenden"
 	_platform_bar.add_child(rb)
 	_light_panel = _build_light_panel()
@@ -290,6 +289,17 @@ func _build_platform_bar() -> void:
 
 const PLATFORM_COLORS := [["Rot", "#ff0505"], ["Orange", "#ff6a00"], ["Gelb", "#ffd000"], ["Grün", "#10ff40"],
 	["Cyan", "#00e5ff"], ["Blau", "#1040ff"], ["Lila", "#8a3dff"], ["Pink", "#ff2aa0"], ["Weiß", "#ffffff"]]
+
+
+## The frame round a colour swatch that has the gamepad / keyboard focus.
+static func _color_focus() -> StyleBoxFlat:
+	var f := StyleBoxFlat.new()
+	f.draw_center = false
+	f.border_color = Color.WHITE
+	f.set_border_width_all(3)
+	f.set_corner_radius_all(4)
+	f.set_expand_margin_all(2)
+	return f
 
 
 ## Garage lights: the ceiling's brightness, the platform ring's brightness and colour (saved).
@@ -311,7 +321,7 @@ func _build_light_panel() -> Control:
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(52, 30)
 		b.tooltip_text = str(c[0])
-		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_stylebox_override("focus", _color_focus())
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(hex)
 		sb.set_corner_radius_all(4)
@@ -329,7 +339,6 @@ func _build_light_panel() -> Control:
 	_platform_picker.custom_minimum_size = Vector2(52, 30)
 	_platform_picker.edit_alpha = false
 	_platform_picker.tooltip_text = "Eigene Farbe"
-	_platform_picker.focus_mode = Control.FOCUS_NONE
 	_platform_picker.color = Color(str(ml.get("platform_color", "#ff0505")))
 	_platform_picker.color_changed.connect(func(c: Color): _set_menu_light("platform_color", "#" + c.to_html(false)))
 	grid.add_child(_platform_picker)
@@ -348,7 +357,20 @@ func _build_light_panel() -> Control:
 		parent.add_child(_light_panel)
 		parent.move_child(_light_panel, at)
 		_light_panel.visible = open, 160))
-	return UiKit.panel(v)
+	var panel := UiKit.panel(v)
+	# up off the panel's first slider: the driver bar in the corner above it (the panel stands in the
+	# way of the gamepad's search for it otherwise)
+	panel.visibility_changed.connect(func():
+		if not panel.visible or _player_info == null:
+			return
+		var bars := _player_info.find_children("*", "Button", true, false)
+		if bars.is_empty():
+			return
+		var bar := bars[0] as Control
+		for c in v.find_children("*", "Range", true, false):
+			(c as Control).focus_neighbor_top = (c as Control).get_path_to(bar)
+			break)
+	return panel
 
 
 func _set_menu_light(key: String, value) -> void:
@@ -515,6 +537,7 @@ func on_shown() -> void:
 	d.canceled.connect(func(): d.queue_free())
 	_root.add_child(d)
 	d.popup_centered()
+	d.get_ok_button().grab_focus.call_deferred()       # (A) answers at once on the gamepad
 
 
 ## The radio where the car is in view (main menu, garage) when it is switched on there; the text in
@@ -891,7 +914,6 @@ func _info_strip(l: Label) -> PanelContainer:
 ## the other side), the profile picture and the driver's name – a click opens the driver profile.
 func _profile_bar() -> Button:
 	var b := Button.new()
-	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.tooltip_text = Game.t("Fahrerprofil")
 	var pname := str(Game.settings["player_name"])
