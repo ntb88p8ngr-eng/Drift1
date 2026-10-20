@@ -18,6 +18,7 @@ const TRACKS := [
 	{"id": "playground", "name": "Playground", "desc": "Riesige Asphaltfläche zum Driften üben – eine Achter-Strecke, Pylonen-Slaloms, Donut-Kreise und überall Fässer, Kisten und Reifen zum Wegschubsen."},
 	{"id": "tokyo", "name": "Neo Tokyo", "desc": "Japanische Großstadt: Scramble-Kreuzung mit Riesen-Bildschirmen, enge 90°-Ecken zwischen Hochhäusern, eine Stadtautobahn-Schleife auf Stelzen, Kirschblüten, Neonschilder – nachts am schönsten."},
 	{"id": "utah", "name": "Utah Desert", "desc": "Hügelige Wüste in Utah: eine verwinkelte Strecke voller Haarnadeln und S-Kurven über Kuppen und durch Senken, mal Asphalt, mal loser Sand. In der Mitte ein See mit Ringstraße, Motel, Diner und Tankstelle, ein Fluss mit Staudamm und Brücken, Kakteen, Felsformationen und Tafelberge."},
+	{"id": "takioro", "name": "Takioro Mountain", "desc": "Japanischer Bergpass, 10,5 km: Serpentinen mit acht Haarnadeln die Südflanke hinauf, am Hang entlang durch drei Tunnel und eine Felsgalerie, über den Pass, in Kehren die Westflanke hinunter und unter Kirschbäumen durchs Tal zurück – 260 m hoch und wieder runter."},
 	{"id": "gruene_hoelle", "name": "Grüne Hölle", "desc": "Nachbau der Nordschleife aus echten Karten- und Höhendaten – 20,5 km durch die Eifel, fast 300 m Höhenunterschied, von Hatzenbach über Karussell bis Döttinger Höhe."},
 ]
 
@@ -31,6 +32,11 @@ static func is_city(id: String) -> bool:
 
 ## The desert maps: sand instead of grass, cacti and boulders instead of forest, a fog bank round them.
 const DESERT_TRACKS := ["utah"]
+
+
+## The long tracks from height data (Grüne Hölle, Takioro): no party minigames, no NPC traffic.
+static func is_data_track(id: String) -> bool:
+	return id == "gruene_hoelle" or id == "takioro"
 
 
 static func is_desert(id: String) -> bool:

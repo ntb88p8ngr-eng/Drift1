@@ -38,6 +38,8 @@ var material: ShaderMaterial
 var outer_material: ShaderMaterial
 var paint = TerrainPaint.new()     # textures painted in the world editor
 var flat_r := 17.0             # distance to the centreline that is guaranteed flat
+var _blend_min := 26.0          # data tracks: from flat_r the ground blends into the real ground over
+var _blend_var := 30.0          # … this many metres (+ up to this much more, varying)
 var banked := false            # the track has banked corners (the ground follows them)
 
 var _dist := PackedFloat32Array()
@@ -82,7 +84,11 @@ func generate(p_track: Node3D) -> void:
 	var b: Rect2 = track.bounds
 	_center = b.get_center()
 	_quay_z = b.end.y + 45.0 if track_id == "harbor" else 1e9
-	flat_r = float(track.wall_base) + 5.0
+	# a mountain road (track def "verge", "blend"): the slope rises right behind the barrier
+	flat_r = float(track.wall_base) + float(track.def.get("verge", 5.0))
+	var bl: Array = track.def.get("blend", [26.0, 30.0])
+	_blend_min = float(bl[0])
+	_blend_var = float(bl[1])
 	big = bool(track.elevated)
 	banked = false
 	for bk in track.bank:
@@ -312,7 +318,7 @@ func _road_h_raw(x: float, z: float) -> float:
 func _height_big(x: float, z: float, d: float, k: int, dem: float) -> float:
 	var rh: float = _near_h[k] if _near_d[k] < NEAR_R else _road_h_raw(x, z)
 	var base := dem + _n_small.get_noise_2d(x, z) * 0.4 * _far_fade(d)
-	var bw := 26.0 + 30.0 * (_n_blend.get_noise_2d(x, z) * 0.5 + 0.5)
+	var bw := _blend_min + _blend_var * (_n_blend.get_noise_2d(x, z) * 0.5 + 0.5)
 	return lerpf(rh, base, smoothstep(flat_r, flat_r + bw, d))
 
 

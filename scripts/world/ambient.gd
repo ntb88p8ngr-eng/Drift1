@@ -7,7 +7,7 @@ extends Node3D
 
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 
-const FOREST := ["ridge", "gruene_hoelle"]
+const FOREST := ["ridge", "gruene_hoelle", "takioro"]
 const SAND_WIND := Vector3(1.0, 0.0, 0.35)      # (desert.gd WIND)
 
 const BIRD_SHADER := """

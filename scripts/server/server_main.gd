@@ -101,7 +101,7 @@ func _write_default_cfg() -> void:
 	c.set_value("server", "public", true)
 	c.set_value("server", "upnp", true)
 	c.set_value("server", "motd", "Willkommen! Viel Spaß beim Driften.")
-	c.set_value("race", "tracks", "ridge, harbor, tokyo, playground, gruene_hoelle")
+	c.set_value("race", "tracks", "ridge, harbor, tokyo, playground, gruene_hoelle, takioro")
 	c.set_value("race", "mode", "race")
 	c.set_value("race", "laps", 3)
 	c.set_value("race", "time_of_day", "night")

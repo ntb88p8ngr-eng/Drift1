@@ -1115,4 +1115,5 @@ const EN := {
 	"Zurück auf die Strecke": "Back onto the track",
 	"AUSSERHALB DER ARENA": "OUTSIDE THE ARENA",
 	"Zurück ins Spiel": "Back into the game",
+	"Japanischer Bergpass, 10,5 km: Serpentinen mit acht Haarnadeln die Südflanke hinauf, am Hang entlang durch drei Tunnel und eine Felsgalerie, über den Pass, in Kehren die Westflanke hinunter und unter Kirschbäumen durchs Tal zurück – 260 m hoch und wieder runter.": "Japanese mountain pass, 10.5 km: a zig-zag of hairpins up the south face, along the slopes through three tunnels and a rock gallery, over the pass, down the west face in hairpins and back through the valley under the cherry trees – 260 m up and down again.",
 }

@@ -112,6 +112,16 @@ const DEFS := {
 		},
 		"ground": "grass", "offroad_grip": 0.62, "wall": "armco", "asphalt": Color(0.095, 0.095, 0.1),
 	},
+	# Japanese mountain pass, made up (tools/make_takioro.py): a zig-zag of hairpins up the south face,
+	# along the upper slopes through three tunnels and a rock gallery, the pass, down the west face and
+	# back along the valley under the cherry trees – ~10.5 km, 260 m up and down
+	"takioro": {
+		"data": "res://assets/tracks/takioro",
+		"width": 12.0, "runoff": 2.6, "start_dist": 60.0,
+		# the ground: level only 1.5 m beyond the barrier, the slope back within 10–22 m
+		"verge": 1.5, "blend": [10.0, 12.0],
+		"ground": "grass", "offroad_grip": 0.6, "wall": "armco", "asphalt": Color(0.085, 0.085, 0.092),
+	},
 }
 
 var track_id := "ridge"

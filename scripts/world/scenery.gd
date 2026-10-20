@@ -17,6 +17,7 @@ const City = preload("res://scripts/world/city.gd")
 const Desert = preload("res://scripts/world/desert.gd")
 const Details = preload("res://scripts/world/details.gd")
 const Clutter = preload("res://scripts/world/clutter.gd")
+const Mountain = preload("res://scripts/world/mountain.gd")
 const Houses = preload("res://scripts/world/houses.gd")
 const MechShop = preload("res://scripts/world/mech_shop.gd")
 const Playground = preload("res://scripts/world/playground.gd")
@@ -47,6 +48,9 @@ var signs: Node3D              # sign_hits.gd: road signs can be knocked down
 var festival: Node3D
 var city: Node3D
 var desert: Node3D            # desert.gd on the desert maps
+var mountain: Node3D          # mountain.gd on Takioro Mountain (tunnels, slope frames, cherry trees …)
+## Extra forest trees at exact spots (x, ground y, z): Takioro's rock over the tunnels
+var extra_trees: Array = []
 var details: Node3D
 var tutorial_site = null          # tutorial mode: its set is built here (before the forest)
 var grass_clear: Array = []     # [PackedVector3Array line, half width]: no GPU grass there (paved areas)
@@ -149,6 +153,13 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 		desert.name = "Desert"
 		add_child(desert)
 		await desert.build(track, terrain, self, quality)
+	elif id == "takioro":
+		mountain = Mountain.new()
+		mountain.name = "Mountain"
+		add_child(mountain)
+		await mountain.build(track, terrain, self, quality)
+		# a few houses in the village by the start straight
+		await _build_houses(7, ["jp", "jp", "shop", "jp", "jp", "jp", "shop"], _section_index("Dorf"))
 	elif big:
 		# a few Eifel farmsteads where the track runs through Breidscheid
 		await _build_houses(8, ["barn", "barn", "office", "barn", "shop", "barn", "barn", "office"], _section_index("Breidscheid"))
@@ -633,6 +644,15 @@ func _build_forest(id: String) -> void:
 			_push(chunks[v], pos, [xf, tint], csize)
 			_push(far_chunks, pos, [xf, Color(tint.r, tint.g, tint.b, 0.75 if kinds[v][0] == "pine" else 1.0)], csize)
 		gz += spacing
+	# trees at given spots (on Takioro's rock over the tunnels)
+	for ep: Vector3 in extra_trees:
+		var v2: int = rng.randi() % kinds.size()
+		var s2 := rng.randf_range(0.85, 1.3)
+		var b2 := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s2 * rng.randf_range(0.85, 1.15), s2, s2 * rng.randf_range(0.85, 1.15)))
+		var xf2 := Transform3D(b2, ep)
+		var tint2 := _foliage_tint(kinds[v2][0] == "pine", autumn_ratio)
+		_push(chunks[v2], ep, [xf2, tint2], csize)
+		_push(far_chunks, ep, [xf2, Color(tint2.r, tint2.g, tint2.b, 0.75 if kinds[v2][0] == "pine" else 1.0)], csize)
 	var oak_reach := 0.0
 	for i in kinds.size():
 		if kinds[i][0] == "oak":

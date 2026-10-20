@@ -1472,7 +1472,7 @@ func _build_single() -> void:
 		bot_rows.visible = Game.settings["mode"] == "race"
 		graffiti_row.visible = Game.settings["mode"] == "graffiti"
 		laps_row.visible = Game.settings["mode"] != "graffiti" and not ta
-		party_rows.visible = Game.settings["track"] != "gruene_hoelle" and not ta
+		party_rows.visible = not Game.is_data_track(str(Game.settings["track"])) and not ta
 		traffic_rows.visible = not ta
 		ghost_rows.visible = ta
 		if ta:
@@ -2123,7 +2123,7 @@ func _refresh_lobby() -> void:
 		var prow := _party_rows(lobby, func(key, v):
 			if Net.lobby.get(key) != v:
 				Net.host_set_option(key, v))
-		prow.visible = str(lobby.get("track", "")) != "gruene_hoelle"
+		prow.visible = not Game.is_data_track(str(lobby.get("track", "")))
 		_lobby_settings.add_child(prow)
 		var coll := UiKit.option(["An – Autos prallen aneinander ab", "Aus – Geister-Modus (durchfahren)"], 0 if bool(lobby.get("collisions", true)) else 1, func(i):
 			Net.host_set_option("collisions", i == 0))
@@ -2138,7 +2138,7 @@ func _refresh_lobby() -> void:
 		_lobby_settings.add_child(UiKit.label(Game.t("Wetter: %s  ·  Tagesverlauf: %s") % [Game.weather_name(str(lobby.get("weather", "dry"))), Game.day_cycle_name(int(lobby.get("day_cycle", 0)))], 18))
 		if str(lobby.get("mode", "")) == "race" and int(lobby.get("bots", 0)) > 0:
 			_lobby_settings.add_child(UiKit.label(Game.t("KI-Gegner: %d  ·  %s") % [int(lobby.get("bots", 0)), RaceAI.LEVELS[clampi(int(lobby.get("bot_level", 1)), 0, 3)]["name"]], 18))
-		if bool(lobby.get("party", false)) and str(lobby.get("track", "")) != "gruene_hoelle":
+		if bool(lobby.get("party", false)) and not Game.is_data_track(str(lobby.get("track", ""))):
 			_lobby_settings.add_child(UiKit.label(Game.t("★ Party-Modus: %d Minispiele, %d Münzen") % [int(lobby.get("party_games", 3)), int(lobby.get("party_coins", 5))], 18, UiKit.GOLD))
 	var me_ready: bool = Net.players.get(Net.local_id(), {}).get("ready", false)
 	_ready_btn.visible = not host

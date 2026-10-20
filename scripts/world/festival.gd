@@ -87,6 +87,8 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 	var sp: float = track.SPACING
 	# camps: every ~110 m on the long track (a festival), every ~190 m elsewhere (fewer in the docks)
 	var step_m: float = 70.0 if big else (260.0 if track.track_id == "harbor" else 140.0)
+	if track.track_id == "takioro":
+		step_m = 420.0         # a mountain pass: a camp now and then, no festival
 	step_m *= [1.6, 1.25, 1.0, 0.85][clampi(quality, 0, 3)]
 	var step := maxi(int(step_m / sp), 8)
 	var i := int(track.start_index) + int(60.0 / sp)

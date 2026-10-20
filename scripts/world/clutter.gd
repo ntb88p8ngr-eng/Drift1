@@ -17,6 +17,8 @@ const RECIPES := {
 		"forest": 0.3, "weeds": 0.5, "flowers": 0.25, "dry": 0.1, "wall_weeds": 0.35},
 	"gruene_hoelle": {"litter": 0.06, "kinds": [["can", 5], ["cup", 3], ["bottle", 2], ["paper", 2], ["bag", 1], ["tyre_strip", 1]],
 		"forest": 0.28, "weeds": 0.45, "flowers": 0.3, "dry": 0.1, "wall_weeds": 0.3},
+	"takioro": {"litter": 0.03, "kinds": [["can", 4], ["bottle", 3], ["paper", 1], ["bag", 1], ["tyre_strip", 2]],
+		"forest": 0.32, "weeds": 0.5, "flowers": 0.3, "dry": 0.05, "wall_weeds": 0.35},
 	"harbor": {"litter": 0.08, "kinds": [["can", 3], ["bottle", 2], ["paper", 3], ["cardboard", 2], ["bag", 2], ["tyre_strip", 1]],
 		"forest": 0.0, "weeds": 0.3, "flowers": 0.05, "dry": 0.45, "wall_weeds": 0.4},
 	"playground": {"litter": 0.03, "kinds": [["tyre_strip", 4], ["can", 2], ["paper", 1], ["bottle", 1]],
