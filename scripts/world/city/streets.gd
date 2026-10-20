@@ -156,7 +156,7 @@ func _ribbon(k: int) -> void:
 		var pb := Vector3(b.x, y, b.y)
 		# u 0.2 – 0.8: the road shader's edge lines (for the race track) stay off the streets
 		cm.quad("road", pa - Vector3(na.x, 0, na.y) * hw, pa + Vector3(na.x, 0, na.y) * hw, pb + Vector3(nb.x, 0, nb.y) * hw, pb - Vector3(nb.x, 0, nb.y) * hw,
-			Vector3.UP, Color(1, 1, 1), Vector2(0.2, v - l), Vector2(0.8, v - l), Vector2(0.8, v), Vector2(0.2, v))
+			Vector3.UP, Color(1, 1, 1, 0), Vector2(0.2, v - l), Vector2(0.8, v - l), Vector2(0.8, v), Vector2(0.2, v))
 	stats["street_m"] = int(stats.get("street_m", 0)) + int(v)
 
 
@@ -211,7 +211,7 @@ func _route_mouths() -> void:
 			var rp := Vector3(r.x, y, r.y)
 			var sp := Vector3(st2.x, y, st2.y)
 			if t > 0:
-				cm.quad("road", prev_r, rp, sp, prev_s, Vector3.UP, Color(1, 1, 1),
+				cm.quad("road", prev_r, rp, sp, prev_s, Vector3.UP, Color(1, 1, 1, 0),
 					Vector2(0.2 + 0.6 * (u - 1.0 / steps), 0.0), Vector2(0.2 + 0.6 * u, 0.0), Vector2(0.2 + 0.6 * u, 3.0), Vector2(0.2 + 0.6 * (u - 1.0 / steps), 3.0))
 			prev_r = rp
 			prev_s = sp
@@ -310,10 +310,10 @@ func _plate(pl: Array) -> void:
 		var a3 := Vector3(p0.x, Y_PLATE, p0.y)
 		var b3 := Vector3(p1.x, Y_PLATE, p1.y)
 		if (p1 - c).cross(p0 - c) > 0.0:
-			cm.quad("road", pc, b3, a3, pc, Vector3.UP, Color(1, 1, 1),
+			cm.quad("road", pc, b3, a3, pc, Vector3.UP, Color(1, 1, 1, 0),
 				Vector2(0.5, c.y), Vector2(0.5, b3.z), Vector2(0.5, a3.z), Vector2(0.5, c.y))
 		else:
-			cm.quad("road", pc, a3, b3, pc, Vector3.UP, Color(1, 1, 1),
+			cm.quad("road", pc, a3, b3, pc, Vector3.UP, Color(1, 1, 1, 0),
 				Vector2(0.5, c.y), Vector2(0.5, a3.z), Vector2(0.5, b3.z), Vector2(0.5, c.y))
 		# kerb stones along the corner edges (just outside the asphalt)
 		if poly[q][1] and p0.distance_to(p1) > 0.1:
@@ -425,7 +425,7 @@ func _plate_poly(c: Vector2, poly: Array) -> void:
 		var a3 := Vector3(p0.x, Y_PLATE, p0.y)
 		var b3 := Vector3(p1.x, Y_PLATE, p1.y)
 		var c3 := Vector3(p2.x, Y_PLATE, p2.y)
-		cm.quad("road", a3, b3, c3, c3, Vector3.UP, Color(1, 1, 1),
+		cm.quad("road", a3, b3, c3, c3, Vector3.UP, Color(1, 1, 1, 0),
 			Vector2(0.5, a3.z), Vector2(0.5, b3.z), Vector2(0.5, c3.z), Vector2(0.5, c3.z))
 	for q in poly.size():
 		var p0: Vector2 = poly[q][0]
@@ -449,7 +449,7 @@ func _plate_disc(c: Vector2, r: float) -> void:
 		var p0 := Vector3(c.x + cos(a0) * r, Y_PLATE, c.y + sin(a0) * r)
 		var p1 := Vector3(c.x + cos(a1) * r, Y_PLATE, c.y + sin(a1) * r)
 		var pc := Vector3(c.x, Y_PLATE, c.y)
-		cm.quad("road", pc, p0, p1, pc, Vector3.UP, Color(1, 1, 1),
+		cm.quad("road", pc, p0, p1, pc, Vector3.UP, Color(1, 1, 1, 0),
 			Vector2(0.5, c.y), Vector2(0.5 + cos(a0) * 0.25, p0.z), Vector2(0.5 + cos(a1) * 0.25, p1.z), Vector2(0.5, c.y))
 
 

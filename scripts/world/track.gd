@@ -587,6 +587,22 @@ func sand_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+## Corners along the lap for the road shader's tyre marks: 0.5 + curvature (radius 25 m = ±0.5),
+## smoothed over a few metres; at most 8192 texels over the lap.
+func curve_texture() -> ImageTexture:
+	var n := curvature.size()
+	var w := mini(n, 8192)
+	var img := Image.create(maxi(w, 1), 1, false, Image.FORMAT_R8)
+	for x in w:
+		var i0 := int(float(x) / w * n)
+		var acc := 0.0
+		for d in range(-6, 7):
+			acc += curvature[(i0 + d + n) % n]
+		var k := clampf(acc / 13.0 * 25.0, -1.0, 1.0)
+		img.set_pixel(x, 0, Color(0.5 + 0.5 * k, 0, 0))
+	return ImageTexture.create_from_image(img)
+
+
 func has_sand() -> bool:
 	for v in sand:
 		if v > 0.0:
@@ -767,6 +783,12 @@ func _build_road() -> void:
 	if has_sand():
 		mat.set_shader_parameter("sand_tex", sand_texture())
 		mat.set_shader_parameter("sand_len", length)
+	mat.set_shader_parameter("curve_tex", curve_texture())
+	mat.set_shader_parameter("curve_len", length)
+	var hw_sum := 0.0
+	for v in hws:
+		hw_sum += float(v)
+	mat.set_shader_parameter("road_w", hw_sum / maxf(hws.size(), 1) * 2.0)
 	road_material = mat
 	var mesh := MeshKit.commit(st, mat, null, true)
 	var mi := MeshKit.mesh_instance(mesh, null, false)

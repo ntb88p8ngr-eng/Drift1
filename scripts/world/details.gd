@@ -180,7 +180,9 @@ func finish() -> void:
 		var m: Array = _meshes.get(key, [])
 		if m.is_empty():
 			continue
-		scenery._emit_chunks(m[0], _sets[key], 0.0, float(m[1]), "Prop_" + key, bool(m[2]))
+		# [mesh, range, shadows, chunk factor (optional: bigger chunks, fewer draw calls)]
+		var f: int = int(m[3]) if m.size() > 3 else 1
+		scenery._emit_chunks(m[0], scenery._rechunk(_sets[key], f), 0.0, float(m[1]), "Prop_" + key, bool(m[2]), scenery.CHUNK * f)
 	if _banner_count > 0:
 		var mesh := MeshKit.commit(_banner_st, _banner_mat)
 		var mi := MeshKit.mesh_instance(mesh, null, false)

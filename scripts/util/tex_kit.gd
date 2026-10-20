@@ -95,6 +95,11 @@ uniform float graffiti_len = 0.0;
 uniform sampler2D sand_tex : hint_default_black, filter_linear, repeat_enable;
 uniform float sand_len = 0.0;
 uniform vec3 sand_col : source_color = vec3(0.72, 0.5, 0.33);
+// corners along the lap (track.gd curve_texture): 0.5 + signed curvature (x = distance / curve_len)
+uniform sampler2D curve_tex : hint_default_black, filter_linear, repeat_enable;
+uniform float curve_len = 0.0;
+uniform float road_w = 12.0;          // metres across (UV.x 0..1)
+uniform float wear = 1.0;             // repair patches, cracks and tar seals, oil stains, tyre marks
 
 varying vec3 wpos;
 
@@ -121,6 +126,58 @@ void fragment() {
 	float line_off = 0.14 * sin(UV.y * 0.011) + 0.06 * sin(UV.y * 0.037);
 	float rubber = smoothstep(0.30, 0.0, abs(UV.x - 0.5 + line_off)) * (0.45 + 0.4 * n2);
 	col *= 1.0 - rubber * 0.55;
+	// wear: squares cut out and refilled (darker, with a seam), cracks – sealed with shiny tar in
+	// places –, oil stains in the middle of the lanes, black tyre marks swinging through the corners
+	float seal = 0.0;
+	float stain = 0.0;
+	float marks = 0.0;
+	if (wear > 0.0) {
+		float lat = UV.x * road_w;
+		float aa = 0.02 + fwidth(UV.y) * 0.7;
+		float cell_i = floor(UV.y / 11.0);
+		float ph = fract(sin(cell_i * 12.9898 + 78.233) * 43758.5453);
+		if (ph > 0.72) {
+			float pw = 1.5 + fract(ph * 3.17) * 3.0;
+			float px = fract(ph * 7.31) * max(road_w - pw, 0.5);
+			float py = cell_i * 11.0 + fract(ph * 5.7) * 4.0;
+			float pl = 2.0 + fract(ph * 9.1) * 4.5;
+			vec2 pq = vec2(lat - px, UV.y - py);
+			float in_p = smoothstep(-aa, aa, pq.x) * smoothstep(-aa, aa, pw - pq.x) * smoothstep(-aa, aa, pq.y) * smoothstep(-aa, aa, pl - pq.y);
+			float seam = in_p * (1.0 - smoothstep(0.05, 0.05 + aa * 2.0, min(min(pq.x, pw - pq.x), min(pq.y, pl - pq.y))));
+			col = mix(col, asphalt * 0.78 * (0.9 + 0.2 * n), in_p * wear);
+			col = mix(col, vec3(0.03), seam * 0.7 * wear);
+			seal = max(seal, seam);
+		}
+		float zone = smoothstep(0.55, 0.7, texture(noise_tex, wpos.xz * 0.013 + vec2(0.61, 0.17)).r);
+		float cn = texture(noise_tex, wpos.xz * 0.09 + vec2(0.37, 0.11)).r;
+		float cw = fwidth(cn) * 1.2 + 0.004;
+		float sealed = step(0.5, texture(noise_tex, wpos.xz * 0.004 + vec2(0.2, 0.9)).r);
+		float crack = (1.0 - smoothstep(0.0, cw, abs(cn - 0.5))) * zone;
+		float tar = (1.0 - smoothstep(0.0, cw * 3.5, abs(cn - 0.5))) * zone * sealed;
+		col *= 1.0 - crack * (1.0 - sealed) * 0.55 * wear;
+		col = mix(col, vec3(0.025, 0.025, 0.028), tar * 0.85 * wear);
+		seal = max(seal, tar);
+		float lane_mid = 1.0 - smoothstep(0.6, 1.4, abs(abs(UV.x - 0.5) * road_w - road_w * 0.25));
+		float on_ = texture(noise_tex, wpos.xz * 0.21 + vec2(0.71, 0.33)).r * (0.6 + 0.6 * texture(noise_tex, wpos.xz * 0.03 + vec2(0.5, 0.2)).r);
+		stain = smoothstep(0.7, 0.8, on_) * lane_mid;
+		col = mix(col, col * 0.45, stain * 0.8 * wear);
+		// (the race route only: the city's side streets carry vertex alpha 0)
+		if (curve_len > 0.0 && COLOR.a > 0.5) {
+			float k = (texture(curve_tex, vec2(UV.y / curve_len, 0.5)).r - 0.5) * 2.0;
+			float ak = smoothstep(0.2, 0.6, abs(k));
+			if (ak > 0.001) {
+				for (int s = 0; s < 3; s++) {
+					float fs = float(s);
+					float sw = texture(noise_tex, vec2(UV.y * 0.013 + fs * 0.37, fs * 0.21 + 0.1)).r;
+					float c = road_w * (0.5 + sign(k) * (0.38 * sw - 0.08 + 0.12 * (fs - 1.0)));
+					float pair = 1.0 - smoothstep(0.08, 0.16 + fwidth(lat), abs(abs(lat - c) - 0.78));
+					float on_m = smoothstep(0.4, 0.62, texture(noise_tex, vec2(UV.y * 0.045 + fs * 0.53, 0.3 + fs * 0.17)).r);
+					marks = max(marks, pair * on_m * ak * (0.55 + 0.45 * n));
+				}
+				col *= 1.0 - marks * 0.62 * wear;
+			}
+		}
+	}
 	float edge_l = step(UV.x, edge_line);
 	float edge_r = step(1.0 - edge_line, UV.x);
 	for (int g = 0; g < 2; g++) {
@@ -168,6 +225,8 @@ void fragment() {
 	SPECULAR = mix(0.45, 0.7, max(wetness, puddle)) * mix(1.0, 0.35, night * (1.0 - puddle));
 	ROUGHNESS = mix(ROUGHNESS, max(ROUGHNESS, 0.93), night * (1.0 - max(wetness, puddle)));
 	ROUGHNESS = mix(ROUGHNESS, 0.97, sandy);
+	// tar and oil shine a little, the rubber a touch smoother than the asphalt
+	ROUGHNESS = mix(ROUGHNESS, 0.38, clamp(seal * 0.6 + stain * 0.7 + marks * 0.25, 0.0, 1.0) * wear * (1.0 - sandy));
 	vec3 nm = texture(noise_nrm, wpos.xz * 0.23).xyz;
 	if (asphalt_mean > 0.0) {
 		nm = mix(nm, texture(asphalt_nrm, tp, road_b).xyz, 0.75 * (1.0 - sandy));
