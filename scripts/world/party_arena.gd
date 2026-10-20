@@ -598,7 +598,7 @@ func _bot_think(id: int, f: Dictionary, delta: float) -> void:
 				continue
 			var d := car.global_position.distance_to((fighters[oid]["car"] as Node3D).global_position)
 			if int(oid) == me:
-				d *= 0.8    # the player is a bit more interesting than the other bots
+				d *= 0.65   # the player is more interesting than the other bots
 			if d < best_d:
 				best_d = d
 				best = int(oid)

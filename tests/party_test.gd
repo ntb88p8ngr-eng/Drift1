@@ -31,8 +31,13 @@ func _ready() -> void:
 	for id in party.sites.sites:
 		var s: Dictionary = party.sites.sites[id]
 		print("  stretch %-8s from %.0f m (%.0f m long)" % [id, float(s["p0"]), float(s["len"])])
-	if party.sites.sites.size() != party.GAMES.size():
-		print("FAIL: only %d of %d minigames got a stretch" % [party.sites.sites.size(), party.GAMES.size()]); fails += 1
+	# (every minigame has a stretch; the shoot-out for five to eight cars its bigger arena too)
+	var missing: Array = []
+	for g in party.GAMES:
+		if not party.sites.sites.has(g["id"]):
+			missing.append(g["id"])
+	if not missing.is_empty():
+		print("FAIL: no stretch for %s" % [missing]); fails += 1
 	var car = world.local_car
 	for f in 30:
 		await get_tree().physics_frame

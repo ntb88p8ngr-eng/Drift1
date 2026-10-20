@@ -28,6 +28,13 @@ const ARENA_WALL := 4.0           # the arena's end walls, m in from both ends o
 ## stretch of BALLOON_LEN metres – far more room than the shoot-out arena.
 const BALLOON_LOOP_MAX := 1600.0
 const BALLOON_LEN := 520.0
+## The shoot-out with five to eight cars: a longer walled arena than the normal one (on the 520 m
+## stretch they were spread so far apart that the bots only ever found each other – and its
+## hundreds of loose tyres cost the physics dearly).
+const ARENA_BIG_LEN := 190.0
+## Parkour and red light / green light: walls this far beyond the road edge (just past the kerbs) –
+## nobody drives round the obstacles beside the road.
+const SIDE_WALL := 1.6
 
 var track: Node3D
 var sites := {}                   # id -> {"i0": start sample, "len": metres, "p0": race progress at the start}
@@ -40,6 +47,11 @@ var _tyre_paints: Array = []
 var mud_spots: Array = []         # parkour: [centre, radius] of the mud patches (less grip)
 var arena_id := "arena"           # the site the arena functions work on (arena or balloon)
 var _course: Node3D
+## Loose tyres stand frozen until a car comes close (stacks of single tyres never came to rest:
+## hundreds of them rocking cost the physics more than everything else): cell -> [bodies]
+const WAKE_CELL := 5.0
+const WAKE_R := 4.5
+var _frozen := {}
 
 
 ## Chooses the stretches (apart from each other where the track is long enough). Always succeeds on
@@ -106,6 +118,19 @@ func plan(p_track: Node3D) -> bool:
 		if best_b >= 0:
 			var pb := fposmod(float(track.dists[best_b]) - float(track.start_dist), float(track.length))
 			sites["balloon"] = {"i0": best_b, "len": BALLOON_LEN, "p0": pb}
+	# the big shoot-out: the straightest ARENA_BIG_LEN metres (it may share road with the others:
+	# the props only stand during their own game)
+	var cnt_a := int(ceil(ARENA_BIG_LEN / sp)) + 10
+	var best_a := -1
+	var best_at := 1e9
+	for i in range(0, n, 4):
+		var ta := turn[i + mini(cnt_a, n)] - turn[i]
+		if ta < best_at:
+			best_at = ta
+			best_a = i
+	if best_a >= 0 and float(track.length) > ARENA_BIG_LEN * 2.5:
+		var pa := fposmod(float(track.dists[best_a]) - float(track.start_dist), float(track.length))
+		sites["arena_big"] = {"i0": best_a, "len": ARENA_BIG_LEN, "p0": pa}
 	return not sites.is_empty()
 
 
@@ -164,7 +189,7 @@ func start_xf(id: String, slot: int, count: int) -> Transform3D:
 		"bowling":
 			# everybody bowls on their own pins from the same spot (the others are ghosts here)
 			return course_xf(id, BOWL_START - 4.0, 0.0, 0.6)
-		"arena", "balloon":
+		"arena", "balloon", "arena_big":
 			arena_id = id
 			return arena_spawn(slot)
 	return course_xf(id, donut_along(slot), 0.0, 0.6)
@@ -222,7 +247,7 @@ func build_course(id: String) -> void:
 			_build_donut()
 		"bowling":
 			_build_bowling()
-		"arena", "balloon":
+		"arena", "balloon", "arena_big":
 			arena_id = id
 			_build_arena()
 
@@ -235,6 +260,7 @@ func clear_course() -> void:
 	koth_zone = null
 	rlgl_lamps = []
 	mud_spots = []
+	_frozen.clear()
 
 
 func _mat(c: Color, rough := 0.8, emit := 0.0) -> StandardMaterial3D:
@@ -322,6 +348,7 @@ func _build_rlgl() -> void:
 		side = -side
 	set_rlgl_light(0)
 	_tyre_edges("rlgl", 2.0, rlgl_finish() + 4.0, 9.0, _venue_rng("rlgl"), 2, 3)
+	_side_walls("rlgl", RLGL_START - 26.0, rlgl_finish() + 10.0)
 
 
 ## -1 off, 0 red, 1 green, 2 yellow (all traffic lights of the stretch together)
@@ -381,8 +408,9 @@ func _build_parkour() -> void:
 			_mud_patch(id, a + r * 0.9, rng.randf_range(-0.5, 0.5) * hw, r * 0.8, rng, n_mud + 1)
 		a += r * (rng.randf_range(0.6, 0.9) if dense else rng.randf_range(0.9, 1.4))
 		n_mud += 1
-	# tyre walls along the edges of the whole course
+	# tyre walls along the edges of the whole course, a barrier just beyond the kerbs
 	_tyre_edges(id, PK_START + 3.0, pk_finish() - 3.0, 7.0, rng, 2, 4)
+	_side_walls(id, PK_START - 26.0, pk_finish() + 10.0)
 	var a0 := PK_START + 8.0
 	var a1 := pk_finish() - 6.0
 	match pk_variant:
@@ -412,6 +440,33 @@ func _build_parkour() -> void:
 		var top := MeshKit.box_node(Vector3(hw * 2.0 + 1.0, 0.35, 0.35), hazard)
 		_course.add_child(top)
 		top.global_transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, 4.5, 0))
+
+
+## Road edge (m from the centre line) at a point of a stretch: the road is wider in places.
+func edge_at(id: String, along: float) -> float:
+	var n: int = track.sample_count()
+	var idx := posmod(int(sites[id]["i0"]) + int(round(along / float(track.SPACING))), n)
+	return float(track.hws[idx]) if track.hws.size() == n else float(track.half_w)
+
+
+## A low striped barrier on both sides from a0 to a1, SIDE_WALL beyond the road edge, its collider
+## higher than it looks (a car launched off a ramp does not sail over it).
+func _side_walls(id: String, a0: float, a1: float) -> void:
+	var red := _mat(Color(0.85, 0.12, 0.08), 0.6)
+	var white := _mat(Color(0.92, 0.92, 0.9), 0.6)
+	var seg := 4.0
+	var a := a0
+	var k := 0
+	while a < a1:
+		for side: float in [-1.0, 1.0]:
+			var lat := side * (edge_at(id, a + seg * 0.5) + SIDE_WALL)
+			var xf := course_xf(id, a + seg * 0.5, lat, 0.0) * Transform3D(Basis.IDENTITY, Vector3(0, float(track.ROAD_Y), 0))
+			var mi := MeshKit.box_node(Vector3(0.45, 0.8, seg + 0.05), red if k % 2 == 0 else white)
+			_course.add_child(mi)
+			mi.global_transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, 0.4, 0))
+			Colliders.add_box(_course, xf * Transform3D(Basis.IDENTITY, Vector3(0, 1.3, 0)), Vector3(0.45, 2.6, seg + 0.3))
+		a += seg
+		k += 1
 
 
 ## False where an obstacle would block a checkpoint's respawn spot (or the start / finish lines).
@@ -756,6 +811,10 @@ func _loose_tyre(xf: Transform3D, mat: Material) -> RigidBody3D:
 	pm.friction = 0.8
 	pm.bounce = 0.2
 	b.physics_material_override = pm
+	# knocked about, they settle and fall asleep again soon (hundreds of them rocking on and on
+	# took the battles' physics from 3 to 8 ms a step)
+	b.linear_damp = 0.35
+	b.angular_damp = 1.5
 	var cs := CollisionShape3D.new()
 	cs.shape = _tyre_shape
 	b.add_child(cs)
@@ -764,8 +823,39 @@ func _loose_tyre(xf: Transform3D, mat: Material) -> RigidBody3D:
 	b.add_child(mi)
 	_course.add_child(b)
 	b.global_transform = xf
-	b.sleeping = true
+	b.freeze = true
+	var key := Vector2i(int(floor(xf.origin.x / WAKE_CELL)), int(floor(xf.origin.z / WAKE_CELL)))
+	if not _frozen.has(key):
+		_frozen[key] = []
+	(_frozen[key] as Array).append(b)
 	return b
+
+
+## Frees the frozen tyres near any of `points` (the cars): from then on they are knocked about.
+func wake_near(points: Array) -> void:
+	if _frozen.is_empty():
+		return
+	for p: Vector3 in points:
+		var cx := int(floor(p.x / WAKE_CELL))
+		var cz := int(floor(p.z / WAKE_CELL))
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				var key := Vector2i(cx + dx, cz + dz)
+				if not _frozen.has(key):
+					continue
+				var list: Array = _frozen[key]
+				for k in range(list.size() - 1, -1, -1):
+					var b = list[k]
+					if not is_instance_valid(b):
+						list.remove_at(k)
+						continue
+					var q: Vector3 = (b as Node3D).global_position
+					if Vector2(q.x - p.x, q.z - p.z).length_squared() < WAKE_R * WAKE_R and absf(q.y - p.y) < 4.0:
+						(b as RigidBody3D).freeze = false
+						(b as RigidBody3D).sleeping = false
+						list.remove_at(k)
+				if list.is_empty():
+					_frozen.erase(key)
 
 
 func _tyre() -> TorusMesh:
@@ -1157,14 +1247,14 @@ func _build_arena() -> void:
 		_course.add_child(mi)
 		mi.global_transform = xf
 		Colliders.add_box(_course, xf, size)
-	_gantry(id, ARENA_WALL - 3.0, "ARENA" if id == "arena" else "BALLON-SCHLACHT", Color(1.0, 0.3, 0.2))
+	_gantry(id, ARENA_WALL - 3.0, "BALLON-SCHLACHT" if id == "balloon" else "ARENA", Color(1.0, 0.3, 0.2))
 	# tyre heaps as more (softer looking) cover, and stacks in front of the walls
-	var heaps := int(clampf(l / 18.0, 3.0, 28.0))
+	var heaps := int(clampf(l / (18.0 if l < 250.0 else 34.0), 3.0, 18.0))
 	for m in heaps:
 		var ca := lerpf(ARENA_WALL + 12.0, l - ARENA_WALL - 12.0, (m + rng.randf_range(0.2, 0.8)) / float(heaps))
 		var cl := (1.0 if m % 2 == 0 else -1.0) * rng.randf_range(0.3, 0.7) * hw
 		_tyre_cluster(id, _clear_of_spawns(ca, cl, 4.5), cl, rng)
-	_tyre_edges(id, ARENA_WALL + 2.0, l - ARENA_WALL - 2.0, 11.0, rng, 1, 3)
+	_tyre_edges(id, ARENA_WALL + 2.0, l - ARENA_WALL - 2.0, 11.0 if l < 250.0 else 20.0, rng, 1, 3)
 	# floor markings: a big ring in the middle
 	var ring := TorusMesh.new()
 	ring.inner_radius = minf(hw - 1.5, 7.0)

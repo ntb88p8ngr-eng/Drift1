@@ -1109,4 +1109,10 @@ const EN := {
 	"Bestzeit löschen": "Delete best time",
 	"Löscht die gespeicherte Bestzeit samt Geisterauto für diese Strecke und Variante.": "Deletes the saved best time and its ghost car for this track and layout.",
 	"Noch keine – fahr die erste Runde": "None yet – drive your first lap",
+	"ZURÜCK AUF DEN KURS!  %.1f s": "BACK ONTO THE COURSE!  %.1f s",
+	"AUSSERHALB DES KURSES": "OFF THE COURSE",
+	"Zurück zum Checkpoint": "Back to the checkpoint",
+	"Zurück auf die Strecke": "Back onto the track",
+	"AUSSERHALB DER ARENA": "OUTSIDE THE ARENA",
+	"Zurück ins Spiel": "Back into the game",
 }

@@ -53,6 +53,8 @@ func _ready() -> void:
 		bot.linear_velocity = dir * 9.0
 		b.sleeping = false
 		for f in 120:
+			# (the party wakes the frozen tyres near the cars every step)
+			sites.wake_near([bot.global_position])
 			await get_tree().physics_frame
 		var moved := b.global_position.distance_to(o)
 		print("BOTPROPS %s (%s, %.0f kg): moved %.2f m, bot now %.0f km/h" % [cls, b.name, b.mass, moved, bot.speed * 3.6])

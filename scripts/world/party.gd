@@ -86,6 +86,11 @@ var _bowl_phase := ""        # roll, settle, reset
 var _arena: PartyArena
 var _pbots: PartyBots          # offline: the race's bots playing along
 var _mask_before := 0
+## Leaving the course (parkour, red light / green light; the battles over the whole lap): after a
+## short grace the car is put back onto it – with no ground gained.
+const OUT_GRACE := 1.2
+var _out_t := 0.0
+var _last_in := 0.0          # metres along where the car was last on the course
 
 # UI
 var _layer: CanvasLayer
@@ -481,6 +486,20 @@ func _on_start(msg: Dictionary) -> void:
 
 ## Holds the car still at xf (placed again every physics step, so it neither rolls nor keeps any
 ## speed – freezing the body brought the old velocity back when released and flung the car).
+## Where all the cars of the minigame are (players, race bots, the arena's own bots).
+func _car_points() -> Array:
+	var pts: Array = []
+	for c in world.cars.values():
+		if is_instance_valid(c) and (c as Node3D).visible:
+			pts.append((c as Node3D).global_position)
+	if _arena:
+		for id in _arena.fighters:
+			var ac = _arena.fighters[id]["car"]
+			if is_instance_valid(ac) and bool(_arena.fighters[id]["bot"]):
+				pts.append((ac as Node3D).global_position)
+	return pts
+
+
 func _hold(xf: Transform3D) -> void:
 	_pin = true
 	_pin_xf = xf
@@ -514,6 +533,8 @@ func _physics_process(delta: float) -> void:
 		return
 	_t += delta
 	var g: Dictionary = GAMES[_game]
+	if state == "travel" or state == "play":
+		sites.wake_near(_car_points())
 	match state:
 		"choose":
 			# host: nobody picked in time -> random
@@ -589,15 +610,16 @@ func _begin_travel() -> void:
 	if id == "parkour":
 		sites.pk_variant = posmod(_seed, sites.PK_VARIANTS.size())
 	# the shoot-out alone with the race's bots: they all come along – with more than four cars it is
-	# fought on the long stretch (the balloon battle's) instead of the short arena
+	# fought in the bigger arena (online: more than four players)
 	var site := id
 	var arena_bots: Array = []
 	if (id == "arena" or id == "balloon") and not world.online:
 		for bid in world._bot_ids:
 			if world.cars.has(bid) and is_instance_valid(world.cars[bid]):
 				arena_bots.append(world.cars[bid])
-		if id == "arena" and arena_bots.size() + 1 > 4 and sites.sites.has("balloon"):
-			site = "balloon"
+	var n_fighters: int = _ids.size() if world.online else 1 + arena_bots.size()
+	if id == "arena" and n_fighters > 4 and sites.sites.has("arena_big"):
+		site = "arena_big"
 	sites.build_course(site)
 	_hold(sites.start_xf(site, _slot, _ids.size()))
 	car.controls_locked = true
@@ -639,6 +661,8 @@ func _begin_travel() -> void:
 		_pbots.setup(self, world, sites, id, _ids, _seed)
 	_checkpoint = 0.0
 	_penalty = 0.0
+	_out_t = 0.0
+	_last_in = 0.0
 	_yaw_acc = 0.0
 	_last_yaw = car.global_rotation.y
 	_red_since = -1.0
@@ -700,6 +724,8 @@ func _play(delta: float, g: Dictionary) -> void:
 	var along := wrapf(float(proj[1]) - float(sites.sites[id]["p0"]), -float(world.track.length) * 0.5, float(world.track.length) * 0.5)
 	var lateral := float(proj[2])
 	_penalty = maxf(_penalty - delta, 0.0)
+	if _out_of_course(id, delta, along, lateral, int(proj[0])):
+		return
 	match id:
 		"rlgl":
 			# the traffic lights say it all (no text): green, yellow for the last second, red –
@@ -806,6 +832,50 @@ func _play(delta: float, g: Dictionary) -> void:
 				_yaw_acc += dy
 			_value = floorf(absf(_yaw_acc) / TAU)
 			_line.text = Game.t("%s   ·   %d Donuts") % [_clock(left), int(_value)]
+
+
+## The local car off the course: beside the road (past the barrier: jumped over it), or round a
+## shortcut where the projection lands on another part of the track. True when it was put back.
+func _out_of_course(id: String, delta: float, along: float, lateral: float, idx: int) -> bool:
+	var course := id == "rlgl" or id == "parkour"
+	var battle := (id == "balloon" or id == "arena") and _arena != null and sites.arena_loop()
+	if _done or _pin or not (course or battle):
+		_out_t = 0.0
+		return false
+	var tr = world.track
+	var hw: float = float(tr.hws[idx]) if idx >= 0 and idx < tr.hws.size() else float(tr.half_w)
+	var out := absf(lateral) > hw + (PartySites.SIDE_WALL + 0.8 if course else 6.0)
+	if course and (along < -30.0 or along > float(sites.sites[id]["len"]) + 20.0):
+		out = true
+	if not out:
+		if _out_t > 0.0:
+			_show_status("", UiKit.TEXT)
+		_out_t = 0.0
+		if course:
+			_last_in = along
+		return false
+	_out_t += delta
+	_show_status(Game.t("ZURÜCK AUF DEN KURS!  %.1f s") % maxf(OUT_GRACE - _out_t, 0.0), UiKit.BAD)
+	if _out_t < OUT_GRACE:
+		return false
+	_out_t = 0.0
+	_hint = -1
+	var car = world.local_car
+	match id:
+		"parkour":
+			car.place(sites.checkpoint_xf(_checkpoint))
+			world.hud.show_message("AUSSERHALB DES KURSES", "Zurück zum Checkpoint", UiKit.BAD, 1.6)
+		"rlgl":
+			var back := clampf(_last_in - 6.0, PartySites.RLGL_START - 4.0, sites.rlgl_finish() - 20.0)
+			_hold(sites.course_xf("rlgl", back, 0.0, 0.6))
+			_penalty = 1.0
+			world.hud.show_message("AUSSERHALB DES KURSES", "Zurück auf die Strecke", UiKit.BAD, 1.6)
+		_:
+			car.place(_arena._spawn_xf())
+			world.hud.show_message("AUSSERHALB DER ARENA", "Zurück ins Spiel", UiKit.BAD, 1.6)
+	_show_status("", UiKit.TEXT)
+	Sfx.play(self, "whistle", -12.0)
+	return true
 
 
 ## Bowling: two throws. Take a run-up; past the red foul line the car only rolls (no gas, no steering).
