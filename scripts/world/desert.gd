@@ -61,6 +61,11 @@ var _props: Array = []
 var _prop_grid := {}
 var _debris: Array = []
 var _weeds: Array = []
+## A few more the wind sends across the road ahead of the player now and then (the scattered ones are
+## spread over kilometres: you hardly ever met one).
+const GUST_WEEDS := 5
+var _gust_weeds: Array = []
+var _gust_t := 5.0
 static var _hulls := {}
 
 
@@ -438,7 +443,7 @@ func _shrubs(quality: int) -> void:
 ## Tumbleweeds: light balls of twigs the wind rolls over the sand (cars knock them about).
 func _tumbleweeds() -> void:
 	var mesh := tumbleweed_mesh(5)
-	for i in 18:
+	for i in 18 + GUST_WEEDS:
 		var b := RigidBody3D.new()
 		b.name = "Tumbleweed"
 		b.mass = 2.5
@@ -464,7 +469,10 @@ func _tumbleweeds() -> void:
 		var x := rng.randf_range(rect.position.x, rect.end.x)
 		var z := rng.randf_range(rect.position.y, rect.end.y)
 		b.global_position = Vector3(x, terrain.height_at(x, z) + r + 0.2, z)
+		b.set_meta("r", r)
 		_weeds.append(b)
+		if i >= 18:
+			_gust_weeds.append(b)
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +560,7 @@ func _physics_process(delta: float) -> void:
 		return
 	Debris.calm(_debris)
 	_blow(delta)
+	_gust(delta)
 	if _prop_grid.is_empty():
 		return
 	for car in world.cars.values():
@@ -617,8 +626,9 @@ func _break(p: Dictionary, car: RigidBody3D, v: Vector3) -> void:
 	stats["broken"] = int(stats.get("broken", 0)) + 1
 
 
-## The wind rolls the tumbleweeds along; one that leaves the desert comes back in upwind.
-func _blow(_delta: float) -> void:
+## The wind rolls the tumbleweeds along, in hops (they bounce over the ground); one that leaves the
+## desert comes back in upwind.
+func _blow(delta: float) -> void:
 	for b in _weeds:
 		if not is_instance_valid(b):
 			continue
@@ -626,11 +636,70 @@ func _blow(_delta: float) -> void:
 		var gust := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.0007 + rb.get_instance_id() % 97)
 		rb.apply_central_force(WIND.normalized() * rb.mass * 3.2 * gust)
 		var p := rb.global_position
+		var r := float(rb.get_meta("r", 0.5))
+		if p.y - terrain.height_at(p.x, p.z) < r + 0.45 and absf(rb.linear_velocity.y) < 0.6:
+			var hop := float(rb.get_meta("hop", 0.0)) - delta
+			if hop <= 0.0:
+				rb.apply_central_impulse(Vector3.UP * rb.mass * rng.randf_range(1.0, 2.6) * gust)
+				hop = rng.randf_range(0.5, 1.5)
+			rb.set_meta("hop", hop)
 		if not rect.grow(-10.0).has_point(Vector2(p.x, p.z)):
 			var x := rect.position.x + 15.0 if WIND.x > 0.0 else rect.end.x - 15.0
 			var z := rng.randf_range(rect.position.y + 20.0, rect.end.y - 20.0)
 			rb.global_position = Vector3(x, terrain.height_at(x, z) + 1.0, z)
 			rb.linear_velocity = Vector3.ZERO
+
+
+## Now and then a tumbleweed comes rolling in from the side the wind blows from, timed to cross the
+## road a few seconds ahead of the player.
+func _gust(delta: float) -> void:
+	var car = world.local_car if world else null
+	if car == null or not is_instance_valid(car) or _gust_weeds.is_empty():
+		return
+	_gust_t -= delta
+	if _gust_t > 0.0:
+		return
+	_gust_t = rng.randf_range(9.0, 22.0)
+	var cp: Vector3 = car.global_position
+	# one that is far away by now (or the one furthest off)
+	var pick: RigidBody3D = null
+	var far := -1.0
+	for b in _gust_weeds:
+		if is_instance_valid(b):
+			var dd := (b as Node3D).global_position.distance_to(cp)
+			if dd > far:
+				far = dd
+				pick = b
+	if pick == null or far < 120.0:
+		return
+	var v: Vector3 = car.linear_velocity
+	var fwd := Vector3(v.x, 0.0, v.z)
+	if fwd.length() < 3.0:
+		fwd = -(car.global_transform.basis.z as Vector3)
+		fwd.y = 0.0
+	fwd = fwd.normalized()
+	var spd := Vector2(v.x, v.z).length()
+	var ahead := clampf(spd * 3.0 + 35.0, 40.0, 140.0)
+	var target := cp + fwd * ahead
+	# on the road: the spot on it the car gets to (the road twists – straight ahead is often desert)
+	var tr = world.track
+	if tr:
+		var proj: Array = tr.project(cp, int(car.track_hint))
+		var i: int = tr.index_at(float(proj[1]))
+		if (tr.samples[i] as Vector3).distance_to(cp) < 25.0:
+			var dir := 1.0 if fwd.dot(tr.tangents[i]) >= 0.0 else -1.0
+			target = tr.samples[tr.index_at(fposmod(float(proj[1]) + dir * ahead, tr.length))]
+	stats["gusts"] = int(stats.get("gusts", 0)) + 1
+	var w := WIND.normalized()
+	var start := target - w * rng.randf_range(24.0, 40.0) + fwd * rng.randf_range(-12.0, 12.0)
+	if not rect.grow(-15.0).has_point(Vector2(start.x, start.z)):
+		return
+	var r := float(pick.get_meta("r", 0.5))
+	pick.global_position = Vector3(start.x, terrain.height_at(start.x, start.z) + r + 0.4, start.z)
+	var roll := w * rng.randf_range(5.5, 8.5)
+	pick.linear_velocity = roll + Vector3.UP * 1.5
+	pick.angular_velocity = Vector3.UP.cross(roll) / r
+	pick.sleeping = false
 
 
 # ---------------------------------------------------------------------------
