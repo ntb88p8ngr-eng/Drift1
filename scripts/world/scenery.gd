@@ -86,7 +86,8 @@ func build(p_track: Node3D, p_terrain: Node3D, p_night: float, p_quality: int) -
 	terrain = p_terrain
 	night = p_night
 	quality = clampi(p_quality, 0, 3)
-	LOD0_END = [50.0, 62.0, 75.0, 95.0][quality]
+	# (full-detail trees are ~6000 triangles each: within 75 m that was 4 million on the Ridge)
+	LOD0_END = [40.0, 50.0, 60.0, 80.0][quality]
 	LOD1_END = [150.0, 185.0, 225.0, 280.0][quality]
 	rng.seed = hash(track.track_id)
 	people = PeopleHits.new()
@@ -508,6 +509,21 @@ static func _chunk_key(p: Vector3, size := CHUNK) -> Vector2i:
 	return Vector2i(int(floor(p.x / size)), int(floor(p.z / size)))
 
 
+## The same items in chunks `factor` times as big (fewer, bigger instance sets: fewer draw calls). For
+## sets whose shader fades each instance by its own distance (the tree LODs) – a chunk's range is
+## only a coarse cut there.
+static func _rechunk(chunks: Dictionary, factor: int) -> Dictionary:
+	if factor <= 1:
+		return chunks
+	var out := {}
+	for key: Vector2i in chunks:
+		var k2 := Vector2i(floori(float(key.x) / factor), floori(float(key.y) / factor))
+		if not out.has(k2):
+			out[k2] = []
+		(out[k2] as Array).append_array(chunks[key])
+	return out
+
+
 static func _push(chunks: Dictionary, p: Vector3, item: Array, size := CHUNK) -> void:
 	var key := _chunk_key(p, size)
 	if not chunks.has(key):
@@ -625,17 +641,21 @@ func _build_forest(id: String) -> void:
 	var f_hi := Vector4(-2.0, -1.0, LOD0_END - FADE0, LOD0_END + FADE0)
 	var f_mid := Vector4(LOD0_END - FADE0, LOD0_END + FADE0, LOD1_END - FADE1, LOD1_END + FADE1)
 	var f_far := Vector4(LOD1_END - FADE1, LOD1_END + FADE1, 1e9, 2e9)
+	# the middle and far levels in chunks twice as big: the same trees in a quarter of the draw calls
+	# (on the Ridge the mid trees alone were ~1600 a frame); each tree still fades by its own distance
+	var k2 := 1 if big else 2
 	for v in kinds.size():
 		await Game.load_tick()
 		# close trees: full detail, but their shadows come from the lighter mid-detail mesh
 		_emit_chunks(meshes[v][0], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_hi", false, csize, false, false, f_hi)
 		_emit_chunks(meshes[v][1], chunks[v], 0.0, LOD0_END + FADE0 + 8.0, "Trees_shadow", true, csize, true, false, f_hi)
-		_emit_chunks(meshes[v][1], chunks[v], LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, csize, false, false, f_mid)
+		_emit_chunks(meshes[v][1], _rechunk(chunks[v], k2), LOD0_END - FADE0 - 8.0, LOD1_END + FADE1 + 8.0, "Trees_mid", lod1_shadow, csize * k2, false, false, f_mid)
 	# the long data track: 3D far trees only in a shorter radius, 2D impostors from there on
 	var far_end := BIG_FAR_END if big else FAR_END
 	await Game.load_tick()
-	_emit_chunks(far_mesh, far_chunks, LOD1_END - FADE1 - 8.0, far_end, "Trees_far", false, csize, false, false, f_far)
-	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), far_chunks, far_end, FAR_END * 2.0, "Trees_2d", false, csize, false, true)
+	_emit_chunks(far_mesh, _rechunk(far_chunks, k2), LOD1_END - FADE1 - 8.0, far_end, "Trees_far", false, csize * k2, false, false, f_far)
+	# the 2D trees far off: big chunks (on the Grüne Hölle ~1200 draw calls of a few quads each)
+	_emit_chunks(_cached("impostor", func(): return TreeFactory.impostor_mesh()), _rechunk(far_chunks, 2), far_end, FAR_END * 2.0, "Trees_2d", false, csize * 2, false, true)
 	await Game.load_tick()
 	await _build_outer_forest(far_mesh, pine_ratio, autumn_ratio)
 
@@ -903,8 +923,9 @@ func _build_rocks(id: String) -> void:
 					q.y = terrain.height_at(q.x, q.z) - 0.1
 					_push(rocks2 if k % 2 == 0 else rocks, q, [_rock_xf(q, s * rng.randf_range(0.2, 0.45)), _rock_tint()], usize)
 		gz += spacing
-	_emit_chunks(rock_mesh, rocks, 0.0, 420.0, "Rocks", true, usize)
-	_emit_chunks(rock_mesh2, rocks2, 0.0, 420.0, "Rocks", true, usize)
+	# (seen up to 420 m: chunks twice as big, a quarter of the draw calls – ~340 on the Ridge)
+	_emit_chunks(rock_mesh, _rechunk(rocks, 2), 0.0, 420.0, "Rocks", true, usize * 2)
+	_emit_chunks(rock_mesh2, _rechunk(rocks2, 2), 0.0, 420.0, "Rocks", true, usize * 2)
 	# small stones: along the verges behind the barriers and scattered over the forest floor
 	var sp2 := 3.2
 	gz = ext.position.y

@@ -18,6 +18,7 @@ const TreeFactory = preload("res://scripts/world/tree_factory.gd")
 const Skidmarks = preload("res://scripts/world/skidmarks.gd")
 const DriftScorer = preload("res://scripts/world/drift_scorer.gd")
 const Car = preload("res://scripts/car/car.gd")
+const Sfx = preload("res://scripts/util/sfx_kit.gd")
 const CameraRig = preload("res://scripts/car/camera_rig.gd")
 const Hud = preload("res://scripts/ui/hud.gd")
 const PauseMenu = preload("res://scripts/ui/pause_menu.gd")
@@ -291,6 +292,11 @@ func _ready() -> void:
 		recorder.name = "Recorder"
 		add_child(recorder)
 		recorder.setup(self)
+	# the sounds of hitting things, rendered now instead of on the first hit (a freeze)
+	var sounds := ["pole_hit", "body_hit", "hydrant_spray", "traffic_engine", "thunder_near", "thunder_far"]
+	if party != null or party_sites != null:
+		sounds += ["shot", "pew", "whistle", "light_go", "light_warn", "light_stop"]
+	await Sfx.prewarm(sounds)
 	Game.async_loading = false
 	Game.load_progress = 1.0
 	is_loaded = true
@@ -1099,3 +1105,17 @@ func _warmup() -> void:
 	w.name = "ShaderWarmup"
 	add_child(w)
 	w.run(self, camera, extra)
+	# the cars' real lights on for these frames (headlights with their shadow, brake and reverse
+	# lights): the first switch-on in the race – shadow map, light setup – no longer stutters
+	var lit: Array = []
+	for c in cars.values():
+		if is_instance_valid(c) and c is Car and (c as Car).body:
+			lit.append([c, c.headlights])
+			c.headlights = true
+			(c as Car).body.set_lights(true, true, true)
+	for f in ShaderWarmup.FRAMES + 2:
+		await get_tree().process_frame
+	for e in lit:
+		if is_instance_valid(e[0]):
+			e[0].headlights = e[1]
+			(e[0] as Car).body.set_lights(e[1], false, false)

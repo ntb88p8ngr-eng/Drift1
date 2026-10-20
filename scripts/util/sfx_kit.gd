@@ -71,6 +71,14 @@ static func get_sound(name: String) -> AudioStreamWAV:
 	return s
 
 
+## Renders the given sounds now (while loading) – each is synthesized by script on first use, which
+## froze the game for ~60 ms the first time a sign was knocked over or someone was hit.
+static func prewarm(names: Array) -> void:
+	for n in names:
+		get_sound(str(n))
+		await Game.load_tick()
+
+
 ## Plays a sound once on a new player under `parent` (3D when `at` is given), frees it afterwards.
 static func play(parent: Node, name: String, volume_db := 0.0, at = null, pitch := 1.0) -> Node:
 	var p: Node

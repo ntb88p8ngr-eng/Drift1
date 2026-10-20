@@ -16,7 +16,8 @@ const MAX_FALLEN := 30
 const CUT := 0.6              # above the tree's origin (which sits 0.3 m in the ground): the stump         # older fallen trees freeze where they lie
 ## Labels of the instanced sets that draw trees (all LODs of the forest, the city's street trees).
 const MAIN := ["Trees_hi", "City_tree", "City_sakura", "Desert_cactus", "Desert_palm"]
-const OTHER := ["Trees_shadow", "Trees_mid", "Trees_far", "Trees_2d"]
+const OTHER := ["Trees_shadow", "Trees_mid", "Trees_far", "Trees_2d", "City_tree_lo", "City_sakura_lo",
+	"City_tree_shadow", "City_sakura_shadow", "Desert_cactus_lo"]
 
 var world
 var terrain

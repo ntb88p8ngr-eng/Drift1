@@ -19,6 +19,7 @@ const BRAKE := 3.0            # comfortable braking
 const BRAKE_MAX := 7.5        # an emergency
 const JERK := 5.0             # how quickly the acceleration may change (m/s³)
 const LAT_W := 1.15           # lane change: spring rate (a change takes ~3.5 s)
+const FAR_STEP := 250.0       # beyond this from the camera: stepped every 3rd frame
 const ID_BASE := 0            # ids for traffic_cars.gd (the city's start at 100000)
 
 class TCar:
@@ -38,12 +39,14 @@ class TCar:
 	var odo := 0.0
 	var brake := false
 	var xf := Transform3D.IDENTITY
+	var acc := 0.0            # time gathered since its last step (the far ones step less often)
 
 var world
 var track
 var render                    # traffic_cars.gd
 var cars: Array = []          # TCar
 var speed_kmh := 50.0
+var _frame := 0
 var stats := {}
 var _rng := RandomNumberGenerator.new()
 var _lane_lat := 3.0
@@ -145,9 +148,18 @@ func _process(delta: float) -> void:
 	var ct = world.get("city_traffic")
 	var ports: Array = ct.ports if ct != null and is_instance_valid(ct) and str(world.get("mode")) != "race" else []
 	var off: Array = []
+	var cam := get_viewport().get_camera_3d()
+	var cp := cam.global_position if cam else Vector3.ZERO
+	_frame += 1
 	for t: TCar in cars:
 		var before := t.progress
-		_drive(t, obstacles, progs, delta)
+		# far from the camera every 3rd frame only (a longer step) – nobody sees the difference
+		t.acc += delta
+		if t.xf.origin.distance_squared_to(cp) > FAR_STEP * FAR_STEP and (_frame + t.id) % 3 != 0:
+			render.add(t.model, t.xf, t.paint, t.odo, t.brake, t.v, t.id)
+			continue
+		_drive(t, obstacles, progs, minf(t.acc, 0.12))
+		t.acc = 0.0
 		# passing a street mouth on its side: now and then it turns off into the city
 		if not ports.is_empty() and cars.size() > int(_count0 * 0.75):
 			for pi in ports.size():

@@ -10,6 +10,7 @@ extends Node3D
 ## Prepared for free roam: the network hands out spawn points, every street is drivable, and the
 ## barriers closing the side streets in race mode can be taken away (set_race_closures).
 
+const TREE_LOD := 70.0          # street trees: full detail up to here (cross-faded)
 const MeshKit = preload("res://scripts/util/mesh_kit.gd")
 const TexKit = preload("res://scripts/util/tex_kit.gd")
 const Props = preload("res://scripts/world/prop_meshes.gd")
@@ -238,6 +239,15 @@ func build(p_track, p_terrain, p_scenery, p_quality: int) -> void:
 	_lap("commit")
 	for kind in _sets.keys():
 		var m: Array = _meshes[kind]
+		if _meshes.has(kind + "_lo"):
+			# the trees: full detail (~5-7k triangles each) only close by, the light version beyond and
+			# for the shadows – the city's 1.8 million tree triangles a frame went down to a fraction
+			var lo: Mesh = _meshes[kind + "_lo"][0]
+			var e := TREE_LOD
+			scenery._emit_chunks(m[0], _sets[kind], 0.0, e + 20.0, "City_" + kind, false, 96.0, false, false, Vector4(-2.0, -1.0, e - 10.0, e + 10.0))
+			scenery._emit_chunks(lo, _sets[kind], 0.0, 220.0, "City_" + kind + "_shadow", true, 96.0, true)
+			scenery._emit_chunks(lo, _sets[kind], e - 20.0, float(m[1]), "City_" + kind + "_lo", false, 96.0, false, false, Vector4(e - 10.0, e + 10.0, 1e9, 2e9))
+			continue
 		scenery._emit_chunks(m[0], _sets[kind], float(m[3]), float(m[1]), "City_" + kind, bool(m[2]), 96.0)
 	_lap("instances")
 	_sakura_petals()
@@ -353,6 +363,9 @@ func _make_inst_meshes() -> void:
 	_meshes["person"] = [Crowd.person_mesh(), 240.0, true, 0.0]
 	_meshes["sakura"] = [TreeFactory.sakura(311, 1.0), 420.0, true, 0.0]
 	_meshes["tree"] = [TreeFactory.deciduous(121, 1.0), 420.0, true, 0.0]
+	# their light versions (beyond TREE_LOD and for the shadows); not instanced on their own
+	_meshes["sakura_lo"] = [TreeFactory.sakura(311, 0.25), 420.0, true, 0.0]
+	_meshes["tree_lo"] = [TreeFactory.deciduous(121, 0.25), 420.0, true, 0.0]
 	for k in ["hydrant", "bicycle", "bench", "bin"]:
 		_meshes[k] = [Props.get_mesh(k), 160.0, k == "bench", 0.0]
 	var pm := Props.material()

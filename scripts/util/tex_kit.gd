@@ -484,6 +484,11 @@ void vertex() {
 	VERTEX.x += sway * wind * h;
 	VERTEX.z += sway * 0.6 * wind * h;
 	VERTEX.y += sin(TIME * 4.3 + wp.x * 2.1 + wp.z * 1.3) * 0.015 * wind * h;
+	// fully faded out at this distance (the neighbouring level draws the tree): no triangles, so
+	// no pixels rasterized only to be discarded
+	if (lod_in <= 0.0 || lod_out >= 1.0) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {
@@ -538,6 +543,11 @@ void vertex() {
 		VERTEX = vec3(0.0);
 	}
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// fully faded out at this distance (the neighbouring level draws the tree): no triangles, so
+	// no pixels rasterized only to be discarded
+	if (lod_in <= 0.0 || lod_out >= 1.0) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {
@@ -618,6 +628,11 @@ void vertex() {
 	float sway = sin(TIME * 1.5 + wp.x * 0.31 + wp.z * 0.23) * 0.05;
 	VERTEX.x += sway * wind * h;
 	VERTEX.z += sway * 0.6 * wind * h;
+	// fully faded out at this distance (the neighbouring level draws the tree): no triangles, so
+	// no pixels rasterized only to be discarded
+	if (lod_in <= 0.0 || lod_out >= 1.0) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {
@@ -1259,6 +1274,11 @@ void vertex() {
 	VERTEX = (VIEW_MATRIX * vec4(w, 1.0)).xyz;
 	NORMAL = normalize((VIEW_MATRIX * vec4(normalize(to_cam + vec3(0.0, 0.9, 0.0)), 0.0)).xyz);
 	UV = vec2(UV.x * 0.5 + leaf * 0.5, UV.y);
+	// fully faded out at this distance (the neighbouring level draws the tree): no triangles, so
+	// no pixels rasterized only to be discarded
+	if (lod_in <= 0.0 || lod_out >= 1.0) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {

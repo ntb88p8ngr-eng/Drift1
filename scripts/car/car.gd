@@ -239,7 +239,9 @@ func _ready() -> void:
 	body = CarBody.new()
 	body.name = "Body"
 	add_child(body)
-	body.build(car_id, paint, not is_remote and not is_display)
+	# only the player's own headlight throws a shadow: every shadowed light renders the scene again
+	# each frame (at night five bots did that five times over); none at the lowest shadow setting
+	body.build(car_id, paint, not is_remote and not is_display and not is_bot and int(Game.settings.get("shadow_quality", 2)) > 0)
 	if not is_display:
 		body.top_level = true
 		_xf_prev = global_transform

@@ -160,8 +160,22 @@ func build(quality: int) -> void:
 	_tyre_stacks(corners)
 
 
+## Small things standing on the bare ground (outside a house's wall, by the road): stood on the
+## ground as it is in the end – the slope outside a levelled plot left bins and lamps up to 1.5 m in
+## the air, a later levelling sank a hydrant.
+const ON_GROUND := ["mailbox", "garden_lamp", "wheelie_bin", "bicycle", "hydrant"]
+
+
 ## Emits all instanced props (call after the houses added theirs).
 func finish() -> void:
+	for key in ON_GROUND:
+		for ck in _sets.get(key, {}):
+			for it in _sets[key][ck]:
+				var xf: Transform3D = it[0]
+				var g: float = terrain.height_at(xf.origin.x, xf.origin.z)
+				if xf.origin.y > g + 0.08 or xf.origin.y < g - 0.04:
+					xf.origin.y = g
+					it[0] = xf
 	for key in _sets.keys():
 		var m: Array = _meshes.get(key, [])
 		if m.is_empty():

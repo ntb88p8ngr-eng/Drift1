@@ -223,9 +223,14 @@ func _kit(name: String, pos: Vector3, was := Vector3.BACK, faces := Vector3.BACK
 	var yaw := atan2(faces.x, faces.z) - atan2(was.x, was.z)
 	n.transform = Transform3D(Basis(Vector3.UP, yaw), pos)
 	root.add_child(n)
-	for c in n.get_children():
-		if c is MeshInstance3D:
-			(c as MeshInstance3D).visibility_range_end = 260.0
+	# the menu workshop's detailed props (over a million triangles all together) are only seen through
+	# the door from close by: drawn within 45 m, and no sun shadow (they stand under the hall's roof)
+	for c in n.find_children("*", "GeometryInstance3D", true, false):
+		var gi := c as GeometryInstance3D
+		gi.visibility_range_end = 45.0
+		gi.visibility_range_end_margin = 5.0
+		gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if solid:
 		var box := AABB()
 		var first := true

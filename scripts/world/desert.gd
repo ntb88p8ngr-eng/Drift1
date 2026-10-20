@@ -16,6 +16,7 @@ const Palms = preload("res://scripts/world/palms.gd")
 
 const PACK := "res://assets/props/street_pack/"
 const PROP_CELL := 8.0
+const CACTUS_LOD := 90.0       # cacti: the six-sided version beyond this (chunk distance)
 const BREAK_SPEED := 4.5        # m/s: slower than this a post just stops the car
 const WIND := Vector3(1.0, 0.0, 0.35)
 
@@ -364,12 +365,16 @@ func _arch() -> void:
 func _cacti(quality: int) -> void:
 	# three kinds: saguaros (4 shapes), prickly pears and organ pipes (3 shapes each)
 	var variants: Array = []
+	var lows: Array = []      # the far versions (null: the pads are small, no light version)
 	for v in 4:
 		variants.append(scenery._cached("saguaro_%d" % v, func(): return saguaro_mesh(100 + v)))
+		lows.append(scenery._cached("saguaro_%d_lo" % v, func(): return saguaro_mesh(100 + v, true)))
 	for v in 3:
 		variants.append(scenery._cached("pear_%d" % v, func(): return pear_mesh(200 + v)))
+		lows.append(null)
 	for v in 3:
 		variants.append(scenery._cached("organ_%d" % v, func(): return organ_mesh(300 + v)))
+		lows.append(scenery._cached("organ_%d_lo" % v, func(): return organ_mesh(300 + v, true)))
 	var sets: Array = []
 	for v in variants.size():
 		sets.append({})
@@ -393,7 +398,14 @@ func _cacti(quality: int) -> void:
 		scenery._push(sets[v], p, [xf, Color(1, 1, 1, 1)], scenery.usize)
 		stats[kind] = int(stats.get(kind, 0)) + 1
 	for v in variants.size():
-		scenery._emit_chunks(variants[v], sets[v], 0.0, 700.0 if v < 4 else 450.0, "Desert_cactus", true, scenery.usize)
+		var far := 700.0 if v < 4 else 450.0
+		if lows[v] == null:
+			scenery._emit_chunks(variants[v], sets[v], 0.0, far, "Desert_cactus", true, scenery.usize)
+			continue
+		# full detail (ribs, spines: thousands of triangles each) close by, six-sided beyond – a chunk
+		# shows exactly one of them (both share its centre)
+		scenery._emit_chunks(variants[v], sets[v], 0.0, CACTUS_LOD, "Desert_cactus", true, scenery.usize)
+		scenery._emit_chunks(lows[v], sets[v], CACTUS_LOD, far, "Desert_cactus_lo", true, scenery.usize)
 	# small barrel cacti, no collision
 	var barrel: Mesh = scenery._cached("barrel_cactus", func(): return barrel_mesh(7))
 	var small := {}
@@ -633,8 +645,12 @@ static func _cactus_material() -> StandardMaterial3D:
 
 
 ## A ribbed tube along `path` (closed with a dome on top), radius r.
+## Building the far (light) version of a cactus: 6 sides instead of 16, no spines.
+static var _low := false
+
+
 static func _tube(st: SurfaceTool, path: Array, r: float, base_index: int, col: Color) -> int:
-	const SEG := 16
+	var SEG := 6 if _low else 16
 	const RIBS := 12.0
 	var idx := base_index
 	var rings: Array = []
@@ -664,7 +680,7 @@ static func _tube(st: SurfaceTool, path: Array, r: float, base_index: int, col: 
 		rings.append(idx)
 		idx += SEG + 1
 		# spines: a little cluster on every rib crest, every other ring (and on the dome)
-		if j % 2 == 1 and rr > 0.03:
+		if j % 2 == 1 and rr > 0.03 and not _low:
 			for m in int(RIBS):
 				var am := TAU * m / RIBS + (0.13 if j % 4 == 1 else 0.0)
 				var dm := side * cos(am) + up * sin(am)
@@ -703,7 +719,8 @@ static func _spine_cluster(st: SurfaceTool, idx: int, base: Vector3, out: Vector
 
 
 ## A saguaro: the ribbed trunk and up to three arms bending up from the side.
-static func saguaro_mesh(seed_value: int) -> ArrayMesh:
+static func saguaro_mesh(seed_value: int, low := false) -> ArrayMesh:
+	_low = low
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_value
 	var st := SurfaceTool.new()
@@ -734,12 +751,14 @@ static func saguaro_mesh(seed_value: int) -> ArrayMesh:
 		for j in range(1, 4):
 			path.append(p0 + d * out + Vector3.UP * (out + (up - out) * j / 3.0))
 		idx = _tube(st, path, 0.22, idx, col * 1.05)
+	_low = false
 	st.set_material(_cactus_material())
 	return st.commit()
 
 
 ## An organ pipe cactus: a clump of ribbed stems rising from one base, bending out and up.
-static func organ_mesh(seed_value: int) -> ArrayMesh:
+static func organ_mesh(seed_value: int, low := false) -> ArrayMesh:
+	_low = low
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_value
 	var st := SurfaceTool.new()
@@ -761,6 +780,7 @@ static func organ_mesh(seed_value: int) -> ArrayMesh:
 		var col := Color(0.27, 0.4, 0.19) * r.randf_range(0.85, 1.1)
 		col.a = 1.0
 		idx = _tube(st, path, r.randf_range(0.11, 0.16), idx, col)
+	_low = false
 	st.set_material(_cactus_material())
 	return st.commit()
 

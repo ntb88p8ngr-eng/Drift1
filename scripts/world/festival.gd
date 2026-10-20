@@ -114,7 +114,9 @@ func build(p_track, p_terrain, p_scenery, quality: int) -> void:
 		_spectators((j + rng.randi_range(0, sstep - 1)) % n, 1.0 if rng.randf() < 0.5 else -1.0)
 	for kind in _sets.keys():
 		var m: Array = _meshes[kind]
-		scenery._emit_chunks(m[0], _sets[kind], 0.0, float(m[1]), "Fest_" + kind, bool(m[2]))
+		# seen from far: bigger chunks (on the Grüne Hölle tents and campers were ~500 draw calls)
+		var k := 2 if float(m[1]) >= 200.0 else 1
+		scenery._emit_chunks(m[0], scenery._rechunk(_sets[kind], k), 0.0, float(m[1]), "Fest_" + kind, bool(m[2]), scenery.CHUNK * k)
 	print("FESTIVAL: %d camps, %s" % [_camps.size(), str(_stats)])
 
 

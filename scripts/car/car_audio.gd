@@ -13,6 +13,12 @@ extends Node
 ## Plus launch-control two-step stutter, nitro hiss, tyre squeal, wind and impacts.
 
 const MIX_RATE := 22050.0
+## Other cars (bots, other players): a lower rate – a quarter less synthesis per sample, and their
+## engines are heard from a distance through the 3D panning anyway.
+const MIX_RATE_OTHER := 16000.0
+## Most frames rendered in one go: a slow frame (or the empty buffer at the start) made one car
+## synthesize a quarter second at once – 10-14 ms spikes; now the buffer fills over a few frames.
+const MAX_CHUNK_S := 0.05
 const R34Data = preload("res://scripts/car/r34_sound_data.gd")
 ## recorded engines: car id -> generated sample tables
 const SAMPLED := {"r34": R34Data}
@@ -208,6 +214,8 @@ var _pop_pitch := 1.0
 var _turbo_level := 1.0
 var _bov_level := 1.0
 var _gain := 1.0
+var _buf_len := 0.12
+var _rate := MIX_RATE         # this voice's sample rate (MIX_RATE / MIX_RATE_OTHER)
 var _lvl := 1.0                # the engine running (car.engine_level) at the last buffer's end
 var _upshift_bang := 0.0
 var _bcoef := PackedFloat32Array([0, 0, 0, 0])   # body resonance biquad (b0, b2, a1, a2)
@@ -337,6 +345,7 @@ var _speed := 0.0
 
 
 func _ready() -> void:
+	_rate = MIX_RATE_OTHER if positional else MIX_RATE
 	if car:
 		engine_type = str(Game.get_car(str(car.car_id)).get("engine", "i6"))
 		setup_voice(engine_type)
@@ -351,10 +360,11 @@ func _ready() -> void:
 		car.wall_hit.connect(_on_hit)
 	Game.settings_changed.connect(_on_settings_changed)
 	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = MIX_RATE
+	gen.mix_rate = _rate
 	# the other cars (several synthesized per frame): a longer buffer, so a slow frame does not run it
 	# dry (a stutter); their state is a little behind anyway
 	gen.buffer_length = 0.25 if positional else 0.12
+	_buf_len = gen.buffer_length
 	var vol := float(Game.settings.get("engine_volume", 1.0))
 	if positional:
 		var p3 := AudioStreamPlayer3D.new()
@@ -430,13 +440,13 @@ func setup_samples(data: GDScript = R34Data, prefix := "r34") -> bool:
 	_sample_gain = float(data.get_script_constant_map().get("GAIN", 1.0))
 	var spool := _load_sample(prefix + "_turbo_spool") if data.LIFT_COUNT > 0 else PackedFloat32Array()
 	# longer grains with less random offset: smoother joins (short, jumpy grains scratched and hissed)
-	_g_on = Granular.new(on, MIX_RATE / _sd.F_REF_ON, 6.0, 3)
-	_g_off = Granular.new(off, MIX_RATE / _sd.F_REF_OFF, 6.0, 3)
+	_g_on = Granular.new(on, _rate / _sd.F_REF_ON, 6.0, 3)
+	_g_off = Granular.new(off, _rate / _sd.F_REF_OFF, 6.0, 3)
 	_idle_buf = idle
 	_on_f = PackedFloat32Array(_sd.ON_F)
 	_off_f = PackedFloat32Array(_sd.OFF_F)
 	if spool.size() > 4096:
-		_g_spool = Granular.new(spool, MIX_RATE / _sd.F_REF_TURBO, 60.0, 10)
+		_g_spool = Granular.new(spool, _rate / _sd.F_REF_TURBO, 60.0, 10)
 		_spool_f = PackedFloat32Array(_sd.SPOOL_F)
 	_lifts.clear()
 	for k in _sd.LIFT_COUNT:
@@ -554,8 +564,8 @@ func _render_sampled(frames: int, r0: float, r1: float, thr: float, boost0: floa
 
 
 ## RBJ band-pass biquad (0 dB peak gain): returns normalized [b0, b2, a1, a2] (b1 = 0, b2 = -b0).
-static func _bandpass(freq: float, q: float) -> PackedFloat32Array:
-	var w := TAU * freq / MIX_RATE
+func _bandpass(freq: float, q: float) -> PackedFloat32Array:
+	var w := TAU * freq / _rate
 	var alpha := sin(w) / (2.0 * q)
 	var a0 := 1.0 + alpha
 	return PackedFloat32Array([alpha / a0, -alpha / a0, -2.0 * cos(w) / a0, (1.0 - alpha) / a0])
@@ -591,7 +601,7 @@ func _on_blow_off(amount: float, full := true) -> void:
 		slot[1] = 0.0
 		slot[2] = clampf(0.35 + 0.75 * amount, 0.4, 1.0) * LIFT_GAIN * (1.0 if full else 0.55)
 		slot[3] = randf_range(0.96, 1.04) * (1.0 if full else 1.06)
-		slot[4] = 0.0 if full else SHIFT_CHUFF * MIX_RATE
+		slot[4] = 0.0 if full else SHIFT_CHUFF * _rate
 		return
 	if _bov_level <= 0.0:
 		return
@@ -622,9 +632,9 @@ func _trigger_pop(amp: float, big: bool) -> void:
 	_pb_env = 1.0
 	_pc_env = 1.0 if big else randf_range(0.45, 0.9)
 	_p_f0 = (randf_range(55.0, 80.0) if big else randf_range(85.0, 135.0)) * _pop_pitch
-	_p_bdec = exp(-1.0 / (MIX_RATE * (randf_range(0.085, 0.12) if big else randf_range(0.03, 0.05))))
-	_p_cdec = exp(-1.0 / (MIX_RATE * (0.014 if big else 0.006)))
-	_p_svf = 2.0 * sin(PI * (randf_range(600.0, 900.0) if big else randf_range(800.0, 1300.0)) / MIX_RATE)
+	_p_bdec = exp(-1.0 / (_rate * (randf_range(0.085, 0.12) if big else randf_range(0.03, 0.05))))
+	_p_cdec = exp(-1.0 / (_rate * (0.014 if big else 0.006)))
+	_p_svf = 2.0 * sin(PI * (randf_range(600.0, 900.0) if big else randf_range(800.0, 1300.0)) / _rate)
 
 
 func _on_hit(strength: float) -> void:
@@ -632,7 +642,7 @@ func _on_hit(strength: float) -> void:
 	_impact_amount = clampf(strength / 15.0, 0.2, 1.0)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if playback == null or car == null:
 		return
 	if positional and is_instance_valid(car):
@@ -647,7 +657,12 @@ func _process(_delta: float) -> void:
 		return
 	if positional and (player as AudioStreamPlayer3D).stream_paused:
 		(player as AudioStreamPlayer3D).stream_paused = false
-	var frames := playback.get_frames_available()
+	# an even share every frame: the audio thread takes whole blocks, so the free space came in jumps
+	# and some frames synthesized a block or two at once (5-14 ms). A little more than one frame's
+	# worth keeps the buffer topped up; only a (nearly) empty one is filled in one go.
+	var avail := playback.get_frames_available()
+	var cap := int(_rate * _buf_len)
+	var frames := avail if avail > int(cap * 0.85) else mini(avail, int(_rate * clampf(delta, 1.0 / 240.0, MAX_CHUNK_S) * 1.3) + 16)
 	if frames <= 0:
 		return
 	playback.push_buffer(render(frames))
@@ -671,7 +686,7 @@ func render(frames: int) -> PackedVector2Array:
 	var turbo_on: bool = float(car.turbo_gain) > 0.0 and _turbo_level > 0.0
 	var off_road: bool = car.surface_name != "asphalt" and car.surface_name != "curb"
 	var overrun: bool = t_thr < 0.08 and t_rpm > redline * 0.42 and t_speed > 6.0
-	var dt := 1.0 / MIX_RATE
+	var dt := 1.0 / _rate
 	var r0 := _rpm
 	var th0 := _thr
 	var b0 := _boost
@@ -701,7 +716,7 @@ func render(frames: int) -> PackedVector2Array:
 	var two_banks := _banks.size() == _cyl
 	var lp_k := 0.0
 	if _lp0 > 0.0:
-		lp_k = 1.0 - exp(-TAU * (_lp0 + t_rpm * _lp1) / MIX_RATE)
+		lp_k = 1.0 - exp(-TAU * (_lp0 + t_rpm * _lp1) / _rate)
 	var idle_rough := clampf(1.0 - (t_rpm - idle) / 1500.0, 0.0, 1.0)
 	# Burble-Tune: overrun pops, most right after lifting off, dying away with the overrun time
 	var blvl := _burble_level()
@@ -717,8 +732,8 @@ func render(frames: int) -> PackedVector2Array:
 		sq_target = 0.0
 	_sq_pitch = clampf(_sq_pitch + randf_range(-0.12, 0.12), -1.0, 1.0)
 	var fc1 := 780.0 + 160.0 * _sq_pitch + t_speed * 2.5
-	var f1 := 2.0 * sin(PI * fc1 / MIX_RATE)
-	var f2 := 2.0 * sin(PI * fc1 * 1.58 / MIX_RATE)
+	var f1 := 2.0 * sin(PI * fc1 / _rate)
+	var f2 := 2.0 * sin(PI * fc1 * 1.58 / _rate)
 	var q := 0.1
 	var sq_attack := 1.0 - exp(-dt / 0.06)
 	var sq_release := 1.0 - exp(-dt / 0.22)
@@ -803,7 +818,7 @@ func render(frames: int) -> PackedVector2Array:
 			var gate := 0.5 + 0.5 * sin(_ph_cut * TAU)
 			eng_amp *= 0.35 + 0.65 * gate * gate
 		elif limiter:
-			eng_amp *= 0.85 + 0.15 * sin(float(i) * TAU * 17.0 / MIX_RATE)
+			eng_amp *= 0.85 + 0.15 * sin(float(i) * TAU * 17.0 / _rate)
 		eng_amp *= 1.0 - _shift_dip * 0.55
 		_shift_dip *= dip_decay
 		eng_amp *= lvl            # (engine switched off: it fades out)
@@ -955,7 +970,7 @@ func render(frames: int) -> PackedVector2Array:
 const OTHER_UNIT := 25.0        # other cars' engine: full volume within this distance (m)
 const OTHER_MAX := 260.0
 const OTHER_GAIN := 1.0
-const MAX_VOICES := 4           # other cars synthesized at the same time (the nearest ones)
+const MAX_VOICES := 3           # other cars synthesized at the same time (the nearest ones)
 static var _voices: Array = []  # positional CarAudio instances
 static var _rank_frame := -1
 

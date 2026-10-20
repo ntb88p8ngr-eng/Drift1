@@ -19,7 +19,8 @@ const DEC_MAX := 7.5
 const JERK := 5.0
 const LAT_ACC := 2.6
 const LAT_W := 1.3               # back into the lane after a knock: spring rate
-const NEAR := 520.0              # beyond drawing range: updated every 4th frame only
+const MID := 180.0               # beyond this: updated every 2nd frame
+const NEAR := 520.0              # beyond drawing range: updated every 8th frame only
 const SEG_CELL := 32.0
 const ID_BASE := 100000          # car ids for traffic_cars.gd (the route traffic's start at 0)
 const BASE_KMH := 50.0           # the street speeds below are for this menu setting
@@ -591,10 +592,17 @@ func _process(delta: float) -> void:
 	for car in world.cars.values():
 		if is_instance_valid(car) and car.visible:
 			_players.append([car.global_position, (car as RigidBody3D).linear_velocity])
+	# near the camera every frame, further off every 2nd, beyond the drawing range every 8th (their
+	# steps just get longer: 560 cars stepped every frame cost ~3 ms)
+	var mid2 := MID * MID
 	var near2 := NEAR * NEAR
 	for c: Car in cars:
 		c.acc += delta
-		if c.xf.origin.distance_squared_to(cp) > near2 and (_frame + c.id) % 4 != 0:
+		var d2 := c.xf.origin.distance_squared_to(cp)
+		if d2 > near2:
+			if (_frame + c.id) % 8 != 0:
+				continue
+		elif d2 > mid2 and (_frame + c.id) % 2 != 0:
 			continue
 		var dt := c.acc
 		c.acc = 0.0
