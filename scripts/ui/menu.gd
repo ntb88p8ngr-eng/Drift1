@@ -14,6 +14,7 @@ const CarBodyScript = preload("res://scripts/car/car_body.gd")
 const SettingsUi = preload("res://scripts/ui/settings_ui.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
 const Replay = preload("res://scripts/replay/replay.gd")
+const TimeAttack = preload("res://scripts/world/time_attack.gd")
 const StoryPc = preload("res://scripts/ui/story_pc.gd")
 const RadioWidget = preload("res://scripts/ui/radio_widget.gd")
 
@@ -1441,11 +1442,47 @@ func _build_single() -> void:
 	var party_rows := _party_rows(Game.settings, func(key, v): Game.set_setting(key, v))
 	var bot_rows := _bot_rows(int(Game.settings.get("bots", 0)), int(Game.settings.get("bot_level", 1)),
 		func(n): Game.set_setting("bots", n), func(l): Game.set_setting("bot_level", l))
+	# maps from the world editor (they bring their own base track)
+	var maps := MapData.list_maps()
+	# time attack: which ghosts drive along, the best lap saved for this course
+	var ghost_rows := VBoxContainer.new()
+	ghost_rows.add_theme_constant_override("separation", 6)
+	var ghost_opt := UiKit.option(TimeAttack.MODES, clampi(int(Game.settings.get("ghost", 0)), 0, TimeAttack.MODES.size() - 1), func(i):
+		Game.set_setting("ghost", i))
+	ghost_opt.tooltip_text = "Deine schnellste Runde (gespeichert pro Strecke, Variante und Karte) fährt als durchsichtiges Geisterauto mit – auf Wunsch auch deine vorige Runde."
+	ghost_rows.add_child(UiKit.labeled("Geisterauto", ghost_opt))
+	var ghost_info := UiKit.label("", 17, UiKit.TEXT)
+	var ghost_ref := func() -> Array:
+		var mp := str(Game.settings.get("custom_map", ""))
+		if mp != "" and FileAccess.file_exists(mp):
+			for m in maps:
+				if m[0] == mp:
+					return [str(m[2]), "normal", mp]
+		return [str(Game.settings["track"]), str(Game.settings.get("layout", "normal")), ""]
+	var ghost_del := UiKit.button("Bestzeit löschen", func():
+		var r: Array = ghost_ref.call()
+		TimeAttack.delete_ghost(r[0], r[1], r[2])
+		show_screen("single"))
+	ghost_del.tooltip_text = "Löscht die gespeicherte Bestzeit samt Geisterauto für diese Strecke und Variante."
+	ghost_rows.add_child(UiKit.labeled("Deine Bestzeit", UiKit.row([ghost_info, ghost_del])))
+	var traffic_rows := VBoxContainer.new()
+	traffic_rows.add_theme_constant_override("separation", 6)
 	var update_desc := func():
+		var ta: bool = Game.settings["mode"] == "time_attack"
 		bot_rows.visible = Game.settings["mode"] == "race"
 		graffiti_row.visible = Game.settings["mode"] == "graffiti"
-		laps_row.visible = Game.settings["mode"] != "graffiti"
-		party_rows.visible = Game.settings["track"] != "gruene_hoelle"
+		laps_row.visible = Game.settings["mode"] != "graffiti" and not ta
+		party_rows.visible = Game.settings["track"] != "gruene_hoelle" and not ta
+		traffic_rows.visible = not ta
+		ghost_rows.visible = ta
+		if ta:
+			var r: Array = ghost_ref.call()
+			var h: Dictionary = TimeAttack.best_info(r[0], r[1], r[2])
+			ghost_del.visible = not h.is_empty()
+			if h.is_empty():
+				ghost_info.text = Game.t("Noch keine – fahr die erste Runde")
+			else:
+				ghost_info.text = "%s  ·  %s  ·  %s" % [Game.format_time(float(h.get("time", 0.0))), str(Game.get_car(str(h.get("car", "r34"))).get("name", "")), str(h.get("date", "")).substr(0, 10)]
 		var t: Dictionary = Game.TRACKS[track_names.find(Game.track_name(Game.settings["track"]))]
 		var m_desc := ""
 		for m in Game.MODES:
@@ -1458,9 +1495,9 @@ func _build_single() -> void:
 		show_screen("single"))))
 	# the course on it: normal, reverse, the map's own (Neo Tokyo: the inner-city circuit)
 	_add(UiKit.labeled("Variante", _layout_option(str(Game.settings["track"]), str(Game.settings.get("layout", "normal")),
-		func(l): Game.set_setting("layout", l))))
-	# maps from the world editor (they bring their own base track)
-	var maps := MapData.list_maps()
+		func(l):
+			Game.set_setting("layout", l)
+			update_desc.call())))
 	if not maps.is_empty():
 		var map_names: Array = ["Keine (Originalstrecke)"]
 		var map_idx := 0
@@ -1469,7 +1506,8 @@ func _build_single() -> void:
 			if maps[k][0] == str(Game.settings.get("custom_map", "")):
 				map_idx = k + 1
 		var map_opt := UiKit.option(map_names, map_idx, func(i):
-			Game.set_setting("custom_map", "" if i == 0 else maps[i - 1][0]))
+			Game.set_setting("custom_map", "" if i == 0 else maps[i - 1][0])
+			update_desc.call())
 		map_opt.tooltip_text = "Im Welt-Editor gebaute Karten: ersetzt die gewählte Strecke durch ihre Basisstrecke mit allen Änderungen."
 		_add(UiKit.labeled("Eigene Karte", map_opt))
 	_add(UiKit.labeled("Modus", UiKit.option(mode_names, mode_idx, func(i):
@@ -1478,15 +1516,17 @@ func _build_single() -> void:
 	_add(laps_row)
 	_add(bot_rows)
 	_add(graffiti_row)
+	_add(ghost_rows)
 	_add(party_rows)
 	var traffic_opt := UiKit.option(["Aus", "Wenig (10 / km)", "Mittel (18 / km)", "Viel (28 / km)", "Rushhour (40 / km)"], clampi(int(Game.settings.get("traffic", 0)), 0, 4), func(i):
 		Game.set_setting("traffic", i))
 	traffic_opt.tooltip_text = "NPC-Autos fahren auf beiden Spuren mit, wechseln die Spur und bremsen für alles vor ihnen; in Neo Tokyo auch in der ganzen Stadt. Nur offline, nicht auf Playground und Grüner Hölle."
-	_add(UiKit.labeled("Verkehr", traffic_opt))
+	traffic_rows.add_child(UiKit.labeled("Verkehr", traffic_opt))
 	var speed_opt := UiKit.option(["30 km/h", "50 km/h", "70 km/h", "90 km/h", "120 km/h"], clampi(int(Game.settings.get("traffic_speed", 1)), 0, 4), func(i):
 		Game.set_setting("traffic_speed", i))
 	speed_opt.tooltip_text = "Wie schnell der Verkehr fährt (in engen Kurven und in der Stadt langsamer)."
-	_add(UiKit.labeled("Verkehrstempo", speed_opt))
+	traffic_rows.add_child(UiKit.labeled("Verkehrstempo", speed_opt))
+	_add(traffic_rows)
 	_add(UiKit.labeled("Tageszeit", UiKit.option(tod_names, tod_idx, func(i):
 		Game.set_setting("time_of_day", Game.TIMES_OF_DAY[i]["id"]))))
 	_add(UiKit.labeled("Tagesverlauf", _day_cycle_option(int(Game.settings["day_cycle"]), func(m): Game.set_setting("day_cycle", m))))
@@ -2044,7 +2084,7 @@ func _refresh_lobby() -> void:
 			func(l): Net.host_set_option("layout", l))))
 		var modes: Array = []
 		var mi := 0
-		var race_modes := Game.MODES.filter(func(m): return m["id"] != "free")
+		var race_modes := Game.MODES.filter(func(m): return not (m["id"] in ["free", "time_attack"]))
 		for i in race_modes.size():
 			modes.append(race_modes[i]["name"])
 			if race_modes[i]["id"] == lobby.get("mode", "race"):

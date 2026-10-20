@@ -33,6 +33,7 @@ const RaceAI = preload("res://scripts/world/race_ai.gd")
 const MapData = preload("res://scripts/editor/map_data.gd")
 const WorldEditor = preload("res://scripts/editor/world_editor.gd")
 const Replay = preload("res://scripts/replay/replay.gd")
+const TimeAttack = preload("res://scripts/world/time_attack.gd")
 const ReplayPlayer = preload("res://scripts/replay/replay_player.gd")
 const AdminPanel = preload("res://scripts/admin/admin_panel.gd")
 
@@ -72,6 +73,7 @@ var map_content: Node3D       # what that map placed
 var editor: Node3D            # world_editor.gd (mode "editor")
 var recorder: Node            # replay.gd: records the session (saved on request)
 var replay_player: Node       # replay_player.gd (mode "replay")
+var time_attack: Node         # time_attack.gd (mode "time_attack"): ghost cars, delta to the best lap
 var _replay: Array = []       # [header, data] being played
 
 var state := "loading"      # loading, waiting, countdown, running, finished
@@ -209,6 +211,11 @@ func _ready() -> void:
 	add_child(camera)
 	_warmup.call_deferred()
 	scorer = DriftScorer.new()
+	if mode == "time_attack" and not track.blank:
+		time_attack = TimeAttack.new()
+		time_attack.name = "TimeAttack"
+		add_child(time_attack)
+		time_attack.setup(self)
 	hud = Hud.new()
 	hud.world = self
 	add_child(hud)
@@ -266,6 +273,11 @@ func _ready() -> void:
 	elif mode == "free":
 		state = "running"
 		hud.show_message(Game.track_name(track.track_id), "Freies Driften – überquere die Startlinie, um die Zeitmessung zu starten", Color.WHITE, 4.0)
+	elif mode == "time_attack":
+		state = "running"
+		var pb: float = time_attack.best_time() if time_attack else 0.0
+		hud.show_message(Game.t("ZEITFAHREN – %s") % Game.track_name(track.track_id),
+			(Game.t("Bestzeit %s – sie fährt als Geist mit") % Game.format_time(pb)) if pb > 0.0 else Game.t("Überquere die Startlinie – deine schnellste Runde fährt danach als Geist mit"), Color.WHITE, 4.0)
 	else:
 		_start_countdown()
 	# online: proximity voice chat (the players close by hear each other)
@@ -275,7 +287,7 @@ func _ready() -> void:
 		vc.world = self
 		add_child(vc)
 	# the map's hidden cassette (for the car radio), while it is not found yet
-	if mode in ["free", "race", "drift", "graffiti"] and not party_sites and not track.blank:
+	if mode in ["free", "time_attack", "race", "drift", "graffiti"] and not party_sites and not track.blank:
 		for tape in CassettePickup.for_world(self):
 			add_child(tape)
 	_collect_view_ranges()
@@ -639,7 +651,7 @@ func _on_cross_forward() -> void:
 	if not crossed_start:
 		crossed_start = true
 		lap_start = race_time
-		if mode == "free":
+		if open_mode():
 			hud.show_message("ZEITMESSUNG LÄUFT", "", Color.WHITE, 1.5)
 	elif valid:
 		_complete_lap()
@@ -650,6 +662,8 @@ func _on_cross_forward() -> void:
 	_lap_spoilt = false
 	_rev_m = 0.0
 	_rev_t = 0.0
+	if time_attack:
+		time_attack.start_lap()
 
 
 func _popcount(v: int) -> int:
@@ -673,6 +687,17 @@ func _complete_lap() -> void:
 	var sub := Game.t("Rundenzeit %s") % Game.format_time(t)
 	if rank > 0:
 		sub += Game.t("  ·  Leaderboard Platz %d") % rank
+	if time_attack:
+		# against the best lap so far (saved across sessions): a new best becomes the ghost
+		var had: float = time_attack.best_time()
+		var diff: float = time_attack.lap_finished(t)
+		if had <= 0.0:
+			hud.show_message("ERSTE RUNDE", sub + Game.t("  ·  fährt jetzt als Geist mit"), UiKit.GOLD, 2.8)
+		elif diff < 0.0:
+			hud.show_message("NEUE BESTZEIT", sub + "  ·  %s" % fmt_delta(diff), UiKit.GOLD, 2.8)
+		else:
+			hud.show_message("RUNDE", sub + "  ·  %s" % fmt_delta(diff), Color.WHITE, 2.4)
+		return
 	if _lap_race() and lap >= laps_total:
 		_finish()
 		return
@@ -682,6 +707,16 @@ func _complete_lap() -> void:
 		hud.show_message(Game.t("RUNDE %d") % (lap + 1) if _lap_race() else "RUNDE", sub, Color.WHITE, 2.0)
 	if _lap_race() and lap == laps_total - 1:
 		hud.show_message("LETZTE RUNDE", sub, UiKit.GOLD, 2.5)
+
+
+## A time difference as +1.234 / −0.567 s.
+static func fmt_delta(d: float) -> String:
+	return "%s%.3f" % ["+" if d >= 0.0 else "−", absf(d)]
+
+
+## Modes without an end: drive as long as you like (free drift, time attack).
+func open_mode() -> bool:
+	return mode == "free" or mode == "time_attack"
 
 
 ## Modes that end after a number of laps.
@@ -818,7 +853,7 @@ func _submit_leaderboard() -> Array:
 			notes.append(Game.t("Rennzeit: Platz %d im Leaderboard!") % r3)
 	# credits for the tuning shop
 	var credits := int(scorer.total / 40.0)
-	if finished and mode != "free":
+	if finished and not open_mode():
 		credits += 600 * laps_total
 		if graffiti:
 			credits += int(graffiti_metres(local_car) * 2.0)
@@ -838,6 +873,14 @@ func end_free_session() -> void:
 	var notes := _submit_leaderboard()
 	var header := ["Fahrer", "Driftpunkte", "Bester Drift", "Beste Runde", "Runden"]
 	var rows := [[local_car.player_name, Game.format_points(scorer.total), Game.format_points(scorer.best_chain), Game.format_time(best_lap), str(lap), true]]
+	if time_attack:
+		header = ["Fahrer", "Beste Runde", "Persönliche Bestzeit", "Runden"]
+		rows = [[local_car.player_name, Game.format_time(best_lap), Game.format_time(time_attack.best_time()), str(lap), true]]
+		var lap_rows: Array = []
+		for i in lap_times.size():
+			lap_rows.append(Game.t("Runde %d: %s") % [i + 1, Game.format_time(lap_times[i])])
+		if not lap_rows.is_empty():
+			notes.push_front("   ".join(lap_rows.slice(maxi(lap_rows.size() - 8, 0))))
 	hud.show_results("SESSION BEENDET", header, rows, notes, [["Weiterfahren", _resume_free], ["Replay speichern", save_replay], ["Hauptmenü", request_main_menu]])
 
 
@@ -847,6 +890,8 @@ func _resume_free() -> void:
 	_session_saved = false
 	scorer = DriftScorer.new()
 	local_car.input_enabled = true
+	if time_attack:
+		crossed_start = false      # (the clock ran on behind the results: the lap starts again at the line)
 
 
 # ---------------------------------------------------------------------------
@@ -922,7 +967,7 @@ func _show_online_results() -> void:
 
 
 func position_text() -> String:
-	if (not online and race_ai == null) or mode == "free":
+	if (not online and race_ai == null) or open_mode():
 		return ""
 	var entries: Array = []
 	for id in cars.keys():
@@ -1063,13 +1108,13 @@ func save_replay() -> void:
 
 
 func request_restart() -> void:
-	if mode == "free" and not _session_saved:
+	if open_mode() and not _session_saved:
 		_submit_leaderboard()
 	exit_requested.emit("restart")
 
 
 func request_main_menu() -> void:
-	if mode == "free" and not _session_saved:
+	if open_mode() and not _session_saved:
 		scorer.bank()
 		_submit_leaderboard()
 	exit_requested.emit("menu")

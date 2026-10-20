@@ -43,7 +43,7 @@ func _ready() -> void:
 	_main_box.add_child(UiKit.button("♪ Radio ein- / ausblenden", _toggle_radio))
 	if world.recorder:
 		_main_box.add_child(UiKit.button("Replay speichern", func(): _close_then(Callable(world, "save_replay"))))
-	if world.mode == "free":
+	if world.open_mode():
 		_main_box.add_child(UiKit.button("Session beenden (Punkte speichern)", func(): _close_then(Callable(world, "end_free_session"))))
 	if editing:
 		_main_box.add_child(UiKit.button("Editor verlassen", func():

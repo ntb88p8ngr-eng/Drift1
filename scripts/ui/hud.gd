@@ -32,6 +32,8 @@ var _total_label: Label
 var _total_caption: Label
 var _top_drift_label: Label
 var _top_drift_sub: Label
+var _ta_delta: Label          # time attack: ahead / behind the best lap
+var _ta_sub: Label
 var _message: Label
 var _sub_message: Label
 var _countdown: Label
@@ -153,6 +155,17 @@ func _ready() -> void:
 	top.add_child(_top_drift_sub)
 	var top_panel := UiKit.panel(top)
 	left_col.add_child(top_panel)
+	# time attack: ahead of / behind the best lap at this point of the lap
+	if world and world.get("time_attack"):
+		var tb := VBoxContainer.new()
+		tb.add_theme_constant_override("separation", 0)
+		tb.add_child(UiKit.label("ZEITFAHREN · GEIST", 14, UiKit.GOLD))
+		_ta_delta = UiKit.label("--", 30, Color.WHITE)
+		_ta_delta.add_theme_font_override("font", UiKit.title_font())
+		_ta_sub = UiKit.label("", 14, UiKit.TEXT_DIM)
+		tb.add_child(_ta_delta)
+		tb.add_child(_ta_sub)
+		left_col.add_child(UiKit.panel(tb))
 
 	# --- drift display (top centre) ---
 	_drift_box = VBoxContainer.new()
@@ -548,7 +561,7 @@ func _process(delta: float) -> void:
 		lines.append(Game.t("Zeit     %s") % Game.format_time(maxf(float(world.time_limit) - float(world.race_time), 0.0)))
 		for st in world.graffiti.standings():
 			lines.append("%s  %d m  (%d %%)" % [str(world.graffiti.names.get(st[0], "?")).substr(0, 10), int(st[1]), int(round(float(st[2]) * 100.0))])
-	elif world.mode == "free":
+	elif world.open_mode():
 		lines.append(Game.t("Runde %d") % (int(world.lap) + 1))
 	else:
 		lines.append(Game.t("Runde %d / %d") % [mini(int(world.lap) + 1, int(world.laps_total)), int(world.laps_total)])
@@ -567,6 +580,8 @@ func _process(delta: float) -> void:
 	if section != "":
 		lines.append("» %s" % section)
 	_info_lines.text = "\n".join(lines)
+	if _ta_delta:
+		_update_time_attack()
 
 	# drift
 	var sc = world.scorer
@@ -615,6 +630,24 @@ func _process(delta: float) -> void:
 		_cam_label.modulate.a = clampf(_cam_time, 0.0, 1.0)
 	else:
 		_cam_label.text = ""
+
+
+func _update_time_attack() -> void:
+	var ta = world.time_attack
+	if ta == null:
+		return
+	if ta.delta_valid:
+		_ta_delta.text = world.fmt_delta(float(ta.delta))
+		_ta_delta.add_theme_color_override("font_color", UiKit.GOOD if float(ta.delta) < 0.0 else UiKit.BAD)
+	else:
+		_ta_delta.text = "--"
+		_ta_delta.add_theme_color_override("font_color", Color.WHITE)
+	var bt: float = ta.best_time()
+	if bt > 0.0:
+		var h: Dictionary = ta.best.get("header", {})
+		_ta_sub.text = Game.t("Bestzeit %s · %s") % [Game.format_time(bt), str(Game.get_car(str(h.get("car", "r34"))).get("name", ""))]
+	else:
+		_ta_sub.text = Game.t("Noch keine Bestzeit auf dieser Strecke")
 
 
 func _fill_scoreboard() -> void:

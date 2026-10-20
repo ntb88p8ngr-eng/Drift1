@@ -128,6 +128,10 @@ static func offline_config() -> Dictionary:
 			cfg["layout"] = "normal"       # (a map is built on the track's own course)
 			cfg["map"] = map_path
 			cfg["party"] = false
+	# time attack: alone on the road (no traffic, no minigames)
+	if cfg["mode"] == "time_attack":
+		cfg["traffic"] = 0
+		cfg["party"] = false
 	# bots also race with party mode on (they wait out the minigames, see world._park_bots)
 	if cfg["mode"] == "race" and int(Game.settings.get("bots", 0)) > 0:
 		cfg["bots"] = RaceAI.make_roster(int(Game.settings["bots"]), int(cfg["weather_seed"]), RaceAI.player_tuning())

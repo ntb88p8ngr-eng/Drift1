@@ -39,6 +39,7 @@ static func is_desert(id: String) -> bool:
 
 const MODES := [
 	{"id": "free", "name": "Freies Driften", "desc": "Kein Zeitlimit – sammle Driftpunkte und jage Rundenzeiten."},
+	{"id": "time_attack", "name": "Zeitfahren", "desc": "Allein gegen die Uhr: deine schnellste Runde wird gespeichert und fährt als Geisterauto mit – auf Wunsch auch deine letzte Runde. Oben links siehst du laufend, wie weit du vor oder hinter deiner Bestzeit liegst."},
 	{"id": "race", "name": "Rennen", "desc": "Wer zuerst alle Runden fährt, gewinnt."},
 	{"id": "drift", "name": "Drift-Battle", "desc": "Alle Runden fahren – die meisten Driftpunkte gewinnen."},
 	{"id": "graffiti", "name": "Graffiti", "desc": "Drifte über die Strecke, um sie in deiner Autofarbe zu markieren – bis jemand drüberdriftet. Nach Ablauf der eingestellten Zeit gewinnt, wer die meiste Strecke hält."},
@@ -211,6 +212,7 @@ var settings := {
 	"mode": "free",
 	"laps": 3,
 	"graffiti_minutes": 5,
+	"ghost": 0,           # time attack: which ghost cars drive along (time_attack.gd MODES)
 	"motion_blur": 0,
 	"art_style": 0,
 	"bots": 0,
