@@ -34,6 +34,7 @@ const MapData = preload("res://scripts/editor/map_data.gd")
 const WorldEditor = preload("res://scripts/editor/world_editor.gd")
 const Replay = preload("res://scripts/replay/replay.gd")
 const TimeAttack = preload("res://scripts/world/time_attack.gd")
+const Ambient = preload("res://scripts/world/ambient.gd")
 const ReplayPlayer = preload("res://scripts/replay/replay_player.gd")
 const AdminPanel = preload("res://scripts/admin/admin_panel.gd")
 
@@ -74,6 +75,7 @@ var editor: Node3D            # world_editor.gd (mode "editor")
 var recorder: Node            # replay.gd: records the session (saved on request)
 var replay_player: Node       # replay_player.gd (mode "replay")
 var time_attack: Node         # time_attack.gd (mode "time_attack"): ghost cars, delta to the best lap
+var ambient: Node3D           # ambient.gd: birds, bats, fireflies, falling leaves, blowing sand, steam
 var _replay: Array = []       # [header, data] being played
 
 var state := "loading"      # loading, waiting, countdown, running, finished
@@ -209,6 +211,11 @@ func _ready() -> void:
 	camera.name = "Camera"
 	camera.car = local_car
 	add_child(camera)
+	if mode != "editor" and not track.blank:
+		ambient = Ambient.new()
+		ambient.name = "Ambient"
+		add_child(ambient)
+		ambient.setup(self)
 	_warmup.call_deferred()
 	scorer = DriftScorer.new()
 	if mode == "time_attack" and not track.blank:
