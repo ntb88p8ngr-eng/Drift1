@@ -3,7 +3,10 @@ extends RefCounted
 ## material (thousands of buildings in a few hundred draw calls). Materials:
 ##   frame  – walls, mullions, slabs, roofs, props (vertex colours, a little grime)
 ##   metal  – railings, poles, frames (vertex colours, metallic)
-##   glass  – windows: dark mirror-like glass; at night a share of the windows lit, each its own room
+##   glass  – windows: dark mirror-like glass; at night a share of the windows lit, each its own room.
+##            Low down and close by, every window looks into a real room (traced in the shader:
+##            floor, walls, ceiling lamp, furniture, now and then someone standing there); high up
+##            and far away only the cheap lit / dark pane
 ##   sign   – boards with their front in a cell of the sign atlas (city_atlas.gd), glowing at night
 ##   glow   – lamps, neon tubes, shop interiors (vertex colour as emission, brighter at night)
 ##   road   – asphalt (the race track's own road material: same wetness, puddles and night)
@@ -27,6 +30,7 @@ uniform vec3 city : source_color = vec3(0.2, 0.21, 0.24);
 // by a hair from pixel to pixel, and the hash below turned that into a different window state
 // for every pixel (black and white noise crawling over the facades)
 varying flat vec4 vcol;
+varying vec3 wpos;
 
 // hash without sin(): stable for the large cell numbers along a facade
 float h(vec2 p) {
@@ -35,8 +39,132 @@ float h(vec2 p) {
 	return fract((p3.x + p3.y) * p3.z);
 }
 
+// 1 inside the rectangle lo..hi, soft edges `aa` wide
+float rect(vec2 q, vec2 lo, vec2 hi, float aa) {
+	vec2 a = smoothstep(lo - aa, lo + aa, q) * (1.0 - smoothstep(hi - aa, hi + aa, q));
+	return a.x * a.y;
+}
+
+// The room behind one window (interior mapping): the view ray `d` (x along the facade, y up, z into
+// the building) from the point `p` on the pane (metres in the window cell) traced through a box
+// bay x 3.6 m x depth; what it meets is shaded – walls, floor, ceiling and its lamp, furniture
+// standing in the middle of the room. Returns the colour coming out of the window.
+vec3 room_view(vec2 cell, vec3 p, vec3 d, float bay, float seed, float lit, float home, float aa) {
+	const float FH = 3.6;
+	float rs = h(cell * 1.31 + seed + 5.0);
+	float rs2 = h(cell * 2.17 + seed + 9.0);
+	float depth = 4.0 + 3.5 * h(cell * 0.73 + seed + 11.0);
+	vec3 id = 1.0 / max(abs(d), vec3(1e-4));
+	float tx = (d.x > 0.0 ? bay - p.x : p.x) * id.x;
+	float ty = (d.y > 0.0 ? FH - p.y : p.y) * id.y;
+	float tz = depth * id.z;
+	float t = min(tx, min(ty, tz));
+	vec3 q = p + d * t;
+	// the room's colours: homes – papered walls, wood or tatami; offices – grey, carpet, panels
+	vec3 wall = home > 0.5
+		? mix(mix(vec3(0.82, 0.76, 0.64), vec3(0.64, 0.71, 0.62), step(0.5, rs)), mix(vec3(0.6, 0.68, 0.78), vec3(0.8, 0.65, 0.6), step(0.5, rs)), step(0.5, rs2))
+		: mix(vec3(0.78, 0.79, 0.8), vec3(0.7, 0.72, 0.76), rs);
+	vec3 floor_c = home > 0.5 ? mix(vec3(0.4, 0.26, 0.15), vec3(0.6, 0.57, 0.38), step(0.65, rs2)) : vec3(0.24, 0.27, 0.31);
+	vec3 ceil_c = vec3(0.86, 0.85, 0.82);
+	vec3 c;
+	float lamp = 0.0;
+	if (t == tz) {
+		c = wall * 0.9;
+		// on the back wall: a picture or shelves (homes), a door or a whiteboard (offices)
+		vec2 b = q.xy;
+		float cx = bay * (0.3 + 0.4 * rs2);
+		if (home > 0.5) {
+			float pic = rect(b, vec2(cx - 0.4, 1.4), vec2(cx + 0.4, 2.0), aa);
+			c = mix(c, mix(vec3(0.2, 0.3, 0.45), vec3(0.55, 0.3, 0.2), rs), pic * step(0.4, rs));
+			float shelf = rect(b, vec2(bay * 0.08, 0.0), vec2(bay * 0.4, 1.9), aa) * step(rs, 0.4);
+			float boards = step(0.85, fract(b.y * 2.6));
+			c = mix(c, mix(vec3(0.3, 0.2, 0.12), vec3(0.55, 0.45, 0.35) * (0.6 + 0.6 * h(floor(b * vec2(6.0, 2.6)) + seed)), 1.0 - boards), shelf);
+		} else {
+			float door = rect(b, vec2(cx - 0.45, 0.0), vec2(cx + 0.45, 2.1), aa) * step(0.5, rs2);
+			c = mix(c, vec3(0.45, 0.47, 0.5), door);
+			float board = rect(b, vec2(cx - 0.8, 1.0), vec2(cx + 0.8, 1.9), aa) * step(rs2, 0.5);
+			c = mix(c, vec3(0.93), board);
+		}
+	} else if (t == tx) {
+		c = wall * 0.78;
+		// a door in the side wall now and then
+		c = mix(c, vec3(0.42, 0.4, 0.38), rect(q.zy, vec2(depth * 0.55, 0.0), vec2(depth * 0.55 + 0.9, 2.1), aa) * step(0.7, rs));
+	} else if (d.y < 0.0) {
+		c = floor_c;
+		if (home > 0.5 && rs2 >= 0.65) {
+			// tatami mats: pale straw with dark borders
+			vec2 m = fract(q.xz / vec2(0.9, 1.8));
+			c *= 1.0 - 0.45 * (1.0 - rect(m, vec2(0.04), vec2(0.96), aa));
+		} else if (home > 0.5) {
+			// floorboards
+			float plank = floor(q.x * 5.0);
+			c *= 0.8 + 0.35 * h(vec2(plank, floor(q.z * 0.7 + plank * 0.37)) + seed);
+		} else {
+			c *= 0.9 + 0.15 * step(0.5, fract(q.x * 2.0 + floor(q.z * 2.0) * 0.5));
+		}
+	} else {
+		c = ceil_c;
+		// the lamp: a round one in homes, panels in offices
+		lamp = home > 0.5 ? 1.0 - smoothstep(0.3, 0.36, length(q.xz - vec2(bay * 0.5, depth * 0.45)))
+			: rect(fract(q.xz / vec2(1.2, 2.4)), vec2(0.2, 0.3), vec2(0.8, 0.7), aa);
+		c = mix(c, vec3(1.0), lamp);
+	}
+	// the light: at night the room's own (warm in homes, cool in offices), brightest under the lamp
+	// and by the window; by day the daylight coming in through the window, dim at the back
+	vec3 light_c = (home > 0.5 ? mix(vec3(1.0, 0.72, 0.45), vec3(1.0, 0.86, 0.66), rs2) : mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.95, 0.85), step(0.6, rs)))
+		* (0.6 + 0.4 * h(cell * 6.1 + seed));
+	// lights on: at night the room's own light, by day (offices) a little brighter than daylight
+	float on_l = lit * mix(0.35, 1.0, night);
+	float near_win = 1.0 - q.z / depth;
+	float fall = 0.45 + 0.55 * near_win * near_win + 0.25 * (q.y / FH);
+	vec3 day_l = vec3(0.4, 0.42, 0.45) * (0.25 + 0.75 * near_win) * (1.0 - 0.95 * night);
+	vec3 L = mix(day_l, light_c * 0.8, on_l) + vec3(0.012, 0.013, 0.018);
+	vec3 col = c * L * fall + lamp * light_c * 1.4 * on_l;
+	// furniture: a plane through the middle of the room with a sofa / table / plant (homes) or desks
+	// with screens (offices), and every so often someone standing in it
+	float zf = depth * (0.4 + 0.2 * rs);
+	float tf = zf * id.z;
+	if (tf < t) {
+		vec2 f2 = (p + d * tf).xy;
+		float x0 = bay * (0.1 + 0.3 * rs2);
+		float furn;
+		vec3 fc;
+		float screen = 0.0;
+		if (home > 0.5) {
+			furn = rect(f2, vec2(x0, 0.0), vec2(x0 + 1.2 + 0.6 * rs, 0.45 + 0.35 * step(0.5, rs)), aa);
+			// a floor lamp or a plant on the other side
+			float px = bay * (0.75 + 0.15 * rs);
+			furn = max(furn, rect(f2, vec2(px - 0.03, 0.0), vec2(px + 0.03, 1.5), aa) * step(0.5, rs2));
+			float shade = 1.0 - smoothstep(0.17, 0.2, length((f2 - vec2(px, 1.55)) * vec2(1.0, 1.6)));
+			furn = max(furn, shade * step(0.5, rs2));
+			furn = max(furn, (1.0 - smoothstep(0.3, 0.34, length((f2 - vec2(px, 0.55)) * vec2(1.0, 0.8)))) * step(rs2, 0.5));
+			fc = mix(vec3(0.3, 0.22, 0.18), vec3(0.18, 0.28, 0.2), step(rs2, 0.5));
+			screen = shade * step(0.5, rs2) * 2.0;
+		} else {
+			// a row of desks with monitors
+			float desk = rect(f2, vec2(0.05, 0.7), vec2(bay - 0.05, 0.76), aa) + rect(fract(f2 / vec2(1.4, 10.0)) * vec2(1.4, 10.0), vec2(0.1, 0.0), vec2(0.16, 0.72), aa);
+			float mon = rect(fract(f2 / vec2(1.4, 10.0)) * vec2(1.4, 10.0), vec2(0.45, 0.82), vec2(0.95, 1.18), aa) * step(0.3, rs);
+			furn = clamp(desk + mon, 0.0, 1.0);
+			fc = vec3(0.16, 0.17, 0.19);
+			screen = mon;
+		}
+		// someone in the room (a few rooms, more of them at night when the light is on)
+		float who = step(0.82 - 0.12 * lit * night, h(cell * 3.7 + seed + 1.0));
+		float wx = bay * (0.3 + 0.4 * h(cell * 5.3 + seed));
+		float body = rect(f2, vec2(wx - 0.2, 0.0), vec2(wx + 0.2, 1.42), aa) * (1.0 - smoothstep(0.18, 0.22, abs(f2.x - wx) - 0.04 * f2.y));
+		float head = 1.0 - smoothstep(0.1, 0.13, length(f2 - vec2(wx, 1.58)));
+		float person = max(body, head) * who;
+		furn = max(furn, person);
+		fc = mix(fc, vec3(0.1, 0.09, 0.1), person);
+		vec3 fl = fc * L * (0.7 + 0.3 * near_win) + screen * (1.0 - person) * mix(vec3(0.03), home > 0.5 ? light_c * 1.2 : vec3(0.3, 0.48, 0.8), on_l);
+		col = mix(col, fl, furn);
+	}
+	return col;
+}
+
 void vertex() {
 	vcol = COLOR;
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
@@ -77,13 +205,39 @@ void fragment() {
 	float towers = step(rf.y, 0.05 + 0.12 * h(vec2(floor(az * 14.0), 3.0)));
 	env = mix(env, city * 1.4, towers * step(0.0, rf.y));
 	float fres = 0.1 + 0.9 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 4.0);
-	ALBEDO = mix(tint * 0.5, vec3(0.05), frame);
+	float on = lit * (1.0 - frame) * mix(1.0, 0.55, blind);
+	vec3 flat_room = room * on * mix(0.55, 2.4, night) * (0.6 + 0.4 * r);
+	// the rooms: low down and close by (high up and far away nobody sees in – the flat pane is enough)
+	float dist = length(wpos - CAMERA_POSITION_WORLD);
+	float inside = detail * (1.0 - smoothstep(30.0, 58.0, UV.y)) * (1.0 - smoothstep(110.0, 210.0, dist));
+	vec3 rooms = flat_room;
+	if (inside > 0.01) {
+		// the facade's frame: x along it (the way UV.x runs), y up, z into the building
+		vec3 tx = normalize(vec3(n.z, 0.0, -n.x));
+		if (dot(dFdx(wpos), tx) * dFdx(UV.x) + dot(dFdy(wpos), tx) * dFdy(UV.x) < 0.0) {
+			tx = -tx;
+		}
+		vec3 ty = normalize(cross(n, tx));
+		vec3 rd = -v;
+		vec3 d = vec3(dot(rd, tx), dot(rd, ty), -dot(rd, n));
+		if (d.z > 0.02) {
+			float lit_room = step(1.0 - share, r);
+			vec3 rv = room_view(cell, vec3(f.x * bay, f.y * 3.6, 0.0), normalize(d), bay, seed, lit_room, step(0.5, vcol.a), 0.01 + dist * 0.0015);
+			// blinds pulled down from the top in some windows: slats, glowing when the room is lit
+			float bl = step(0.62, h(cell * 4.1 + seed)) * (0.2 + 0.7 * h(cell * 4.9 + seed));
+			float slat = step(1.0 - bl, f.y);
+			vec3 blinds = vec3(0.75, 0.72, 0.66) * (0.85 + 0.15 * step(0.5, fract(f.y * 3.6 * 9.0)))
+				* mix(vec3(0.3), mix(vec3(1.0, 0.85, 0.6), vec3(0.85, 0.92, 1.0), 1.0 - vcol.a) * 1.3 * lit_room, night);
+			rv = mix(rv, blinds, slat);
+			// tinted glass in front of it
+			rooms = mix(flat_room, rv * (1.0 - frame) * mix(0.75, 1.0, night) * (1.0 - fres * 0.8), inside);
+		}
+	}
+	ALBEDO = mix(tint * 0.5, vec3(0.05), frame) * mix(1.0, 0.35, inside);
 	METALLIC = 0.0;
 	ROUGHNESS = mix(0.16, 0.5, frame);
 	SPECULAR = 0.6;
-	float on = lit * (1.0 - frame) * mix(1.0, 0.55, blind);
-	EMISSION = env * fres * (1.0 - frame) * mix(0.9, 0.22, night)
-		+ room * on * mix(0.55, 2.4, night) * (0.6 + 0.4 * r);
+	EMISSION = env * fres * (1.0 - frame) * mix(0.9, 0.22, night) + rooms;
 }
 """
 

@@ -65,6 +65,16 @@ func _ready() -> void:
 			views["round%d" % rk] = [bc + Vector3(hh * 0.55, hh * 1.25, hh * 0.55), bc + Vector3(0, hh * 0.55, 0)]
 			rk += 1
 	views["skyline"] = [Vector3(0, 220, 600), Vector3(380, 60, -200)]
+	# the lower floors of a tower, an office block and an apartment block from across the street
+	# (the rooms behind the windows)
+	for b in city.builds:
+		var bst := str(b["style"])
+		if bst in ["tower", "office", "apartment"] and not views.has("facade_" + bst) and float(b["h"]) > 22.0:
+			var bc: Vector3 = b["c"]
+			var baz: Vector3 = b["az"]
+			var bax: Vector3 = b["ax"]
+			var bd: float = b["d"]
+			views["facade_" + bst] = [bc - baz * (bd * 0.5 + 16.0) + bax * 6.0 + Vector3(0, 2.5, 0), bc - baz * bd * 0.5 + Vector3(0, 7.0, 0)]
 	# street corners (where streets meet), looked at from above
 	for q in 4:
 		var cs: Dictionary = city.net.streets[(city.net.streets.size() * (q + 1)) / 6]
