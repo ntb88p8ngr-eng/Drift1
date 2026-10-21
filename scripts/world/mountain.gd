@@ -490,11 +490,13 @@ func _slope_frames() -> void:
 		m.shader.code = FRAME_SHADER
 		return m)
 	var wall_mat := _mat("retaining", func(): return TexKit.std(Color(0.62, 0.61, 0.58), 0.9))
+	# (not in front of the waterfall: its rock wall is the slope there)
+	var fall_i := _idx(float(track.meta["waterfall"])) if track.meta.has("waterfall") else -100000
 	for side: float in [-1.0, 1.0]:
 		var run: Array = []
 		for i in range(0, n, 2):
 			var steep := false
-			if not in_tunnel(i):
+			if not in_tunnel(i) and absi(posmod(i - fall_i + n / 2, n) - n / 2) > 30:
 				var probe := _p(i, side * (wb + 6.0))
 				var road_y: float = (track.samples[i] as Vector3).y
 				steep = terrain.height_at(probe.x, probe.z) - road_y > 1.8
@@ -715,7 +717,8 @@ func _waterfall(i: int) -> void:
 	var toward_road := -(track.rights[i] as Vector3) * up
 	var basis := Basis.looking_at(-toward_road, Vector3.UP)      # -z away from the road: +z faces it
 	var road_y: float = (track.samples[i] as Vector3).y
-	var foot := _p(i, up * (wb + 11.0))
+	# (the wall stands back from the road on a shelf the terrain has for it – tools/make_takioro.py)
+	var foot := _p(i, up * (wb + 16.0))
 	# as tall as the rock wall the terrain has behind it
 	var behind := foot - toward_road * 8.0
 	var height := clampf(terrain.height_at(behind.x, behind.z) - road_y, 10.0, 28.0)
@@ -783,7 +786,8 @@ func _waterfall(i: int) -> void:
 	pm.mesh = pool
 	pm.material_override = TexKit.water_material()
 	add_child(pm)
-	pm.global_position = Vector3(foot.x, road_y + 0.05, foot.z) + toward_road * 1.5
+	var pool_at := foot + toward_road * 1.5
+	pm.global_position = Vector3(pool_at.x, maxf(road_y, terrain.height_at(pool_at.x, pool_at.z)) + 0.08, pool_at.z)
 	# spray
 	var p := GPUParticles3D.new()
 	p.amount = 40
@@ -818,9 +822,9 @@ func _waterfall(i: int) -> void:
 	p.draw_pass_1 = sq
 	p.visibility_range_end = 220.0
 	add_child(p)
-	p.global_position = Vector3(foot.x, road_y + 0.5, foot.z) + toward_road * 0.8
+	p.global_position = Vector3(pool_at.x, pm.global_position.y + 0.45, pool_at.z) - toward_road * 0.7
 	scenery.occupy(foot, 12.0)
 	# a clearing on that side of the road so the fall is seen on the approach
 	for k in range(-24, 9, 4):
-		scenery.occupy(_p(i + k, up * (wb + 9.0)), 9.0)
+		scenery.occupy(_p(i + k, up * (wb + 12.0)), 11.0)
 	stats["waterfall"] = 1

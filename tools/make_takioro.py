@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Builds the data of "Takioro Mountain", a made-up Japanese mountain pass (no real-world data).
 
-The course is laid out like a road engineer would: straights and arcs of fixed radius (turtle),
-every piece with its own grade – a valley straight at the foot, a zig-zag of hairpins up the south
+The course is laid out like a road engineer would (turtle): straights, arcs and corners that
+tighten or open up, every piece with its own grade, the legs between the corners never quite
+straight and no two hairpins alike – a valley straight at the foot, a zig-zag of hairpins up the south
 face, a traverse along the upper slopes through rock spurs (tunnels), the pass, a faster descent
 with more hairpins down the west face and back along the valley to the start. The ground is then
 made to fit the road: near it the road's own heights, further out a massif with peaks above the
@@ -30,7 +31,6 @@ from scipy import ndimage as ndi
 SPACING = 2.0
 GRID_CELL = 10.0
 GRID_HALF = 4600.0
-HAIRPIN_R = 17.0
 
 
 class Turtle:
@@ -72,19 +72,91 @@ class Turtle:
             self.th += dth
             self._add(grade)
 
+    def curve(self, deg, r0, r1, grade=0.0):
+        """Like turn(), but the radius changes evenly from r0 to r1 on the way round: a corner that
+        tightens (r1 < r0) or opens up (r1 > r0)."""
+        ang = math.radians(abs(deg))
+        k0, k1 = 1.0 / r0, 1.0 / r1
+        length = ang / ((k0 + k1) * 0.5)
+        n = max(2, int(round(length / 1.0)))
+        ds = length / n
+        sgn = -1.0 if deg > 0 else 1.0
+        ks = [k0 + (k1 - k0) * (j + 0.5) / n for j in range(n)]
+        scale = ang / (sum(ks) * ds)
+        for kk in ks:
+            dth = sgn * kk * ds * scale
+            mid = self.th + dth * 0.5
+            self.x += math.cos(mid) * ds
+            self.z += math.sin(mid) * ds
+            self.th += dth
+            self._add(grade)
+
     def heading_deg(self):
         return math.degrees(self.th)
 
-    def turn_to(self, target_deg, radius, grade=0.0, side=0):
-        """Turns to a compass heading (0 east, 90 south, 180 west, 270 north); side +1 left, -1
-        right, 0 the shorter way."""
+    def turn_amount(self, target_deg, side=0):
+        """The signed turn (deg > 0 left) to a compass heading; side +1 left, -1 right, 0 the
+        shorter way."""
         cur = self.heading_deg() % 360.0
         diff = (target_deg - cur) % 360.0          # increasing heading = a right turn
         right = diff if diff > 1e-6 else 360.0
         left = 360.0 - right
         if side == 0:
             side = 1 if left < right else -1
-        self.turn(left if side > 0 else -right, radius, grade)
+        return left if side > 0 else -right
+
+    def turn_to(self, target_deg, radius, grade=0.0, side=0, r1=None):
+        """Turns to a compass heading (0 east, 90 south, 180 west, 270 north); r1: the radius at
+        the end of the corner, if it changes."""
+        deg = self.turn_amount(target_deg, side)
+        if r1 is None:
+            self.turn(deg, radius, grade)
+        else:
+            self.curve(deg, radius, r1, grade)
+
+    def wander(self, length, grade, rng, max_dev=6.0, bend=(3.0, 12.0), radius=(80.0, 260.0), gap=(22.0, 70.0)):
+        """A leg that is never quite straight: short straights and gentle bends of different size
+        and radius, the heading kept within max_dev of the one it started with."""
+        h0 = self.heading_deg()
+        done = 0.0
+        while done < length - 1.0:
+            sl = min(rng.uniform(*gap), length - done)
+            self.straight(sl, grade)
+            done += sl
+            if done > length - 15.0:
+                break
+            off = (self.heading_deg() - h0 + 180.0) % 360.0 - 180.0     # > 0: turned right
+            deg = rng.uniform(*bend) * (1.0 if rng.random() < 0.5 else -1.0)
+            if abs(off - deg) > max_dev:
+                deg = -deg
+            if abs(off - deg) > max_dev:
+                deg = off                                             # back onto the line
+            r = rng.uniform(*radius)
+            arc = r * math.radians(abs(deg))
+            if arc > length - done:
+                r = max((length - done) / max(math.radians(abs(deg)), 1e-3), 30.0)
+                arc = r * math.radians(abs(deg))
+            if abs(deg) > 0.5:
+                self.turn(deg, r, grade)
+                done += arc
+
+    def hairpin(self, spec, target, side, grade):
+        """A hairpin onto a compass heading, each one its own: "plain" (one radius), "tighten" /
+        "open" (radius r → x), "keyhole" (swings out x° the other way first, then round), "double"
+        (two apexes with x m between them)."""
+        kind, r, x = spec
+        if kind == "plain":
+            self.turn_to(target, r, grade, side)
+        elif kind in ("tighten", "open"):
+            self.turn_to(target, r, grade, side, r1=x)
+        elif kind == "keyhole":
+            self.turn(-side * x, 55.0, grade)
+            self.turn_to(target, r, grade, side)
+        elif kind == "double":
+            half = self.turn_amount(target, side) * 0.5
+            self.turn(half, r, grade)
+            self.straight(x, grade)
+            self.turn_to(target, r, grade, side)
 
 
 E, S, W, N = 0.0, 90.0, 180.0, 270.0
@@ -92,6 +164,7 @@ E, S, W, N = 0.0, 90.0, 180.0, 270.0
 
 def layout():
     t = Turtle(0.0, 0.0, 0.0)
+    rng = np.random.default_rng(2611)
     secs = []
 
     def sec(name):
@@ -100,94 +173,133 @@ def layout():
     # --- the valley: start/finish, then over the river and into the foot of the mountain ------------
     sec("Start / Ziel")
     t.tag = "valley"
-    t.straight(260, 0.0)
+    t.straight(190, 0.0)
+    t.turn(-5, 420, 0.3)
+    t.straight(60, 0.5)
     sec("Hashi-Kurve")
-    t.turn_to(N + 45, 150, 0.8)
-    t.straight(150, 2.0)
+    t.turn_to(N + 45, 200, 0.8, r1=90)          # tightens onto the bridge
+    t.straight(70, 1.5)
+    t.turn(12, 150, 2.0)
+    t.straight(60, 2.5)
     sec("Sugi-Allee")
-    t.turn_to(N + 70, 120, 3.0)
-    t.straight(100, 4.0)
-    t.turn_to(N, 85, 4.5)
-    t.straight(60, 6.0)
-    # --- the zig-zag up the south face: legs tilted 10° uphill, hairpins of 160° ---------------------
+    t.turn_to(N + 72, 150, 3.0, r1=105)
+    t.wander(110, 4.0, rng, max_dev=5)
+    t.turn_to(N, 62, 4.5, r1=115)                # opens up
+    t.straight(50, 6.0)
+    # --- the zig-zag up the south face: no two legs or hairpins alike ------------------------------
     t.tag = "switchbacks"
     sec("Iroha-Serpentinen")
-    t.turn_to(W + 10, 45, 6.0, side=1)
-    legs = [200, 235, 185, 250, 210, 230, 195, 245]
-    for k, L in enumerate(legs):
+    # legs: length, tilt uphill (°), grade (%), how far a leg wanders off its line (°)
+    # (of different lengths, so the hairpins don't line up: the zig-zag works its way east as it climbs)
+    legs = [(205, 11, 8.0, 6), (275, 6, 7.5, 9), (150, 16, 9.0, 4), (245, 9, 8.0, 10),
+            (185, 13, 8.5, 7), (290, 5, 7.0, 8), (160, 15, 9.0, 5), (230, 10, 7.5, 8)]
+    pins = [("plain", 18.0, 0.0), ("tighten", 34.0, 14.5), ("keyhole", 16.0, 26.0), ("double", 21.0, 14.0),
+            ("plain", 15.0, 0.0), ("open", 14.5, 30.0), ("plain", 26.0, 0.0)]
+    t.turn_to(W + legs[0][1], 45, 6.0, side=1, r1=70)
+    for k, (L, tilt, gr, dev) in enumerate(legs):
         west = k % 2 == 0
-        a = L * 0.35
-        b = L * 0.3
-        t.straight(a, 8.0)
-        # a gentle wiggle in the middle of the leg (the slope is never quite even)
-        w = 14 if k % 3 else -12
-        t.turn(w, 140, 8.0)
-        t.straight(L - a - b, 8.0)
-        t.turn(-w, 140, 8.0)
-        t.straight(b * 0.5, 7.5)
+        t.wander(L, gr, rng, max_dev=dev)
         if k < len(legs) - 1:
             sec("Kehre %d" % (k + 1))
-            # westbound legs end with a right-hand hairpin (towards the uphill side, north), eastbound
-            # ones with a left-hand one
-            t.turn_to(E - 10 if west else W + 10, HAIRPIN_R, 4.0, side=-1 if west else 1)
-            t.straight(b * 0.5, 6.0)
+            # westbound legs end with a right-hand hairpin (towards the uphill side, north),
+            # eastbound ones with a left-hand one
+            nt = legs[k + 1][1]
+            t.hairpin(pins[k], E - nt if west else W + nt, -1 if west else 1, 4.0)
     # --- round the shoulder and along the upper slopes westwards, through the spurs ----------------
     t.tag = "traverse"
     sec("Kumo-Schulter")
-    t.turn_to(W - 5, 55, 5.0, side=1)
-    t.straight(150, 4.5)
+    t.turn_to(W - 5, 48, 5.0, side=1, r1=80)
+    t.wander(150, 4.5, rng, max_dev=5)
     sec("Tunnel Ichi")
-    t.straight(230, 3.5)                # (tunnel 1)
-    t.turn_to(W - 35, 170, 3.0)
-    t.straight(120, 3.0)
+    t.straight(70, 3.5)                 # (tunnel 1, a slight bend inside)
+    t.turn(-7, 600, 3.5)
+    t.straight(87, 3.5)
+    t.turn_to(W - 35, 230, 3.0, r1=95)          # tightens on the way out
+    t.wander(120, 3.0, rng, max_dev=4)
     sec("Galerie")
     t.turn_to(W + 25, 140, 3.0)
-    t.straight(210, 2.5)                # (rock gallery along the cliff)
-    t.turn_to(W - 20, 110, 2.5)
-    t.straight(100, 2.0)
+    t.straight(110, 2.5)                # (rock gallery along the cliff)
+    t.turn(5, 500, 2.5)
+    t.straight(56, 2.5)
+    t.turn_to(W - 20, 115, 2.5, r1=60)
+    t.straight(60, 2.0)
+    # into the gully the stream has cut, round its head under the waterfall and out again
+    t.turn(-55, 50, 2.0)
+    t.straight(22, 2.0)
     sec("Taki-Wasserfall")
-    t.turn_to(W + 45, 75, 2.0)
-    t.straight(80, 1.5)
+    t.turn(105, 30, 1.5)
+    t.straight(30, 1.5)
+    t.turn(-50, 70, 1.5)
     t.turn_to(W, 90, 1.0)
     sec("Tunnel Ni")
-    t.straight(260, 1.5)                # (tunnel 2)
-    t.turn_to(W - 25, 200, 1.0)
-    t.straight(120, 0.5)
+    t.straight(120, 1.5)                # (tunnel 2)
+    t.turn(6, 700, 1.5)
+    t.straight(67, 1.5)
+    t.turn_to(W - 25, 260, 1.0, r1=150)
+    t.wander(120, 0.5, rng, max_dev=4)
     sec("Takioro-Pass")
     t.turn_to(W + 10, 250, 0.0)
-    t.straight(150, 0.0)
-    # --- down the west face: fast sweepers, then a zig-zag of four hairpins ------------------------
+    t.straight(90, 0.0)
+    t.turn(-5, 300, 0.0)
+    t.straight(40, 0.0)
+    # --- down the west face: sweepers that tighten, a sharp kink, then a zig-zag of hairpins -------
     t.tag = "descent"
-    t.turn_to(S + 45, 130, -3.0, side=1)     # heading south-west
-    t.straight(170, -7.0)
+    t.turn_to(S + 45, 150, -3.0, side=1, r1=85)     # heading south-west
+    t.wander(170, -7.0, rng, max_dev=6)
     sec("Momiji-Kurven")
-    t.turn_to(S + 5, 95, -6.0)
-    t.straight(110, -6.5)
-    t.turn_to(S + 60, 80, -6.5)
-    t.straight(90, -6.5)
-    t.turn_to(S + 20, 120, -6.0)
+    t.turn_to(S + 5, 110, -6.0, r1=55)
+    t.straight(70, -6.5)
+    t.turn(-14, 120, -6.5)
+    t.straight(40, -6.5)
+    t.turn_to(S + 80, 34, -6.0)                     # the sharp one
+    t.straight(80, -6.5)
+    t.turn_to(S + 20, 160, -6.0, r1=90)
     sec("Tunnel San")
     t.straight(190, -5.5)               # (tunnel 3)
     t.turn_to(S, 160, -6.0)
     t.straight(60, -7.0)
     sec("Kaeru-Kehren")
     # zig-zag down: legs east-west, moving south
-    t.turn_to(E + 10, 60, -7.0, side=1)
-    legs2 = [150, 175, 160, 185, 150, 190]
-    for k, L in enumerate(legs2):
-        t.straight(L, -8.5)
+    legs2 = [(150, 10, -8.5, 5), (210, 6, -8.0, 8), (130, 15, -9.0, 4), (200, 9, -8.0, 9),
+             (120, 13, -8.5, 5), (215, 7, -7.5, 7)]
+    pins2 = [("tighten", 30.0, 14.5), ("plain", 20.0, 0.0), ("keyhole", 15.5, 24.0), ("double", 18.0, 10.0),
+             ("open", 14.5, 27.0)]
+    t.turn_to(E + legs2[0][1], 60, -7.0, side=1, r1=40)
+    for k, (L, tilt, gr, dev) in enumerate(legs2):
+        east = k % 2 == 0
+        t.wander(L, gr, rng, max_dev=dev)
         if k < len(legs2) - 1:
-            east = k % 2 == 0
-            t.turn_to(W - 10 if east else E + 10, HAIRPIN_R + 1.0, -4.0, side=-1 if east else 1)
-    # --- back along the valley under the cherry trees -------------------------------------------------
+            nt = legs2[k + 1][1]
+            t.hairpin(pins2[k], W - nt if east else E + nt, -1 if east else 1, -4.0)
+    # --- back along the valley under the cherry trees, through the village to the start ------------
     t.tag = "valley"
     sec("Sakura-Ufer")
-    t.turn_to(E, 160, -5.0)
-    t.straight(200, -4.0)
-    t.turn_to(E - 25, 250, -3.0)
-    t.straight(150, -2.0)
+    t.curve(95, 150, 80, -5.0)              # round the foot of the slope in two goes
+    t.straight(55, -5.0)
+    t.turn_to(E, 190, -5.0)
+    t.wander(200, -4.0, rng, max_dev=7)
+    t.turn_to(E - 25, 260, -3.0)
+    t.straight(70, -2.0)
+    t.turn(16, 140, -2.0)
+    t.turn(-22, 110, -2.0)
+    t.straight(60, -1.5)
     t.turn_to(E + 10, 250, -1.5)
+    t.wander(120, -1.0, rng, max_dev=5)
+    # the valley road back east towards the start, winding a little along the fields
+    def bearing(x, z):
+        return math.degrees(math.atan2(z - t.z, x - t.x)) % 360.0
+
+    t.turn_to(bearing(-420.0, 30.0), 230, -2.5)
+    t.wander(math.hypot(t.x + 420.0, t.z - 30.0) * 0.55, -2.5, rng, max_dev=9, bend=(5.0, 16.0))
+    t.turn_to(bearing(-420.0, 30.0), 180, -2.0)
+    t.wander(max(math.hypot(t.x + 420.0, t.z - 30.0) - 60.0, 40.0), -2.0, rng, max_dev=6)
     sec("Dorf")
+    # the village street: a jog round the houses, then out onto the start straight
+    t.turn_to(bearing(-200.0, 0.0), 120, -0.5)
+    t.straight(40, -0.5)
+    t.turn(-18, 70, -0.5)
+    t.straight(30, 0.0)
+    t.turn(18, 70, 0.0)
     return t, secs
 
 
@@ -434,11 +546,18 @@ def main():
     ga = ga * ga * (3.0 - 2.0 * ga) * (1.0 - smoothstep(120.0, 220.0, np.where(ok, dd, 1e9)))
     dem += np.where(ok, ga * 32.0 * smoothstep(9.0, 30.0, lat) * (1.0 - smoothstep(70.0, 130.0, lat)), 0.0)
     # the waterfall: a short rock wall above the uphill verge that the water drops down
-    wf = sec_at("Taki-Wasserfall") + 40.0
+    wf = sec_at("Taki-Wasserfall") + 25.0       # the apex of the bend round the head of the gully
+    # (a level shelf at road height up to the foot of the wall, ~30 m out, whatever the slope was
+    # there – on the outside of the bend round the gully head it would bury the wall – then 28 m of
+    # rock straight up; the 10 m grid smears it over a few cells, so it starts well behind the verge)
     ok, along, lat, past, dd = along_piece(wf - 40.0, wf + 40.0, 60.0)
     wa = np.clip(1.0 - (np.abs(along - wf) - 22.0) / 40.0, 0.0, 1.0)
     wa = wa * wa * (3.0 - 2.0 * wa) * (1.0 - smoothstep(90.0, 160.0, np.where(ok, dd, 1e9)))
-    dem += np.where(ok, wa * 26.0 * smoothstep(18.0, 30.0, lat) * (1.0 - smoothstep(70.0, 120.0, lat)), 0.0)
+    wa *= (lat > -5.0) * (1.0 - smoothstep(60.0, 95.0, lat))
+    road_y = h[np.clip((along / SPACING).astype(int), 0, None) % len(pts)]
+    wall = road_y + 0.5 + 28.0 * smoothstep(31.0, 37.0, lat)
+    shaped = np.where(lat < 37.0, wall, np.maximum(dem, wall))
+    dem = np.where(ok, dem + wa * (shaped - dem), dem)
     dem_min = float(np.floor(dem.min()))
     q = np.clip(np.round((dem - dem_min) * 100.0), 0, 65535).astype("<u2")
 
@@ -448,7 +567,7 @@ def main():
     # rice fields on the flat valley floor (patchy), not up on the mountain
     patches = smoothstep(-0.2, 0.3, fbm(260.0, 3, 31))
     field = np.clip((1.0 - smoothstep(0.05, 0.14, slope)) * (1.0 - smoothstep(30.0, 70.0, alt)) * patches, 0, 1)
-    village_c = pts[0] + np.array([-260.0, 60.0])
+    village_c = pts[(int(sec_at("Dorf") / SPACING) + 40) % len(pts)]
     village = 1.0 - smoothstep(120.0, 220.0, np.hypot(X - village_c[0], Z - village_c[1]))
     forest = np.clip(1.0 - field * 1.2 - village, 0.0, 1.0) * (1.0 - smoothstep(780.0, 950.0, alt))
     forest *= 1.0 - smoothstep(0.9, 1.3, slope)          # cliffs: rock

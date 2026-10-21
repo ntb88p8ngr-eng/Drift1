@@ -58,6 +58,7 @@ func _ready() -> void:
 		if c.name == "WaterfallRock":
 			var rp: Vector3 = (c as Node3D).global_transform * ((c as MeshInstance3D).get_aabb().get_center())
 			var ri: int = tr.nearest_index(rp)
+			views["fall_top"] = [rp + (tr.samples[ri] - rp) * 2.5 + Vector3(0, 45.0, 0), rp]
 			views["fall_close"] = [tr.samples[ri] - (rp - tr.samples[ri]).normalized() * 6.0 + Vector3(0, 3.0, 0) - tr.tangents[ri] * 14.0, rp + Vector3(0, 2.0, 0)]
 		if c.name == "Gallery":
 			var gp: Vector3 = (c as Node3D).global_transform * ((c as MeshInstance3D).get_aabb().get_center())

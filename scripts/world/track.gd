@@ -114,7 +114,7 @@ const DEFS := {
 	},
 	# Japanese mountain pass, made up (tools/make_takioro.py): a zig-zag of hairpins up the south face,
 	# along the upper slopes through three tunnels and a rock gallery, the pass, down the west face and
-	# back along the valley under the cherry trees – ~10.5 km, 260 m up and down
+	# back along the valley under the cherry trees – ~10 km, 230 m up and down
 	"takioro": {
 		"data": "res://assets/tracks/takioro",
 		"width": 12.0, "runoff": 2.6, "start_dist": 60.0,
